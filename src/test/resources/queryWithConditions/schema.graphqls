@@ -1,0 +1,60 @@
+type Query {
+  paramCondition(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
+  ): [Emne]
+
+  paramConditionOverride(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER", override: true)
+  ): [Emne]
+
+  fieldCondition(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE")
+  ): [Emne] @condition(name: "TEST_EMNE_ALL")
+
+  fieldConditionOverride(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE")
+  ): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+
+  fieldAndParamCondition(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
+  ): [Emne] @condition(name: "TEST_EMNE_ALL")
+
+  fieldAndParamConditionOverride(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
+  ): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+
+  fieldAndParamConditionOverrideBoth(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER", override: true)
+  ): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+
+  fieldInputCondition(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    emneInput: EmneInput # Potentially support: @condition(name: "TEST_EMNE_INPUT")
+  ): [Emne] @condition(name: "TEST_EMNE_INPUT_ALL")
+}
+
+type Emne @node {
+  id: ID!
+  kode: String! @column(name: "EMNEKODE")
+  navn: Emnenavn!
+  versjonskode: String! @column(name: "VERSJONSKODE")
+}
+
+input EmneInput {
+  kode: String! @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODE")
+  versjonskode: String! @column(name: "VERSJONSKODE")
+}
+
+type Emnenavn {
+  eng: String @column(name: "EMNENAVN_ENGELSK")
+  nob: String! @column(name: "EMNENAVN_BOKMAL")
+  nno: String @column(name: "EMNENAVN_NYNORSK")
+  sme: String @column(name: "EMNENAVN_SAMISK")
+}

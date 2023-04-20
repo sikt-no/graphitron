@@ -1,0 +1,79 @@
+type Query {
+  personNoPage(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
+    pin: PersonInput
+  ): PersonProfil
+
+  personWithPage(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
+    pin: PersonInput,
+    first: Int = 100,
+    after: String
+  ): PersonProfilConnection! @connection(for: "PersonProfil")
+
+  studenter(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    first: Int = 100,
+    after: String
+  ): QueryStudentVedInstitusjonConnection @connection(for: "StudentVedInstitusjon")
+}
+
+input PersonInput {
+  fornavn: String, #Optional
+  etternavn: String!, #Mandatory
+  epost: PersonInputEpost
+}
+
+input PersonInputEpost {
+  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT"),
+  arbeidsEpost: String! @column(name: "EMAILADRESSE_ARBEID")
+}
+
+type PersonProfil @node(table: "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  epost: PersonEpost
+}
+
+type PersonEpost {
+  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+  arbeidsEpost: String! @column(name: "EMAILADRESSE_ARBEID")
+  institusjonsEpost: String @column(name: "EMAILADRESSE")
+}
+
+type StudentVedInstitusjon @node(table: "STUDENT") {
+  id: ID!
+  semesterregistreringer(terminIn: SemesterregistreringsterminInput!): [Semesterregistrering!]! @resolver
+  registreringerForInputList(terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @resolver
+  registreringerForMixOfListAndSingleInput(terminIn: SemesterregistreringsterminInput!, terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @resolver
+  registreringerForInputWithOneFieldList(terminInListOneField: [SemesterregistreringsterminInputWithOneField!]): [Semesterregistrering!]! @resolver
+  registreringerForInputWithNestedFieldList(terminInListNestedField: [SemesterregistreringsterminNestedInput!]): [Semesterregistrering!]! @resolver
+}
+
+input SemesterregistreringsterminInput {
+  maned: Int! @column(name: "MANEDNR_START", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+  termintype: Termintype! @column(name: "TERMINKODE", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+}
+
+input SemesterregistreringsterminInputWithOneField {
+  maned: Int! @column(name: "MANEDNR_START", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+}
+
+input SemesterregistreringsterminNestedInput {
+  manedField: SemesterregistreringsterminInputWithOneField!
+  termintype: Termintype! @column(name: "TERMINKODE", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+}
+
+type Semesterregistrering @node {
+  id: ID!
+  registrert: Boolean! @column(name: "STATUS_REG_OK")
+}
+
+enum Termintype {
+  VAR @mapEnum(name: "VÅR"),
+  SOM @mapEnum(name: "SOM"),
+  HOST @mapEnum(name: "HØST")
+}

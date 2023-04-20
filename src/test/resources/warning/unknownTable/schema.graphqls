@@ -1,0 +1,10 @@
+type Query {
+    rom(bygningskode: String!): Rom
+}
+
+type Rom @node(table: "ROMSKIP") {
+    id: ID!
+    kode: ID!
+    navn: String!
+    bygningskode: String!
+}

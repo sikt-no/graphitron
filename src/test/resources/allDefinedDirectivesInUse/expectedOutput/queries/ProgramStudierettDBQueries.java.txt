@@ -1,0 +1,49 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Adresse;
+import no.fellesstudentsystem.graphql.generated.model.Maalform;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class ProgramStudierettDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, PersonProfil> personProfilForProgramStudierett(
+            Set<String> programStudierettIder, SelectionSets select) {
+        return ctx
+                .select(
+                        STUDIERETT.getId(),
+                        row(
+                                STUDIERETT.person().getId().as("id"),
+                                select.optional("fornavn", STUDIERETT.person().FORNAVN).as("fornavn"),
+                                select.optional("etternavn", STUDIERETT.person().ETTERNAVN).as("etternavn"),
+                                select.optional("privatEpost", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost"),
+                                select.optional("arbeidsEpost", STUDIERETT.person().EMAILADRESSE_ARBEID).as("arbeidsEpost"),
+                                select.optional("institusjonsEpost", STUDIERETT.person().EMAILADRESSE).as("institusjonsEpost"),
+                                row(
+                                        select.optional("folkeregistrertAdresse/gate", STUDIERETT.person().ADRLIN2_HJEMSTED).as("gate")
+                                ).mapping(nullOnAllNull(Adresse::new)).as("folkeregistrertAdresse"),
+                                select.optional("fodselsdato", STUDIERETT.person().DATO_FODT).as("fodselsdato"),
+                                select.optional("fodselsnummer", STUDIERETT.person().FODSELSNR).as("fodselsnummer"),
+                                select.optional("morsmaal", STUDIERETT.person().SPRAKKODE_MORSMAL).as("morsmaal"),
+                                select.optional("maalform", STUDIERETT.person().person_Malform_Sprak_Fk().SPRAKKODE_639_2.convert(Maalform.class, s -> s == null ? null : Map.of("NOB", Maalform.NOB, "NNO", Maalform.NNO, "ENG", Maalform.ENG).getOrDefault(s, null), s -> s == null ? null : Map.of(Maalform.NOB, "NOB", Maalform.NNO, "NNO", Maalform.ENG, "ENG").getOrDefault(s, null))).as("maalform")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personProfil")
+                )
+                .from(STUDIERETT)
+                .where(STUDIERETT.hasIds(programStudierettIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

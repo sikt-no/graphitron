@@ -1,0 +1,18 @@
+type Query {
+    rom(bygningskode: String!): Rom
+}
+
+type Rom @node(table: "ROM") {
+    id: ID!
+    romId: ID!
+}
+
+enum Kjonn @mapEnum(name: "Kjonn") { #should NOT trigger warning
+    MANN,
+    KVINNE
+}
+
+enum Kjonn2 @mapEnum(name: "Kjonn2") { #should trigger warning
+    MANN,
+    KVINNE
+}

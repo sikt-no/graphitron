@@ -1,0 +1,15 @@
+#only a couple of directives are defined, many recognized directives are missing
+directive @resolver on FIELD_DEFINITION
+directive @notGenerated on FIELD_DEFINITION
+directive @node(table: String) on OBJECT
+
+type Query {
+  rom(bygningskode: String!): Rom @notGenerated
+}
+
+type Rom @node {
+  id: ID!
+  romkode: ID!
+  romnavn: String!
+  bygningskode: String!
+}

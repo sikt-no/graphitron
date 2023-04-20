@@ -1,0 +1,41 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Permisjon;
+import no.fellesstudentsystem.graphql.generated.model.Permisjonsperiode;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class StudentVedInstitusjonDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, List<Permisjon>> permisjonerForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder, SelectionSets select) {
+        return ctx
+                .select(
+                        PERMISJON.getStudentId(),
+                        row(
+                                PERMISJON.getId().as("id"),
+                                row(
+                                        select.optional("permisjonsperiode/fra", PERMISJON.DATO_FRA).as("fra"),
+                                        select.optional("permisjonsperiode/til", PERMISJON.DATO_TIL).as("til")
+                                ).mapping(nullOnAllNull(Permisjonsperiode::new)).as("permisjonsperiode")
+                        ).mapping(nullOnAllNull(Permisjon::new)).as("permisjoner")
+                )
+                .from(PERMISJON)
+                .where(PERMISJON.hasStudentIds(studentVedInstitusjonIder))
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

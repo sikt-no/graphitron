@@ -1,0 +1,25 @@
+type Query {
+  personProfil(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
+  ): PersonProfil
+}
+
+type PersonProfil @node(table: "PERSON") {
+  id: ID!
+  fornavn: String!
+  kontaktinformasjon: Personkontaktinformasjon @resolver @notGenerated
+}
+
+type Personkontaktinformasjon @node(table: "PERSON") {
+  id: ID!
+  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+}
+
+type Mutation {
+  endreNavn(input: EndreInput!): ID! @service(name: "SERVICE_PERSONPROFIL") @notGenerated
+}
+
+input EndreInput @record(table: "PERSON") {
+  id: ID!
+}

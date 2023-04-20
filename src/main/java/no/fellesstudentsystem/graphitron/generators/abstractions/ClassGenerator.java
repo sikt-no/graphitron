@@ -1,0 +1,56 @@
+package no.fellesstudentsystem.graphitron.generators.abstractions;
+
+import com.squareup.javapoet.TypeSpec;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+
+import java.io.IOException;
+import java.util.List;
+
+/**
+ * A class generator uses a GraphQL object in order to generate an entire class, based on only the data contained
+ * within a parsed object from {@link no.fellesstudentsystem.graphitron.definitions.objects objects}.
+ * @param <T> Object type that this generator operates on.
+ */
+public interface ClassGenerator<T extends GenerationTarget> {
+    /**
+     * @param target A {@link GenerationTarget} object representing a source from which a class should be generated.
+     * @return A complete class in the form of a javapoet {@link TypeSpec}.
+     */
+    TypeSpec generate(T target);
+
+    /**
+     * @param path The path to the output directory.
+     * @param packagePath The package path that this class should be written to.
+     */
+    void generateQualifyingObjectsToDirectory(String path, String packagePath) throws IOException;
+
+    /**
+     * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
+     * @param generatedClass A complete javapoet {@link TypeSpec}.
+     * @param path           The path to the output directory.
+     * @param packagePath    The package path that this class should be written to.
+     */
+    void writeToFile(TypeSpec generatedClass, String path, String packagePath) throws IOException;
+
+    /**
+     * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
+     * @param generatedClass A complete javapoet {@link TypeSpec}.
+     * @param path           The path to the output directory.
+     * @param packagePath    The package path that this class should be written to.
+     * @param directoryOverride Override the directory within the package where the class is saved to.
+     */
+    void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) throws IOException;
+
+    /**
+     * @return The final directory path within the package where the classes are ultimately saved.
+     */
+    String getDefaultSaveDirectoryName();
+
+    /**
+     * @param className  The name of the class.
+     * @param generators List of method generators that this class should use to generate its methods.
+     * @return A completed {@link TypeSpec.Builder} for this class, where all methods have already been added.
+     */
+    TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField>> generators);
+}

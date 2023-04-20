@@ -1,0 +1,183 @@
+package no.fellesstudentsystem.graphitron.validation;
+
+import graphql.com.google.common.collect.Sets;
+import no.fellesstudentsystem.graphitron.GraphQLGenerator;
+import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.objects.*;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
+import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
+import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
+import org.apache.commons.lang3.Validate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public class ProcessedDefinitionsValidator {
+
+    private final Map<String, ObjectDefinition> objects;
+    private final Map<String, ConnectionObjectDefinition> connectionObjects;
+    private final Map<String, EnumDefinition> enums;
+    private final Map<String, InterfaceDefinition> interfaces;
+    private final Map<String, InputDefinition> inputs;
+    static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
+
+    public ProcessedDefinitionsValidator(ProcessedSchema schema) {
+        objects = schema.getObjects();
+        connectionObjects = schema.getConnectionObjects();
+        enums = schema.getEnums();
+        interfaces = schema.getInterfaces();
+        inputs = schema.getInputTypes();
+    }
+
+    public void validateThatProcessedDefinitionsConformToDatabaseNaming() {
+        objects.values().forEach(objectDefinition -> {
+            var fields = objectDefinition.getFields();
+            if (objectDefinition.hasTable()) {
+                String tableName = objectDefinition.getTable().getName();
+                Set<String> dbNamesForFieldsThatShouldBeValidated = getDbNamesForFieldsThatShouldBeValidated(
+                        fields
+                                .stream()
+                                .filter(f -> !f.hasImplicitJoin())
+                                .collect(Collectors.toList())
+                );
+                validateTableExistsAndHasMethods(tableName, dbNamesForFieldsThatShouldBeValidated);
+            }
+            checkPaginationSpecs(fields);
+        });
+        objects.values().forEach(objectDefinition -> objectDefinition
+                .getFields()
+                .stream()
+                .filter(ObjectField::isGenerated)
+                .forEach(this::validateGeneratedField)
+        );
+
+        var enumValueSet = Stream.of(GeneratorEnum.values()).map(Enum::name).collect(Collectors.toSet());
+        enums
+                .values()
+                .stream()
+                .filter(EnumDefinition::hasDbEnumMapping)
+                .filter(e -> !enumValueSet.contains(e.getDbName().toUpperCase()))
+                .forEach(e -> LOGGER.warn("No enum with name '{}' found in {}", e.getDbName(), GeneratorEnum.class.getName()));
+    }
+
+    private void validateGeneratedField(ObjectField generatedField) {
+        String typeName = generatedField.getTypeName();
+        Optional<String> nodeName = Optional.ofNullable(connectionObjects.get(typeName))
+                .map(ConnectionObjectDefinition::getNodeType);
+
+        String name = nodeName.orElse(typeName);
+
+        var object = objects.get(name);
+        if (interfaces.containsKey(name)) {
+            Validate.isTrue(generatedField.getInputFields().size() == 1,
+                    "Only exactly one input field is currently supported for fields returning interfaces. " +
+                            "'%s' has %s input fields", generatedField.getName(), generatedField.getInputFields().size());
+            Validate.isTrue(!generatedField.getFieldType().isIterableWrapped(),
+                    "Generating fields returning collections/lists of interfaces is not supported. " +
+                            "'%s' must return only one %s", generatedField.getName(), generatedField.getFieldType().getName());
+            if (!(generatedField instanceof TopLevelObjectField)) {
+                LOGGER.warn("interface ({}) returned in non root object. This is not fully supported. Use with care", name );
+            }
+        } else if (object != null && object.hasTable()) {
+            validateInputFields(generatedField.getNonReservedInputFields(), object.getTable());
+        }
+    }
+
+    private void validateInputFields(List<InputField> nonReservedInputFields, JOOQTableMapping table) {
+        nonReservedInputFields.forEach(field -> {
+            FieldType fieldType = field.getFieldType();
+
+            if (fieldType.isIterableWrapped()) {
+                Optional.ofNullable(inputs.get(fieldType.getName()))
+                        .ifPresent(definition -> validateConditionTupleGenerationForField(definition, field));
+            }
+        });
+
+        var flatInputs = new ArrayList<InputField>();
+        var inputBuffer = new LinkedList<>(nonReservedInputFields);
+        var seen = new HashSet<String>();
+        while (!inputBuffer.isEmpty()) {
+            var f = inputBuffer.poll();
+            if (inputs.containsKey(f.getTypeName()) && !seen.contains(f.getName() + f.getTypeName())) {
+                var definition = inputs.get(f.getTypeName());
+                inputBuffer.addAll(definition.getInputs());
+                seen.add(f.getName() + f.getTypeName());
+            } else {
+                flatInputs.add(f);
+            }
+        }
+
+        Set<String> inputFieldDbNames = flatInputs
+                .stream()
+                .filter(inputField -> !inputField.getFieldType().isID())
+                .filter(inputField -> !inputField.hasImplicitJoin())
+                .map(AbstractField::getUpperCaseName)
+                .collect(Collectors.toSet());
+        validateTableExistsAndHasMethods(table.getName(), inputFieldDbNames);
+    }
+
+    private void validateConditionTupleGenerationForField(InputDefinition inputDefinition, InputField inputField) {
+        List<String> optionalFields = new ArrayList<>();
+        String messageStart = String.format("Argument '%s' is of collection of InputFields ('%s') type.", inputField.getName(), inputField.getFieldType().getName());
+
+        inputDefinition.getInputs().forEach(field -> {
+            if (field.getFieldType().isNullable()) {
+                optionalFields.add(field.getName());
+            }
+            if (field.getFieldType().isIterableWrapped()) {
+                throw new IllegalArgumentException(String.format("%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)", messageStart, field.getName()));
+            }
+        });
+
+        if (!optionalFields.isEmpty()) {
+            LOGGER.warn("{} Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: '{}'", messageStart, String.join("', '", optionalFields));
+        }
+    }
+
+    private Set<String> getDbNamesForFieldsThatShouldBeValidated(Collection<ObjectField> objectFields) {
+        Set<String> fieldNames = new HashSet<>();
+        objectFields.stream().filter(o -> !o.getFieldType().isID()).forEach(objectField ->
+                Optional.ofNullable(objects.get(objectField.getTypeName())).ifPresentOrElse(
+                        objectDefinition -> {
+                            if (!objectDefinition.hasTable()) {
+                                fieldNames.addAll(getDbNamesForFieldsThatShouldBeValidated(objectDefinition.getFields()));
+                            }
+                        },
+                        () -> fieldNames.add(objectField.getUpperCaseName())
+                ));
+        return fieldNames;
+    }
+
+    private void validateTableExistsAndHasMethods(String tableName, Set<String> expectedMethodNames) {
+        if (!TableReflection.tableExists(tableName)) {
+            LOGGER.warn("No table with name '{}' found in {}", tableName, TableReflection.TABLES_CLASS.getName());
+        } else {
+            validateTableHasMethods(tableName, expectedMethodNames);
+        }
+    }
+
+    public void validateTableHasMethods(String tableName, Set<String> methodNames) {
+        var methodsNotFoundInTable = Sets.difference(methodNames, TableReflection.getFieldNamesForTable(tableName));
+
+        if (!methodsNotFoundInTable.isEmpty()) {
+            LOGGER.warn("No column(s) with name(s) '{}' found in table '{}'", methodsNotFoundInTable.stream().sorted().collect(Collectors.joining(", ")), tableName);
+        }
+    }
+
+    private void checkPaginationSpecs(List<ObjectField> fields) {
+        for (var field : fields) {
+            var hasConnectionSuffix = field.getTypeName().endsWith(GraphQLReservedName.SCHEMA_CONNECTION_SUFFIX.getName());
+            if (hasConnectionSuffix && !field.hasRequiredPaginationFields()) {
+                LOGGER.warn("Type {} ending with the reserved suffix 'Connection' must have either " +
+                        "forward(first and after fields) or backwards(last and before fields) pagination, " +
+                        "yet neither was found. No pagination was generated for this type.", field.getTypeName()
+                );
+            }
+        }
+    }
+}

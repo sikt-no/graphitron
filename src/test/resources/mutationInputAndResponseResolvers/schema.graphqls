@@ -1,0 +1,53 @@
+type Query {
+  # Dummy query, since the schema insists that there must be at least one.
+  i(id: ID): ID! @notGenerated
+}
+
+type Mutation {
+  endrePersonSimple(id: ID!): ID! @service(name: "TEST_PERSON")
+  endrePersonInput(input: EndreInput!): ID! @service(name: "TEST_PERSON")
+
+  # Note: method has the same name, but it resolves correctly based on number of arguments. Doesn't check the types though.
+  endrePerson2Params(input: EndreInput!, etternavn: String): ID! @service(name: "TEST_PERSON")
+
+  endrePersonResponse(id: ID!): EndreResponse! @service(name: "TEST_PERSON")
+  endrePersonInputAndResponse(input: EndreInput!): EndreResponse! @service(name: "TEST_PERSON")
+
+  endrePersonWithProfil(id: ID!): PersonProfil! @column(name: "Terminator") @service(name: "TEST_PERSON") # Column should not matter. It may change some internal variable names.
+  endrePersonWithProfilResponse(id: ID!): EndreResponseWithPerson! @service(name: "TEST_PERSON")
+}
+
+input EndreInput @record(table: "PERSON") {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+}
+
+type EndreResponse {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name: "epostField")
+}
+
+type EndreResponseWithPerson {
+  id: ID!
+  personProfil: PersonProfil @column(name: "persProf")
+  post: Postadresse
+}
+
+type PersonProfil @node(table: "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+  postadresse: Postadresse @resolver @notGenerated
+  dod: Boolean @column(name: "STATUS_DOD")
+}
+
+type Postadresse @node(table: "STUDENT") {
+  id: ID!
+  co: String @column(name: "ADRLIN1_SEMADR")
+  gate: String @column(name: "ADRLIN2_SEMADR")
+  postnummerOgSted: String @column(name: "ADRLIN3_SEMADR")
+  land: String @column(name: "ADRESSELAND_SEMADR")
+}

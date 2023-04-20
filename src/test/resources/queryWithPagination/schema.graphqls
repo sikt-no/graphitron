@@ -1,0 +1,12 @@
+type Query {
+  person(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    first: Int = 100,
+    after: String,
+  ): PersonProfilConnection @connection(for: "PersonProfil")
+}
+
+type PersonProfil @node(table: "PERSON")  {
+  id: ID!
+  fornavn: String!
+}

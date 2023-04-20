@@ -1,0 +1,78 @@
+package no.fellesstudentsystem.graphql.resolvers.query;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
+import no.fellesstudentsystem.graphql.generated.model.Emne;
+import no.fellesstudentsystem.graphql.generated.model.EmneInput;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.QueryDBQueries;
+
+public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    private QueryDBQueries queryDBQueries;
+
+    @Override
+    public CompletableFuture<List<Emne>> paramCondition(String eierInstitusjonsnummer,
+            List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var dbResult = queryDBQueries.paramConditionForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> paramConditionOverride(String eierInstitusjonsnummer,
+            List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var dbResult = queryDBQueries.paramConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> fieldCondition(String eierInstitusjonsnummer,
+            List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var dbResult = queryDBQueries.fieldConditionForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> fieldConditionOverride(String eierInstitusjonsnummer,
+            List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> fieldAndParamCondition(String eierInstitusjonsnummer,
+            List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> fieldAndParamConditionOverride(
+            String eierInstitusjonsnummer, List<String> emnekoder, DataFetchingEnvironment env)
+            throws Exception {
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> fieldAndParamConditionOverrideBoth(
+            String eierInstitusjonsnummer, List<String> emnekoder, DataFetchingEnvironment env)
+            throws Exception {
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Emne>> fieldInputCondition(String eierInstitusjonsnummer,
+            EmneInput emneInput, DataFetchingEnvironment env) throws Exception {
+        var dbResult = queryDBQueries.fieldInputConditionForQuery(eierInstitusjonsnummer, emneInput, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        return CompletableFuture.completedFuture(dbResult);
+    }
+}

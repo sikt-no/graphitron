@@ -1,0 +1,5 @@
+type PersonProfil @node(table: "PERSON")  {
+  id: ID!
+  fornavn: String!
+  kontaktinformasjon: Personkontaktinformasjon @resolver
+}

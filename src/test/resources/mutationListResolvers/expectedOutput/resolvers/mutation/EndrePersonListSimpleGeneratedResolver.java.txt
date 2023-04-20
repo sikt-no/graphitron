@@ -1,0 +1,29 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonListSimpleMutationResolver;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService;
+import org.jooq.DSLContext;
+
+public class EndrePersonListSimpleGeneratedResolver implements EndrePersonListSimpleMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Override
+    public CompletableFuture<List<String>> endrePersonListSimple(List<String> id,
+            DataFetchingEnvironment env) throws Exception {
+        var testPersonService = new TestPersonService(ctx);
+        var select = new SelectionSets(env.getSelectionSet());
+
+        var endrePersonListSimpleResult = testPersonService.endrePersonListSimple(id);
+
+        return CompletableFuture.completedFuture(endrePersonListSimpleResult);
+    }
+}

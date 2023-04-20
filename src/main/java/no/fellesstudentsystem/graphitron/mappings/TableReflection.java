@@ -1,0 +1,62 @@
+package no.fellesstudentsystem.graphitron.mappings;
+
+import no.fellesstudentsystem.kjerneapi.Keys;
+import no.fellesstudentsystem.kjerneapi.Tables;
+import org.jooq.ForeignKey;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
+ */
+public class TableReflection {
+    public static final Class<Tables> TABLES_CLASS = Tables.class;
+    public static final Class<Keys> KEYS_CLASS = Keys.class;
+    private final static Set<Field> TABLE_FIELDS = Set.of(TABLES_CLASS.getFields());
+    private final static Set<String> POSSIBLE_TABLE_NAMES = TABLE_FIELDS.stream().map(Field::getName).collect(Collectors.toSet());
+
+    public static boolean tableExists(String tableName) {
+        return POSSIBLE_TABLE_NAMES.contains(tableName);
+    }
+
+    public static boolean tableHasMethod(String tableName, String methodName) {
+        return Stream.of(getField(tableName).getType().getMethods())
+                .map(Method::getName)
+                .anyMatch(m -> m.equals(methodName));
+    }
+
+    public static Optional<String> searchTableForMethodByKey(String tableName, String keyName) {
+        var k = keyName.replace("_", "");
+        return Stream
+                .of(getField(tableName).getType().getMethods())
+                .map(Method::getName)
+                .filter(m -> m.replace("_", "").equalsIgnoreCase(k))
+                .findFirst();
+    }
+
+    public static Optional<String> getJoinTableByKey(String keyName) {
+        try {
+            return Optional.of(((ForeignKey<?, ?>) KEYS_CLASS.getField(keyName).get(null)).getKey().getTable().getName());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    public static Set<String> getFieldNamesForTable(String tableName) {
+        return Stream.of(getField(tableName).getType().getFields())
+                .map(Field::getName)
+                .collect(Collectors.toSet());
+    }
+
+    private static Field getField(String tableName) {
+        return TABLE_FIELDS
+                .stream()
+                .filter(f -> f.getName().equals(tableName))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No table with the name '" + tableName + "' exists."));
+    }
+}

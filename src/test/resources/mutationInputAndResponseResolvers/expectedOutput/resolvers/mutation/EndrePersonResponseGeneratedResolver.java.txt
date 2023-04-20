@@ -1,0 +1,34 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonResponseMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService;
+import org.jooq.DSLContext;
+
+public class EndrePersonResponseGeneratedResolver implements EndrePersonResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Override
+    public CompletableFuture<EndreResponse> endrePersonResponse(String id,
+            DataFetchingEnvironment env) throws Exception {
+        var testPersonService = new TestPersonService(ctx);
+        var select = new SelectionSets(env.getSelectionSet());
+
+        var endrePersonResponseResult = testPersonService.endrePersonResponse(id);
+
+        var endreResponse = new EndreResponse();
+        endreResponse.setId(endrePersonResponseResult.getId());
+        endreResponse.setFornavn(endrePersonResponseResult.getFornavn());
+        endreResponse.setPrivatEpost(endrePersonResponseResult.getEpostField());
+
+        return CompletableFuture.completedFuture(endreResponse);
+    }
+}

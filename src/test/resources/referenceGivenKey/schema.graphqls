@@ -1,0 +1,16 @@
+type Query {
+  emner(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    first: Int = 100,
+    after: String,
+  ): QueryEmneConnection @connection(for: "Emne")
+}
+
+type Emne @node {
+  id: ID!
+  campuser: [Campusemne!]! @resolver @reference(key: "CAMPUS_EMNE__HAR__EMNE__FK")
+}
+
+type Campusemne @node(table: "CAMPUS_EMNE") {
+  id: ID!
+}

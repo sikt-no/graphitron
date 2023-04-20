@@ -1,0 +1,275 @@
+package no.fellesstudentsystem.graphitron.generators.resolvers;
+
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
+import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static java.util.Collections.nCopies;
+import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
+
+/**
+ * This class generates the resolvers for default fetch queries with potential arguments or pagination.
+ */
+public class FetchResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
+    private static final String
+            EXECUTION_STEP_PATH_ID_DELIMITER = "||",
+            ENV_NAME = "env",
+            BATCHED_ENV_NAME = "batchEnvLoader",
+            PAGE_SIZE_NAME = "pageSize",
+            MAP_RESULT_NAME = "mapResult",
+            QUERY_RESULT_NAME = "dbResult",
+            PAGINATION_RESULT_NAME = "pagedResult",
+            RESULT_ENTRY_NAME = "resultEntry",
+            RESULT_VALUE_NAME = "resultValue",
+            PAGINATION_RESULT_ENTRY_NAME = "pagedResultEntry";
+
+    public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+        super(localObject, processedSchema);
+    }
+
+    @Override
+    public MethodSpec generate(ObjectField target) {
+        var localObject = getLocalObject();
+        var isRootLevel = localObject.isRoot();
+
+        var returnClassName = getReturnTypeName(target);
+        var spec = getDefaultSpecBuilder(target.getName(), returnClassName);
+
+        if (!isRootLevel) {
+            spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
+        }
+
+        var allQueryInputs = getQueryInputs(spec, target);
+        spec.addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME);
+
+        spec.addCode(queryMethodCall(target, returnClassName, allQueryInputs));
+
+        var currentResultName = (isRootLevel) ? QUERY_RESULT_NAME : MAP_RESULT_NAME;
+        if (target.hasForwardPagination()) {
+            if (!isRootLevel) {
+                spec
+                        .addCode("var $L = $N.entrySet().stream().map(", PAGINATION_RESULT_NAME, currentResultName)
+                        .beginControlFlow("$L ->", RESULT_ENTRY_NAME)
+                        .addStatement("var $L = $N.getValue()", RESULT_VALUE_NAME, RESULT_ENTRY_NAME);
+                currentResultName = RESULT_VALUE_NAME;
+            }
+            var nodeType = processedSchema.getConnectionObject(target.getTypeName()).getNodeType();
+            var paginationInputMap = Map.of(
+                    "math", MATH.className,
+                    "dbResult", currentResultName,
+                    "resultName", (!isRootLevel) ? PAGINATION_RESULT_ENTRY_NAME : PAGINATION_RESULT_NAME,
+                    "pageSize", PAGE_SIZE_NAME,
+                    "connectionClass", RELAY_CONNECTION_IMPL.className,
+                    "connectionCursorClass", RELAY_CONNECTION_CURSOR_IMPL.className,
+                    "pageInfoClass", RELAY_PAGE_INFO_IMPL.className,
+                    "nodeType", nodeType,
+                    "edgeClass", RELAY_EDGE_IMPL.className,
+                    "collectors", COLLECTORS.className
+            );
+            spec.addNamedCode(getPaginationSegmentString(), paginationInputMap);
+            currentResultName = PAGINATION_RESULT_NAME;
+            if (!isRootLevel) {
+                spec
+                        .addStatement(
+                                "return new $T<$T, $T<$N>>($N.getKey(), $N)",
+                                SIMPLE_ENTRY.className,
+                                STRING.className,
+                                RELAY_CONNECTION.className,
+                                nodeType,
+                                RESULT_ENTRY_NAME,
+                                PAGINATION_RESULT_ENTRY_NAME
+                        )
+                        .endControlFlow(").collect($T.toMap(r -> r.getKey(), r -> r.getValue()))", COLLECTORS.className);
+            }
+        } // TODO: Backwards pagination if necessary.
+
+        return spec
+                .addStatement("return $T.completedFuture($N)", COMPLETABLE_FUTURE.className, currentResultName)
+                .addCode(getMethodCallTail(target))
+                .build();
+    }
+
+    @NotNull
+    private ArrayList<String> getQueryInputs(MethodSpec.Builder spec, ObjectField referenceField) {
+        var allQueryInputs = new ArrayList<String>();
+        var allInputs = processedSchema.getInputTypes();
+        for (var input : referenceField.getNonReservedInputFields()) {
+            var name = input.getName();
+            spec.addParameter(input.getFieldType().getWrappedTypeClass(allInputs), name);
+            allQueryInputs.add(name);
+        }
+        if (referenceField.hasForwardPagination()) {
+            spec
+                    .addParameter(INTEGER.className, GraphQLReservedName.PAGINATION_FIRST.getName())
+                    .addStatement(
+                            "int " + PAGE_SIZE_NAME + " = $T.ofNullable($N).orElse(" + referenceField.getAfterDefault() + ")",
+                            OPTIONAL.className,
+                            GraphQLReservedName.PAGINATION_FIRST.getName()
+                    );
+            allQueryInputs.add(PAGE_SIZE_NAME);
+            spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
+            allQueryInputs.add(GraphQLReservedName.PAGINATION_AFTER.getName());
+        }
+        return allQueryInputs;
+    }
+
+    private TypeName getReturnTypeName(ObjectField referenceField) {
+        var refClassName = processedSchema.getObject(referenceField.getTypeName()).getGraphClassName();
+        var hasFPagination = referenceField.hasForwardPagination();
+        TypeName returnClassName = referenceField.getFieldType().isIterableWrapped()
+                || getLocalObject().isRoot() && !hasFPagination
+                ? ParameterizedTypeName.get(LIST.className, refClassName)
+                : refClassName;
+        if (hasFPagination) {
+            var connectionObject = processedSchema.getConnectionObject(referenceField.getTypeName());
+            TypeName nodeClassName = processedSchema.getObject(connectionObject.getNodeType()).getGraphClassName();
+            returnClassName = ParameterizedTypeName.get(RELAY_CONNECTION.className, nodeClassName);
+        }
+        return returnClassName;
+    }
+
+    @NotNull
+    private CodeBlock queryMethodCall(ObjectField referenceField, TypeName returnClassName, List<String> allQueryInputs) {
+        var localObject = getLocalObject();
+        var localName = localObject.getName();
+
+        var extraParameters = String.join(", ", nCopies(allQueryInputs.size(), "$N"));
+        var queryMethodName = referenceField.getName() + "For" + localName;
+        var queryParams = CodeBlock.builder();
+
+        var queryLocation = localName + FILE_NAME_SUFFIX;
+        queryParams.add("var " + QUERY_RESULT_NAME + " = $N.$N(", uncapitalize(queryLocation), queryMethodName);
+        dependencySet.add(new QueryDependency(queryLocation));
+        if (!localObject.isRoot()) {
+            queryParams.add("idSet, ");
+        }
+
+        if (allQueryInputs.size() > 0) {
+            queryParams.add(extraParameters + ", ", allQueryInputs.toArray());
+        }
+
+        var params = queryParams.addStatement(
+                "new $T($T.getSelectionSetsFromEnvironment($N)))",
+                referenceField.hasForwardPagination() ? CONNECTION_SELECTION_SETS.className : SELECTION_SETS.className,
+                ENVIRONMENT_UTILS.className,
+                localObject.isRoot() ? ENV_NAME : BATCHED_ENV_NAME
+        ).build();
+
+        var coreQuery = CodeBlock.builder();
+        if (localObject.isRoot()) {
+            coreQuery.add(params);
+        } else {
+            coreQuery
+                    .beginControlFlow(
+                            "$T<$T, $T> loader = $N.getDataLoaderRegistry().computeIfAbsent(\""
+                                    + queryMethodName
+                                    + "\""
+                                    + ", name ->",
+                            DATA_LOADER.className,
+                            STRING.className,
+                            returnClassName,
+                            ENV_NAME
+                    )
+                    .beginControlFlow("var batchLoader = ($T<$T, $T>) (keys, " + BATCHED_ENV_NAME + ") ->",
+                            MAPPED_BATCH_LOADER_WITH_CONTEXT.className, STRING.className, returnClassName)
+                    .addStatement("var keyToId = keys.stream().collect($W$T.toMap(s -> s, s -> s.substring(s.lastIndexOf($S) + $L)))",
+                            COLLECTORS.className, EXECUTION_STEP_PATH_ID_DELIMITER, EXECUTION_STEP_PATH_ID_DELIMITER.length())
+                    .addStatement("var idSet = new $T<>(keyToId.values())", HASH_SET.className)
+                    .add(params)
+                    .addStatement(
+                            "var "
+                                    + MAP_RESULT_NAME
+                                    + " = keyToId.entrySet().stream()$W"
+                                    + ".filter(it -> $N.get(it.getValue()) != null)$W"
+                                    + ".collect($T.toMap($T.Entry::getKey, it -> $N.get(it.getValue())))",
+                            QUERY_RESULT_NAME,
+                            COLLECTORS.className,
+                            MAP.className,
+                            QUERY_RESULT_NAME
+                    );
+        }
+        return coreQuery.build();
+    }
+
+    @NotNull
+    private CodeBlock getMethodCallTail(ObjectField referenceField) {
+        var localObject = getLocalObject();
+        var closeMethodCall = CodeBlock.builder();
+        if (!localObject.isRoot()) {
+            closeMethodCall
+                    .endControlFlow("")
+                    .addStatement("return $T.newMappedDataLoader(batchLoader)", DATA_LOADER_FACTORY.className)
+                    .endControlFlow(")")
+                    .add(
+                            "return loader.load($N.getExecutionStepInfo().getPath().toString() + $S + $N.getId(), $N)",
+                            ENV_NAME,
+                            EXECUTION_STEP_PATH_ID_DELIMITER,
+                            uncapitalize(localObject.getName()),
+                            ENV_NAME
+                    );
+
+            if (referenceField.getFieldType().isIterableNonNullable()) {
+                closeMethodCall.addStatement(".thenApply(data -> $T.ofNullable(data).orElse($T.of()))", OPTIONAL.className, LIST.className);
+            } else {
+                closeMethodCall.add(";");
+            }
+        }
+        return closeMethodCall.build();
+    }
+
+    /**
+     * Template-style code for the large pagination section.
+     */
+    private String getPaginationSegmentString() {
+        return "var size = $math:T.min($dbResult:N.size(), $pageSize:N);\n" +
+                "var items = $dbResult:N.subList(0, size);\n" +
+                "var firstItem = items.size() == 0 ? null : new $connectionCursorClass:T(items.get(0).getId());\n" +
+                "var lastItem = items.size() == 0 ? null : new $connectionCursorClass:T(items.get(items.size() - 1).getId());\n" +
+                "var $resultName:L = $connectionClass:T\n" +
+                "        .<$nodeType:N>builder()\n" +
+                "        .setPageInfo(\n" +
+                "                new $pageInfoClass:T(firstItem, lastItem, false, $dbResult:N.size() > $pageSize:N)\n" +
+                "        )\n" +
+                "        .setNodes(items)\n" +
+                "        .setEdges(\n" +
+                "                items\n" +
+                "                        .stream()\n" +
+                "                        .map(item -> new $edgeClass:T<$nodeType:N>(item, new $connectionCursorClass:T(item.getId())))\n" +
+                "                        .collect($collectors:T.toList())\n" +
+                "        )\n" +
+                "        .build();\n";
+    }
+
+    @Override
+    public List<MethodSpec> generateAll() {
+        return getLocalObject()
+                .getReferredFieldsFromObjectNames(processedSchema.getNamesWithTableOrConnections())
+                .stream()
+                .filter(ObjectField::isGenerated)
+                .map(this::generate)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean generatesAll() {
+        var fieldStream = getLocalObject().getReferredFieldsFromObjectNames(processedSchema.getNamesWithTableOrConnections()).stream();
+        return getLocalObject().isRoot()
+                ? fieldStream.allMatch(ObjectField::isGenerated)
+                : fieldStream.allMatch(f -> !f.isResolver() || f.isGenerated());
+    }
+}

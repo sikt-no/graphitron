@@ -1,0 +1,66 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.Integer;
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Adresse;
+import no.fellesstudentsystem.graphql.generated.model.Maalform;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<PersonProfil> personProfilForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                PERSON.getId().as("id"),
+                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
+                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                select.optional("privatEpost", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost"),
+                                select.optional("arbeidsEpost", PERSON.EMAILADRESSE_ARBEID).as("arbeidsEpost"),
+                                select.optional("institusjonsEpost", PERSON.EMAILADRESSE).as("institusjonsEpost"),
+                                row(
+                                        select.optional("folkeregistrertAdresse/gate", PERSON.ADRLIN2_HJEMSTED).as("gate")
+                                ).mapping(nullOnAllNull(Adresse::new)).as("folkeregistrertAdresse"),
+                                select.optional("fodselsdato", PERSON.DATO_FODT).as("fodselsdato"),
+                                select.optional("fodselsnummer", PERSON.FODSELSNR).as("fodselsnummer"),
+                                select.optional("morsmaal", PERSON.SPRAKKODE_MORSMAL).as("morsmaal"),
+                                select.optional("maalform", PERSON.person_Malform_Sprak_Fk().SPRAKKODE_639_2.convert(Maalform.class, s -> s == null ? null : Map.of("NOB", Maalform.NOB, "NNO", Maalform.NNO, "ENG", Maalform.ENG).getOrDefault(s, null), s -> s == null ? null : Map.of(Maalform.NOB, "NOB", Maalform.NNO, "NNO", Maalform.ENG, "ENG").getOrDefault(s, null))).as("maalform")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personProfil")
+                )
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .orderBy(PERSON.getIdFields())
+                .fetch(0, PersonProfil.class);
+    }
+
+    public List<StudentVedInstitusjon> studenterForQuery(String eierInstitusjonsnummer,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                STUDENT.getId().as("id"),
+                                select.optional("studentnummer", STUDENT.STUDENTNR_TILDELT).as("studentnummer")
+                        ).mapping(nullOnAllNull(StudentVedInstitusjon::new)).as("studenter")
+                )
+                .from(STUDENT)
+                .where(STUDENT.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .orderBy(STUDENT.getIdFields())
+                .fetch(0, StudentVedInstitusjon.class);
+    }
+}

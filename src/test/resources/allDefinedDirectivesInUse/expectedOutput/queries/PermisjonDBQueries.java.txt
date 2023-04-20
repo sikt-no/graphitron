@@ -1,0 +1,51 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Kull;
+import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
+import no.fellesstudentsystem.graphql.generated.model.Termin;
+import no.fellesstudentsystem.graphql.generated.model.Termintype;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class PermisjonDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, List<ProgramStudierett>> programStudieretterForPermisjon(
+            Set<String> permisjonIder, SelectionSets select) {
+        var permisjon_programstudieretter = STUDIERETT.as("permisjon_programstudieretter");
+        return ctx
+                .select(
+                        PERMISJON.getId(),
+                        row(
+                                permisjon_programstudieretter.getId().as("id"),
+                                row(
+                                        permisjon_programstudieretter.kull().getId().as("id"),
+                                        select.optional("kull/navn", permisjon_programstudieretter.kull().STUDIEKULLNAVN).as("navn"),
+                                        row(
+                                                permisjon_programstudieretter.kull().termin().getId().as("id"),
+                                                select.optional("kull/termin/termintype", permisjon_programstudieretter.kull().termin().TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype"),
+                                                select.optional("kull/termin/arstall", permisjon_programstudieretter.kull().termin().ARSTALL).as("arstall")
+                                        ).mapping(nullOnAllNull(Termin::new)).as("termin")
+                                ).mapping(nullOnAllNull(Kull::new)).as("kull")
+                        ).mapping(nullOnAllNull(ProgramStudierett::new)).as("programStudieretter")
+                )
+                .from(PERMISJON)
+                .join(permisjon_programstudieretter)
+                .on(no.fellesstudentsystem.kjerneapi.conditions.PermisjonConditions.permisjonStudierettJoin(PERMISJON, permisjon_programstudieretter))
+                .where(PERMISJON.hasIds(permisjonIder))
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

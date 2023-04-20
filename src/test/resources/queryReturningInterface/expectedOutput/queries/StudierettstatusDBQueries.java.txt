@@ -1,0 +1,35 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Studierettstatus;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class StudierettstatusDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, Studierettstatus> loadStudierettstatusByIdsAsNode(Set<String> ids,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        STUDIERETTSTATUS.getId(),
+                        row(
+                                STUDIERETTSTATUS.getId().as("id")
+                        ).mapping(nullOnAllNull(Studierettstatus::new)).as("id")
+                )
+                .from(STUDIERETTSTATUS)
+                .where(STUDIERETTSTATUS.hasIds(ids))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

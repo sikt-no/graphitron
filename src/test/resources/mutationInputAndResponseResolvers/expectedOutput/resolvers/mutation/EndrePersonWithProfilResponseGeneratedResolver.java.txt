@@ -1,0 +1,69 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilResponseMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponseWithPerson;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.Postadresse;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
+import no.fellesstudentsystem.graphql.queries.PostadresseDBQueries;
+import no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService;
+import org.jooq.DSLContext;
+
+public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePersonWithProfilResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Inject
+    private PostadresseDBQueries postadresseDBQueries;
+
+    @Override
+    public CompletableFuture<EndreResponseWithPerson> endrePersonWithProfilResponse(String id,
+            DataFetchingEnvironment env) throws Exception {
+        var testPersonService = new TestPersonService(ctx);
+        var select = new SelectionSets(env.getSelectionSet());
+
+        var endrePersonWithProfilResponseResult = testPersonService.endrePersonWithProfilResponse(id);
+        var endreResponseWithPersonPersonProfil = getEndreResponseWithPersonPersonProfil(endrePersonWithProfilResponseResult, select);
+        var endreResponseWithPersonPost = getEndreResponseWithPersonPost(endrePersonWithProfilResponseResult, select);
+
+        var endreResponseWithPerson = new EndreResponseWithPerson();
+        endreResponseWithPerson.setId(endrePersonWithProfilResponseResult.getId());
+        endreResponseWithPerson.setPersonProfil(endreResponseWithPersonPersonProfil);
+        endreResponseWithPerson.setPost(endreResponseWithPersonPost);
+
+        return CompletableFuture.completedFuture(endreResponseWithPerson);
+    }
+
+    private PersonProfil getEndreResponseWithPersonPersonProfil(
+            no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService.EndrePersonResponse result,
+            SelectionSets select) {
+        if (!select.contains("personProfil")) {
+            return null;
+        }
+
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(result.getPersProf().getId()), select.withPrefix("personProfil"));
+        return nodes.values().stream().findFirst().orElse(null);
+    }
+
+    private Postadresse getEndreResponseWithPersonPost(
+            no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService.EndrePersonResponse result,
+            SelectionSets select) {
+        if (!select.contains("post")) {
+            return null;
+        }
+
+        var nodes = postadresseDBQueries.loadPostadresseByIdsAsNode(Set.of(result.getPost().getId()), select.withPrefix("post"));
+        return nodes.values().stream().findFirst().orElse(null);
+    }
+}

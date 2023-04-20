@@ -1,0 +1,24 @@
+type Query {
+  studenter(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    first: Int = 100,
+    after: String
+  ): StudentVedInstitusjon
+}
+
+type StudentVedInstitusjon @node(table: "STUDENT") {
+  id: ID!
+  studentVedInstitusjonId: ID!
+  studentkort: [Studentkort!] @resolver # Should be ok, exists key join between STUDENT and STUDENTKORT.
+  studentkort2: [Studentkort2!] @resolver # Should fail, no join can be deduced between STUDENT and KULL.
+}
+
+type Studentkort @node(table: "STUDENTKORT") {
+  id: ID!
+  studentkortnummer: String! @column(name: "STUDENTKORTNR")
+}
+
+type Studentkort2 @node(table: "KULL") {
+  id: ID!
+  studentkortnummer: String! @column(name: "STUDENTKORTNR")
+}

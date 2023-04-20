@@ -1,0 +1,8 @@
+type Query {
+  nodes(id: ID!, navn: String): Node #field returning interface should have exactly one argument
+}
+
+type Kull @node {
+  id: ID!
+  navn: String! @column(name: "STUDIEKULLNAVN")
+}

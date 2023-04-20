@@ -1,0 +1,15 @@
+type Query {
+  kull(navn: String!): Kull
+}
+
+type Kull @node {
+  id: ID!
+  navn: String! @column(name: "STUDIEKULLNAVN")
+  referertNode: Node @resolver #field returning interface should have exactly one argument
+}
+
+type ProgramStudierett @node(table: "STUDIERETT") {
+  id: ID!
+  navn: String!
+}
+

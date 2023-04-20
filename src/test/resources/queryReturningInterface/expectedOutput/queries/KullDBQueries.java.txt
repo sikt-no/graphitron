@@ -1,0 +1,52 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Kull;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class KullDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, Kull> loadKullByIdsAsNode(Set<String> ids, SelectionSets select) {
+        return ctx
+                .select(
+                        KULL.getId(),
+                        row(
+                                KULL.getId().as("id"),
+                                select.optional("terminId", KULL.TERMINKODE).as("terminId"),
+                                select.optional("navn", KULL.STUDIEKULLNAVN).as("navn")
+                        ).mapping(nullOnAllNull(Kull::new)).as("id")
+                )
+                .from(KULL)
+                .where(KULL.hasIds(ids))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, Kull> loadKullByTerminIdsAsTerminNode(Set<String> terminIds,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        KULL.getId(),
+                        row(
+                                KULL.getId().as("id"),
+                                select.optional("terminId", KULL.TERMINKODE).as("terminId"),
+                                select.optional("navn", KULL.STUDIEKULLNAVN).as("navn")
+                        ).mapping(nullOnAllNull(Kull::new)).as("id")
+                )
+                .from(KULL)
+                .where(KULL.hasTerminIds(terminIds))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

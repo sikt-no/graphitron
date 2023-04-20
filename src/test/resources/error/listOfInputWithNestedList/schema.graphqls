@@ -1,0 +1,29 @@
+type Query {
+  studenter(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    first: Int = 100,
+    after: String
+  ): QueryStudentVedInstitusjonConnection @connection(for: "StudentVedInstitusjon")
+}
+
+type StudentVedInstitusjon @node(table: "STUDENT") {
+  id: ID!
+  registreringerForInputWithListField(inputWithListField: [InputWithListField!]): [Semesterregistrering!]! @resolver
+}
+
+input InputWithListField {
+  arstall: [Int!]! @column(name: "ARSTALL", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+  maned: Int! @column(name: "MANEDNR_START", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+  termintype: Termintype! @column(name: "TERMINKODE", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+}
+
+type Semesterregistrering @node {
+  id: ID!
+  registrert: Boolean! @column(name: "STATUS_REG_OK")
+}
+
+enum Termintype {
+  VAR @mapEnum(name: "VÅR"),
+  SOM @mapEnum(name: "SOM"),
+  HOST @mapEnum(name: "HØST")
+}

@@ -1,0 +1,25 @@
+type Query {
+  personTwoArguments(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
+    first: Int = 100,
+    after: String,
+  ): QueryPerson2Connection @connection(for: "PersonProfil")
+
+  personFiveArguments(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
+    fornavn: String, #Optional
+    etternavn: String!, #Mandatory
+    personkode: Int,
+    first: Int = 100,
+    after: String,
+  ): QueryPerson5Connection! @connection(for: "PersonProfil")
+}
+
+type PersonProfil @node(table: "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  personkode: Int
+}

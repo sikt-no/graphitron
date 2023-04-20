@@ -1,0 +1,134 @@
+package no.fellesstudentsystem.graphql.resolvers.query;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.StudentVedInstitusjonResolver;
+import no.fellesstudentsystem.graphql.generated.model.Semesterregistrering;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInput;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInputWithOneField;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminNestedInput;
+import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.StudentVedInstitusjonDBQueries;
+import org.dataloader.DataLoader;
+import org.dataloader.DataLoaderFactory;
+import org.dataloader.MappedBatchLoaderWithContext;
+
+public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitusjonResolver {
+    @Inject
+    private StudentVedInstitusjonDBQueries studentVedInstitusjonDBQueries;
+
+    @Override
+    public CompletableFuture<List<Semesterregistrering>> semesterregistreringer(
+            StudentVedInstitusjon studentVedInstitusjon, SemesterregistreringsterminInput terminIn,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("semesterregistreringerForStudentVedInstitusjon", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = studentVedInstitusjonDBQueries.semesterregistreringerForStudentVedInstitusjon(idSet, terminIn, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + studentVedInstitusjon.getId(), env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
+    }
+
+    @Override
+    public CompletableFuture<List<Semesterregistrering>> registreringerForInputList(
+            StudentVedInstitusjon studentVedInstitusjon,
+            List<SemesterregistreringsterminInput> terminInList, DataFetchingEnvironment env) throws
+            Exception {
+        DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputListForStudentVedInstitusjon", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputListForStudentVedInstitusjon(idSet, terminInList, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + studentVedInstitusjon.getId(), env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
+    }
+
+    @Override
+    public CompletableFuture<List<Semesterregistrering>> registreringerForMixOfListAndSingleInput(
+            StudentVedInstitusjon studentVedInstitusjon, SemesterregistreringsterminInput terminIn,
+            List<SemesterregistreringsterminInput> terminInList, DataFetchingEnvironment env) throws
+            Exception {
+        DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForMixOfListAndSingleInputForStudentVedInstitusjon", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForMixOfListAndSingleInputForStudentVedInstitusjon(idSet, terminIn, terminInList, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + studentVedInstitusjon.getId(), env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
+    }
+
+    @Override
+    public CompletableFuture<List<Semesterregistrering>> registreringerForInputWithOneFieldList(
+            StudentVedInstitusjon studentVedInstitusjon,
+            List<SemesterregistreringsterminInputWithOneField> terminInListOneField,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputWithOneFieldListForStudentVedInstitusjon", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputWithOneFieldListForStudentVedInstitusjon(idSet, terminInListOneField, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + studentVedInstitusjon.getId(), env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
+    }
+
+    @Override
+    public CompletableFuture<List<Semesterregistrering>> registreringerForInputWithNestedFieldList(
+            StudentVedInstitusjon studentVedInstitusjon,
+            List<SemesterregistreringsterminNestedInput> terminInListNestedField,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputWithNestedFieldListForStudentVedInstitusjon", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputWithNestedFieldListForStudentVedInstitusjon(idSet, terminInListNestedField, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + studentVedInstitusjon.getId(), env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
+    }
+}

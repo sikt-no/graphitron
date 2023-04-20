@@ -1,0 +1,58 @@
+type Query {
+    rom(
+        bygningskode: String! #should NOT trigger warning
+    ): Rom
+
+    personProfilGenerated(
+        id: ID!, #ID types should not trigger warning
+        eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"), #should NOT trigger warning
+        personlopenummer: [Int!] @column(name: "MENNESKENR"), #should trigger warning
+    ): PersonProfil
+
+    personProfilNotGenerated(
+        eierInstitusjonsnummer: String!
+        menneskenr: [Int!]
+    ): PersonProfil @notGenerated #should not trigger warning when marked with '@notGenerated'
+}
+
+type Rom @node {
+    id: ID!
+    romId: ID! #No ROMID column, but ID types should not trigger warning
+    romvesen: String! #No ROMVESEN column, should trigger warning
+    romkode: String @column(name: "ROMKAMERAT") #No ROMKAMERAT column, should trigger warning
+    bygningskode: String! #BYGNINGSKODE column name should NOT trigger warning
+    typekode: String! @column(name: "ROMTYPEKODE") #ROMTYPEKODE column name should NOT trigger warning
+    romKapasitet: RomKapasitet @resolver #No ROMKAPASITET column, but references should not trigger warning
+    merknad: Merknad
+}
+
+type RomKapasitet @node(table: "ROM") {
+    id: ID!
+    eksamenskapasitet: Int @column(name: "TALL_KAPASITET_EKS") #should NOT trigger warning
+    undervisningskapasitet: Int #should trigger warning
+}
+
+type Merknad {
+    ankomst: Int @column(name: "MERKNADTEKST_ANKOMST") #should NOT trigger warning
+    generell: Int #should trigger warning
+
+    nynorskMerknad : NynorskMerknad #just to have to one more level of nested objects
+}
+
+type NynorskMerknad {
+    ankomst: Int @column(name: "MERKNADTEKST_ANKOMST_NYNORSK") #should NOT trigger warning
+    generell: Int @column(name: "KVERKNADTEKST_NYNORSK") #should trigger warning
+}
+
+type PersonProfil @node(table: "PERSON") {
+    id: ID!
+    fodselsnummer: String @column(name: "FODSELSNR") #should NOT trigger warning
+    fodselsnummer2: String @column(name: "FODSELSNR2") #should trigger warning
+    kjonn: Kjonn #should NOT trigger warning
+    kjonn2: Kjonn @column(name: "KJONN2") #should trigger warning
+}
+
+enum Kjonn @mapEnum(name: "Kjonn") {
+    MANN @mapEnum(name: "ABCDE"), #enum values are not validated
+    KVINNE @mapEnum(name: "K")
+}

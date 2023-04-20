@@ -1,0 +1,7 @@
+type Query {
+  nodes(ids: [ID!]): [Node] #collections of interfaces is not supported
+}
+
+type ProgramStudierett @node(table: "STUDIERETT") {
+  id: ID!
+}

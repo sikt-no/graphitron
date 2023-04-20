@@ -1,0 +1,15 @@
+"""Defines that there is supposed to be a resolver for this field."""
+directive @resolver on FIELD_DEFINITION
+"""Defines that the generator should attempt to generate a method for this field."""
+directive @generated on FIELD_DEFINITION
+"""Connects the object to a DB table."""
+directive @node(table: String!) on OBJECT
+"""Connects the field to a DB representation. Defaults to the field name."""
+directive @column(name: String!) on FIELD_DEFINITION | ENUM_VALUE | ARGUMENT_DEFINITION
+
+type Query {
+  personProfil(
+    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
+  ): PersonProfil @generated
+}

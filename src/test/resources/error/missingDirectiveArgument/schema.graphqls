@@ -1,0 +1,9 @@
+type Query {
+    kommune(fylkesnr: String!): Kommune
+}
+
+type Kommune @node {
+    id: ID!
+    kommunenr: Int! @column(table: "Linux") # @column missing the required 'name' parameter.
+    fylkesnr: String!
+}

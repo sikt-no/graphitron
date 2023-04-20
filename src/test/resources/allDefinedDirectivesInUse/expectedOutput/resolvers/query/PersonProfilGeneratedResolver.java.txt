@@ -1,0 +1,85 @@
+package no.fellesstudentsystem.graphql.resolvers.query;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.PersonProfilResolver;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
+import no.fellesstudentsystem.graphql.generated.model.Telefon;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
+import org.dataloader.DataLoader;
+import org.dataloader.DataLoaderFactory;
+import org.dataloader.MappedBatchLoaderWithContext;
+
+public class PersonProfilGeneratedResolver implements PersonProfilResolver {
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Override
+    public CompletableFuture<Telefon> mobilTelefon(PersonProfil personProfil,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, Telefon> loader = env.getDataLoaderRegistry().computeIfAbsent("mobilTelefonForPersonProfil", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, Telefon>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = personProfilDBQueries.mobilTelefonForPersonProfil(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + personProfil.getId(), env);
+    }
+
+    @Override
+    public CompletableFuture<Telefon> privatTelefon(PersonProfil personProfil,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, Telefon> loader = env.getDataLoaderRegistry().computeIfAbsent("privatTelefonForPersonProfil", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, Telefon>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = personProfilDBQueries.privatTelefonForPersonProfil(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + personProfil.getId(), env);
+    }
+
+    @Override
+    public CompletableFuture<List<ProgramStudierett>> studieretter(PersonProfil personProfil,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, List<ProgramStudierett>> loader = env.getDataLoaderRegistry().computeIfAbsent("studieretterForPersonProfil", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, List<ProgramStudierett>>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = personProfilDBQueries.studieretterForPersonProfil(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + personProfil.getId(), env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
+    }
+}

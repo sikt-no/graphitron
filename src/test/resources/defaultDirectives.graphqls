@@ -1,0 +1,63 @@
+#defines all default directives, should contain all directives found in 'fs-graphql-spec/src/main/resources/schema.graphqls'
+
+directive @connection(for: String) on FIELD_DEFINITION
+
+"""Defines that there is supposed to be a resolver for this field."""
+directive @resolver on FIELD_DEFINITION
+"""Defines that the generator shouldn't attempt to generate a method for this field."""
+directive @notGenerated on FIELD_DEFINITION
+
+"""Knytter objektet til en tabell i KjerneAPI. Dette gjør objektet til en Node i grafen."""
+directive @node(
+  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
+  table: String
+) on OBJECT
+
+"""Kopi av @node for input-typer som ikke forsøker å implementere node."""
+directive @record(
+  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
+  table: String
+) on INPUT_OBJECT
+
+"""Knytter feltet (eller argumentet) til en kolonne i KjerneAPI."""
+directive @column(
+  """Kolonnenavn i KjerneAPI."""
+  name: String!,
+
+  """Slå opp navnet i en relatert tabell i stedet. Tabellnavn i KjerneAPI."""
+  table: String,
+  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
+  key: String
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Connects the enum to an API enum, or DB column value."""
+directive @mapEnum(name: String!) on ENUM | ENUM_VALUE
+
+"""Knytter feltet til en service som har en metode for å utføre denne spørringen."""
+directive @service(
+  """Navn på service som inneholder en metode som heter det samme som dette feltet."""
+  name: String!
+) on FIELD_DEFINITION
+
+"""Knytter feltet til en relatert tabell i KjerneAPI."""
+directive @reference(
+  """Tabellen i KjerneAPI."""
+  table: String
+
+  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
+  key: String,
+
+  """En skranke i KjerneAPI som begrenser hvilke rader som er av relevans for koblingen."""
+  condition: String
+) on FIELD_DEFINITION
+
+"""Legger på ekstra begrensninger for dette feltet eller verdien."""
+directive @condition(
+  """En skranke i KjerneAPI."""
+  name: String,
+  """Hvis sant, overskriver det som ville vanligvis blitt generert av conditions for dette."""
+  override: Boolean = false
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+scalar Date
+scalar BigDecimal

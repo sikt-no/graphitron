@@ -1,0 +1,24 @@
+type Query {
+  emnevalgstatus(id: ID!): Emnevalgstatus
+}
+
+type Emnevalgstatus @node {
+  id: ID!
+  minimumsvekting: MinimumVektingForEmnevalgstatus
+  maksimumsvekting: MaksimumVektingForEmnevalgstatus
+}
+
+type MinimumVektingForEmnevalgstatus{
+  verdi: BigDecimal @column(name: "VEKTINGSTALL_MINIMUM")
+  vektingstype: Vektingstype @reference(key: "EMNEVALGSTATUS__MINIMUM__VEKTINGSTYPE__FK") #reference 1 for emnevalgstatus_vektingstype
+}
+
+type MaksimumVektingForEmnevalgstatus{
+  verdi: BigDecimal @column(name: "VEKTINGSTALL_MAX")
+  vektingstype: Vektingstype @reference(key: "EMNEVALGSTATUS__MAX__VEKTINGSTYPE__FK") #reference 2 for emnevalgstatus_vektingstype
+}
+
+type Vektingstype @node {
+  id: ID!
+}
+
