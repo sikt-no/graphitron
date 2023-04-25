@@ -23,7 +23,7 @@ hjelp av node-resolveren. Dette er i tråd med GraphQLs mønster for [Global Obj
 
 ## Bygg
 Generatoren er satt opp for å bygges via vanlig maven pipeline, og kan også kjøres via main-metoden i
-[GraphQLGenerator](src/main/java/no/fellesstudentsystem/graphitron/generator/GraphQLGenerator.java).
+[GraphQLGenerator](src/main/java/no/fellesstudentsystem/graphitron/GraphQLGenerator.java).
 For å bygge via maven er det bare å kjøre `mvn clean install` i enten rotmappen til prosjektet eller generatorens rotmappe.
 Merk at hvis det skal kjøres fra generatorens rotmappe, må man forsikre seg om at både **KjerneAPI**-tabellene og **GraphQL**-objektene er bygget først.
 
@@ -47,7 +47,7 @@ For slike tilfeller har vi direktivet **reference**. Det tar inn følgende param
 * _table_ - Overskriver tabellen i det som refereres til. Lite brukt akkurat nå.
 * _key_ - Hvis tabellen har mer enn en FK til det som refereres til, må den oppgis her. Da blir denne nøkkelen brukt for å lage koblingen.
 * _condition_ - Hvis man ønsker å begrense resultatet videre kan man oppgi en condition her. Det må være et innslag i enumen
-[GeneratorCondition](../../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/conditions/GeneratorCondition.java).
+[GeneratorCondition](../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/conditions/GeneratorCondition.java).
 Hvis det ikke går å utlede en kobling, og _key_ ikke er oppgitt, blir dette tolket som en condition for bruk i en join-operasjon 
 for å få til koblingen. Det blir til en left join hvis feltet ikke er påkrevd.
 
@@ -72,7 +72,7 @@ Det kan settes på input-parametere eller for hele feltet som har input paramete
 Følgende parametere er tilgjengelige:
 
 * _name_ - Navnet på en condition definert i KjerneAPI. Det må være et innslag i enumen
-  [GeneratorCondition](../../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/conditions/GeneratorCondition.java).
+  [GeneratorCondition](../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/conditions/GeneratorCondition.java).
 * _override_ - Skal det forhindres at sjekkene som blir lagt til automatisk tas med?
 Hvis ja, blir kun den oppgitte condition med, ellers legges conditionen på som et tillegg til de øvrige sjekkene. Se eksemplene nedenfor.
 
@@ -90,7 +90,7 @@ TEST_EMNE_KODER(EmneTestConditions.class, "emneKoder", Emne.class, List.class)
 Resultat:
 ```java
 .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-.and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
 ```
 #### Case: No _override_ on field with input parameters
 Legg til denne conditionen i tillegg til de sjekkene som vanligvis legges på.
@@ -110,7 +110,7 @@ Resultat:
 ```java
 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
 .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-.and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
 ```
 #### Case: Both field and parameters
 Summen av punktene over. Resultatet blir at begge conditionene tas med.
@@ -127,7 +127,7 @@ TEST_EMNE_KODER(EmneTestConditions.class, "emneKoder", Emne.class, List.class)
 ```
 Resultat:
 ```java
-.and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
 ```
 #### Case: With _override_ on field with input parameters
 Bytt ut de sjekkene som vanligvis hadde blitt satt for alle parameterne til feltet med denne conditionen.
@@ -145,7 +145,7 @@ TEST_EMNE_ALL(EmneTestConditions.class, "emneAll", Emne.class, String.class, Lis
 ```
 Resultat:
 ```java
-.where(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+.where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
 ```
 #### Case: With _override_ on both field and parameters
 Både conditions satt på feltet og på parametere blir med, men ingenting annet. 
@@ -164,14 +164,14 @@ TEST_EMNE_ALL(EmneTestConditions.class, "emneAll", Emne.class, String.class, Lis
 ```
 Resultat:
 ```java
-.where(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-.and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+.where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
 ```
 
 ## Functionality & Directives for Mutations
 ### Services
 Mutasjoner må knyttes til java-metoder via service-klassene definert i
-[GeneratorService](../../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/services/GeneratorService.java).
+[GeneratorService](../kjerneapi-service/src/main/java/no/fellesstudentsystem/codegenenums/GeneratorService.java).
 Dette gjøres ved hjelp av **service**-direktivet. Metoden må ha samme navn og samme antall parametre som mutasjonsfeltet.
 Det er nødvendig å sette på _notGenerated_ hvis _service_ ikke er satt.
 
@@ -294,6 +294,60 @@ I dette tilfellet er det anbefalt å heller inkludere ID inni input-typen, eller
 Det vil virke uansett, men hvis det er satt opp slik som dette vil sannsynligvis det første som skjer inni servicen være å sette ID-en på record-en.
 Det er også uheldig å ha ID-en slik fordi det er ikke like klart hvilket KjerneAPI-view ID-en hører til.
 Dette er likevel tillatt for å ikke å kreve endring på eksisterende skjema for at det skal virke.
+
+### Error Handling
+En feiltype er definert ved at den implementerer _Error_-interfacet og oppgir _error_-direktivet. Unioner av slike er også tilatte.
+Feil til direktivet oppgis på samme måte som til conditions og enums, bare fra enumen
+[GeneratorException](../kjerneapi-service/src/main/java/no/fellesstudentsystem/codegenenums/GeneratorException.java).
+Når en respons spesifiserer en type som innheholder felt som er av en _Error_-type, vil Graphitron automatisk fange opp dette.
+Akkurat nå brukes try-catch for å fange opp feil, som betyr at vi får bare ut maks en feilmelding per servicekall. Dette kan endre seg i framtiden.
+Feil mappes til rett GraphQL-type og plasseres i responsen slik som man skulle forvente.
+
+En spørring med feil kan se slik ut:
+
+```graphql
+type Mutation {
+  endrePerson(id: ID!): EndrePersonPayload! @service(name: "SERVICE_PERSON")
+}
+
+type EndrePersonPayload {
+  id: ID!
+  errors: [SomeError!]!
+}
+
+type SomeError implements Error @error(name: "EXCEPTION_ULOVLIG") {
+  path: [String!]!
+  message: String!
+}
+```
+
+Vi forventer da at noe som dette finnes i _GeneratorException_ enumen:
+
+```java
+EXCEPTION_ULOVLIG(UlovligException.class)
+```
+
+Her er `UlovligException.class` en exception-klasse som vi forventer at kan kastes fra det som _SERVICE_PERSON_ peker til.
+Deretter burde vi se at Graphitron produserer noe som dette:
+
+```java
+try {
+    endrePersonResult = personService.endrePerson(id);
+} catch (UlovligException e) {
+    var error = new SomeError();
+    error.setMessage(e.getMessage());
+    var cause = e.getCauseField();
+    var causeName = Map.of().getOrDefault(cause != null ? cause : "", "undefined");
+    error.setPath(List.of(("Mutation.endrePerson." + causeName).split("\\.")));
+    endrePersonErrorsList.add(error);
+}
+```
+
+Informasjonen om "cause", altså feltet som forårsakert feilen, brukes bare hvis feilen har den hardkodede metoden som heter _getCauseField_.
+Dette kan endre seg til å bli mer intuitivt i fremtiden. Når det finnes et felt som har skyld i feilen, vil map-en i eksemplet over
+inneholde alle felt som ble funnet i responsen, slik at de kan mappes ut fra databasefelt til felt i skjemaet.
+
+Hvis der er flere mulige feil ved at det er flere feil-felt eller det oppgis unioner av feiltyper, vil det bli flere _catch_-blokker, en per feiltype.
 
 ## Testing
 Testene for modulen sjekker det genererte resultatet opp mot predefinerte filer.

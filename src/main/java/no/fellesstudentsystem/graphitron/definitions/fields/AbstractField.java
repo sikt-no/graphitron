@@ -7,7 +7,9 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.*;
@@ -125,6 +127,10 @@ public abstract class AbstractField {
 
     public String applyCondition(List<String> inputs) {
         return condition.formatToString(inputs);
+    }
+
+    public String applyCondition(List<String> inputs, Map<String, Method> conditionOverrides) {
+        return condition.formatToString(inputs, conditionOverrides);
     }
 
     public boolean hasCondition() {

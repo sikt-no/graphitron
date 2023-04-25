@@ -25,13 +25,15 @@ public class ProcessedDefinitionsValidator {
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, InputDefinition> inputs;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
+    private final Map<String, Class<?>> enumOverrides;
 
-    public ProcessedDefinitionsValidator(ProcessedSchema schema) {
+    public ProcessedDefinitionsValidator(ProcessedSchema schema, Map<String, Class<?>> enumOverrides) {
         objects = schema.getObjects();
         connectionObjects = schema.getConnectionObjects();
         enums = schema.getEnums();
         interfaces = schema.getInterfaces();
         inputs = schema.getInputTypes();
+        this.enumOverrides = enumOverrides;
     }
 
     public void validateThatProcessedDefinitionsConformToDatabaseNaming() {
@@ -60,8 +62,9 @@ public class ProcessedDefinitionsValidator {
         enums.values()
                 .stream()
                 .filter(EnumDefinition::hasDbEnumMapping)
-                .filter(e -> !enumValueSet.contains(e.getDbName().toUpperCase()))
-                .forEach(e -> LOGGER.warn("No enum with name '{}' found in {}", e.getDbName(), GeneratorEnum.class.getName()));
+                .map(EnumDefinition::getDbName)
+                .filter(e -> !enumValueSet.contains(e.toUpperCase()) && !enumOverrides.containsKey(e.toUpperCase()))
+                .forEach(e -> LOGGER.warn("No enum with name '{}' found in {}", e, GeneratorEnum.class.getName()));
 
         inputs.values()
                 .stream()

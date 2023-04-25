@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 
 /**
  * An extension of {@link SQLJoin} with additional data on which table to join towards and which alias should be used.
@@ -45,6 +47,13 @@ public class SQLJoinStatement extends SQLJoin {
      * @return A string that contains a complete join statement followed by all conditions set for this join.
      */
     public String toJoinString() {
-        return super.toJoinString(joinAlias);
+        return super.toJoinString(joinAlias, Map.of());
+    }
+
+    /**
+     * @return A string that contains a complete join statement followed by all conditions set for this join.
+     */
+    public String toJoinString(Map<String, Method> conditionOverrides) {
+        return super.toJoinString(joinAlias, conditionOverrides);
     }
 }

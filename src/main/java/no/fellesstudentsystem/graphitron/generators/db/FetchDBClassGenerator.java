@@ -8,6 +8,7 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerato
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -21,8 +22,21 @@ public class FetchDBClassGenerator extends DBClassGenerator {
 
     private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
 
+    private final Map<String, Class<?>> enumOverrides;
+    private final Map<String, Method> conditionOverrides;
+
     public FetchDBClassGenerator(ProcessedSchema processedSchema) {
+        this(processedSchema, Map.of(), Map.of());
+    }
+
+    public FetchDBClassGenerator(
+            ProcessedSchema processedSchema,
+            Map<String, Class<?>> enumOverrides,
+            Map<String, Method> conditionOverrides
+    ) {
         super(processedSchema);
+        this.enumOverrides = enumOverrides;
+        this.conditionOverrides = conditionOverrides;
 
         interfacesReturnedByObjectField = processedSchema
                 .getObjects()
@@ -62,8 +76,8 @@ public class FetchDBClassGenerator extends DBClassGenerator {
         return getSpec(
                 target.getName() + FILE_NAME_SUFFIX,
                 List.of(
-                        new FetchDBMethodGenerator(target, processedSchema),
-                        new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField)
+                        new FetchDBMethodGenerator(target, processedSchema, enumOverrides, conditionOverrides),
+                        new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField, enumOverrides, conditionOverrides)
                 )
         ).build();
     }

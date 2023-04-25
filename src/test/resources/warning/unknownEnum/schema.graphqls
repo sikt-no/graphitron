@@ -7,12 +7,12 @@ type Rom @node(table: "ROM") {
     romId: ID!
 }
 
-enum Kjonn @mapEnum(name: "Kjonn") { #should NOT trigger warning
+enum Kjonn @mapEnum(name: "KJONN_TEST") { #should NOT trigger warning
     MANN,
     KVINNE
 }
 
-enum Kjonn2 @mapEnum(name: "Kjonn2") { #should trigger warning
+enum Kjonn2 @mapEnum(name: "KJONN_TEST2") { #should trigger warning
     MANN,
     KVINNE
 }

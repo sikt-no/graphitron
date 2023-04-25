@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.generators.abstractions;
+package no.fellesstudentsystem.graphitron.generators.context;
 
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
@@ -7,15 +7,17 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.findReferencedObjectDefinition;
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesIDReference;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
-public class GeneratorContext {
-    private final GeneratorContext previousContext;
+public class FetchContext {
+    private final FetchContext previousContext;
     private final AbstractField referenceObjectField;
     private final ObjectDefinition referenceObject;
     private final String currentJoinSequence;
@@ -32,6 +34,7 @@ public class GeneratorContext {
 
     private boolean hasKeyReference = false;
     private final ProcessedSchema processedSchema;
+    private final Map<String, Method> conditionOverrides;
 
     /**
      * @param referenceObjectField The referring field that contains an object.
@@ -41,7 +44,7 @@ public class GeneratorContext {
      * @param pastGraphPath The path in the GraphQL schema so far.
      * @param recCounter Counter that limits recursion depth to the max value of integers.
      */
-    private GeneratorContext(
+    private FetchContext(
             ProcessedSchema processedSchema,
             AbstractField referenceObjectField,
             String pastJoinSequence,
@@ -52,13 +55,15 @@ public class GeneratorContext {
             ArrayList<String> conditionList,
             String pastGraphPath,
             int recCounter,
-            GeneratorContext previousContext
+            FetchContext previousContext,
+            Map<String, Method> conditionOverrides
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
             throw new RuntimeException("Recursion depth has reached the integer max value.");
         }
         this.recCounter = recCounter;
         this.processedSchema = processedSchema;
+        this.conditionOverrides = conditionOverrides;
         hasJoinedAlready = recCounter == 0 && (!joinList.isEmpty() || !aliasList.isEmpty());
         referenceObject = findReferencedObjectDefinition(referenceObjectField, processedSchema);
         this.joinList = joinList;
@@ -88,10 +93,23 @@ public class GeneratorContext {
      * @param referenceObjectField The referring field that contains an object.
      * @param localObject          Object of origin for this context.
      */
-    public GeneratorContext(
+    public FetchContext(
             ProcessedSchema processedSchema,
             AbstractField referenceObjectField,
             ObjectDefinition localObject
+    ) {
+        this(processedSchema, referenceObjectField, localObject, Map.of());
+    }
+
+    /**
+     * @param referenceObjectField The referring field that contains an object.
+     * @param localObject          Object of origin for this context.
+     */
+    public FetchContext(
+            ProcessedSchema processedSchema,
+            AbstractField referenceObjectField,
+            ObjectDefinition localObject,
+            Map<String, Method> conditionOverrides
     ) {
         this(
                 processedSchema,
@@ -104,7 +122,8 @@ public class GeneratorContext {
                 new ArrayList<>(),
                 "",
                 0,
-                null
+                null,
+                conditionOverrides
         );
     }
 
@@ -169,8 +188,8 @@ public class GeneratorContext {
         previousContext.shouldUseEnhancedNullOnAllNullCheck = true;
     }
 
-    public GeneratorContext nextContext(AbstractField referenceObjectField) {
-        return new GeneratorContext(
+    public FetchContext nextContext(AbstractField referenceObjectField) {
+        return new FetchContext(
                 processedSchema,
                 referenceObjectField,
                 currentJoinSequence,
@@ -181,7 +200,8 @@ public class GeneratorContext {
                 conditionList,
                 graphPath + referenceObjectField.getName(),
                 recCounter + 1,
-                this
+                this,
+                conditionOverrides
         );
     }
 
@@ -214,7 +234,8 @@ public class GeneratorContext {
                                                         ? pastJoinSequence
                                                         : previousTableName,
                                                 currentJoinSequence
-                                        )
+                                        ),
+                                        conditionOverrides
                                 ) + ")"
                         );
                     } else {

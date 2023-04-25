@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -53,7 +55,7 @@ public class SQLJoin {
      * @param aliasName The name of the table alias to be used for this particular join statement.
      * @return A string that contains a complete join statement followed by all conditions set for this join.
      */
-    public String toJoinString(String aliasName) {
+    public String toJoinString(String aliasName, Map<String, Method> conditionOverrides) {
         var sb = new StringBuilder();
         sb
                 .append(".")
@@ -69,7 +71,7 @@ public class SQLJoin {
                     .append(".")
                     .append(i == 0 ? joinField.getMethodCallName() : "and")
                     .append("(")
-                    .append(joinField.toJoinString(joinSourceTable, aliasName))
+                    .append(joinField.toJoinString(joinSourceTable, aliasName, conditionOverrides))
                     .append(")\n");
         }
         return sb.toString();

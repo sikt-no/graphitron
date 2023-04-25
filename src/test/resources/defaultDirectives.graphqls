@@ -39,6 +39,10 @@ directive @service(
   name: String!
 ) on FIELD_DEFINITION
 
+directive @error(
+  name: String!
+) on OBJECT
+
 """Knytter feltet til en relatert tabell i KjerneAPI."""
 directive @reference(
   """Tabellen i KjerneAPI."""

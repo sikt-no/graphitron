@@ -38,7 +38,7 @@ public class QueryDBQueries {
                 .from(EMNE)
                 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
                 .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -61,7 +61,7 @@ public class QueryDBQueries {
                 )
                 .from(EMNE)
                 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -85,7 +85,7 @@ public class QueryDBQueries {
                 .from(EMNE)
                 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
                 .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -107,7 +107,7 @@ public class QueryDBQueries {
                         ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldConditionOverride")
                 )
                 .from(EMNE)
-                .where(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+                .where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -131,8 +131,8 @@ public class QueryDBQueries {
                 .from(EMNE)
                 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
                 .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -154,8 +154,8 @@ public class QueryDBQueries {
                         ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldAndParamConditionOverride")
                 )
                 .from(EMNE)
-                .where(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+                .where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -177,8 +177,8 @@ public class QueryDBQueries {
                         ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldAndParamConditionOverrideBoth")
                 )
                 .from(EMNE)
-                .where(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+                .where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }
@@ -202,9 +202,9 @@ public class QueryDBQueries {
                 .from(EMNE)
                 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
                 .and(emneInput != null ? EMNE.EMNEKODE.eq(emneInput.getKode()) : noCondition())
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneKode(EMNE, emneInput != null ? emneInput.getKode() : null))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKode(EMNE, emneInput != null ? emneInput.getKode() : null))
                 .and(emneInput != null ? EMNE.VERSJONSKODE.eq(emneInput.getVersjonskode()) : noCondition())
-                .and(no.fellesstudentsystem.kjerneapi.conditions.test_conditions.EmneTestConditions.emneInputAll(EMNE, eierInstitusjonsnummer, emneInput != null ? emneInput.getKode() : null, emneInput != null ? emneInput.getVersjonskode() : null))
+                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneInputAll(EMNE, eierInstitusjonsnummer, emneInput != null ? emneInput.getKode() : null, emneInput != null ? emneInput.getVersjonskode() : null))
                 .orderBy(EMNE.getIdFields())
                 .fetch(0, Emne.class);
     }

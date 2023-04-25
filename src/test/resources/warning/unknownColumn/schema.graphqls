@@ -52,7 +52,7 @@ type PersonProfil @node(table: "PERSON") {
     kjonn2: Kjonn @column(name: "KJONN2") #should trigger warning
 }
 
-enum Kjonn @mapEnum(name: "Kjonn") {
+enum Kjonn @mapEnum(name: "KJONN_TEST") {
     MANN @mapEnum(name: "ABCDE"), #enum values are not validated
     KVINNE @mapEnum(name: "K")
 }

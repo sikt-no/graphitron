@@ -4,8 +4,18 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import no.fellesstudentsystem.graphitron.conditions.EmneTestConditions;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
+import no.fellesstudentsystem.graphitron.exceptions.TestException;
+import no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause;
+import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.services.TestPermisjonService;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+import no.fellesstudentsystem.kjerneapi.tables.Emne;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -30,6 +41,20 @@ public class GraphQLGeneratorTest {
 
     private ListAppender<ILoggingEvent> logWatcher;
 
+    private final Map<String, Class<?>>
+            enumOverrides = Map.of("KJONN_TEST", KjonnTest.class),
+            exceptionOverrides = Map.of("EXCEPTION_TEST", TestException.class, "EXCEPTION_TEST_CAUSE", TestExceptionCause.class),
+            serviceOverrides = Map.of("TEST_PERSON", TestPersonService.class, "TEST_PERMISJON", TestPermisjonService.class);
+    private final Map<String, Method> conditionOverrides = Map.of(
+            "TEST_EMNE_KODE", EmneTestConditions.class.getMethod("emneKode", Emne.class, String.class),
+            "TEST_EMNE_KODER", EmneTestConditions.class.getMethod("emneKoder", Emne.class, List.class),
+            "TEST_EMNE_ALL", EmneTestConditions.class.getMethod("emneAll", Emne.class, String.class, List.class),
+            "TEST_EMNE_INPUT_ALL", EmneTestConditions.class.getMethod("emneInputAll", Emne.class, String.class, String.class, String.class)
+    );
+
+    public GraphQLGeneratorTest() throws NoSuchMethodException {
+    }
+
     @BeforeEach
     void setup() {
         logWatcher = new ListAppender<>();
@@ -46,7 +71,16 @@ public class GraphQLGeneratorTest {
     private Map<String, String> generateFiles(String schemaParentFolder) throws IOException {
         System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_FILES, SRC_TEST_RESOURCES + schemaParentFolder + "/schema.graphqls," + SRC_TEST_RESOURCES + "defaultDirectives.graphqls");
         System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
-        GraphQLGenerator.generate();
+
+        var processedSchema = GraphQLGenerator.getProcessedSchema();
+        processedSchema.validate(enumOverrides);
+        var generators = List.of(
+                new FetchDBClassGenerator(processedSchema, enumOverrides, conditionOverrides),
+                new FetchResolverClassGenerator(processedSchema),
+                new UpdateResolverClassGenerator(processedSchema, exceptionOverrides, serviceOverrides)
+        );
+
+        GraphQLGenerator.generate(generators);
         Map<String, String> generatedFiles = new HashMap<>();
         Files.walkFileTree(tempOutputDirectory, new SimpleFileVisitor<>() {
             @Override
@@ -176,7 +210,7 @@ public class GraphQLGeneratorTest {
         Set<String> logMessages = getLogMessagesWithLevelWarn();
         assertThat(logMessages).containsOnly(
                 "The following directives are declared in the code generator, but were not found in the GraphQL schema files: " +
-                        "reference, condition, mapEnum, service, record, column");
+                        "reference, condition, mapEnum, service, record, column, error");
     }
 
     @Test
@@ -241,7 +275,7 @@ public class GraphQLGeneratorTest {
     void generate_whenUnknownEnum_shouldLogWarning() throws IOException {
         generateFiles("warning/unknownEnum");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No enum with name 'Kjonn2' found in no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum"
+                "No enum with name 'KJONN_TEST2' found in no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum"
         );
     }
 
@@ -303,6 +337,11 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
+    void generate_mutation_shouldGenerateResolversWithErrorHandling() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationExceptionResolvers");
+    }
+
+    @Test
     void generate_whenNoServiceMethodSet_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotSet"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -317,7 +356,7 @@ public class GraphQLGeneratorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
                         "Requested to generate a method for 'endrePersonSimple' that calls service 'SERVICE_NOT_FOUND', " +
-                                "but no such service was found in 'no.fellesstudentsystem.kjerneapi_service.GeneratorService'"
+                                "but no such service was found in 'no.fellesstudentsystem.codegenenums.GeneratorService'"
                 );
     }
 
@@ -326,7 +365,7 @@ public class GraphQLGeneratorTest {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
-                        "Service 'no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService'" +
+                        "Service 'no.fellesstudentsystem.graphitron.services.TestPersonService'" +
                                 " contains no method with the name 'endrePersonSimple'" +
                                 " and 2 parameter(s), which is required to generate the resolver."
                 );

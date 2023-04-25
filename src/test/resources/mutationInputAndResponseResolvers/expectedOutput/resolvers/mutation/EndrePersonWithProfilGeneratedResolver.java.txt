@@ -7,11 +7,11 @@ import java.lang.String;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
 import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
-import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithProfilMutationResolver {
@@ -36,7 +36,7 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
     private PersonProfil getPersonProfilEndrePersonWithProfil(
             no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord result,
             SelectionSets select) {
-        if (!select.contains("endrePersonWithProfil")) {
+        if (!select.contains("endrePersonWithProfil") || result == null) {
             return null;
         }
 

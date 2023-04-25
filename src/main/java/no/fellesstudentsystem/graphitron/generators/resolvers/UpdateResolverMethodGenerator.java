@@ -3,14 +3,14 @@ package no.fellesstudentsystem.graphitron.generators.resolvers;
 import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLRecord;
-import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
+import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.kjerneapi_service.GeneratorService;
+import no.fellesstudentsystem.codegenenums.GeneratorService;
 import org.apache.commons.lang3.EnumUtils;
 import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
@@ -18,15 +18,17 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.lang.model.element.Modifier;
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static java.util.Collections.nCopies;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
+import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.extractType;
+import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.getServiceReturnClassName;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.context.UpdateContext.countParams;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.ERROR_TYPE;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -36,22 +38,42 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     private static final String
-            PARAM_ENV_NAME = "env",
-            VARIABLE_ID_NAME = "ids",
-            VARIABLE_RESULT_SUFFIX = "Result",
+            PARAM_ENV = "env",
+            VARIABLE_ID = "ids",
             VARIABLE_RESULT_PARAM = "result",
-            VARIABLE_LIST_SUFFIX = "List",
-            VARIABLE_ITERATE_PREFIX = "it",
-            VARIABLE_GET_PREFIX = "get",
-            VARIABLE_NODE_RESULT_NAME = "nodes",
-            VARIABLE_SELECT_NAME = "select";
+            VARIABLE_NODE_RESULT = "nodes",
+            VARIABLE_SELECT = "select",
+            VARIABLE_EXCEPTION = "e",
+            VARIABLE_ERROR = "error",
+            VARIABLE_CAUSE_NAME = "causeName",
+            VARIABLE_CAUSE = "cause",
+            VALUE_UNDEFINED = "undefined",
+            FIELD_MESSAGE = "message", // Hardcoded expected fields.
+            FIELD_MESSAGE_UPPER = capitalize(FIELD_MESSAGE),
+            FIELD_PATH = "path", // Hardcoded expected fields.
+            FIELD_PATH_UPPER = capitalize(FIELD_PATH),
+            METHOD_GET_CAUSE = "getCauseField"; // Hardcoded method name. Perhaps it should be tied to an interface?
+
+    private final Map<String, Class<?>> exceptionOverrides, serviceOverrides;
 
     private final ObjectField localField;
+    private UpdateContext context;
 
     public UpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
+        this(localField, processedSchema, Map.of(), Map.of());
+    }
+
+    public UpdateResolverMethodGenerator(
+            ObjectField localField,
+            ProcessedSchema processedSchema,
+            Map<String, Class<?>> exceptionOverrides,
+            Map<String, Class<?>> serviceOverrides
+    ) {
         super(processedSchema.getMutationType(), processedSchema);
         dependencySet.add(ContextDependency.getInstance());
         this.localField = localField;
+        this.exceptionOverrides = exceptionOverrides;
+        this.serviceOverrides = serviceOverrides;
     }
 
     @Override
@@ -62,27 +84,26 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         var specInputs = target.getInputFields();
         specInputs.forEach(input -> spec.addParameter(input.getFieldType().getWrappedTypeClass(allInputs), input.getName()));
 
+        context = new UpdateContext(target, processedSchema, exceptionOverrides, serviceOverrides);
         var code = CodeBlock
                 .builder()
-                .addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT_NAME, SELECTION_SETS.className, PARAM_ENV_NAME);
-        var inputNames = declareRecords(specInputs, code);
-
-        code
+                .addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SETS.className, PARAM_ENV)
+                .add(declareRecords(specInputs))
                 .add("\n")
-                .add(generateServiceCall(target, inputNames))
+                .add(generateServiceCall(target))
                 .add(generateResponsesAndGetCalls(target))
                 .add("\n")
-                .addStatement("return $T.completedFuture($N)", COMPLETABLE_FUTURE.className, getExpectedResultName(target));
+                .addStatement("return $T.completedFuture($N)", COMPLETABLE_FUTURE.className, getResolverResultName(target));
 
         return spec
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, PARAM_ENV_NAME)
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, PARAM_ENV)
                 .addCode(declareAllServiceClasses())
                 .addCode(code.build())
                 .build();
     }
 
     @Nullable
-    private String getExpectedResultName(ObjectField target) {
+    private String getResolverResultName(ObjectField target) {
         var typeName = target.getTypeName();
         if (!processedSchema.isObject(typeName)) {
             return asResultName(target.getUnprocessedNameInput());
@@ -113,36 +134,34 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
      * @return List of variable names for the declared and fully set records.
      */
     @NotNull
-    private List<String> declareRecords(List<InputField> specInputs, CodeBlock.Builder code) {
-        var serviceInputs = new ArrayList<String>();
-
+    private CodeBlock declareRecords(List<InputField> specInputs) {
+        var code = CodeBlock.builder();
         var recordCode = CodeBlock.builder();
         for (var in : specInputs) {
             if (processedSchema.isInputType(in.getTypeName())) {
-                serviceInputs.addAll(declareRecords(in, code, 0));
+                code.add(declareRecords(in, 0));
                 recordCode.add(fillRecords(in, "", 0));
-            } else {
-                serviceInputs.add(in.getName());
             }
         }
         if (!recordCode.isEmpty()) {
             code.add("\n").add(recordCode.build());
         }
-        return serviceInputs;
+        return code.build();
     }
 
     /**
      * @return List of variable names for the declared records.
      */
     @NotNull
-    private List<String> declareRecords(InputField target, CodeBlock.Builder code, int recursion) {
+    private CodeBlock declareRecords(InputField target, int recursion) {
         recursionCheck(recursion);
 
+        var code = CodeBlock.builder();
         var input = processedSchema.getInputType(target.getTypeName());
         if (!input.hasTable()) {
-            return List.of();
+            return code.build();
         }
-        var targetAsRecordName = SQLRecord.asRecordName(target.getName());
+        var targetAsRecordName = asRecordName(target.getName());
 
         var sqlRecordClassName = input.asSQLRecord().getGraphClassName();
         var isIterable = target.getFieldType().isIterableWrapped();
@@ -152,16 +171,13 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
             code.addStatement("var $L = new $T()", targetAsRecordName, sqlRecordClassName);
         }
 
-        return Stream
-                .concat(
-                        Stream.of(isIterable ? asListedName(targetAsRecordName) : targetAsRecordName),
-                        input
-                                .getInputs()
-                                .stream()
-                                .filter(in -> processedSchema.isInputType(in.getTypeName()))
-                                .flatMap(in -> declareRecords(in, code, recursion + 1).stream())
-                )
-                .collect(Collectors.toList());
+        input
+                .getInputs()
+                .stream()
+                .filter(in -> processedSchema.isInputType(in.getTypeName()))
+                .forEach(in -> code.add(declareRecords(in, recursion + 1)));
+
+        return code.build();
     }
 
     /**
@@ -174,17 +190,16 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         var input = processedSchema.getInputType(target.getTypeName());
         var hasTable = input.hasTable();
         var targetName = target.getName();
-        var recordName = hasTable ? SQLRecord.asRecordName(targetName) : previousRecord;
-        var sqlRecord = input.asSQLRecord();
-        var iterableInputName = targetName;
+        var recordName = hasTable ? asRecordName(targetName) : previousRecord;
 
         var code = CodeBlock.builder();
 
+        var iterableInputName = targetName;
         String potentialArrayListName = "";
         var isIterable = target.getFieldType().isIterableWrapped();
         if (isIterable) {
             if (!hasTable) {
-                return CodeBlock.of("");
+                return code.build();
             }
 
             potentialArrayListName = asListedName(recordName);
@@ -194,7 +209,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                     .beginControlFlow("if ($N != null)", targetName)
                     .beginControlFlow("for (var $L : $N)", iterableInputName, targetName)
                     .addStatement("if ($N == null) continue", iterableInputName)
-                    .addStatement("var $L = new $T()", recordName, sqlRecord.getGraphClassName());
+                    .addStatement("var $L = new $T()", recordName, input.asSQLRecord().getGraphClassName());
         }
 
         for (var in : input.getInputs()) {
@@ -222,21 +237,147 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                 .build();
     }
 
-    private CodeBlock generateServiceCall(ObjectField target, List<String> inputNames) {
+    private CodeBlock generateServiceCall(ObjectField target) {
+        var service = context.getService();
+        var serviceName = service.getServiceName();
+        dependencySet.add(new ServiceDependency(serviceName, service.getPackageName()));
+
+        if (!context.hasErrors()) {
+            return generateSimpleServiceCall(target, serviceName);
+        }
+        var serviceResultName = asResultName(target.getUnprocessedNameInput());
         return CodeBlock
                 .builder()
-                .add("var $L = $N.$L(", asResultName(target.getUnprocessedNameInput()), uncapitalize(extractServiceName(target)), target.getName()) // Method name is expected to be the field's name.
-                .add(String.join(", ", nCopies(inputNames.size(), "$N")), inputNames.toArray())
-                .addStatement(")")
+                .addStatement("$T $L = null", service.getReturnTypeName(), serviceResultName)
+                .add(defineErrorLists())
+                .beginControlFlow("try")
+                .add("$N = ", serviceResultName)
+                .addStatement("$N.$L($L)", uncapitalize(serviceName), target.getName(), context.getServiceInputString())
+                .add(createCatchBlocks(target))
+                .add("\n")
+                .add(generateNullReturn(target))
+                .add("\n")
                 .build();
     }
 
     @NotNull
-    private String extractServiceName(ObjectField target) {
-        var service = GeneratorService.valueOf(target.getServiceReference()).getService();
-        var serviceName = service.getSimpleName();
-        dependencySet.add(new ServiceDependency(serviceName, service.getPackageName()));
-        return serviceName;
+    private CodeBlock generateSimpleServiceCall(ObjectField target, String serviceName) {
+        return CodeBlock
+                .builder()
+                .add("var $L = ", asResultName(target.getUnprocessedNameInput()))
+                .addStatement("$N.$L($L)", uncapitalize(serviceName), target.getName(), context.getServiceInputString()) // Method name is expected to be the field's name.
+                .build();
+    }
+
+    private CodeBlock defineErrorLists() {
+        var code = CodeBlock.builder();
+        for (var errorField : context.getAllErrors()) {
+            var definition = context.getErrorTypeDefinition(errorField.getTypeName());
+            code.addStatement(
+                    "var $L = new $T<$T>()",
+                    asListedName(definition.getName()),
+                    ARRAY_LIST.className,
+                    definition.getGraphClassName()
+            );
+        }
+        return code.build();
+    }
+
+    private CodeBlock createCatchBlocks(ObjectField target) {
+        var errorInterface = processedSchema.getInterface(ERROR_TYPE.getName());
+        var hasPathField = errorInterface.hasField(FIELD_PATH);
+        var preparedErrorsMap = hasPathField ? getFieldErrorMap(target) : CodeBlock.of("");
+        var preparedCode = errorInterface.hasField(FIELD_MESSAGE) ? createPreparedMessageCode() : CodeBlock.of("");
+
+        var code = CodeBlock.builder();
+        for (var errorField : context.getAllErrors()) {
+            var errorListName = asListedName(context.getErrorTypeDefinition(errorField.getTypeName()).getName());
+            for (var exc : context.getExceptionDefinitions(errorField.getTypeName())) {
+                var exception = context.getExceptionClass(exc.getExceptionReference());
+                var exceptionJavaClassName = ClassName.get(exception.getPackageName(), exception.getSimpleName());
+                code
+                        .nextControlFlow("catch ($T $L)", exceptionJavaClassName, VARIABLE_EXCEPTION)
+                        .addStatement("var $N = new $T()", VARIABLE_ERROR, exc.getGraphClassName())
+                        .add(preparedCode);
+                if (hasPathField) {
+                    if (Stream.of(exception.getMethods()).map(Method::getName).anyMatch(it -> it.equals(METHOD_GET_CAUSE))) {
+                        code
+                                .add(preparedErrorsMap)
+                                .addStatement(
+                                        "$N.set$L($T.of(($S + $N).split($S)))",
+                                        VARIABLE_ERROR,
+                                        FIELD_PATH_UPPER,
+                                        LIST.className,
+                                        localObject.getName() + "." + target.getName() + ".",
+                                        VARIABLE_CAUSE_NAME,
+                                        "\\."
+                                );
+                    } else {
+                        code.addStatement("$N.set$L($T.of($S))", VARIABLE_ERROR, FIELD_PATH_UPPER, LIST.className, target.getName());
+                    }
+                }
+                code.addStatement("$N.add($N)", errorListName, VARIABLE_ERROR);
+            }
+        }
+
+        return code.endControlFlow().build();
+    }
+
+    @NotNull
+    private CodeBlock getFieldErrorMap(ObjectField target) {
+        return CodeBlock
+                .builder()
+                .addStatement("var $L = $N.$L()", VARIABLE_CAUSE, VARIABLE_EXCEPTION, METHOD_GET_CAUSE)
+                .addStatement(
+                        "var $L = $T.of($L).getOrDefault($N != null ? $N : \"\", $S)",
+                        VARIABLE_CAUSE_NAME,
+                        MAP.className,
+                        context.getFieldErrorNameSets(target),
+                        VARIABLE_CAUSE,
+                        VARIABLE_CAUSE,
+                        VALUE_UNDEFINED
+                )
+                .build();
+    }
+
+    @NotNull
+    private CodeBlock createPreparedMessageCode() {
+        return CodeBlock
+                .builder()
+                .addStatement(
+                    "$N.set$L($N.get$L())",
+                        VARIABLE_ERROR,
+                        FIELD_MESSAGE_UPPER,
+                        VARIABLE_EXCEPTION,
+                        FIELD_MESSAGE_UPPER
+                )
+                .build();
+    }
+
+    @NotNull
+    private CodeBlock generateNullReturn(ObjectField target) {
+        var resolverResultName = getResolverResultName(target);
+        var code = CodeBlock
+                .builder()
+                .beginControlFlow("if ($N == null)", asResultName(target.getUnprocessedNameInput()))
+                .addStatement("var $L = new $T()", resolverResultName, processedSchema.getObject(target.getTypeName()).getGraphClassName());
+
+        for (var error : context.getAllErrors()) {
+            code
+                    .add("$N", resolverResultName)
+                    .addStatement(
+                            error.getMappingFromFieldName().asSetCall("$N"),
+                            asListedName(context.getErrorTypeDefinition(error.getTypeName()).getName())
+                    );
+        }
+
+        if (target.getFieldType().isIterableWrapped()) {
+            code.addStatement("return $T.completedFuture($T.of($N))", COMPLETABLE_FUTURE.className, LIST.className, resolverResultName);
+        } else {
+            code.addStatement("return $T.completedFuture($N)", COMPLETABLE_FUTURE.className, resolverResultName);
+        }
+
+        return code.endControlFlow().build();
     }
 
     /**
@@ -245,7 +386,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     private CodeBlock generateResponsesAndGetCalls(ObjectField target) {
         var code = CodeBlock.builder();
         var typeName = target.getTypeName();
-        if (!processedSchema.isObject(typeName)) {
+        if (!processedSchema.isObject(typeName) || processedSchema.isExceptionOrExceptionUnion(typeName)) {
             return code.build();
         }
 
@@ -261,9 +402,8 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
      */
     private CodeBlock generateResultUnpacking(ObjectField target) {
         var code = CodeBlock.builder();
-        var service = GeneratorService.valueOf(target.getServiceReference()).getService();
-        var serviceReturnType = getServiceReturnTypeClass(target, service);
-        if (serviceReturnType.getEnclosingClass() != service) {
+
+        if (!context.getService().isReturnTypeInService()) {
             return code.build();
         }
 
@@ -278,7 +418,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
 
         var targetTypeName = target.getTypeName();
         var code = CodeBlock.builder();
-        if (!processedSchema.isObject(targetTypeName)) {
+        if (!processedSchema.isObject(targetTypeName) || processedSchema.isExceptionOrExceptionUnion(targetTypeName)) {
             return code.build();
         }
 
@@ -322,7 +462,6 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         recursionCheck(recursion);
 
         var targetTypeName = target.getTypeName();
-
         var code = CodeBlock.builder();
         if (!processedSchema.isObject(targetTypeName)) {
             return code.build();
@@ -336,7 +475,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                             asGetMethodVariableName(previous.getTypeName(), target.getName()),
                             asGetMethodName(previous.getTypeName(), target.getName()),
                             asResultName(previous.getUnprocessedNameInput()),
-                            VARIABLE_SELECT_NAME
+                            VARIABLE_SELECT
                     )
                     .build();
         }
@@ -356,8 +495,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
 
         var code = CodeBlock.builder();
         var targetTypeName = target.getTypeName();
-
-        if (!processedSchema.isObject(targetTypeName)) {
+        if (!processedSchema.isObject(targetTypeName) || processedSchema.isExceptionOrExceptionUnion(targetTypeName)) {
             return code.build();
         }
 
@@ -392,7 +530,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         for (var field : responseObject.getFields()) {
             code
                     .add(generateResponses(field, target, recursion + 1))
-                    .add(mapToSetCall(field, target));
+                    .add(mapToSetCall(field, target, recursion == 0)); // Only set exceptions on top layer, recursion isn't supported here.
         }
 
         if (isIterable) {
@@ -404,37 +542,82 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     /**
      * @return Code for any set method calls for this response object.
      */
-    private CodeBlock mapToSetCall(ObjectField field, ObjectField previousField) {
+    private CodeBlock mapToSetCall(ObjectField field, ObjectField previousField, boolean setExceptions) {
+        var fieldTypeName = field.getTypeName();
+        var previousTypeNameLower = uncapitalize(previousField.getTypeName());
+
+        if (setExceptions && processedSchema.isExceptionOrExceptionUnion(fieldTypeName)) {
+            return mapToSimpleSetCall(field, previousTypeNameLower);
+        }
+
         var code = CodeBlock.builder();
-
-        var fieldName = field.getName();
-        var fieldMapping = field.getMappingFromFieldName();
-
-        var previousTypeName = previousField.getTypeName();
-        var previousIsIterable = previousField.getFieldType().isIterableWrapped();
-        var targetTypeNameLower = uncapitalize(previousTypeName);
-        if (processedSchema.isObject(field.getTypeName())) {
-            var getVariable = asGetMethodVariableName(previousTypeName, fieldName);
-            var isNode = processedSchema.getObject(field.getTypeName()).implementsInterface(NODE_TYPE.getName());
-            code.add("$N", targetTypeNameLower);
-
-            if (isNode) {
-                if (previousIsIterable) {
-                    code.addStatement(fieldMapping.asSetCall("$N.get($N.getId())"), getVariable, targetTypeNameLower);
-                } else {
-                    code.addStatement(fieldMapping.asSetCall("$N"), getVariable);
-                }
-            } else {
-                code.addStatement(fieldMapping.asSetCall("$N"), field.getFieldType().isIterableWrapped() ? asListedName(fieldName) : fieldName);
-            }
+        if (processedSchema.isObject(fieldTypeName)) {
+            code.add(mapToObjectSetCall(field, previousField));
         } else {
             code.addStatement(
-                    "$N" + fieldMapping.asSetCall("$N" + field.getMappingFromColumn().asGetCall()),
-                    targetTypeNameLower,
-                    previousIsIterable ? asIterableResultName(previousField.getUnprocessedNameInput()) : asResultName(previousField.getUnprocessedNameInput())
+                    "$N" + field.getMappingFromFieldName().asSetCall("$N" + field.getMappingFromColumn().asGetCall()),
+                    previousTypeNameLower,
+                    previousField.getFieldType().isIterableWrapped()
+                            ? asIterableResultName(previousField.getUnprocessedNameInput())
+                            : asResultName(previousField.getUnprocessedNameInput())
             );
         }
         return code.build();
+    }
+
+    @NotNull
+    private CodeBlock mapToSimpleSetCall(ObjectField field, String previousTypeNameLower) {
+        return CodeBlock
+                .builder()
+                .addStatement(
+                        "$N" + field.getMappingFromFieldName().asSetCall("$N"),
+                        previousTypeNameLower,
+                        asListedName(context.getErrorTypeDefinition(field.getTypeName()).getName())
+                )
+                .build();
+    }
+
+    private CodeBlock mapToObjectSetCall(ObjectField field, ObjectField previousField) {
+        var code = CodeBlock.builder().add("$N", uncapitalize(previousField.getTypeName()));
+
+        var fieldName = field.getName();
+        if (processedSchema.getObject(field.getTypeName()).implementsInterface(NODE_TYPE.getName())) {
+            code.add(mapToNodeSetCall(field, previousField));
+        } else {
+            code.addStatement(field.getMappingFromFieldName().asSetCall("$N"), field.getFieldType().isIterableWrapped() ? asListedName(fieldName) : fieldName);
+        }
+        return code.build();
+    }
+
+    private CodeBlock mapToNodeSetCall(ObjectField field, ObjectField previousField) {
+        var code = CodeBlock.builder();
+        var fieldMapping = field.getMappingFromFieldName();
+        var previousTypeName = previousField.getTypeName();
+        var getVariable = asGetMethodVariableName(previousTypeName, field.getName());
+
+        if (previousField.getFieldType().isIterableWrapped()) {
+            code.addStatement(
+                    fieldMapping.asSetCall("$N.get($N.getId())"),
+                    getVariable,
+                    hasId(previousTypeName) ? uncapitalize(previousTypeName) : asIterableResultName(previousField.getUnprocessedNameInput())
+            );
+        } else {
+            var service = context.getService();
+            if (previousField == localField && !service.isReturnTypeInService() && service.returnIsIterable()) {
+                code.addStatement(fieldMapping.asSetCall("new $T<>($N.values())"), ARRAY_LIST.className, getVariable);
+            } else {
+                code.addStatement(fieldMapping.asSetCall("$N"), getVariable);
+            }
+        }
+        return code.build();
+    }
+
+    private boolean hasId(String typeName) {
+        return processedSchema.isObject(typeName) && processedSchema
+                .getObject(typeName)
+                .getFields()
+                .stream()
+                .anyMatch(it -> it.getName().equalsIgnoreCase("Id"));
     }
 
     /**
@@ -443,54 +626,15 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
      * @return The code for any get helper methods to be made for this schema tree.
      */
     private List<MethodSpec> generateGetMethods(ObjectField target) {
+        context = new UpdateContext(localField, processedSchema, exceptionOverrides, serviceOverrides);
         var responseObject = processedSchema.getObject(target.getTypeName());
         if (responseObject == null) {
             return List.of();
         }
 
-        var service = GeneratorService.valueOf(target.getServiceReference()).getService();
-        var serviceReturnType = getServiceReturnTypeClass(target, service);
-        var classes = Arrays.stream(service.getClasses()).collect(Collectors.toSet());
-        var extracted = extractType(serviceReturnType);
-
-        return generateGetMethod(target, target, "", extracted, extracted, classes);
-    }
-
-    /**
-     * @return The class object of the type returned by the service.
-     */
-    private Class<?> getServiceReturnTypeClass(ObjectField target, Class<?> service) {
-        return getServiceReturnMethod(target, service).map(Method::getReturnType).orElse(null);
-    }
-
-    /**
-     * @return The method object of the type returned by the service.
-     */
-    @NotNull
-    private Optional<Method> getServiceReturnMethod(ObjectField target, Class<?> service) {
-        var targetName = target.getName();
-        var totalFields = countParams(target.getInputFields(), false);
-
-        return Stream
-                .of(service.getMethods())
-                .filter(m -> m.getName().equals(targetName) && m.getParameterTypes().length == totalFields)
-                .findFirst();
-    }
-
-    private int countParams(List<InputField> fields, boolean inRecord) {
-        var numFields = 0;
-        for (var input : fields) {
-            if (processedSchema.isInputType(input.getTypeName())) {
-                var object = processedSchema.getInputType(input.getTypeName());
-                if (object.hasTable()) {
-                    numFields++;
-                }
-                numFields += countParams(object.getInputs(), inRecord || object.hasTable());
-            } else if (!inRecord) {
-                numFields++;
-            }
-        }
-        return numFields;
+        var service = context.getService();
+        var serviceReturnType = service.getReturnType();
+        return generateGetMethod(target, target, "", serviceReturnType, serviceReturnType, service.getInternalClasses());
     }
 
     /**
@@ -516,7 +660,9 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
             return flatMapSpecs(target, path, returnTypeClass, classes);
         }
 
-        var previousIsIterable = previous.getFieldType().isIterableWrapped();
+        var service = context.getService();
+        var previousIsIterable = previous.getFieldType().isIterableWrapped()
+                || previous == localField && !service.isReturnTypeInService() && service.returnIsIterable();
         var returnType = previousIsIterable
                 ? ParameterizedTypeName.get(MAP.className, STRING.className, responseFieldClassName)
                 : responseFieldClassName;
@@ -530,8 +676,12 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                 MethodSpec
                         .methodBuilder(asGetMethodName(previous.getTypeName(), target.getName()))
                         .addModifiers(Modifier.PRIVATE)
-                        .addParameter(getServiceReturnParam(previousTypeClass.getName(), previousIsIterable))
-                        .addParameter(SELECTION_SETS.className, VARIABLE_SELECT_NAME)
+                        .addParameter(
+                                ParameterSpec
+                                        .builder(getServiceReturnClassName(previousTypeClass.getName(), previousIsIterable), VARIABLE_RESULT_PARAM)
+                                        .build()
+                        )
+                        .addParameter(SELECTION_SETS.className, VARIABLE_SELECT)
                         .returns(returnType)
                         .addCode(methodCode)
                         .build()
@@ -563,20 +713,16 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                 .collect(Collectors.toList());
     }
 
-    private Class<?> extractType(Type type) {
-        return (Class<?>) (type instanceof ParameterizedType ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
-    }
-
     /**
      * @return The code for a get helper method for a node type.
      */
     @NotNull
-    private CodeBlock createGetMethodCode(ObjectField field, String selectionSetPath, boolean returnTypeIsRecord, boolean previousIsIterable) {
+    private CodeBlock createGetMethodCode(ObjectField field, String selectionSetPath, boolean returnTypeIsRecord, boolean isIterable) {
         var typeName = field.getTypeName();
         var code = CodeBlock.builder();
 
-        code.beginControlFlow("if (!$N.contains($S))", VARIABLE_SELECT_NAME, selectionSetPath);
-        if (previousIsIterable) {
+        code.beginControlFlow("if (!$N.contains($S) || $N == null)", VARIABLE_SELECT, selectionSetPath, VARIABLE_RESULT_PARAM);
+        if (isIterable) {
             code.addStatement("return $T.of()", MAP.className);
         } else {
             code.addStatement("return null");
@@ -587,10 +733,10 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         var querySourceName = uncapitalize(querySource);
         var queryMethod = asQueryNodeMethod(typeName);
         var idCall = returnTypeIsRecord ? ".getId()" : field.getMappingFromColumn().asGetCall() + ".getId()";
-        if (previousIsIterable) {
+        if (isIterable) {
             code.addStatement(
                     "var $L = $N.stream().map(it -> it$L).collect($T.toSet())",
-                    VARIABLE_ID_NAME,
+                    VARIABLE_ID,
                     VARIABLE_RESULT_PARAM,
                     idCall,
                     COLLECTORS.className
@@ -599,55 +745,27 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                     "return $N.$L($N, $N.withPrefix($S))",
                     querySourceName,
                     queryMethod,
-                    VARIABLE_ID_NAME,
-                    VARIABLE_SELECT_NAME,
+                    VARIABLE_ID,
+                    VARIABLE_SELECT,
                     selectionSetPath
             );
         } else {
             code
                     .addStatement(
                             "var $L = $N.$L($T.of($N$L), $N.withPrefix($S))",
-                            VARIABLE_NODE_RESULT_NAME,
+                            VARIABLE_NODE_RESULT,
                             querySourceName,
                             queryMethod,
                             SET.className,
                             VARIABLE_RESULT_PARAM,
                             idCall,
-                            VARIABLE_SELECT_NAME,
+                            VARIABLE_SELECT,
                             selectionSetPath
                     )
-                    .addStatement("return $N.values().stream().findFirst().orElse(null)", VARIABLE_NODE_RESULT_NAME);
+                    .addStatement("return $N.values().stream().findFirst().orElse(null)", VARIABLE_NODE_RESULT);
         }
         dependencySet.add(new QueryDependency(querySource));
         return code.build();
-    }
-
-    /**
-     * @return Inputs formatted as a get call, but without the get element of the string.
-     */
-    protected String asGetMethodVariableName(String fieldSourceTypeName, String fieldName) {
-        return uncapitalize(fieldSourceTypeName) + capitalize(fieldName);
-    }
-
-    /**
-     * @return Inputs formatted as a get call.
-     */
-    protected String asGetMethodName(String fieldSourceTypeName, String fieldName) {
-        return VARIABLE_GET_PREFIX + fieldSourceTypeName + capitalize(fieldName);
-    }
-
-    /**
-     * @return Field type formatted as a query method call.
-     */
-    protected String asQueryClass(String fieldType) {
-        return fieldType + DBClassGenerator.FILE_NAME_SUFFIX;
-    }
-
-    /**
-     * @return Field type formatted as a node interface method call.
-     */
-    protected String asQueryNodeMethod(String fieldType) {
-        return "load" + fieldType + "ByIdsAs" + NODE_TYPE.getName();
     }
 
     /**
@@ -658,14 +776,22 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                 "Requested to generate a method for '%s' in type '%s' without providing a service to call.",
                 localField.getName(), localObject.getName());
 
-        var generatorService = EnumUtils.getEnum(GeneratorService.class, localField.getServiceReference());
-        Validate.isTrue(generatorService != null,
-                "Requested to generate a method for '%s' that calls service '%s', but no such service was found in '%s'",
-                localField.getName(), localField.getServiceReference(), GeneratorService.class.getName());
+        var ref = localField.getServiceReference();
+        Class<?> generatorService;
+        if (!serviceOverrides.containsKey(ref)) {
+            var service = EnumUtils.getEnum(GeneratorService.class, ref);
+            Validate.isTrue(service != null,
+                    "Requested to generate a method for '%s' that calls service '%s', but no such service was found in '%s'",
+                    localField.getName(), localField.getServiceReference(), GeneratorService.class.getName());
+            generatorService = service.getService();
+        } else {
+            generatorService = serviceOverrides.get(ref);
+        }
 
-        Validate.isTrue(getServiceReturnMethod(target, generatorService.getService()).isPresent(),
+        var service = new ServiceWrapper(target.getName(), countParams(target.getInputFields(), false, processedSchema), generatorService);
+        Validate.isTrue(service.getMethod() != null,
                 "Service '%s' contains no method with the name '%s' and %d parameter(s), which is required to generate the resolver.",
-                generatorService.getService().getName(), target.getName(), countParams(target.getInputFields(), false));
+                generatorService.getName(), target.getName(), service.getParamCount());
     }
 
     @Override
@@ -680,51 +806,6 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     @Override
     public boolean generatesAll() {
         return localField.isGenerated() && localField.hasServiceReference();
-    }
-
-    /**
-     * @return Input formatted as a list version of itself.
-     */
-    @NotNull
-    private static String asListedName(String s) {
-        return uncapitalize(s) + VARIABLE_LIST_SUFFIX;
-    }
-
-    /**
-     * @return Input formatted as a result name.
-     */
-    @NotNull
-    private static String asResultName(String s) {
-        return uncapitalize(s) + VARIABLE_RESULT_SUFFIX;
-    }
-
-    /**
-     * @return Input formatted as an iterable name.
-     */
-    @NotNull
-    private static String asIterable(String s) {
-        return VARIABLE_ITERATE_PREFIX + capitalize(s);
-    }
-
-    /**
-     * @return Input formatted as an iterable result name.
-     */
-    @NotNull
-    private static String asIterableResultName(String s) {
-        return asIterable(asResultName(s));
-    }
-
-    /**
-     * @return The spec for a parameter that holds the result of a query method call.
-     */
-    @NotNull
-    private static ParameterSpec getServiceReturnParam(String serviceReturnTypeName, boolean isIterable) {
-        var serviceReturnClassName = ClassName.get("", serviceReturnTypeName.replace("$", "."));
-        var serviceReturnClassNameParam = isIterable
-                ? ParameterizedTypeName.get(LIST.className, serviceReturnClassName)
-                : serviceReturnClassName;
-
-        return ParameterSpec.builder(serviceReturnClassNameParam, VARIABLE_RESULT_PARAM).build();
     }
 
     private static void recursionCheck(int recursion) {

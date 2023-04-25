@@ -4,18 +4,18 @@ import com.squareup.javapoet.ClassName;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.RECORDS_PACKAGE_PATH;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordName;
 
 /**
  * A record representation of table data.
  */
 public class SQLRecord {
-    public static final String RECORD_NAME_SUFFIX = "Record";
     private final String name, type;
     private final ClassName graphClassName;
 
     public SQLRecord(RecordMethodMapping recordMethodMapping) {
-        this.name = recordMethodMapping.getCodeName() + RECORD_NAME_SUFFIX;
-        this.type = recordMethodMapping.getName() + RECORD_NAME_SUFFIX;
+        this.name = asRecordName(recordMethodMapping.getCodeName());
+        this.type = asRecordName(recordMethodMapping.getName());
         graphClassName = ClassName.get(RECORDS_PACKAGE_PATH, type);
     }
 
@@ -38,12 +38,5 @@ public class SQLRecord {
      */
     public ClassName getGraphClassName() {
         return graphClassName;
-    }
-
-    /**
-     * @return Format this string as a record naming pattern.
-     */
-    public static String asRecordName(String name) {
-        return name + RECORD_NAME_SUFFIX;
     }
 }

@@ -7,9 +7,9 @@ import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonListSimpleMutationResolver;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
-import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonListSimpleGeneratedResolver implements EndrePersonListSimpleMutationResolver {

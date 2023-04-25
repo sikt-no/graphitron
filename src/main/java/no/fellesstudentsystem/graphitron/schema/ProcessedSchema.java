@@ -16,9 +16,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition.processObjectDefinitions;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_QUERY;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.*;
 
 /**
  * This class represents a fully processed GraphQL schema.
@@ -26,6 +24,7 @@ import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_
 public class ProcessedSchema {
     private final Map<String, EnumDefinition> enums;
     private final Map<String, ObjectDefinition> objects;
+    private final Map<String, ExceptionDefinition> exceptions;
     private final Map<String, InputDefinition> inputs;
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, ConnectionObjectDefinition> connectionObjects;
@@ -33,7 +32,6 @@ public class ProcessedSchema {
     private final Set<String> objectsWithTableOrConnection;
     private final ObjectDefinition queryType;
     private final ObjectDefinition mutationType;
-
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
         new DirectiveDefinitionsValidator(typeRegistry.getDirectiveDefinitions()).warnMismatchedDirectives();
@@ -43,9 +41,26 @@ public class ProcessedSchema {
                 .stream()
                 .collect(Collectors.toMap(EnumDefinition::getName, Function.identity()));
 
-        objects = processObjectDefinitions(objectTypes)
+        objects = ObjectDefinition
+                .processObjectDefinitions(objectTypes)
                 .stream()
                 .collect(Collectors.toMap(ObjectDefinition::getName, Function.identity()));
+
+        var exceptionTypes = objectTypes
+                .stream()
+                .filter(obj ->
+                        obj
+                                .getImplements()
+                                .stream()
+                                .filter(it -> it instanceof TypeName)
+                                .map(it -> ((TypeName) it).getName())
+                                .anyMatch(it -> it.equals(ERROR_TYPE.getName()))
+                )
+                .collect(Collectors.toList());
+        exceptions = ExceptionDefinition
+                .processObjectDefinitions(exceptionTypes)
+                .stream()
+                .collect(Collectors.toMap(ExceptionDefinition::getName, Function.identity()));
 
         queryType = objects.get(SCHEMA_ROOT_NODE_QUERY.getName());
         mutationType = objects.get(SCHEMA_ROOT_NODE_MUTATION.getName());
@@ -75,9 +90,14 @@ public class ProcessedSchema {
         unions = UnionDefinition.processUnionDefinitions(typeRegistry.getTypes(UnionTypeDefinition.class))
                 .stream()
                 .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
+    }
 
-        new ProcessedDefinitionsValidator(this)
-                .validateThatProcessedDefinitionsConformToDatabaseNaming();
+    public void validate() {
+        validate(Map.of());
+    }
+
+    public void validate(Map<String, Class<?>> enumOverrides) {
+        new ProcessedDefinitionsValidator(this, enumOverrides).validateThatProcessedDefinitionsConformToDatabaseNaming();
     }
 
     /**
@@ -90,7 +110,7 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to an enum type in the schema?
      */
-    public Boolean isEnum(String name) {
+    public boolean isEnum(String name) {
         return enums.containsKey(name);
     }
 
@@ -111,7 +131,7 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to an interface type in the schema?
      */
-    public Boolean isInterface(String name) {
+    public boolean isInterface(String name) {
         return interfaces.containsKey(name);
     }
 
@@ -132,7 +152,7 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to an object type in the schema?
      */
-    public Boolean isObject(String name) {
+    public boolean isObject(String name) {
         return objects.containsKey(name);
     }
 
@@ -153,7 +173,7 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to a connection object type in the schema?
      */
-    public Boolean isConnectionObject(String name) {
+    public boolean isConnectionObject(String name) {
         return connectionObjects.containsKey(name);
     }
 
@@ -162,6 +182,27 @@ public class ProcessedSchema {
      */
     public ConnectionObjectDefinition getConnectionObject(String name) {
         return connectionObjects.get(name);
+    }
+
+    /**
+     * @return Map of all the exceptions in the schema by name.
+     */
+    public Map<String, ExceptionDefinition> getException() {
+        return exceptions;
+    }
+
+    /**
+     * @return Does this name belong to an exception type in the schema?
+     */
+    public boolean isException(String name) {
+        return exceptions.containsKey(name);
+    }
+
+    /**
+     * @return Get an exception with this name.
+     */
+    public ExceptionDefinition getException(String name) {
+        return exceptions.get(name);
     }
 
 
@@ -175,7 +216,7 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to an input type in the schema?
      */
-    public Boolean isInputType(String name) {
+    public boolean isInputType(String name) {
         return inputs.containsKey(name);
     }
 
@@ -189,8 +230,25 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to a union type in the schema?
      */
-    public Boolean isUnion(String name) {
+    public boolean isUnion(String name) {
         return unions.containsKey(name);
+    }
+
+    /**
+     * @return Does this name belong to a union type containing only error types?
+     */
+    public boolean isExceptionUnion(String name) {
+        if (!isUnion(name)) {
+            return false;
+        }
+        return getUnion(name).getFieldTypeNames().stream().allMatch(this::isException); // What if only some match?
+    }
+
+    /**
+     * @return Does this name belong to an exception type or a union type containing only error types?
+     */
+    public boolean isExceptionOrExceptionUnion(String name) {
+        return isException(name) || isExceptionUnion(name);
     }
 
     /**

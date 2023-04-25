@@ -1,0 +1,128 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.exceptions.TestException;
+import no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
+import no.fellesstudentsystem.graphql.generated.api.EndreErrorUnion2MutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreErrorsUnion2;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse2;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse3;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponseUnion2;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.SomeErrorA;
+import no.fellesstudentsystem.graphql.generated.model.SomeErrorB;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndreErrorUnion2GeneratedResolver implements EndreErrorUnion2MutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Override
+    public CompletableFuture<EndreResponseUnion2> endreErrorUnion2(EndreInput input,
+            DataFetchingEnvironment env) throws Exception {
+        var testPersonService = new TestPersonService(ctx);
+        var select = new SelectionSets(env.getSelectionSet());
+        var inputRecord = new PersonRecord();
+        var endre2Record = new PersonRecord();
+
+        if (input != null) {
+            inputRecord.setId(input.getId());
+            inputRecord.setFornavn(input.getNavn());
+            inputRecord.setEtternavn(input.getEtternavn());
+            var endre2 = input.getEndre2();
+            if (endre2 != null) {
+                endre2Record.setEmailadressePrivat(endre2.getPrivatEpost());
+            }
+        }
+
+        no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse endreErrorUnion2Result = null;
+        var endreErrorsUnion2List = new ArrayList<EndreErrorsUnion2>();
+        try {
+            endreErrorUnion2Result = testPersonService.endreErrorUnion2(inputRecord, endre2Record);
+        } catch (TestException e) {
+            var error = new SomeErrorA();
+            error.setMessage(e.getMessage());
+            error.setPath(List.of("endreErrorUnion2"));
+            endreErrorsUnion2List.add(error);
+        } catch (TestExceptionCause e) {
+            var error = new SomeErrorB();
+            error.setMessage(e.getMessage());
+            var cause = e.getCauseField();
+            var causeName = Map.of("EMAILADRESSE_PRIVAT", "EndreInput.EndreInput2.privatEpost", "ID", "EndreInput.id", "ETTERNAVN", "EndreInput.etternavn", "FORNAVN", "EndreInput.navn").getOrDefault(cause != null ? cause : "", "undefined");
+            error.setPath(List.of(("Mutation.endreErrorUnion2." + causeName).split("\\.")));
+            endreErrorsUnion2List.add(error);
+        }
+
+        if (endreErrorUnion2Result == null) {
+            var endreResponseUnion2 = new EndreResponseUnion2();
+            endreResponseUnion2.setErrors(endreErrorsUnion2List);
+            return CompletableFuture.completedFuture(endreResponseUnion2);
+        }
+
+        var endreResponse2Result = endreErrorUnion2Result.getEndreResponse2();
+        var endreResponse3Result = endreErrorUnion2Result.getEndreResponse3();
+
+        var endreResponse2PersonProfil = getEndreResponse2PersonProfil(endreResponse2Result, select);
+        var endreResponse3PersonProfil = getEndreResponse3PersonProfil(endreResponse3Result, select);
+
+        var endreResponseUnion2 = new EndreResponseUnion2();
+        endreResponseUnion2.setId(endreErrorUnion2Result.getId());
+
+        var endreResponse2 = new EndreResponse2();
+        endreResponse2.setId(endreResponse2Result.getId2());
+        endreResponse2.setPersonProfil(endreResponse2PersonProfil);
+        endreResponseUnion2.setEndreResponse2(endreResponse2);
+
+        var endreResponse3List = new ArrayList<EndreResponse3>();
+        for (var itEndreResponse3Result : endreResponse3Result) {
+            var endreResponse3 = new EndreResponse3();
+            endreResponse3.setId(itEndreResponse3Result.getId3());
+            endreResponse3.setPersonProfil(endreResponse3PersonProfil.get(endreResponse3.getId()));
+            endreResponse3List.add(endreResponse3);
+        }
+        endreResponseUnion2.setEndreResponse3(endreResponse3List);
+        endreResponseUnion2.setErrors(endreErrorsUnion2List);
+
+        return CompletableFuture.completedFuture(endreResponseUnion2);
+    }
+
+    private PersonProfil getEndreResponse2PersonProfil(
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 result,
+            SelectionSets select) {
+        if (!select.contains("endreResponse2/personProfil") || result == null) {
+            return null;
+        }
+
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(result.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
+        return nodes.values().stream().findFirst().orElse(null);
+    }
+
+    private Map<String, PersonProfil> getEndreResponse3PersonProfil(
+            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> result,
+            SelectionSets select) {
+        if (!select.contains("endreResponse3/personProfil") || result == null) {
+            return Map.of();
+        }
+
+        var ids = result.stream().map(it -> it.getPers3().getId()).collect(Collectors.toSet());
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("endreResponse3/personProfil"));
+    }
+}

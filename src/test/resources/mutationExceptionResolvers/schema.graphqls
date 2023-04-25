@@ -1,0 +1,83 @@
+input EndreInput @record(table : "PERSON") {
+  id: ID!
+  navn: String @column(name: "FORNAVN")
+  etternavn: String
+  endre2: EndreInput2 @column(name : "endreDouble")
+}
+
+input EndreInput2 @record(table : "PERSON") {
+  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+}
+
+interface Error {
+  path: [String!]!
+  message: String!
+}
+
+type SomeErrorA implements Error @error(name: "EXCEPTION_TEST") {
+  path: [String!]!
+  message: String!
+}
+
+type SomeErrorB implements Error @error(name: "EXCEPTION_TEST_CAUSE") {
+  path: [String!]!
+  message: String!
+}
+
+union EndreErrorsUnion1 = SomeErrorA
+union EndreErrorsUnion2 = SomeErrorA | SomeErrorB
+
+type EndreResponse {
+  id: ID!
+  endreResponse2: EndreResponse2
+  endreResponse3: [EndreResponse3!]
+  errors: [SomeErrorB!]!
+}
+
+type EndreResponseUnion1 {
+  id: ID!
+  endreResponse2: EndreResponse2
+  endreResponse3: [EndreResponse3!]
+  errors: [EndreErrorsUnion1!]!
+}
+
+type EndreResponseUnion2 {
+  id: ID!
+  endreResponse2: EndreResponse2
+  endreResponse3: [EndreResponse3!]
+  errors: [EndreErrorsUnion2!]!
+}
+
+type EndreResponse2 {
+  id: ID! @column(name : "id2")
+  personProfil: PersonProfil
+}
+
+type EndreResponse3 {
+  id: ID! @column(name : "id3")
+  personProfil: PersonProfil @column(name : "pers3")
+}
+
+type Mutation {
+  endreError(input: EndreInput!): EndreResponse! @service(name : "TEST_PERSON")
+  endreErrorUnion1(navn: String! @column(name: "FORNAVN")): EndreResponseUnion1! @service(name : "TEST_PERSON")
+  endreErrorUnion2(input: EndreInput!): EndreResponseUnion2! @service(name : "TEST_PERSON")
+}
+
+interface Node {
+  id: ID!
+}
+
+type PersonProfil implements Node @node(table : "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  postadresse: Postadresse @resolver @notGenerated
+  dod: Boolean @column(name : "STATUS_DOD")
+}
+
+type Query {
+  " Dummy query, since the schema insists that there must be at least one."
+  i(id: ID): ID! @notGenerated
+}

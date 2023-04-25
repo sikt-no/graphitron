@@ -14,6 +14,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
+import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
@@ -21,6 +22,7 @@ import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
 import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -35,10 +37,23 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractMethodGenerator<T> {
     protected final static String SELECTION_NAME = "select";
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
+    protected final Map<String, Class<?>> enumOverrides;
+    protected final Map<String, Method> conditionOverrides;
 
     public DBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+        this(localObject, processedSchema, Map.of(), Map.of());
+    }
+
+    public DBMethodGenerator(
+            ObjectDefinition localObject,
+            ProcessedSchema processedSchema,
+            Map<String, Class<?>> enumOverrides,
+            Map<String, Method> conditionOverrides
+    ) {
         super(localObject, processedSchema);
         dependencySet.add(ContextDependency.getInstance());
+        this.enumOverrides = enumOverrides;
+        this.conditionOverrides = conditionOverrides;
     }
 
     @Override
@@ -72,7 +87,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      */
     protected CodeBlock createSelectJoins(List<SQLJoinStatement> joinList) {
         var codeBuilder = CodeBlock.builder();
-        joinList.forEach(join -> codeBuilder.add(join.toJoinString()));
+        joinList.forEach(join -> codeBuilder.add(join.toJoinString(conditionOverrides)));
         return codeBuilder.build();
     }
 
@@ -91,7 +106,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      * It deduces how each layer of row call should be structured by keeping track of joins and following field references.
      * @return Code block which contains the entire recursive structure of the row statement.
      */
-    protected CodeBlock generateSelectRow(GeneratorContext context) {
+    protected CodeBlock generateSelectRow(FetchContext context) {
         var codeBlockBuilder = CodeBlock
                 .builder()
                 .add("row(\n")
@@ -134,7 +149,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         return codeBlockBuilder.build();
     }
 
-    private CodeBlock createMappingFunction(GeneratorContext context, List<ObjectField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
+    private CodeBlock createMappingFunction(FetchContext context, List<ObjectField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
         boolean hasIdField = fieldsWithoutTable.stream()
                 .map(ObjectField::getFieldType)
                 .anyMatch(FieldType::isID);
@@ -199,7 +214,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, GeneratorContext context, List<ObjectField> fieldsWithoutTable) {
+    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<ObjectField> fieldsWithoutTable) {
         var codeBlockBuilder = CodeBlock.builder();
         codeBlockBuilder.add("$T.class, r ->\n", context.getReferenceObject().getGraphClassName());
         codeBlockBuilder.indent().indent();
@@ -233,7 +248,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     /**
      * Generate a single argument in the row method call.
      */
-    private CodeBlock generateForScalarField(ObjectField field, GeneratorContext context) {
+    private CodeBlock generateForScalarField(ObjectField field, FetchContext context) {
         var fieldType = field.getTypeName();
         var refObject = context.getReferenceObject();
 
@@ -326,7 +341,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     private CodeBlock renderValueSide(boolean hasEnumReference, String dbName, String valueName) {
         var code = CodeBlock.builder();
         if (hasEnumReference) {
-            var apiEnumType = GeneratorEnum.valueOf(dbName.toUpperCase()).getEnumType();
+            var enumName = dbName.toUpperCase();
+            var apiEnumType = enumOverrides.containsKey(enumName) ?  enumOverrides.get(enumName) : GeneratorEnum.valueOf(enumName).getEnumType();
             code.add("$T.$L", ClassName.get(apiEnumType.getPackageName(), apiEnumType.getSimpleName()), valueName);
         } else {
             code.add("$S", valueName);

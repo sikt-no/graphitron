@@ -7,6 +7,7 @@ import java.lang.String;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilResponseMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponseWithPerson;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
@@ -14,7 +15,6 @@ import no.fellesstudentsystem.graphql.generated.model.Postadresse;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
 import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.queries.PostadresseDBQueries;
-import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePersonWithProfilResponseMutationResolver {
@@ -34,6 +34,7 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
         var select = new SelectionSets(env.getSelectionSet());
 
         var endrePersonWithProfilResponseResult = testPersonService.endrePersonWithProfilResponse(id);
+
         var endreResponseWithPersonPersonProfil = getEndreResponseWithPersonPersonProfil(endrePersonWithProfilResponseResult, select);
         var endreResponseWithPersonPost = getEndreResponseWithPersonPost(endrePersonWithProfilResponseResult, select);
 
@@ -46,9 +47,9 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     }
 
     private PersonProfil getEndreResponseWithPersonPersonProfil(
-            no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse result,
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse result,
             SelectionSets select) {
-        if (!select.contains("personProfil")) {
+        if (!select.contains("personProfil") || result == null) {
             return null;
         }
 
@@ -57,9 +58,9 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     }
 
     private Postadresse getEndreResponseWithPersonPost(
-            no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse result,
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse result,
             SelectionSets select) {
-        if (!select.contains("post")) {
+        if (!select.contains("post") || result == null) {
             return null;
         }
 

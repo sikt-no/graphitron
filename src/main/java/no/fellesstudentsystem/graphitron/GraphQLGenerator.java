@@ -1,10 +1,13 @@
 package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,11 +25,8 @@ public class GraphQLGenerator {
     }
 
     public static void generate() throws IOException {
-        GeneratorConfig.loadProperties();
-        var schemaLocations = new ArrayList<>(GeneratorConfig.schemaFiles());
-        LOGGER.info("Reading graphql schemas {}", schemaLocations);
-        var typeRegistry = getTypeDefinitionRegistry(schemaLocations);
-        var processedSchema = new ProcessedSchema(typeRegistry);
+        var processedSchema = getProcessedSchema();
+        processedSchema.validate();
 
         var generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
@@ -34,9 +34,21 @@ public class GraphQLGenerator {
                 new UpdateResolverClassGenerator(processedSchema)
         );
 
+        generate(generators);
+    }
+
+    public static void generate(List<ClassGenerator<? extends GenerationTarget>> generators) throws IOException {
         for (var g : generators) {
             g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
             LOGGER.info("Generated sources to: " + GeneratorConfig.outputPackage() + "." + g.getDefaultSaveDirectoryName());
         }
+    }
+
+    @NotNull
+    public static ProcessedSchema getProcessedSchema() throws IOException {
+        GeneratorConfig.loadProperties();
+        var schemaLocations = new ArrayList<>(GeneratorConfig.schemaFiles());
+        LOGGER.info("Reading graphql schemas {}", schemaLocations);
+        return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations));
     }
 }

@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonNestedMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreInputLevel1;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
@@ -23,7 +24,6 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
 import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.queries.PostadresseDBQueries;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
-import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMutationResolver {
@@ -128,9 +128,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     }
 
     private PersonProfil getEndreResponse2PersonProfil(
-            no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse2 result,
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 result,
             SelectionSets select) {
-        if (!select.contains("endreResponse2/personProfil")) {
+        if (!select.contains("endreResponse2/personProfil") || result == null) {
             return null;
         }
 
@@ -139,9 +139,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     }
 
     private Map<String, PersonProfil> getEndreResponse3PersonProfil(
-            List<no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse3> result,
+            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> result,
             SelectionSets select) {
-        if (!select.contains("endreResponse3/personProfil")) {
+        if (!select.contains("endreResponse3/personProfil") || result == null) {
             return Map.of();
         }
 
@@ -150,9 +150,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     }
 
     private Map<String, Postadresse> getEndreResponse4Post(
-            List<no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse4> result,
+            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse4> result,
             SelectionSets select) {
-        if (!select.contains("endreResponse3/endreResponse4/post")) {
+        if (!select.contains("endreResponse3/endreResponse4/post") || result == null) {
             return Map.of();
         }
 

@@ -10,6 +10,7 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -22,8 +23,20 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
             INTERFACE_FILE_NAME_SUFFIX = "MutationResolver",
             SAVE_DIRECTORY_NAME = ResolverClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + ".mutation";
 
+    private final Map<String, Class<?>> exceptionOverrides, serviceOverrides;
+
     public UpdateResolverClassGenerator(ProcessedSchema processedSchema) {
+        this(processedSchema, Map.of(), Map.of());
+    }
+
+    public UpdateResolverClassGenerator(
+            ProcessedSchema processedSchema,
+            Map<String, Class<?>> exceptionOverrides,
+            Map<String, Class<?>> serviceOverrides
+    ) {
         super(processedSchema);
+        this.exceptionOverrides = exceptionOverrides;
+        this.serviceOverrides = serviceOverrides;
     }
 
     @Override
@@ -57,7 +70,7 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
     public TypeSpec generate(ObjectField target) {
         return getSpec(
                 capitalize(target.getName()),
-                List.of(new UpdateResolverMethodGenerator(target, processedSchema))
+                List.of(new UpdateResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides))
         ).build();
     }
 

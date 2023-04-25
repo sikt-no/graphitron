@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SQL join condition which joins using an external condition method.
@@ -27,5 +29,10 @@ public class SQLJoinOnCondition extends SQLJoinField {
     @Override
     public String toJoinString(String joinSourceTable, String aliasName) {
         return condition.formatToString(List.of(joinSourceTable, aliasName));
+    }
+
+    @Override
+    public String toJoinString(String joinSourceTable, String aliasName, Map<String, Method> conditionOverrides) {
+        return condition.formatToString(List.of(joinSourceTable, aliasName), conditionOverrides);
     }
 }

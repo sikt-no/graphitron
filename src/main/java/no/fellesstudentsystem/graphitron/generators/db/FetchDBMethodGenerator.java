@@ -9,13 +9,14 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.abstractions.GeneratorContext;
+import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -36,6 +37,15 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         super(localObject, processedSchema);
     }
 
+    public FetchDBMethodGenerator(
+            ObjectDefinition localObject,
+            ProcessedSchema processedSchema,
+            Map<String, Class<?>> enumOverrides,
+            Map<String, Method> conditionOverrides
+    ) {
+        super(localObject, processedSchema, enumOverrides, conditionOverrides);
+    }
+
     /**
      * @param target A {@link ObjectField} for which a method should be generated for.
      *                       This must reference an object with the
@@ -47,7 +57,7 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         var refObject = ReferenceHelpers.findReferencedObjectDefinition(target, processedSchema);
         var localObject = getLocalObject();
 
-        var context = new GeneratorContext(processedSchema, target, localObject);
+        var context = new FetchContext(processedSchema, target, localObject, conditionOverrides);
         var selectRowCode = generateSelectRow(context);
         var hasKeyReference = context.hasKeyReference();
 
@@ -74,7 +84,7 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 .build();
     }
 
-    private CodeBlock declareAliasesAndSetInitialCode(GeneratorContext context, String actualRefTable) {
+    private CodeBlock declareAliasesAndSetInitialCode(FetchContext context, String actualRefTable) {
         var code = CodeBlock
                 .builder()
                 .add(createSelectAliases(context.getJoinList(), context.getAliasList()))
@@ -182,7 +192,7 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
             if (field.hasCondition()) {
                 var conditionInputs = List.of(actualRefTable, inputCondition.getCheckedNameWithPath());
-                codeBlockBuilder.add(wrapCondition(field.applyCondition(conditionInputs), hasWhere));
+                codeBlockBuilder.add(wrapCondition(field.applyCondition(conditionInputs, conditionOverrides), hasWhere));
             }
             if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
@@ -199,7 +209,7 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                     Stream.of(actualRefTable),
                     flatInputs.stream().map(InputCondition::getCheckedNameWithPath)
             ).collect(Collectors.toList());
-            codeBlockBuilder.add(wrapCondition(referenceField.applyCondition(inputs), hasWhere));
+            codeBlockBuilder.add(wrapCondition(referenceField.applyCondition(inputs, conditionOverrides), hasWhere));
         }
         return codeBlockBuilder.build();
     }
