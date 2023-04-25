@@ -8,10 +8,10 @@ import java.util.stream.Stream;
 /**
  * Stores operations related to rendering record method calls.
  */
-public class RecordMapping {
+public class RecordMethodMapping {
     private final String name, codeName, set, setCallPart;
 
-    public RecordMapping(String name) {
+    public RecordMethodMapping(String name) {
         var codeNameUpper = Stream
                 .of(name.toLowerCase().split("_"))
                 .map(StringUtils::capitalize)

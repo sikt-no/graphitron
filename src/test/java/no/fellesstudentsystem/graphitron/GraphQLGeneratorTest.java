@@ -312,6 +312,11 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
+    void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationMapIDsNotInDB", false);
+    }
+
+    @Test
     void generate_whenNoServiceMethodSet_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotSet"))
                 .isInstanceOf(IllegalStateException.class)

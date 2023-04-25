@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.ClassName;
-import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.RECORDS_PACKAGE_PATH;
 
@@ -13,9 +13,9 @@ public class SQLRecord {
     private final String name, type;
     private final ClassName graphClassName;
 
-    public SQLRecord(RecordMapping recordMapping) {
-        this.name = recordMapping.getCodeName() + RECORD_NAME_SUFFIX;
-        this.type = recordMapping.getName() + RECORD_NAME_SUFFIX;
+    public SQLRecord(RecordMethodMapping recordMethodMapping) {
+        this.name = recordMethodMapping.getCodeName() + RECORD_NAME_SUFFIX;
+        this.type = recordMethodMapping.getName() + RECORD_NAME_SUFFIX;
         graphClassName = ClassName.get(RECORDS_PACKAGE_PATH, type);
     }
 

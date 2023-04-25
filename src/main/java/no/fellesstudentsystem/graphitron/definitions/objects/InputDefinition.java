@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.InputObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLRecord;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
@@ -38,7 +38,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
             table = null;
         }
         hasTable = hasNode || hasRecord;
-        record = new SQLRecord(new RecordMapping(tableName));
+        record = new SQLRecord(new RecordMethodMapping(tableName));
     }
 
     /**

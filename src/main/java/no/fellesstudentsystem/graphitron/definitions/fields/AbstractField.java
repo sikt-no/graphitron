@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.*;
-import no.fellesstudentsystem.graphitron.definitions.mapping.SchemaMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam;
@@ -24,7 +24,7 @@ public abstract class AbstractField {
     private final String name, upperCaseName, unprocessedNameInput;
     private final FieldReference fieldReference;
     private final SQLCondition condition;
-    private final SchemaMapping schemaMapping, unprocessedInputSchemaMapping;
+    private final MethodMapping mappingFromFieldName, mappingFromColumn;
 
     private <T extends NamedNode<T> & DirectivesContainer<T>> AbstractField(T field, FieldType f) {
         name = field.getName();
@@ -45,8 +45,8 @@ public abstract class AbstractField {
             condition = null;
         }
         fieldType = f;
-        schemaMapping = new SchemaMapping(name);
-        unprocessedInputSchemaMapping = new SchemaMapping(unprocessedNameInput);
+        mappingFromFieldName = new MethodMapping(name);
+        mappingFromColumn = new MethodMapping(unprocessedNameInput);
     }
 
     public AbstractField(FieldDefinition field) {
@@ -93,15 +93,15 @@ public abstract class AbstractField {
     /**
      * @return Schema-side method name mappings based on the GraphQL equivalent of this field.
      */
-    public SchemaMapping getSchemaMapping() {
-        return schemaMapping;
+    public MethodMapping getMappingFromFieldName() {
+        return mappingFromFieldName;
     }
 
     /**
      * @return Schema-side method name mappings based on the GraphQL equivalent of this field.
      */
-    public SchemaMapping getUnprocessedInputSchemaMapping() {
-        return unprocessedInputSchemaMapping;
+    public MethodMapping getMappingFromColumn() {
+        return mappingFromColumn;
     }
 
     public FieldReference getFieldReference() {

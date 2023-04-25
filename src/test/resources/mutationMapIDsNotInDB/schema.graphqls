@@ -1,0 +1,18 @@
+type Query {
+  # Dummy query, since the schema insists that there must be at least one.
+  i(id: ID): ID! @notGenerated
+}
+
+type Mutation {
+  endrePermisjon(in: EndreInput!): EndreResponse! @service(name: "TEST_PERMISJON")
+}
+
+input EndreInput @record(table: "PERMISJON") {
+  id: ID!
+  studentId: ID!
+}
+
+type EndreResponse {
+  id: ID!
+  studentId: ID!
+}

@@ -202,7 +202,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                         .add(fillRecords(in, recordName, recursion + 1));
             } else {
                 code.addStatement(
-                        "$N" + in.getRecordMapping().asSetCall("$N" + in.getSchemaMapping().asGetCall()),
+                        "$N" + in.getRecordSetCall("$N" + in.getMappingFromFieldName().asGetCall()),
                         recordName,
                         iterableInputName
                 );
@@ -293,7 +293,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                         "var $L = $N.stream().flatMap(it -> it$L.stream()).collect($T.toList())",
                         asResultName(targetName),
                         asResultName(previousName),
-                        target.getUnprocessedInputSchemaMapping().asGetCall(),
+                        target.getMappingFromColumn().asGetCall(),
                         COLLECTORS.className
                 );
             } else {
@@ -301,7 +301,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                         "var $L = $N$L",
                         asResultName(targetName),
                         asResultName(previousName),
-                        target.getUnprocessedInputSchemaMapping().asGetCall()
+                        target.getMappingFromColumn().asGetCall()
                 );
             }
         }
@@ -378,7 +378,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                         "for (var $L : $N$L)",
                         targetResultName,
                         asIterableResultName(previous.getUnprocessedNameInput()),
-                        target.getUnprocessedInputSchemaMapping().asGetCall()
+                        target.getMappingFromColumn().asGetCall()
                 );
             } else {
                 code.beginControlFlow("for (var $L : $N)", targetResultName, asResultName(target.getUnprocessedNameInput()));
@@ -406,7 +406,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         var code = CodeBlock.builder();
 
         var fieldName = field.getName();
-        var fieldMapping = field.getSchemaMapping();
+        var fieldMapping = field.getMappingFromFieldName();
 
         var previousTypeName = previousField.getTypeName();
         var previousIsIterable = previousField.getFieldType().isIterableWrapped();
@@ -427,7 +427,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
             }
         } else {
             code.addStatement(
-                    "$N" + fieldMapping.asSetCall("$N" + field.getUnprocessedInputSchemaMapping().asGetCall()),
+                    "$N" + fieldMapping.asSetCall("$N" + field.getMappingFromColumn().asGetCall()),
                     targetTypeNameLower,
                     previousIsIterable ? asIterableResultName(previousField.getUnprocessedNameInput()) : asResultName(previousField.getUnprocessedNameInput())
             );
@@ -546,7 +546,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                 .flatMap(field -> {
                             var nextReturn = Arrays
                                     .stream(returnMethods)
-                                    .filter(m -> m.getName().equals(field.getUnprocessedInputSchemaMapping().asGet()))
+                                    .filter(m -> m.getName().equals(field.getMappingFromColumn().asGet()))
                                     .findFirst();
                             return generateGetMethod(
                                     field,
@@ -584,7 +584,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         var querySource = asQueryClass(typeName);
         var querySourceName = uncapitalize(querySource);
         var queryMethod = asQueryNodeMethod(typeName);
-        var idCall = returnTypeIsRecord ? ".getId()" : field.getUnprocessedInputSchemaMapping().asGetCall() + ".getId()";
+        var idCall = returnTypeIsRecord ? ".getId()" : field.getMappingFromColumn().asGetCall() + ".getId()";
         if (previousIsIterable) {
             code.addStatement(
                     "var $L = $N.stream().map(it -> it$L).collect($T.toSet())",

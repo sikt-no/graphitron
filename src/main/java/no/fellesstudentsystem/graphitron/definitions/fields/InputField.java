@@ -1,7 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.InputValueDefinition;
-import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 
 import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.COLUMN;
@@ -12,18 +13,24 @@ import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.COLUMN;
 public class InputField extends AbstractField {
     private final String defaultValue;
     private final SQLImplicitFKJoin join;
-    private final RecordMapping recordMapping;
+    private final RecordMethodMapping recordFromColumnMapping;
+    private final MethodMapping recordFromSchemaNameMapping;
+    private final boolean hasColumn;
 
     public InputField(InputValueDefinition field) {
         super(field);
         defaultValue = field.getDefaultValue() != null ? field.getDefaultValue().toString() : "";
 
-        if (field.hasDirective(COLUMN.getName())) {
+        hasColumn = field.hasDirective(COLUMN.getName());
+        if (hasColumn) {
             join = getSqlRoleJoin(field);
+            recordFromColumnMapping = new RecordMethodMapping(getUpperCaseName());
+            recordFromSchemaNameMapping = null;
         } else {
             join = null;
+            recordFromColumnMapping = null;
+            recordFromSchemaNameMapping = new MethodMapping(getUnprocessedNameInput());
         }
-        recordMapping = new RecordMapping(getUpperCaseName());
     }
 
     /**
@@ -55,9 +62,9 @@ public class InputField extends AbstractField {
     }
 
     /**
-     * @return Record-side method name mappings based on the DB equivalent of this input.
+     * @return Record-side method name mappings based on the name of the field or the directive set on this input.
      */
-    public RecordMapping getRecordMapping() {
-        return recordMapping;
+    public String getRecordSetCall(String input) {
+        return hasColumn ? recordFromColumnMapping.asSetCall(input) : recordFromSchemaNameMapping.asSetCall(input);
     }
 }

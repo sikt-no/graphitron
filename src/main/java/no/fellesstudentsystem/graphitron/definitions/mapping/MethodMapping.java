@@ -5,10 +5,10 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
 /**
  * Stores operations related to rendering input method calls.
  */
-public class SchemaMapping {
+public class MethodMapping {
     private final String name, get, getCall, set, setCallPart;
 
-    public SchemaMapping(String name) {
+    public MethodMapping(String name) {
         this.name = name;
         get = "get" + capitalize(name);
         getCall = "." + get + "()";

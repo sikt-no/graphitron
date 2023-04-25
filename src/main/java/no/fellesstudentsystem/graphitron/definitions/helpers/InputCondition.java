@@ -48,7 +48,7 @@ public class InputCondition {
     }
 
     public String getNameWithPath() {
-        return namePath.isEmpty() ? input.getName() : namePath + input.getSchemaMapping().asGetCall();
+        return namePath.isEmpty() ? input.getName() : namePath + input.getMappingFromFieldName().asGetCall();
     }
 
     public String getChecksAsSequence() {
