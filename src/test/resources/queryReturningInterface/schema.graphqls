@@ -1,32 +1,35 @@
-type Query {
-  node(id: ID!): Node
-  terminNode(terminId: String!): Terminbasert
-  nodes(ids: [ID!]): [Node] @notGenerated
+type Kull implements Terminbasert & Node @node {
+  id: ID!
+  terminId: String! @column(name : "TERMINKODE")
+  navn: String! @column(name : "STUDIEKULLNAVN")
 }
 
-interface Terminbasert {
-  terminId: String!
+interface Node {
+  id: ID!
 }
 
-type ProgramStudierett @node(table: "STUDIERETT") {
+type ProgramStudierett implements Node @node(table : "STUDIERETT") {
   id: ID!
   kull: Kull!
   studierettperiode: Studierettperiode!
   studierettstatus: Studierettstatus! @resolver
 }
 
-type Kull implements Terminbasert @node {
-  id: ID!
-  terminId: String! @column(name: "TERMINKODE")
-  navn: String! @column(name: "STUDIEKULLNAVN")
+type Query {
+  node(id: ID!): Node
+  terminNode(terminId: String!): Terminbasert
+  nodes(ids: [ID!]): [Node] @notGenerated
 }
 
 type Studierettperiode {
-  fraDato: Date! @column(name: "DATO_STUDIERETT_TILDELT")
-  tilDato: Date @column(name: "DATO_STUDIERETT_GYLDIG_TIL")
+  fraDato: Date! @column(name : "DATO_STUDIERETT_TILDELT")
+  tilDato: Date @column(name : "DATO_STUDIERETT_GYLDIG_TIL")
 }
 
-type Studierettstatus @node {
+type Studierettstatus implements Node @node {
   id: ID!
 }
 
+interface Terminbasert {
+  terminId: String!
+}

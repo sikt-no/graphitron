@@ -1,16 +1,17 @@
+type Kull implements Node @node {
+  id: ID!
+}
+
+interface Node {
+  id: ID!
+}
+
+type ProgramStudierett implements Node @node(table : "STUDIERETT") {
+  id: ID!
+  kull: Kull!
+  referertNode(id: ID!): Node! @resolver
+}
+
 type Query {
   programStudierett(id: ID!): ProgramStudierett
 }
-
-type ProgramStudierett @node(table: "STUDIERETT") {
-  id: ID!
-  kull: Kull!
-  referertNode(id: ID!): Node! @resolver #Nb! dette blir "løst koblet" fra ProgramStudierett. Det er ikke implementert noe som håndhever at "referertNode" har en relasjon fra ProgramStudierett
-}
-
-type Kull @node {
-  id: ID!
-}
-
-
-

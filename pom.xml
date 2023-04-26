@@ -7,7 +7,7 @@
     <properties>
         <generatedSourcesOutputDirectory>${project.build.directory}/generated-sources</generatedSourcesOutputDirectory>
         <generatorPackagePath>no/fellesstudentsystem/graphitron/**</generatorPackagePath>
-        <schemaRootDirectory>${project.basedir}/../fs-graphql-spec/src/main/resources</schemaRootDirectory>
+        <schemaLocation>${project.basedir}/../fs-graphql-spec/target/generated-sources</schemaLocation>
     </properties>
     <parent>
         <groupId>no.fellesstudentsystem</groupId>
@@ -82,8 +82,8 @@
                     <mainClass>no.fellesstudentsystem.graphitron.GraphQLGenerator</mainClass>
                     <systemProperties>
                         <systemProperty>
-                           <key>schemaRootDirectory</key>
-                            <value>${schemaRootDirectory}</value>
+                            <key>schemaFiles</key>
+                            <value>${schemaLocation}/expanded-schema.graphql</value>
                         </systemProperty>
                         <systemProperty>
                             <key>outputDirectory</key>
@@ -109,39 +109,6 @@
                         ${generatedSourcesOutputDirectory}
                     </sourceRoot>
                 </configuration>
-            </plugin>
-
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>add-generated-sources</id>
-                        <phase>process-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${generatedSourcesOutputDirectory}</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>add-generated-resources</id>
-                        <phase>generate-resources</phase>
-                        <goals>
-                            <goal>add-resource</goal>
-                        </goals>
-                        <configuration>
-                            <resources>
-                                <resource>
-                                    <directory>${generatedSourcesOutputDirectory}</directory>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
 
             <!-- Custom compilation mode. Need to compile twice:

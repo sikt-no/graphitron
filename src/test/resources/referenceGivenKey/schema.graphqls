@@ -1,16 +1,34 @@
+type Campusemne implements Node @node(table : "CAMPUS_EMNE") {
+  id: ID!
+}
+
+type Emne implements Node @node {
+  id: ID!
+  campuser: [Campusemne!]! @resolver @reference(key : "CAMPUS_EMNE__HAR__EMNE__FK")
+}
+
+interface Node {
+  id: ID!
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
 type Query {
-  emner(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    first: Int = 100,
-    after: String,
-  ): QueryEmneConnection @connection(for: "Emne")
+  emner(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): QueryEmneConnection
 }
 
-type Emne @node {
-  id: ID!
-  campuser: [Campusemne!]! @resolver @reference(key: "CAMPUS_EMNE__HAR__EMNE__FK")
+type QueryEmneConnection {
+  edges: [QueryEmneConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Emne!]!
 }
 
-type Campusemne @node(table: "CAMPUS_EMNE") {
-  id: ID!
+type QueryEmneConnectionEdge {
+  cursor: String
+  node: Emne
 }

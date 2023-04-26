@@ -1,7 +1,11 @@
-type Query {
-  nodes(ids: [ID!]): [Node] #collections of interfaces is not supported
+interface Node {
+  id: ID!
 }
 
-type ProgramStudierett @node(table: "STUDIERETT") {
+type ProgramStudierett implements Node @node(table : "STUDIERETT") {
   id: ID!
+}
+
+type Query {
+  nodes(ids: [ID!]): [Node]
 }

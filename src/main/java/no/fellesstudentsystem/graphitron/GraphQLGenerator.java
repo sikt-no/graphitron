@@ -12,9 +12,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.fellesstudentsystem.graphql.schema.SchemaWriter.assembleSchema;
-import static no.fellesstudentsystem.graphql.schema.SchemaReader.getTypeDefinitionRegistry;
-import static no.fellesstudentsystem.graphql.schema.SchemaWriter.writeSchemaToDirectory;
+import static no.fellesstudentsystem.graphitron.schema.SchemaReader.getTypeDefinitionRegistry;
 
 public class GraphQLGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
@@ -25,11 +23,9 @@ public class GraphQLGenerator {
 
     public static void generate() throws IOException {
         GeneratorConfig.loadProperties();
-        var schemaLocations = new ArrayList<>(GeneratorConfig.schemaLocations());
+        var schemaLocations = new ArrayList<>(GeneratorConfig.schemaFiles());
         LOGGER.info("Reading graphql schemas {}", schemaLocations);
         var typeRegistry = getTypeDefinitionRegistry(schemaLocations);
-        var schema = assembleSchema(typeRegistry);
-        writeSchemaToDirectory(schema, GeneratorConfig.outputDirectory());
         var processedSchema = new ProcessedSchema(typeRegistry);
 
         var generators = List.of(

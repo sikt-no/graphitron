@@ -1,12 +1,30 @@
-type Query {
-  person(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    first: Int = 100,
-    after: String,
-  ): PersonProfilConnection @connection(for: "PersonProfil")
+interface Node {
+  id: ID!
 }
 
-type PersonProfil @node(table: "PERSON")  {
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type PersonProfil implements Node @node(table : "PERSON") {
   id: ID!
   fornavn: String!
+}
+
+type PersonProfilConnection {
+  edges: [PersonProfilConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [PersonProfil!]!
+}
+
+type PersonProfilConnectionEdge {
+  cursor: String
+  node: PersonProfil
+}
+
+type Query {
+  person(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): PersonProfilConnection
 }

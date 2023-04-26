@@ -1,9 +1,0 @@
-type Query {
-    kommune(fylkesnr: String!): Kommune
-}
-
-type Kommune {
-    kommuneID: ID!
-    kommunenr: Int!
-    fylkesnummer: String! @column(name: FYLKESNR)  #name should be string, "FYLKESNR", not EnumValue
-}

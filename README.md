@@ -4,7 +4,7 @@ brukt til å besvare forespørsler fra klienter.
 
 ## Skjema
 Annoteringen skjer via direktiver direkte i GraphQL-skjemaet. Direktivene må legges inn i skjemaet som Graphitron kjøres
-mot, per default er dette i _schema.graphqls_ i modulen _fs-graphql-spec_. I schema.graphqls er direktivene og deres
+mot, per default er dette i _schema.graphql_ i modulen _fs-graphql-spec_. I schema.graphql er direktivene og deres
 parametre beskrevet med kommentarer. Ytterligere forklaring med enkelte eksempler finnes nedenfor i denne readme-fila.
 
 De viktigste direktivene er _resolver_, _notGenerated_ og _node_. 

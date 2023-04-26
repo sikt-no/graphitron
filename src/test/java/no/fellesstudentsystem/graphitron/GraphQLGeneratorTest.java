@@ -4,10 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import graphql.schema.idl.errors.SchemaProblem;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
-import no.fellesstudentsystem.graphql.schema.SchemaWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,12 +40,11 @@ public class GraphQLGeneratorTest {
     @AfterEach
     void teardown() {
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
-        System.clearProperty(GeneratorConfig.PROPERTY_SCHEMA_LOCATIONS);
-        System.clearProperty(GeneratorConfig.PROPERTY_SCHEMA_ROOT_DIRECTORY);
+        System.clearProperty(GeneratorConfig.PROPERTY_SCHEMA_FILES);
     }
 
     private Map<String, String> generateFiles(String schemaParentFolder) throws IOException {
-        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_LOCATIONS, SRC_TEST_RESOURCES + schemaParentFolder + "/schema.graphqls," + SRC_TEST_RESOURCES + "defaultDirectives.graphqls");
+        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_FILES, SRC_TEST_RESOURCES + schemaParentFolder + "/schema.graphqls," + SRC_TEST_RESOURCES + "defaultDirectives.graphqls");
         System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
         GraphQLGenerator.generate();
         Map<String, String> generatedFiles = new HashMap<>();
@@ -65,78 +62,78 @@ public class GraphQLGeneratorTest {
 
     @Test
     void generate_usingAllDefinedDirectives_shouldGenerateResolversForAllSupportedTypesOfJoins() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("allDefinedDirectivesInUse", true);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("allDefinedDirectivesInUse");
     }
 
     @Test //jOOQ' støtter maks 22 type-safe records. Flere enn 22 er støttet, men uten type safety.
     void generate_whenTypeHasMoreThan22Fields_shouldGenerateValidResolver() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("moreThan22Fields", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("moreThan22Fields");
     }
 
     @Test
     void generate_manualResolver_shouldNotGenerateAnyResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("manualResolver", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("manualResolver");
     }
 
     @Test
     void generate_whenMixOfOptionalAndRequiredFieldsOnRequiredLeafNode_shouldGenerateQueryThatIncludesOneRequiredField() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mixOfOptionalAndRequiredFields", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mixOfOptionalAndRequiredFields");
     }
 
     @Test
     void generate_queryWithPagination_shouldCreateQueryResolverWithPaginationSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPagination", true);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPagination");
     }
 
     @Test
     void generate_queryWithResolverPagination_shouldCreateResolverWithPaginationOnResolver() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithResolverPagination", true);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithResolverPagination");
     }
 
     @Test
     void generate_queryWithPaginationFullRelayBoilerplate_shouldCreateQueryResolverWithPaginationSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPaginationRelayBoilerplate", "queryWithPagination", true);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPaginationRelayBoilerplate", "queryWithPagination");
     }
 
     @Test
     void generate_queryWithMultipleAndOptionalArguments_shouldCreateQueryResolverThatHandlesMultipleAndOptionalArguments() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultipleArguments", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultipleArguments");
     }
 
     @Test
     void generate_queryWithInputTypes_shouldCreateQueryResolverThatHandlesInputTypes() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithInputTypeArguments", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithInputTypeArguments");
     }
 
     @Test
     void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithConditions", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithConditions");
     }
 
     @Test
     void generate_referenceGivenKey_shouldJoinTables() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKey", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKey");
     }
 
     @Test
     void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("multipleAliasesForSameType", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("multipleAliasesForSameType");
     }
 
     @Test
     void generate_queryWithoutPagination_shouldCreateQueryAndQueryResolverWithoutPaginationSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithoutPagination", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithoutPagination");
     }
 
     @Test
     void generate_queryThatReturnsInterface_shouldCreateResolver() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryReturningInterface", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();
     }
 
     @Test
     void generate_nonRootObjectThatReturnsInterface_shouldCreateResolverAndLogWarning() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverReturningInterface", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverReturningInterface");
         Set<String> logMessages = getLogMessagesWithLevelWarn();
         assertThat(logMessages).containsOnly(
                 "No column(s) with name(s) 'REFERERTNODE' found in table 'STUDIERETT'",
@@ -165,20 +162,6 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
-    void generate_whenMissingRequiredDirectiveArgument_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/missingDirectiveArgument"))
-                .isInstanceOf(SchemaProblem.class)
-                .hasMessage("errors=['kommunenr' [@7:5] failed to provide a value for the non null argument 'name' on directive 'column']");
-    }
-
-    @Test
-    void generate_whenInvalidDirectiveArgument_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/invalidDirectiveArgument"))
-                .isInstanceOf(SchemaProblem.class)
-                .hasMessage("errors=['fylkesnummer' [@8:5] uses an illegal value for the argument 'name' on directive 'column'. Argument value is not a valid value of scalar 'String'.]");
-    }
-
-    @Test
     void generate_whenIncorrectImplicitJoin_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implicitJoinFailure"))
                 .isInstanceOf(IllegalStateException.class)
@@ -187,7 +170,7 @@ public class GraphQLGeneratorTest {
 
     @Test
     void generate_whenRecognizedDirectivesNotUsedInSchema_shouldLogWarning() throws IOException {
-        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_LOCATIONS, SRC_TEST_RESOURCES + "warning/unusedDirective/schema.graphqls");
+        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_FILES, SRC_TEST_RESOURCES + "warning/unusedDirective/schema.graphqls");
         System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
         GraphQLGenerator.generate();
         Set<String> logMessages = getLogMessagesWithLevelWarn();
@@ -198,7 +181,11 @@ public class GraphQLGeneratorTest {
 
     @Test
     void generate_whenSpecifiedSchemaRootDirectory_shouldInfoLogAllExpectedSchemaFiles() throws IOException {
-        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_ROOT_DIRECTORY, SRC_TEST_RESOURCES + "testReadingSchemasInDirectory");
+        var testDirectory = SRC_TEST_RESOURCES + "testReadingSchemasInDirectory";
+        System.setProperty(
+                GeneratorConfig.PROPERTY_SCHEMA_FILES,
+                testDirectory + "/schema1.graphqls," + testDirectory + "/subdir/schema2.graphqls," + testDirectory + "/subdir/subsubdir/schema3.graphqls"
+        );
         System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
         GraphQLGenerator.generate();
         Set<String> logMessages = getLogMessagesWithLevel(Level.INFO);
@@ -206,15 +193,6 @@ public class GraphQLGeneratorTest {
                 msg.startsWith("Reading graphql schemas [") && msg.contains("schema1.graphqls") && msg.contains("schema2.graphqls")
                         && msg.contains("schema3.graphqls") && !msg.contains("notASchema"))
         ).isTrue();
-    }
-
-    @Test
-    void generate_whenSpecifyingBothSchemaRootDirectoryAndSchemaLocationProperties_shouldThrowException() {
-        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_ROOT_DIRECTORY, SRC_TEST_RESOURCES + "testReadingSchemasInDirectory");
-        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_LOCATIONS, SRC_TEST_RESOURCES + "testReadingSchemasInDirectory/schema1.graphqls");
-        assertThatThrownBy(GraphQLGenerator::generate)
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Only one of the following properties should be set at the same time: " + GeneratorConfig.PROPERTY_SCHEMA_LOCATIONS + " " + GeneratorConfig.PROPERTY_SCHEMA_ROOT_DIRECTORY);
     }
 
     @Test
@@ -306,22 +284,22 @@ public class GraphQLGeneratorTest {
 
     @Test
     void generate_mutation_shouldGenerateResolversWithInputsAndResponseObjects() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationInputAndResponseResolvers", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationInputAndResponseResolvers");
     }
 
     @Test
     void generate_mutationWithListFields_shouldGenerateResolversForLists() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationListResolvers", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationListResolvers");
     }
 
     @Test
     void generate_mutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationNestedResolvers", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationNestedResolvers");
     }
 
     @Test
     void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationMapIDsNotInDB", false);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationMapIDsNotInDB");
     }
 
     @Test
@@ -365,7 +343,7 @@ public class GraphQLGeneratorTest {
                 .collect(Collectors.toSet());
     }
 
-    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String schemaFolder, String expectedOutputFolder, boolean testGeneratedSchema) throws IOException {
+    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String schemaFolder, String expectedOutputFolder) throws IOException {
         Map<String, String> generatedFiles = generateFiles(schemaFolder);
         var expectedFileNames = new HashSet<String>();
 
@@ -383,15 +361,11 @@ public class GraphQLGeneratorTest {
             }
         });
 
-        assertThat(expectedFileNames)
-                .containsExactlyInAnyOrderElementsOf(
-                        generatedFiles.keySet().stream()
-                                .filter(fileName -> testGeneratedSchema || !fileName.equals(SchemaWriter.FILENAME))
-                                .collect(Collectors.toList()));
+        assertThat(expectedFileNames).containsExactlyInAnyOrderElementsOf(generatedFiles.keySet());
     }
 
-    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String resourceRootFolder, boolean testGeneratedSchema) throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(resourceRootFolder, resourceRootFolder, testGeneratedSchema);
+    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String resourceRootFolder) throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(resourceRootFolder, resourceRootFolder);
     }
 
     private static String readFileAsString(Path file) throws IOException {

@@ -1,4 +1,4 @@
-#defines all default directives, should contain all directives found in 'fs-graphql-spec/src/main/resources/schema.graphqls'
+#defines all default directives, should contain all directives found in 'fs-graphql-spec/src/main/resources/schema.graphql'
 
 directive @connection(for: String) on FIELD_DEFINITION
 

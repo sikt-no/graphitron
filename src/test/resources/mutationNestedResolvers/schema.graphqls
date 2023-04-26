@@ -1,26 +1,17 @@
-type Query {
-  # Dummy query, since the schema insists that there must be at least one.
-  i(id: ID): ID! @notGenerated
-}
-
-type Mutation {
-  endrePersonNested(input: EndreInputLevel1!): EndreResponse! @service(name: "TEST_PERSON")
-}
-
-input EndreInputLevel1 @record(table: "PERSON") {
+input EndreInputLevel1 @record(table : "PERSON") {
   id: ID!
   endreA1: EndreInputLevel2A!
-  endreA2: EndreInputLevel2A @column(name: "endreDobbel")
+  endreA2: EndreInputLevel2A @column(name : "endreDobbel")
   endreB: EndreInputLevel2B
   endreC1: EndreInputLevel2C!
-  endreC2: [EndreInputLevel2C!]! # Undefined behaviour, but will compile.
+  endreC2: [EndreInputLevel2C!]!
 }
 
-input EndreInputLevel2A @record(table: "PERSON") {
+input EndreInputLevel2A @record(table : "PERSON") {
   fornavn: String
 }
 
-input EndreInputLevel2B @record(table: "PERSON") {
+input EndreInputLevel2B @record(table : "PERSON") {
   fornavn: String
   endre3: [EndreInputLevel3!]
 }
@@ -29,12 +20,12 @@ input EndreInputLevel2C {
   etternavn: String!
 }
 
-input EndreInputLevel3 @record(table: "PERSON") {
-  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+input EndreInputLevel3 @record(table : "PERSON") {
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   endre4: [EndreInputLevel4!]
 }
 
-input EndreInputLevel4 @record(table: "PERSON") {
+input EndreInputLevel4 @record(table : "PERSON") {
   etternavn: String!
 }
 
@@ -45,34 +36,47 @@ type EndreResponse {
 }
 
 type EndreResponse2 {
-  id: ID! @column(name: "id2")
+  id: ID! @column(name : "id2")
   personProfil: PersonProfil
 }
 
 type EndreResponse3 {
-  id: ID! @column(name: "id3")
-  personProfil: PersonProfil @column(name: "pers3")
-  endreResponse4: [EndreResponse4!] @column(name: "endre4")
+  id: ID! @column(name : "id3")
+  personProfil: PersonProfil @column(name : "pers3")
+  endreResponse4: [EndreResponse4!] @column(name : "endre4")
 }
 
 type EndreResponse4 {
-  id: ID! @column(name: "id4")
-  post: Postadresse @column(name: "postAdr4")
+  id: ID! @column(name : "id4")
+  post: Postadresse @column(name : "postAdr4")
 }
 
-type PersonProfil @node(table: "PERSON") {
+type Mutation {
+  endrePersonNested(input: EndreInputLevel1!): EndreResponse! @service(name : "TEST_PERSON")
+}
+
+interface Node {
+  id: ID!
+}
+
+type PersonProfil implements Node @node(table : "PERSON") {
   id: ID!
   fornavn: String!
   etternavn: String!
-  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   postadresse: Postadresse @resolver @notGenerated
-  dod: Boolean @column(name: "STATUS_DOD")
+  dod: Boolean @column(name : "STATUS_DOD")
 }
 
-type Postadresse @node(table: "STUDENT") {
+type Postadresse implements Node @node(table : "STUDENT") {
   id: ID!
-  co: String @column(name: "ADRLIN1_SEMADR")
-  gate: String @column(name: "ADRLIN2_SEMADR")
-  postnummerOgSted: String @column(name: "ADRLIN3_SEMADR")
-  land: String @column(name: "ADRESSELAND_SEMADR")
+  co: String @column(name : "ADRLIN1_SEMADR")
+  gate: String @column(name : "ADRLIN2_SEMADR")
+  postnummerOgSted: String @column(name : "ADRLIN3_SEMADR")
+  land: String @column(name : "ADRESSELAND_SEMADR")
+}
+
+type Query {
+  " Dummy query, since the schema insists that there must be at least one."
+  i(id: ID): ID! @notGenerated
 }

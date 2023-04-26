@@ -1,20 +1,48 @@
-type Query {
-  person(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    first: Int = 100,
-    after: String
-  ): PersonProfilConnection @connection(for: "PersonProfil")
-
-  person2(eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER")): [PersonProfil]
+interface Node {
+  id: ID!
 }
 
-type PersonProfil @node(table: "PERSON") {
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Pass implements Node @node(table : "PASS") {
   id: ID!
-  pass(first: Int = 10, after: String): PassConnection @connection(for: "Pass") @resolver
+  passnummer: String! @column(name : "NUMMER")
+}
+
+type PassConnection {
+  edges: [PassConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Pass!]!
+}
+
+type PassConnectionEdge {
+  cursor: String
+  node: Pass
+}
+
+type PersonProfil implements Node @node(table : "PERSON") {
+  id: ID!
+  pass(first: Int = 10, after: String): PassConnection @resolver
   fornavn: String!
 }
 
-type Pass @node(table: "PASS") {
-  id: ID!
-  passnummer: String! @column(name: "NUMMER")
+type PersonProfilConnection {
+  edges: [PersonProfilConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [PersonProfil!]!
+}
+
+type PersonProfilConnectionEdge {
+  cursor: String
+  node: PersonProfil
+}
+
+type Query {
+  person(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): PersonProfilConnection
+  person2(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER")): [PersonProfil]
 }
