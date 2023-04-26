@@ -4,13 +4,15 @@ import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLRecord;
-import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.kjerneapi.services.GeneratorService;
+import org.apache.commons.lang3.EnumUtils;
+import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -24,8 +26,8 @@ import java.util.stream.Stream;
 
 import static java.util.Collections.nCopies;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -652,29 +654,18 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
      * Look for class object of the type returned by the specified service. Throw exception if not found.
      */
     private void checkService(ObjectField target) {
-        if (!localField.hasServiceReference()) {
-            throw new IllegalStateException(
-                    "Requested to generate a method for '"
-                            + localField.getName()
-                            + "' in type '"
-                            + localObject.getName()
-                            + "' without providing a service to call."
-            );
-        }
+        Validate.isTrue(localField.hasServiceReference(),
+                "Requested to generate a method for '%s' in type '%s' without providing a service to call.",
+                localField.getName(), localObject.getName());
 
-        var service = GeneratorService.valueOf(localField.getServiceReference()).getService();
-        if (getServiceReturnMethod(target, service).isEmpty()) {
-            var totalFields = countParams(target.getInputFields(), false);
-            throw new IllegalStateException(
-                    "Service '"
-                            + service.getName()
-                            + "' contains no method with the name '"
-                            + target.getName()
-                            + "' and "
-                            + totalFields
-                            + " parameter(s), which is required to generate the resolver."
-            );
-        }
+        var generatorService = EnumUtils.getEnum(GeneratorService.class, localField.getServiceReference());
+        Validate.isTrue(generatorService != null,
+                "Requested to generate a method for '%s' that calls service '%s', but no such service was found in '%s'",
+                localField.getName(), localField.getServiceReference(), GeneratorService.class.getName());
+
+        Validate.isTrue(getServiceReturnMethod(target, generatorService.getService()).isPresent(),
+                "Service '%s' contains no method with the name '%s' and %d parameter(s), which is required to generate the resolver.",
+                generatorService.getService().getName(), target.getName(), countParams(target.getInputFields(), false));
     }
 
     @Override

@@ -49,7 +49,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     }
 
     /**
-     * @return Does this object have the "{@link GenerationDirective#NODE node}" directive
+     * @return Does this object have the "{@link GenerationDirective#NODE node}" or "{@link GenerationDirective#RECORD record}" directive
      * which implies a connection to a database table?
      */
     public boolean hasTable() {
