@@ -233,10 +233,18 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
-    void generate_whenUnknownTable_shouldLogWarning() throws IOException {
-        generateFiles("warning/unknownTable");
+    void generate_whenUnknownNodeTable_shouldLogWarning() throws IOException {
+        generateFiles("warning/unknownNodeTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No table with name 'ROMSKIP' found in no.fellesstudentsystem.kjerneapi.Tables"
+        );
+    }
+
+    @Test
+    void generate_whenUnknownResourceTable_shouldLogWarning() throws IOException {
+        generateFiles("warning/unknownResourceTable");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "No table with name 'UNKNOWN_TABLE' found in no.fellesstudentsystem.kjerneapi.Tables"
         );
     }
 
@@ -314,16 +322,26 @@ public class GraphQLGeneratorTest {
     @Test
     void generate_whenNoServiceMethodSet_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotSet"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
                         "Requested to generate a method for 'endrePersonSimple' in type 'Mutation' without providing a service to call."
                 );
     }
 
     @Test
+    void generate_whenServiceNotFound_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/serviceNotFound"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(
+                        "Requested to generate a method for 'endrePersonSimple' that calls service 'SERVICE_NOT_FOUND', " +
+                                "but no such service was found in 'no.fellesstudentsystem.kjerneapi.services.GeneratorService'"
+                );
+    }
+
+    @Test
     void generate_whenServiceMethodNotFound_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotFound"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
                         "Service 'no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService'" +
                                 " contains no method with the name 'endrePersonSimple'" +

@@ -3,11 +3,11 @@ package no.fellesstudentsystem.graphitron.validation;
 import graphql.com.google.common.collect.Sets;
 import no.fellesstudentsystem.graphitron.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
-import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
 import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
 import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
@@ -57,12 +57,17 @@ public class ProcessedDefinitionsValidator {
         );
 
         var enumValueSet = Stream.of(GeneratorEnum.values()).map(Enum::name).collect(Collectors.toSet());
-        enums
-                .values()
+        enums.values()
                 .stream()
                 .filter(EnumDefinition::hasDbEnumMapping)
                 .filter(e -> !enumValueSet.contains(e.getDbName().toUpperCase()))
                 .forEach(e -> LOGGER.warn("No enum with name '{}' found in {}", e.getDbName(), GeneratorEnum.class.getName()));
+
+        inputs.values()
+                .stream()
+                .filter(InputDefinition::hasTable)
+                .forEach(inputDefinition -> validateTableExistsAndHasMethods(inputDefinition.getTable().getName(), Set.of()));
+
     }
 
     private void validateGeneratedField(ObjectField generatedField) {

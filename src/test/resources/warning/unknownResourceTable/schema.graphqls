@@ -1,0 +1,13 @@
+type Query {
+    # Dummy query, since the schema insists that there must be at least one.
+    i(id: ID): ID! @notGenerated
+}
+
+type Mutation {
+    endrePersonInput(input: EndreInput!): ID! @service(name: "TEST_PERSON")
+}
+
+input EndreInput @record(table: "UNKNOWN_TABLE") {
+    id: ID!
+    fornavn: String
+}
