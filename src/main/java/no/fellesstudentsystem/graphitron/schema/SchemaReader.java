@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphitron.schema;
 import graphql.language.Document;
 import graphql.parser.MultiSourceReader;
 import graphql.parser.Parser;
+import graphql.parser.ParserOptions;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
@@ -16,13 +17,19 @@ import java.util.List;
  * Class for reading schema files from disk.
  */
 public class SchemaReader {
+    // Default is 15000. With new directive on every field it goes over this limit.
+    // If the error about preventing DoS attacks shows up again, increase this value here.
+    private final static int MAX_TOKENS = 60000;
+
     public static Document readSchemas(List<String> sources) throws IOException {
         MultiSourceReader.Builder builder = MultiSourceReader.newMultiSourceReader();
         for (String path : sources) {
             String content = Files.readString(Paths.get(path), StandardCharsets.UTF_8) + System.lineSeparator();
             builder.string(content, path);
         }
-        return new Parser().parseDocument(builder.trackData(true).build());
+
+        var parseOptions = ParserOptions.getDefaultParserOptions().transform(build -> build.maxTokens(MAX_TOKENS));
+        return new Parser().parseDocument(builder.trackData(true).build(), parseOptions);
     }
 
     public static TypeDefinitionRegistry getTypeDefinitionRegistry(List<String> schemas) throws IOException {

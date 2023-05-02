@@ -17,8 +17,8 @@ public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDef
     public EdgeObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
         var fields = ObjectField.from(objectDefinition.getFieldDefinitions());
-        nodeType = getObjectForField(GraphQLReservedName.PAGINATION_NODE_FIELD.getName(), fields).getTypeName();
-        cursor = getObjectForField(GraphQLReservedName.PAGINATION_CURSOR_FIELD.getName(), fields);
+        nodeType = getObjectForField(GraphQLReservedName.CONNECTION_NODE_FIELD.getName(), fields).getTypeName();
+        cursor = getObjectForField(GraphQLReservedName.CONNECTION_CURSOR_FIELD.getName(), fields);
     }
 
     private ObjectField getObjectForField(String name, List<ObjectField> fields) {

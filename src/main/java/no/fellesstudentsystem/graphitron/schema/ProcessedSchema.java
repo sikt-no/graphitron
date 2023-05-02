@@ -230,9 +230,9 @@ public class ProcessedSchema {
         var nodeFieldType = object
                 .getFieldDefinitions()
                 .stream()
-                .filter(it -> it.getName().equalsIgnoreCase(GraphQLReservedName.PAGINATION_EDGE_FIELD.getName()))
+                .filter(it -> it.getName().equalsIgnoreCase(GraphQLReservedName.CONNECTION_EDGE_FIELD.getName()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(object.getName() + " has no '" + GraphQLReservedName.PAGINATION_EDGE_FIELD.getName() + "' field."))
+                .orElseThrow(() -> new IllegalArgumentException(object.getName() + " has no '" + GraphQLReservedName.CONNECTION_EDGE_FIELD.getName() + "' field."))
                 .getType();
         var edge = new EdgeObjectDefinition(objects.get(new FieldType(nodeFieldType).getName()).getTypeDefinition());
         return new ConnectionObjectDefinition(object, edge);
