@@ -11,7 +11,7 @@ import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilMutatio
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
 import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
-import no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService;
+import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithProfilMutationResolver {

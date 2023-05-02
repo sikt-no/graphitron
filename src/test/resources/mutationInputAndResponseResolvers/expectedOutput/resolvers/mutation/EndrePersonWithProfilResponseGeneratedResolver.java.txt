@@ -14,7 +14,7 @@ import no.fellesstudentsystem.graphql.generated.model.Postadresse;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
 import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.queries.PostadresseDBQueries;
-import no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService;
+import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePersonWithProfilResponseMutationResolver {
@@ -46,7 +46,7 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     }
 
     private PersonProfil getEndreResponseWithPersonPersonProfil(
-            no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService.EndrePersonResponse result,
+            no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse result,
             SelectionSets select) {
         if (!select.contains("personProfil")) {
             return null;
@@ -57,7 +57,7 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     }
 
     private Postadresse getEndreResponseWithPersonPost(
-            no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService.EndrePersonResponse result,
+            no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService.EndrePersonResponse result,
             SelectionSets select) {
         if (!select.contains("post")) {
             return null;

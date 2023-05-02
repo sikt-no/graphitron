@@ -31,6 +31,11 @@
         </dependency>
         <dependency>
             <groupId>no.fellesstudentsystem</groupId>
+            <artifactId>kjerneapi-service</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>no.fellesstudentsystem</groupId>
             <artifactId>fs-graphql-spec</artifactId>
             <version>${project.version}</version>
         </dependency>

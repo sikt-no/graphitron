@@ -317,7 +317,7 @@ public class GraphQLGeneratorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
                         "Requested to generate a method for 'endrePersonSimple' that calls service 'SERVICE_NOT_FOUND', " +
-                                "but no such service was found in 'no.fellesstudentsystem.kjerneapi.services.GeneratorService'"
+                                "but no such service was found in 'no.fellesstudentsystem.kjerneapi_service.GeneratorService'"
                 );
     }
 
@@ -326,7 +326,7 @@ public class GraphQLGeneratorTest {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
-                        "Service 'no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService'" +
+                        "Service 'no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService'" +
                                 " contains no method with the name 'endrePersonSimple'" +
                                 " and 2 parameter(s), which is required to generate the resolver."
                 );

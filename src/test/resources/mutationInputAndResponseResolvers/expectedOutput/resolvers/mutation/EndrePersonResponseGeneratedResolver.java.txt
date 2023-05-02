@@ -9,7 +9,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonResponseMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
-import no.fellesstudentsystem.kjerneapi.services.test_services.TestPersonService;
+import no.fellesstudentsystem.kjerneapi_service.test_services.TestPersonService;
 import org.jooq.DSLContext;
 
 public class EndrePersonResponseGeneratedResolver implements EndrePersonResponseMutationResolver {

@@ -10,7 +10,7 @@ import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependen
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.kjerneapi.services.GeneratorService;
+import no.fellesstudentsystem.kjerneapi_service.GeneratorService;
 import org.apache.commons.lang3.EnumUtils;
 import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
