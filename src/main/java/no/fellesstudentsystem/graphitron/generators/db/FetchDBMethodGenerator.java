@@ -8,6 +8,7 @@ import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
@@ -61,8 +62,7 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         var selectRowCode = generateSelectRow(context);
         var hasKeyReference = context.hasKeyReference();
 
-        var fieldReferenceTable = target.getFieldReferenceTableIfPresent();
-        var actualRefTable = fieldReferenceTable.orElseGet(() -> refObject.getTable().getName());
+        var actualRefTable = refObject.getTable().getName();
         var code = CodeBlock
                 .builder()
                 .add(declareAliasesAndSetInitialCode(context, actualRefTable))

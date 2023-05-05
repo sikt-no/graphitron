@@ -260,7 +260,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         if (field.getFieldType().isID()) {
             var hasKeyReference = !field.hasImplicitJoin()
                     && !context.hasJoinedAlreadyOrWillJoin()
-                    && ReferenceHelpers.usesIDReference(context.getPreviousTableObject(), refObject);
+                    && ReferenceHelpers.usesIDReference(context.getPreviousTableObject(), refObject.getTable());
             return codeBlockBuilder
                     .add(joinedFieldSource + (hasKeyReference ? context.getReferenceTable().asGetIdCall() : ".getId()"))
                     .build();

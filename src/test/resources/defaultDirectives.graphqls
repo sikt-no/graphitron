@@ -43,7 +43,7 @@ directive @error(
   name: String!
 ) on OBJECT
 
-"""Knytter feltet til en relatert tabell i KjerneAPI."""
+"""Referanse som knytter feltet til en relatert tabell i KjerneAPI."""
 directive @reference(
   """Tabellen i KjerneAPI."""
   table: String
@@ -51,9 +51,18 @@ directive @reference(
   """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
   key: String,
 
-  """En skranke i KjerneAPI som begrenser hvilke rader som er av relevans for koblingen."""
-  condition: String
+  """
+  En skranke i KjerneAPI som begrenser hvilke rader som er av relevans for koblingen.
+  Tilgjengelige metoder finnes i no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition.
+  """
+  condition: String,
+
+  """En eller flere referanser til tabeller som referansen går via"""
+  via: [ReferenceElement!]
+
 ) on FIELD_DEFINITION
+
+input ReferenceElement { table: String!, key: String, condition: String }
 
 """Legger på ekstra begrensninger for dette feltet eller verdien."""
 directive @condition(

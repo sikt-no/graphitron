@@ -1,0 +1,45 @@
+package no.fellesstudentsystem.graphql.resolvers.query;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.StudentVedInstitusjonResolver;
+import no.fellesstudentsystem.graphql.generated.model.Landtype;
+import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.StudentVedInstitusjonDBQueries;
+import org.dataloader.DataLoader;
+import org.dataloader.DataLoaderFactory;
+import org.dataloader.MappedBatchLoaderWithContext;
+
+public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitusjonResolver {
+    @Inject
+    private StudentVedInstitusjonDBQueries studentVedInstitusjonDBQueries;
+
+    @Override
+    public CompletableFuture<Landtype> institusjonslandtype(
+            StudentVedInstitusjon studentVedInstitusjon, DataFetchingEnvironment env) throws
+            Exception {
+        DataLoader<String, Landtype> loader = env.getDataLoaderRegistry().computeIfAbsent("institusjonslandtypeForStudentVedInstitusjon", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, Landtype>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var dbResult = studentVedInstitusjonDBQueries.institusjonslandtypeForStudentVedInstitusjon(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + studentVedInstitusjon.getId(), env);
+    }
+}

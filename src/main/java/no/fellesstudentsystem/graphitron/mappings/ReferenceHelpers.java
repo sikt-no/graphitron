@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.mappings;
 
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
@@ -13,33 +14,37 @@ public class ReferenceHelpers {
      * using method naming conventions and java reflection.
      *
      * @param sourceObject The object that is joined from, the left side of the join expression.
-     * @param referenceObject The object that is joined with, the right side of the join expression.
+     * @param referenceObjectTable The object that is joined with, the right side of the join expression.
      * @return Is there a foreign key reference from the source object to the reference object?
      */
-    public static boolean usesIDReference(ObjectDefinition sourceObject, ObjectDefinition referenceObject) {
+    public static boolean usesIDReference(ObjectDefinition sourceObject, JOOQTableMapping referenceObjectTable) {
         if (sourceObject == null || sourceObject.isRoot() || !sourceObject.hasTable()) {
             return false;
         }
+        JOOQTableMapping sourceObjectTable = sourceObject.getTable();
+        return usesIDReference(sourceObjectTable, referenceObjectTable);
+    }
 
-        var localTable = sourceObject.getTable().getName();
-        var refTable = referenceObject.getTable().getName();
+    public static boolean usesIDReference(JOOQTableMapping sourceObjectTable, JOOQTableMapping referenceObjectTable) {
+        var localTableName = sourceObjectTable.getName();
+        var refTableName = referenceObjectTable.getName();
 
-        if (!tableExists(localTable) || !tableExists(refTable)) {
+        if (!tableExists(localTableName) || !tableExists(refTableName)) {
             return false;
         }
 
-        if (localTable.equals(refTable)) {
+        if (localTableName.equals(refTableName)) {
             return false;
         }
 
-        var implicitJoinIsPossible = tableHasMethod(localTable, referenceObject.getTable().getCodeName());
+        var implicitJoinIsPossible = tableHasMethod(localTableName, referenceObjectTable.getCodeName());
         var hasKeyReference = false;
         if (!implicitJoinIsPossible) {
-            hasKeyReference = tableHasMethod(refTable, sourceObject.getTable().asGetId());
+            hasKeyReference = tableHasMethod(refTableName, sourceObjectTable.asGetId());
         }
 
         if (!implicitJoinIsPossible && !hasKeyReference) {
-            throw new IllegalStateException("Can not automatically infer join of '" + localTable +  "' and '" + refTable + "'.");
+            throw new IllegalStateException("Can not automatically infer join of '" + localTableName +  "' and '" + refTableName + "'.");
         }
         return hasKeyReference;
     }

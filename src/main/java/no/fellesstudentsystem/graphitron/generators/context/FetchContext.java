@@ -1,10 +1,11 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.fields.FieldReference;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.lang.reflect.Method;
@@ -14,7 +15,7 @@ import java.util.Map;
 
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.findReferencedObjectDefinition;
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesIDReference;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
 
 public class FetchContext {
     private final FetchContext previousContext;
@@ -23,9 +24,9 @@ public class FetchContext {
     private final String currentJoinSequence;
     private final ObjectDefinition previousTableObject;
 
-    private ArrayList<SQLJoinStatement> joinList;
-    private ArrayList<SQLAlias> aliasList;
-    private ArrayList<String> conditionList;
+    private final ArrayList<SQLJoinStatement> joinList;
+    private final ArrayList<SQLAlias> aliasList;
+    private final ArrayList<String> conditionList;
 
     private final String graphPath;
     private final int recCounter;
@@ -72,12 +73,12 @@ public class FetchContext {
 
         var targetObjectForID = previousTableObject != null ? previousTableObject : referenceObject;
         if (pastJoinSequence.isEmpty() && localObject != null) {
-            var hasRelation = referenceObjectField.hasFieldReference();
-            var hasRelationCondition = hasRelation && referenceObjectField.getFieldReference().hasTableCondition();
-            var hasRelationKey = hasRelation && referenceObjectField.getFieldReference().hasTableKey();
-            var hasRelationConditionOrKey = hasRelationCondition || hasRelationKey;
-            hasKeyReference = !hasRelationConditionOrKey && usesIDReference(localObject, referenceObject);
 
+            if (referenceObjectField.hasFieldReferences()) {
+                hasKeyReference = allFieldReferencesUsesIDReferences(localObject, referenceObjectField.getFieldReferences());
+            } else{
+                hasKeyReference = usesIDReference(localObject, referenceObject.getTable());
+            }
             targetObjectForID = hasKeyReference ? referenceObject : localObject;
         }
 
@@ -85,8 +86,28 @@ public class FetchContext {
         this.previousTableObject = targetObjectForID;
         graphPath = pastGraphPath + (pastGraphPath.isEmpty() ? "" : "/");
 
-        this.currentJoinSequence = iterateSourceSequence(pastJoinSequence);
+        this.currentJoinSequence = iterateSourceMultipleSequences(pastJoinSequence);
         this.previousContext = previousContext;
+    }
+
+    private boolean allFieldReferencesUsesIDReferences(ObjectDefinition localObject, List<FieldReference> fieldReferences) {
+        boolean allFieldReferencesUsesIDReferences = true;
+
+        for (int i = 0; i < fieldReferences.size(); i++) {
+            var fieldReference = fieldReferences.get(i);
+            var hasRelationCondition = fieldReference.hasTableCondition();
+            var hasRelationKey = fieldReference.hasTableKey();
+            var hasRelationConditionOrKey = hasRelationCondition || hasRelationKey;
+            var referenceObjectTable = i == fieldReferences.size()-1 ? referenceObject.getTable() : fieldReference.getTable();
+
+            if (i == 0) {
+                allFieldReferencesUsesIDReferences = !hasRelationConditionOrKey && usesIDReference(localObject, referenceObjectTable);
+            } else {
+                JOOQTableMapping sourceTable = fieldReferences.get(i - 1).getTable();
+                allFieldReferencesUsesIDReferences = !hasRelationConditionOrKey && usesIDReference(sourceTable, referenceObjectTable) && allFieldReferencesUsesIDReferences;
+            }
+        }
+        return allFieldReferencesUsesIDReferences;
     }
 
     /**
@@ -146,7 +167,7 @@ public class FetchContext {
     }
 
     public boolean hasJoinedAlreadyOrWillJoin() {
-        return hasJoinedAlready || referenceObjectField.hasFieldReference();
+        return hasJoinedAlready || referenceObjectField.hasFieldReferences();
     }
 
     public ObjectDefinition getReferenceObject() {
@@ -204,29 +225,50 @@ public class FetchContext {
                 conditionOverrides
         );
     }
-
-    private String iterateSourceSequence(String pastJoinSequence) {
+    public String iterateSourceMultipleSequences(String pastJoinSequence) {
         if (hasJoinedAlready || !referenceObject.hasTable()) {
             return pastJoinSequence;
         }
 
-        var refTable = referenceObject.getTable();
-        var refTableName = refTable.getName();
-        var refTableCode = refTable.getCodeName();
+        if (referenceObjectField.hasFieldReferences()) {
+            String currentJoinSequence = processFieldReferences(pastJoinSequence);
+
+            if (currentJoinSequence != null && !currentJoinSequence.isBlank()) {
+                return currentJoinSequence;
+            }
+        }
+
+        var table = referenceObject.getTable();
+        var refTableName = table.getName();
+        var refTableCode = table.getCodeName();
         var previousTable = this.previousTableObject != null ? this.previousTableObject.getTable() : null;
         var previousTableName = previousTable != null ? previousTable.getName() : refTableName;
-        var hasNaturalImplicitJoin = !previousTableName.isEmpty()
-                && !previousTableName.equals(refTableName)
-                && tableHasMethod(previousTableName, refTableCode);
+        var hasDirectJoin = hasDirectJoin(table, previousTableName);
 
-        if (referenceObjectField.hasFieldReference()) {
-            var fRef = referenceObjectField.getFieldReference();
-            var table = fRef.hasTable() ? fRef.getTable() : refTable;
-            var hasImplicitJoin = fRef.hasTableKey() || hasNaturalImplicitJoin;
+        if (pastJoinSequence.isEmpty()) {
+            return hasDirectJoin ? createMetodCallString(previousTableName, refTableCode) : refTableName;
+        }
+
+        if (hasDirectJoin) {
+            return createMetodCallString(pastJoinSequence, refTableCode);
+        }
+        return pastJoinSequence;
+    }
+
+    private String processFieldReferences(String previousJoinSequence) {
+        String currentJoinSequence = getCurrentJoinSequence();
+        var referenceTable = referenceObject.getTable();
+        var previousTable = this.previousTableObject != null ? this.previousTableObject.getTable() : null;
+
+        for (FieldReference fRef : referenceObjectField.getFieldReferences()) {
+            var table = fRef.hasTable() ? fRef.getTable() : referenceTable;
+            var previousTableName = previousTable != null ? previousTable.getName() : referenceTable.getName();
 
             if (!table.getName().equals(previousTableName)) {
+                currentJoinSequence = previousJoinSequence;
+
                 if (fRef.hasTableCondition()) {
-                    if (hasImplicitJoin) {
+                    if (fRef.hasTableKey() || hasDirectJoin(table, previousTableName)) {
                         this.conditionList.add(
                                 ".and(" + fRef.getTableCondition().formatToString(
                                         List.of(previousTableName, table.getName()),
@@ -234,51 +276,60 @@ public class FetchContext {
                                 ) + ")"
                         );
                     } else {
-                        var join = fRef.createConditionJoinFor(
-                                referenceObjectField,
-                                previousTableName,
-                                pastJoinSequence,
-                                table.getName()
-                        );
-                        joinList.add(join);
-                        return join.getJoinAlias();
+                        currentJoinSequence = processConditionJoinReference(fRef, currentJoinSequence, table, table.getCodeName(), previousJoinSequence, previousTableName);
                     }
                 } else {
-                    if (hasImplicitJoin) {
-                        var alias = fRef.createAliasFor(
-                                getSnakeCasedGraphPath().isBlank() ? referenceObjectField.getName() : getSnakeCasedGraphPath(),
-                                previousTableName,
-                                pastJoinSequence,
-                                table.getCodeName()
-                        );
-                        if (alias != null) {
-                            aliasList.add(alias);
-                            return alias.getName();
-                        } else {
-                            var join = fRef.createJoinOnKeyFor(
-                                    referenceObjectField,
-                                    previousTableName,
-                                    pastJoinSequence,
-                                    table.getName()
-                            );
-                            joinList.add(join);
-                            return join.getJoinAlias();
-                        }
-                    }
+                    currentJoinSequence = processReference(fRef, table, previousJoinSequence, previousTableName);
                 }
+                previousJoinSequence = currentJoinSequence;
+                previousTable = table;
             }
-            refTableName = table.getName();
-            refTableCode = table.getCodeName();
         }
+        return currentJoinSequence;
+    }
 
-        if (pastJoinSequence.isEmpty()) {
-            return hasNaturalImplicitJoin ? createMetodCallString(previousTableName, refTableCode) : refTableName;
+    private String processReference(FieldReference fRef, JOOQTableMapping table, String previousJoinSequence, String previousTableName) {
+        String currentJoinSequence;
+        String snakeCasedGraphPath = getSnakeCasedGraphPath();
+        var alias = fRef.createAliasFor(
+                snakeCasedGraphPath.isBlank() ? table.getName() : snakeCasedGraphPath,
+                previousTableName,
+                previousJoinSequence,
+                table.getCodeName()
+        );
+        if (alias != null) {
+            aliasList.add(alias);
+            currentJoinSequence = alias.getName();
+        } else {
+            var join = fRef.createJoinOnKeyFor(
+                    referenceObjectField,
+                    previousTableName,
+                    previousJoinSequence,
+                    table.getName()
+            );
+            joinList.add(join);
+            currentJoinSequence = join.getJoinAlias();
         }
+        return currentJoinSequence;
+    }
 
-        if (hasNaturalImplicitJoin) {
-            return createMetodCallString(pastJoinSequence, refTableCode);
-        }
-        return pastJoinSequence;
+    private String processConditionJoinReference(FieldReference fRef, String currentJoinSequence, JOOQTableMapping table, String refTableCode, String previousJoinSequence, String previousTableName) {
+        var join = fRef.createConditionJoinFor(
+                referenceObjectField,
+                previousTableName,
+                currentJoinSequence != null && currentJoinSequence.endsWith(refTableCode) ? currentJoinSequence : previousJoinSequence,
+                table.getName()
+        );
+        joinList.add(join);
+        return join.getJoinAlias();
+    }
+
+    private static boolean hasDirectJoin(JOOQTableMapping referenceTable, String previousTableName) {
+        var refTableName = referenceTable.getName();
+        var refTableCode = referenceTable.getCodeName();
+        return !previousTableName.isEmpty()
+                && !previousTableName.equals(refTableName)
+                && tableHasMethod(previousTableName, refTableCode);
     }
 
     private static String createMetodCallString(String className, String methodName) {

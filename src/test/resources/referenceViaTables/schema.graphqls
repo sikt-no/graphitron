@@ -1,0 +1,14 @@
+type Query {
+  vurderingsmelding(id: ID!): Vurderingsmelding
+}
+
+type Vurderingsmelding @node {
+  id: ID!
+  #via tables starting from the referring type (VURDERINGSMELDING): VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE
+  emne: Emne! @resolver @reference(via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}])
+}
+
+type Emne @node {
+  id: ID!
+  kode: String! @column(name: "EMNEKODE")
+}

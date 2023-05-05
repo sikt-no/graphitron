@@ -1,0 +1,32 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Vurderingsmelding;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<Vurderingsmelding> vurderingsmeldingForQuery(String id, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                VURDERINGSMELDING.getId().as("id")
+                        ).mapping(nullOnAllNull(Vurderingsmelding::new)).as("vurderingsmelding")
+                )
+                .from(VURDERINGSMELDING)
+                .where(VURDERINGSMELDING.ID.eq(id))
+                .orderBy(VURDERINGSMELDING.getIdFields())
+                .fetch(0, Vurderingsmelding.class);
+    }
+}

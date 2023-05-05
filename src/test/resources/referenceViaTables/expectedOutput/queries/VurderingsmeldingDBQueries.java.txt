@@ -1,0 +1,39 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Emne;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class VurderingsmeldingDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, Emne> emneForVurderingsmelding(Set<String> vurderingsmeldingIder,
+            SelectionSets select) {
+        var vurderingsmelding_vurderingsenhet = VURDERINGSMELDING.vurderingsenhet().as("vurderingsmelding_vurderingsenhet");
+        var vurderingsmelding_vurderingsenhet_vurderingskombinasjon = vurderingsmelding_vurderingsenhet.vurderingskombinasjon().as("vurderingsmelding_vurderingsenhet_vurderingskombinasjon");
+        var vurderingsmelding_vurderingsenhet_vurderingskombinasjon_emne = vurderingsmelding_vurderingsenhet_vurderingskombinasjon.emne().as("vurderingsmelding_vurderingsenhet_vurderingskombinasjon_emne");
+        return ctx
+                .select(
+                        VURDERINGSMELDING.getId(),
+                        row(
+                                vurderingsmelding_vurderingsenhet_vurderingskombinasjon_emne.getId().as("id"),
+                                select.optional("kode", vurderingsmelding_vurderingsenhet_vurderingskombinasjon_emne.EMNEKODE).as("kode")
+                        ).mapping(nullOnAllNull(Emne::new)).as("emne")
+                )
+                .from(VURDERINGSMELDING)
+                .where(VURDERINGSMELDING.hasIds(vurderingsmeldingIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

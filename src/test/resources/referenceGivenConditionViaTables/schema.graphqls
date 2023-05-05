@@ -1,0 +1,16 @@
+type Query {
+  vurderingsmelding(id: ID!): Vurderingsmelding
+}
+
+type Vurderingsmelding @node {
+  id: ID!
+  # join path: VURDERINGSMELDING -> STUDENT -> PERSON -> PERSON_TELEFON(via condition)
+  studentPrivatTelefon: Telefon @resolver @reference(
+    via: [{table: "STUDENT"}, {table: "PERSON"}],
+    condition: "PERSON_TELEFON_PRIVAT")
+}
+
+type Telefon implements Node @node(table : "PERSON_TELEFON") {
+  id: ID!
+  nummer: String! @column(name : "TELEFONNR")
+}

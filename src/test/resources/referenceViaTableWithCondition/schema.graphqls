@@ -1,0 +1,15 @@
+type Query {
+  student(id: ID!): StudentVedInstitusjon
+}
+
+type StudentVedInstitusjon @node(table: "STUDENT") {
+  id: ID!
+  studentnummer: String! @column(name: "STUDENTNR_TILDELT")
+  # join path: STUDENT -> PERSON -> PERSON_TELEFON(via condition) -> LAND
+  privatTelefonLand: Land @resolver @reference(via: [{table: "PERSON"}, {table: "PERSON_TELEFON", condition: "PERSON_TELEFON_PRIVAT"}])
+}
+
+type Land @node {
+  id: ID!
+  landnr: String!
+}

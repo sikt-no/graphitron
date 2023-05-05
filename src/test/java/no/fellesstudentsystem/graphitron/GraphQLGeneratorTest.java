@@ -18,6 +18,7 @@ import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 import no.fellesstudentsystem.kjerneapi.tables.Emne;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
@@ -155,6 +156,37 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
+    void generate_referenceViaTables_shouldCreateJoinViaTables() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTables");
+    }
+
+    @Disabled("not supported yet")
+    @Test
+    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTablesBackwards");
+    }
+
+    @Test
+    void generate_referenceGivenConditionViaTables_shouldCreateJoinViaTablesThenCondition() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenConditionViaTables");
+    }
+
+    @Test
+    void generate_referenceViaTableWithCondition_shouldCreateJoinViaTableWithCondition() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTableWithCondition");
+    }
+
+    @Test
+    void generate_referenceGivenKeyViaTables_shouldCreateJoinViaTablesThenKey() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKeyViaTables");
+    }
+
+    @Test
+    void generate_referenceGivenKeyViaTableWithConditionAndTableWithKey_shouldCreateJoinViaTablesThenKey() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKeyViaTableWithConditionAndTableWithKey");
+    }
+
+    @Test
     void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("multipleAliasesForSameType");
     }
@@ -205,6 +237,20 @@ public class GraphQLGeneratorTest {
         assertThatThrownBy(() -> generateFiles("error/implicitJoinFailure"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Can not automatically infer join of 'STUDENT' and 'KULL'.");
+    }
+
+    @Test
+    void generate_whenImplicitJoinViaNonExistentPath_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/implicitJoinViaNonExistentPath"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Can not automatically infer join of 'EKSAMENSTILPASNING' and 'EMNE'.");
+    }
+
+    @Test
+    void generate_whenimplicitJoinViaExistentThenNonExistentPath_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/implicitJoinViaExistentThenNonExistentPath"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Can not automatically infer join of 'LAND' and 'EKSAMENSTILPASNING'.");
     }
 
     @Test

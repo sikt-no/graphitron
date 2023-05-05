@@ -7,13 +7,13 @@ public class SQLAlias {
     private final String joinTargetMethod, name, joinSourceTable;
 
     /**
-     * @param joinSourceTable The table to be joined from.
+     * @param joinSourceTable  The table to be joined from.
      * @param joinTargetMethod The table to be joined with, using the provided method.
      */
     public SQLAlias(String name, String joinSourceTable, String joinTargetMethod) {
         this.joinSourceTable = joinSourceTable;
         this.joinTargetMethod = joinTargetMethod;
-        this.name = name;
+        this.name = name.replaceAll("[.]", "_").replaceAll("[()]", "");
     }
 
     /**

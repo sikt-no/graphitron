@@ -9,16 +9,17 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Optional;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.REFERENCE;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.*;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForMethodByKey;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
+import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.REFERENCE;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.*;
 import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getOptionalDirectiveArgumentString;
 
 public class FieldReference {
     private final JOOQTableMapping table;
     private final String tableKey;
     private final SQLCondition tableCondition;
+
 
     public <T extends NamedNode<T> & DirectivesContainer<T>> FieldReference(T field) {
         var relatedTable = "";
@@ -35,6 +36,12 @@ public class FieldReference {
         table = new JOOQTableMapping(relatedTable);
         tableKey = relatedTableKey;
         tableCondition = relatedTableCondition;
+    }
+
+    public FieldReference(JOOQTableMapping table, String tableKey, SQLCondition tableCondition) {
+        this.table = table;
+        this.tableKey = tableKey;
+        this.tableCondition = tableCondition;
     }
 
     public boolean hasTable() {
@@ -67,14 +74,16 @@ public class FieldReference {
         var hasNaturalImplicitJoin = tableHasMethod(previousJoinTable, relationTableSource);
         Optional<String> joinReference = tableKey.isEmpty() || hasNaturalImplicitJoin ? Optional.empty() : searchTableForMethodByKey(previousJoinTable, tableKey);
         if (hasNaturalImplicitJoin || joinReference.isPresent()) {
+            String joinSourceTable = pastJoinSequence == null || pastJoinSequence.isEmpty() ? previousJoinTable : pastJoinSequence;
             return new SQLAlias(
-                    (previousJoinTable + "_" + referenceName).toLowerCase(),
-                    !pastJoinSequence.isEmpty() ? pastJoinSequence : previousJoinTable,
-                    joinReference.orElse(relationTableSource)
-            );
+                    (joinSourceTable + "_" + referenceName).toLowerCase(),
+                    joinSourceTable,
+                    joinReference.orElse(relationTableSource));
         }
         return null;
     }
+
+
 
     private SQLJoinStatement createJoinFor(
             AbstractField reference,

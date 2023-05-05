@@ -1,0 +1,38 @@
+package no.fellesstudentsystem.graphql.queries;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Eksamenstilpasningssoknad;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class StudentVedInstitusjonDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, List<Eksamenstilpasningssoknad>> eksamenstilpasningssoknaderForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder, SelectionSets select) {
+        var eksamenstilpasning_vurderingsmelding = EKSAMENSTILPASNING.vurderingsmelding().as("eksamenstilpasning_vurderingsmelding");
+        return ctx
+                .select(
+                        eksamenstilpasning_vurderingsmelding.getStudentId(),
+                        row(
+                                EKSAMENSTILPASNING.getId().as("id"),
+                                select.optional("soknadsdato", EKSAMENSTILPASNING.DATO_SOKNAD).as("soknadsdato")
+                        ).mapping(nullOnAllNull(Eksamenstilpasningssoknad::new)).as("eksamenstilpasningssoknader")
+                )
+                .from(EKSAMENSTILPASNING)
+                .where(eksamenstilpasning_vurderingsmelding.hasStudentIds(studentVedInstitusjonIder))
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

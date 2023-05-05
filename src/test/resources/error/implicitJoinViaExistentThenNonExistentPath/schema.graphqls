@@ -1,0 +1,18 @@
+type Query {
+  student(id: ID!): StudentVedInstitusjon
+}
+
+type StudentVedInstitusjon @node(table: "STUDENT") {
+  id: ID!
+  #there is no path from LAND to EKSAMENSTILPASNING
+  emner: [Emne!]! @resolver @reference(via: [{table: "PERSON"}, {table: "INSITITUSJON"}, {table: "LAND"}  {table: "EKSAMENSTILPASNING"}])
+}
+
+type Eksamenstilpasningssoknad @node(table: "EKSAMENSTILPASNING") {
+  id: ID!
+}
+
+type Emne @node {
+  id: ID!
+}
+

@@ -1,0 +1,16 @@
+type Query {
+  vurderingsmelding(id: ID!): Vurderingsmelding
+}
+
+type Vurderingsmelding @node {
+  id: ID!
+  #join path: VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE -> TERMIN(via key)
+  forsteTerminForVurdering: Termin! @resolver @reference(
+    via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}, {table: "EMNE"}],
+    key: "EMNE__EKS_FORSTE__TERMIN__FK")
+}
+
+type Termin @node {
+  id: ID!
+  arstall: Int!
+}
