@@ -12,7 +12,7 @@ public class GeneratorConfig {
             TABLES_PACKAGE_PATH = "no.fellesstudentsystem.kjerneapi.tables",
             RECORDS_PACKAGE_PATH = TABLES_PACKAGE_PATH + ".records";
     private static final String
-            DEFAULT_SCHEMA_FILES = "fs-graphql-spec/target/generated-sources/expanded-schema.graphql",
+            DEFAULT_SCHEMA_FILES = "fs-graphql-spec/target/generated-sources/generator-schema.graphql",
             DEFAULT_OUTPUT_DIRECTORY = "graphitron/target/generated-sources",
             DEFAULT_OUTPUT_PACKAGE = "no.fellesstudentsystem.graphql",
             DEFAULT_GENERATED_RESOLVERS_PACKAGE = "no.fellesstudentsystem.graphql.generated.api",
