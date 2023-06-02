@@ -229,12 +229,7 @@ public class FetchContext {
                     if (hasImplicitJoin) {
                         this.conditionList.add(
                                 ".and(" + fRef.getTableCondition().formatToString(
-                                        List.of(
-                                                !pastJoinSequence.equals(currentJoinSequence) && !pastJoinSequence.isEmpty()
-                                                        ? pastJoinSequence
-                                                        : previousTableName,
-                                                currentJoinSequence
-                                        ),
+                                        List.of(previousTableName, table.getName()),
                                         conditionOverrides
                                 ) + ")"
                         );
@@ -272,18 +267,21 @@ public class FetchContext {
                     }
                 }
             }
-
             refTableName = table.getName();
             refTableCode = table.getCodeName();
         }
 
         if (pastJoinSequence.isEmpty()) {
-            return hasNaturalImplicitJoin ? previousTableName + "." + refTableCode + "()" : refTableName;
+            return hasNaturalImplicitJoin ? createMetodCallString(previousTableName, refTableCode) : refTableName;
         }
 
         if (hasNaturalImplicitJoin) {
-            return pastJoinSequence + "." + refTableCode + "()";
+            return createMetodCallString(pastJoinSequence, refTableCode);
         }
         return pastJoinSequence;
+    }
+
+    private static String createMetodCallString(String className, String methodName) {
+        return className + "." + methodName + "()";
     }
 }

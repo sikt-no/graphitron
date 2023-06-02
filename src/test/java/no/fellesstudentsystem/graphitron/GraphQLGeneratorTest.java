@@ -150,6 +150,11 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
+    void generate_referenceGivenConditionOnDirectJoin_shouldApplyCondition() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenConditionOnDirectJoin");
+    }
+
+    @Test
     void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("multipleAliasesForSameType");
     }

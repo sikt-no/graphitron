@@ -1,0 +1,14 @@
+type Query {
+  student(id: ID!): Student
+}
+
+type Student @node {
+  id: ID!
+  # Dette vil ikke gi kjørbar kode da den faktiske conditionen angår INSTITUSJON og ikke EIERINSTIUSJON,
+  # men det tester kodegrenen som sørger for å håndtere tilsvarende tilfeller.
+  institiusjon: [Eierinstitusjon!]! @resolver @reference(condition : "STUDENT_INSTITUSJON_EQUALS")
+}
+
+type Eierinstitusjon @node(table : "EIERINSTITUSJON") {
+  id: ID!
+}
