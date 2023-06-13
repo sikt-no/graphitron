@@ -1,0 +1,49 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.SlettPersonInputMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.queries.mutation.SlettPersonInputDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class SlettPersonInputGeneratedResolver implements SlettPersonInputMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private SlettPersonInputDBQueries slettPersonInputDBQueries;
+
+    @Override
+    public CompletableFuture<List<String>> slettPersonInput(List<EndreInput> input,
+            DataFetchingEnvironment env) throws Exception {
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setFornavn(itInput.getFornavn());
+                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var slettPersonInputResult = slettPersonInputDBQueries.slettPersonInput(inputRecordList);
+
+        return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
+    }
+}

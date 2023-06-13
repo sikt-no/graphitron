@@ -21,6 +21,7 @@ import static java.util.Map.entry;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
+import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -169,7 +170,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         dbQueryCallCodeBlock.addStatement(selectionSetDeclaration);
 
         dbQueryCallCodeBlock.add("var $L = $N.$L(", QUERY_RESULT_NAME, uncapitalize(queryLocation), queryMethodName);
-        dependencySet.add(new QueryDependency(queryLocation));
+        dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
         allQueryInputs.add(SELECTION_SET_NAME);
 

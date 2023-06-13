@@ -1,0 +1,45 @@
+package no.fellesstudentsystem.graphql.resolvers.query;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.ProgramStudierettResolver;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.queries.query.ProgramStudierettDBQueries;
+import org.dataloader.DataLoader;
+import org.dataloader.DataLoaderFactory;
+import org.dataloader.MappedBatchLoaderWithContext;
+
+public class ProgramStudierettGeneratedResolver implements ProgramStudierettResolver {
+    @Inject
+    private ProgramStudierettDBQueries programStudierettDBQueries;
+
+    @Override
+    public CompletableFuture<PersonProfil> personProfil(ProgramStudierett programStudierett,
+            DataFetchingEnvironment env) throws Exception {
+        DataLoader<String, PersonProfil> loader = env.getDataLoaderRegistry().computeIfAbsent("personProfilForProgramStudierett", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, PersonProfil>) (keys, batchEnvLoader) -> {
+                var keyToId = keys.stream().collect(
+                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+                var idSet = new HashSet<>(keyToId.values());
+                var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var dbResult = programStudierettDBQueries.personProfilForProgramStudierett(idSet, selectionSet);
+                var mapResult = keyToId.entrySet().stream()
+                        .filter(it -> dbResult.get(it.getValue()) != null)
+                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+                return CompletableFuture.completedFuture(mapResult);
+            } ;
+            return DataLoaderFactory.newMappedDataLoader(batchLoader);
+        } );
+        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + programStudierett.getId(), env);
+    }
+}

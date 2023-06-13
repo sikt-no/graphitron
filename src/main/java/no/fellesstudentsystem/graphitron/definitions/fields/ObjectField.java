@@ -11,6 +11,8 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.*;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLDirective.RESOLVER;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.TYPE;
+import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveArgumentEnum;
 import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveArgumentString;
 
 /**
@@ -23,6 +25,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     private final List<InputField> inputFields;
     private final List<InputField> nonReservedFields;
     private final SQLImplicitFKJoin join;
+    private final MutationType mutationType;
     private final boolean isGenerated;
     private final boolean isResolver;
     public final static Set<String> RESERVED_PAGINATION_NAMES = Set.of(
@@ -45,6 +48,9 @@ public class ObjectField extends AbstractField implements GenerationTarget {
 
         join = field.hasDirective(COLUMN.getName()) ? getSqlRoleJoin(field) : null;
         serviceReference = field.hasDirective(SERVICE.getName()) ? getDirectiveArgumentString(field, SERVICE, SERVICE.getParamName(NAME)) : "";
+        mutationType = field.hasDirective(MUTATION_TYPE.getName())
+                ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION_TYPE, MUTATION_TYPE.getParamName(TYPE)))
+                : null;
     }
 
     protected List<InputField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
@@ -147,6 +153,14 @@ public class ObjectField extends AbstractField implements GenerationTarget {
      */
     public boolean hasServiceReference() {
         return !serviceReference.isEmpty();
+    }
+
+    public boolean hasMutationType() {
+        return mutationType != null;
+    }
+
+    public MutationType getMutationType() {
+        return mutationType;
     }
 
     /**

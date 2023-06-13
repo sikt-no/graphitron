@@ -1,0 +1,49 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Emnevalgstatus;
+import no.fellesstudentsystem.graphql.generated.model.MaksimumVektingForEmnevalgstatus;
+import no.fellesstudentsystem.graphql.generated.model.MinimumVektingForEmnevalgstatus;
+import no.fellesstudentsystem.graphql.generated.model.Vektingstype;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<Emnevalgstatus> emnevalgstatusForQuery(String id, SelectionSets select) {
+        var emnevalgstatus_minimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Minimum_Vektingstype_Fk().as("emnevalgstatus_minimumsvekting_vektingstype");
+        var emnevalgstatus_maksimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Max_Vektingstype_Fk().as("emnevalgstatus_maksimumsvekting_vektingstype");
+        return ctx
+                .select(
+                        row(
+                                EMNEVALGSTATUS.getId().as("id"),
+                                row(
+                                        select.optional("minimumsvekting/verdi", EMNEVALGSTATUS.VEKTINGSTALL_MINIMUM).as("verdi"),
+                                        row(
+                                                emnevalgstatus_minimumsvekting_vektingstype.getId().as("id")
+                                        ).mapping(nullOnAllNull(Vektingstype::new)).as("vektingstype")
+                                ).mapping(nullOnAllNull(MinimumVektingForEmnevalgstatus::new)).as("minimumsvekting"),
+                                row(
+                                        select.optional("maksimumsvekting/verdi", EMNEVALGSTATUS.VEKTINGSTALL_MAX).as("verdi"),
+                                        row(
+                                                emnevalgstatus_maksimumsvekting_vektingstype.getId().as("id")
+                                        ).mapping(nullOnAllNull(Vektingstype::new)).as("vektingstype")
+                                ).mapping(nullOnAllNull(MaksimumVektingForEmnevalgstatus::new)).as("maksimumsvekting")
+                        ).mapping(nullOnAllNull(Emnevalgstatus::new)).as("emnevalgstatus")
+                )
+                .from(EMNEVALGSTATUS)
+                .where(EMNEVALGSTATUS.ID.eq(id))
+                .orderBy(EMNEVALGSTATUS.getIdFields())
+                .fetch(0, Emnevalgstatus.class);
+    }
+}

@@ -1,0 +1,21 @@
+package no.fellesstudentsystem.graphql.queries.mutation;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.util.Arrays;
+import javax.inject.Inject;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class SlettPersonWithProfilResponseDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public int slettPersonWithProfilResponse(PersonRecord inputRecord) {
+        return Arrays.stream(ctx.batchDelete(inputRecord).execute()).sum();
+    }
+}

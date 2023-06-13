@@ -1,12 +1,16 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers;
 
 import com.squareup.javapoet.*;
+import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
@@ -25,8 +29,10 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.extractType;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.getServiceReturnClassName;
+import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.UpdateContext.countParams;
+import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.ERROR_TYPE;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
@@ -47,6 +53,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
             VARIABLE_ERROR = "error",
             VARIABLE_CAUSE_NAME = "causeName",
             VARIABLE_CAUSE = "cause",
+            VARIABLE_RECORD_LIST = "recordList",
             VALUE_UNDEFINED = "undefined",
             FIELD_MESSAGE = "message", // Hardcoded expected fields.
             FIELD_MESSAGE_UPPER = capitalize(FIELD_MESSAGE),
@@ -85,15 +92,15 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         specInputs.forEach(input -> spec.addParameter(input.getFieldType().getWrappedTypeClass(allInputs), input.getName()));
 
         context = new UpdateContext(target, processedSchema, exceptionOverrides, serviceOverrides);
-        var code = CodeBlock
-                .builder()
-                .addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SETS.className, PARAM_ENV)
+        var code = CodeBlock.builder();
+        if (target.hasServiceReference()) {
+            code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SETS.className, PARAM_ENV);
+        }
+        code
                 .add(declareRecords(specInputs))
                 .add("\n")
                 .add(generateServiceCall(target))
-                .add(generateResponsesAndGetCalls(target))
-                .add("\n")
-                .addStatement("return $T.completedFuture($N)", COMPLETABLE_FUTURE.className, getResolverResultName(target));
+                .add(generateResponsesAndGetCalls(target));
 
         return spec
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, PARAM_ENV)
@@ -137,14 +144,16 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     private CodeBlock declareRecords(List<InputField> specInputs) {
         var code = CodeBlock.builder();
         var recordCode = CodeBlock.builder();
-        for (var in : specInputs) {
-            if (processedSchema.isInputType(in.getTypeName())) {
-                code.add(declareRecords(in, 0));
-                recordCode.add(fillRecords(in, "", 0));
-            }
+
+        var inputObjects = specInputs.stream().filter(it -> processedSchema.isInputType(it.getTypeName())).collect(Collectors.toList());
+        for (var in : inputObjects) {
+            code.add(declareRecords(in, 0));
+            recordCode.add(fillRecords(in, "", 0));
         }
         if (!recordCode.isEmpty()) {
             code.add("\n").add(recordCode.build());
+        } else if (!context.hasService()) {
+            throw new UnsupportedOperationException("Must have at least one record reference when generating resolvers with queries. Mutation '" + localField.getName() + "' has no records attached.");
         }
         return code.build();
     }
@@ -168,7 +177,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         if (isIterable) {
             code.addStatement("var $L = new $T<$T>()", asListedName(targetAsRecordName), ARRAY_LIST.className, sqlRecordClassName);
         } else {
-            code.addStatement("var $L = new $T()", targetAsRecordName, sqlRecordClassName);
+            code.add(declareRecord(targetAsRecordName, sqlRecordClassName));
         }
 
         input
@@ -178,6 +187,14 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                 .forEach(in -> code.add(declareRecords(in, recursion + 1)));
 
         return code.build();
+    }
+
+    private static CodeBlock declareRecord(String recordName, ClassName sqlRecordClassName) {
+        return CodeBlock
+                .builder()
+                .addStatement("var $L = new $T()", recordName, sqlRecordClassName)
+                .addStatement("$N.attach($N.configuration())", recordName, Dependency.CONTEXT_NAME)
+                .build();
     }
 
     /**
@@ -209,7 +226,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                     .beginControlFlow("if ($N != null)", targetName)
                     .beginControlFlow("for (var $L : $N)", iterableInputName, targetName)
                     .addStatement("if ($N == null) continue", iterableInputName)
-                    .addStatement("var $L = new $T()", recordName, input.asSQLRecord().getGraphClassName());
+                    .add(declareRecord(recordName, input.asSQLRecord().getGraphClassName()));
         }
 
         for (var in : input.getInputs()) {
@@ -229,6 +246,16 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         if (isIterable) {
             code.addStatement("$N.add($N)", potentialArrayListName, recordName).endControlFlow().endControlFlow();
         }
+
+        if (!code.isEmpty()) {
+            code.addStatement(
+                    "$T.setPersonKeysFromPlattformIds($N, $N)",
+                    FIELD_HELPERS.className,
+                    ContextDependency.CONTEXT_NAME,
+                    isIterable ? potentialArrayListName : recordName
+            );
+        }
+
         return code.isEmpty() || isIterable ? code.build() : CodeBlock
                 .builder()
                 .beginControlFlow("if ($N != null)", iterableInputName)
@@ -238,21 +265,29 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     }
 
     private CodeBlock generateServiceCall(ObjectField target) {
-        var service = context.getService();
-        var serviceName = service.getServiceName();
-        dependencySet.add(new ServiceDependency(serviceName, service.getPackageName()));
-
-        if (!context.hasErrors()) {
-            return generateSimpleServiceCall(target, serviceName);
+        var useGeneratedQuery = !context.hasService();
+        String objectToCall;
+        if (useGeneratedQuery) {
+            objectToCall = target.getName() + FILE_NAME_SUFFIX;
+            dependencySet.add(new QueryDependency(capitalize(objectToCall), UpdateDBClassGenerator.SAVE_DIRECTORY_NAME));
+        } else {
+            var service = context.getService();
+            objectToCall = service.getServiceName();
+            dependencySet.add(new ServiceDependency(objectToCall, service.getPackageName()));
         }
+
+        if (!context.hasErrors() || useGeneratedQuery) {
+            return generateSimpleServiceCall(target, objectToCall);
+        }
+
+        var service = context.getService();
         var serviceResultName = asResultName(target.getUnprocessedNameInput());
         return CodeBlock
                 .builder()
                 .addStatement("$T $L = null", service.getReturnTypeName(), serviceResultName)
                 .add(defineErrorLists())
                 .beginControlFlow("try")
-                .add("$N = ", serviceResultName)
-                .addStatement("$N.$L($L)", uncapitalize(serviceName), target.getName(), context.getServiceInputString())
+                .addStatement("$N = $N.$L($L)", serviceResultName, uncapitalize(objectToCall), target.getName(), context.getServiceInputString())
                 .add(createCatchBlocks(target))
                 .add("\n")
                 .add(generateNullReturn(target))
@@ -261,11 +296,16 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     }
 
     @NotNull
-    private CodeBlock generateSimpleServiceCall(ObjectField target, String serviceName) {
+    private CodeBlock generateSimpleServiceCall(ObjectField target, String serviceObjectName) {
         return CodeBlock
                 .builder()
-                .add("var $L = ", asResultName(target.getUnprocessedNameInput()))
-                .addStatement("$N.$L($L)", uncapitalize(serviceName), target.getName(), context.getServiceInputString()) // Method name is expected to be the field's name.
+                .addStatement(
+                        "var $L = $N.$L($L)",
+                        asResultName(target.getUnprocessedNameInput()),
+                        uncapitalize(serviceObjectName),
+                        target.getName(),
+                        context.getServiceInputString()
+                ) // Method name is expected to be the field's name.
                 .build();
     }
 
@@ -386,14 +426,32 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     private CodeBlock generateResponsesAndGetCalls(ObjectField target) {
         var code = CodeBlock.builder();
         var typeName = target.getTypeName();
-        if (!processedSchema.isObject(typeName) || processedSchema.isExceptionOrExceptionUnion(typeName)) {
+        if (processedSchema.isExceptionOrExceptionUnion(typeName)) {
             return code.build();
         }
 
+
+        var hasService = context.hasService();
+        if (hasService) {
+            code
+                    .add(generateResultUnpacking(target))
+                    .add(generateGetCalls(target, target, 0));
+        }
+
+        var recordInputs = context
+                .getServiceInputs()
+                .entrySet()
+                .stream()
+                .filter(it -> Optional.ofNullable(processedSchema.getInputType(it.getValue().getName())).map(InputDefinition::hasTable).orElse(false))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        var returnValue = !hasService && !processedSchema.isObject(target.getTypeName())
+                ? CodeBlock.of("$L", getIDMappingCode(target, target, recordInputs))
+                : CodeBlock.of("$N", getResolverResultName(target));
         return code
-                .add(generateResultUnpacking(target))
-                .add(generateGetCalls(target, target, 0))
-                .add(generateResponses(target, target, 0))
+                .add(generateResponses(target, target, recordInputs, 0))
+                .add("\n")
+                .addStatement("return $T.completedFuture($L)", COMPLETABLE_FUTURE.className, returnValue)
                 .build();
     }
 
@@ -430,21 +488,15 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         if (previous != null) {
             var targetName = target.getUnprocessedNameInput();
             var previousName = previous.getUnprocessedNameInput();
+            code.add("var $L = $N", asResultName(targetName), asResultName(previousName));
             if (previous.getFieldType().isIterableWrapped()) {
                 code.addStatement(
-                        "var $L = $N.stream().flatMap(it -> it$L.stream()).collect($T.toList())",
-                        asResultName(targetName),
-                        asResultName(previousName),
+                        ".stream().flatMap(it -> it$L.stream()).collect($T.toList())",
                         target.getMappingFromColumn().asGetCall(),
                         COLLECTORS.className
                 );
             } else {
-                code.addStatement(
-                        "var $L = $N$L",
-                        asResultName(targetName),
-                        asResultName(previousName),
-                        target.getMappingFromColumn().asGetCall()
-                );
+                code.addStatement("$L", target.getMappingFromColumn().asGetCall());
             }
         }
 
@@ -490,7 +542,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
     /**
      * @return Code for constructing any structure of response types.
      */
-    private CodeBlock generateResponses(ObjectField target, ObjectField previous, int recursion) {
+    private CodeBlock generateResponses(ObjectField target, ObjectField previous, Map<String, FieldType> recordInputs, int recursion) {
         recursionCheck(recursion);
 
         var code = CodeBlock.builder();
@@ -504,38 +556,105 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
             return code.build();
         }
 
+        var useGeneratedQuery = !context.hasService();
         var responseClassName = responseObject.getGraphClassName();
         var isIterable = target.getFieldType().isIterableWrapped();
         var targetTypeNameLower = uncapitalize(targetTypeName);
-        var responseListName = isIterable ? asListedName(targetTypeNameLower) : targetTypeNameLower;
+        var responseListName = asListedName(targetTypeNameLower);
+
         code.add("\n");
+
         if (isIterable) {
-            code.addStatement("var $L = new $T<$T>()", responseListName, ARRAY_LIST.className, responseClassName);
-            var previousIsIterable = previous.getFieldType().isIterableWrapped();
-            var targetResultName = asIterableResultName(target.getUnprocessedNameInput());
-            if (previousIsIterable && target != previous) {
-                code.beginControlFlow(
-                        "for (var $L : $N$L)",
-                        targetResultName,
-                        asIterableResultName(previous.getUnprocessedNameInput()),
-                        target.getMappingFromColumn().asGetCall()
-                );
+            CodeBlock iteration;
+            String iterableName;
+            if (useGeneratedQuery) {
+                var iterationTarget = recordInputs.size() == 1 ? recordInputs.entrySet().stream().findFirst().get().getKey() : VARIABLE_RECORD_LIST;
+                iteration = CodeBlock.of("$N", iterationTarget);
+                iterableName = asIterable(iterationTarget);
             } else {
-                code.beginControlFlow("for (var $L : $N)", targetResultName, asResultName(target.getUnprocessedNameInput()));
+                iteration = previous.getFieldType().isIterableWrapped() && target != previous
+                        ? CodeBlock.of("$N$L", asIterableResultName(previous.getUnprocessedNameInput()), target.getMappingFromColumn().asGetCall())
+                        : CodeBlock.of("$N", asResultName(target.getUnprocessedNameInput()));
+                iterableName = asIterableResultName(target.getUnprocessedNameInput());
             }
+
+            code
+                    .addStatement("var $L = new $T<$T>()", responseListName, ARRAY_LIST.className, responseClassName)
+                    .beginControlFlow("for (var $L : $L)", iterableName, iteration);
         }
 
         code.addStatement("var $L = new $T()", targetTypeNameLower, responseClassName);
 
-        for (var field : responseObject.getFields()) {
-            code
-                    .add(generateResponses(field, target, recursion + 1))
-                    .add(mapToSetCall(field, target, recursion == 0)); // Only set exceptions on top layer, recursion isn't supported here.
+        if (useGeneratedQuery) {
+            for (var field : responseObject.getFields()) {
+                code.add(mapToRecordSetCall(field, target, recordInputs));
+            }
+        } else {
+            for (var field : responseObject.getFields()) {
+                code
+                        .add(generateResponses(field, target, recordInputs, recursion + 1))
+                        .add(mapToSetCall(field, target, recursion == 0)); // Only set exceptions on top layer, recursion isn't supported here.
+            }
         }
 
         if (isIterable) {
             code.addStatement("$N.add($N)", responseListName, targetTypeNameLower).endControlFlow();
         }
+
+        return code.build();
+    }
+
+    /**
+     * @return Code for any set method calls for this response object.
+     */
+    private CodeBlock mapToRecordSetCall(ObjectField field, ObjectField previousField, Map<String, FieldType> recordInputs) {
+        if (!field.getFieldType().isID()) {
+            return CodeBlock.of(""); // mapToSimpleSetCall(field, previousTypeNameLower); // Not supported.
+        }
+
+        return CodeBlock
+                .builder()
+                .add("$N", uncapitalize(previousField.getTypeName()))
+                .addStatement(field.getMappingFromFieldName().asSetCall("$L"), getIDMappingCode(field, previousField, recordInputs))
+                .build();
+    }
+
+    @NotNull
+    private CodeBlock getIDMappingCode(ObjectField field, ObjectField containerField, Map<String, FieldType> recordInputs) {
+        var inputSource = localField
+                .getInputFields()
+                .stream()
+                .filter(it -> it.getFieldType().isID())
+                .findFirst();
+
+        boolean containerIsIterable = containerField.getFieldType().isIterableWrapped(),
+                isIterable = field.getFieldType().isIterableWrapped(),
+                shouldMap;
+        String idSource;
+        if (inputSource.isPresent()) {
+            var source = inputSource.get();
+            shouldMap = isIterable || processedSchema.isInputType(source.getTypeName());
+            idSource = source.getName();
+        } else {
+            var recordSource = recordInputs
+                    .entrySet()
+                    .stream()
+                    .filter(it -> processedSchema.getInputType(it.getValue().getName()).getInputs().stream().anyMatch(f -> f.getFieldType().isID()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Could not find a suitable ID to return for '" + containerField.getName() + "'."));
+            shouldMap = true;
+            idSource = containerIsIterable && processedSchema.isObject(containerField.getTypeName()) ? asIterable(recordSource.getKey()) : recordSource.getKey();
+        }
+
+        var code = CodeBlock.builder().add("$N", idSource);
+        if (shouldMap) {
+            if (isIterable) {
+                code.add(".stream().map(it -> it.getId()).collect($T.toList())", COLLECTORS.className);
+            } else {
+                code.add(".getId()");
+            }
+        }
+
         return code.build();
     }
 
@@ -581,7 +700,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         var code = CodeBlock.builder().add("$N", uncapitalize(previousField.getTypeName()));
 
         var fieldName = field.getName();
-        if (processedSchema.getObject(field.getTypeName()).implementsInterface(NODE_TYPE.getName())) {
+        if (context.hasService() && processedSchema.getObject(field.getTypeName()).implementsInterface(NODE_TYPE.getName())) {
             code.add(mapToNodeSetCall(field, previousField));
         } else {
             code.addStatement(field.getMappingFromFieldName().asSetCall("$N"), field.getFieldType().isIterableWrapped() ? asListedName(fieldName) : fieldName);
@@ -626,6 +745,10 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
      * @return The code for any get helper methods to be made for this schema tree.
      */
     private List<MethodSpec> generateGetMethods(ObjectField target) {
+        if (!target.hasServiceReference()) {
+            return List.of();
+        }
+
         context = new UpdateContext(localField, processedSchema, exceptionOverrides, serviceOverrides);
         var responseObject = processedSchema.getObject(target.getTypeName());
         if (responseObject == null) {
@@ -764,7 +887,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                     )
                     .addStatement("return $N.values().stream().findFirst().orElse(null)", VARIABLE_NODE_RESULT);
         }
-        dependencySet.add(new QueryDependency(querySource));
+        dependencySet.add(new QueryDependency(querySource, SAVE_DIRECTORY_NAME));
         return code.build();
     }
 
@@ -796,16 +919,22 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (localField.isGenerated()) {
-            checkService(localField);
+        var hasService = localField.hasServiceReference();
+        var isGenerated = localField.isGenerated();
+        if (isGenerated && (localField.hasMutationType() || hasService)) {
+            if (hasService) {
+                checkService(localField);
+            }
             return Stream.concat(Stream.of(generate(localField)), generateGetMethods(localField).stream()).collect(Collectors.toList());
+        } else if (isGenerated) {
+            throw new IllegalStateException("Mutation '" + localField.getName() + "' is set to generate, but has neither a service nor mutation type set.");
         }
         return List.of();
     }
 
     @Override
     public boolean generatesAll() {
-        return localField.isGenerated() && localField.hasServiceReference();
+        return localField.isGenerated() && (localField.hasMutationType() || localField.hasServiceReference());
     }
 
     private static void recursionCheck(int recursion) {

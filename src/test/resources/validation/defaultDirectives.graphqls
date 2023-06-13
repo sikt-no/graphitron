@@ -1,0 +1,35 @@
+#defines all default query directives.
+
+directive @connection(for: String) on FIELD_DEFINITION
+
+"""Connects the enum to an API enum, or DB column value."""
+directive @mapEnum(name: String!) on ENUM | ENUM_VALUE
+
+"""Referanse som knytter feltet til en relatert tabell i KjerneAPI."""
+directive @reference(
+  """Tabellen i KjerneAPI."""
+  table: String
+
+  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
+  key: String,
+
+  """
+  En skranke i KjerneAPI som begrenser hvilke rader som er av relevans for koblingen.
+  Tilgjengelige metoder finnes i no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition.
+  """
+  condition: String,
+
+  """En eller flere referanser til tabeller som referansen går via"""
+  via: [ReferenceElement!]
+
+) on FIELD_DEFINITION
+
+input ReferenceElement { table: String!, key: String, condition: String }
+
+"""Legger på ekstra begrensninger for dette feltet eller verdien."""
+directive @condition(
+  """En skranke i KjerneAPI."""
+  name: String,
+  """Hvis sant, overskriver det som ville vanligvis blitt generert av conditions for dette."""
+  override: Boolean = false
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION

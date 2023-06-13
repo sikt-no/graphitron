@@ -2,32 +2,34 @@ package no.fellesstudentsystem.graphitron.generators.context;
 
 import no.fellesstudentsystem.codegenenums.GeneratorException;
 import no.fellesstudentsystem.codegenenums.GeneratorService;
+import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asListedName;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordName;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.ERROR_TYPE;
 
 public class UpdateContext {
     private final ServiceWrapper service;
-    private final List<String> serviceInputNames;
+    private final Map<String, FieldType> serviceInputs;
     private final String serviceInputString;
     private final List<ObjectField> allErrors;
     private final ProcessedSchema processedSchema;
     private final Map<String, Class<?>> exceptionOverrides;
+
+    public UpdateContext(ObjectField target, ProcessedSchema processedSchema) {
+        this(target, processedSchema, Map.of(), Map.of());
+    }
 
     public UpdateContext(
             ObjectField target,
@@ -49,7 +51,8 @@ public class UpdateContext {
             service = null;
         }
 
-        serviceInputNames = parseInputs(target.getInputFields());
+        serviceInputs = parseInputs(target.getInputFields());
+        List<String> serviceInputNames = new ArrayList<>(serviceInputs.keySet());
         serviceInputString = String.join(", ", serviceInputNames);
         if (processedSchema.isObject(target.getTypeName()) && processedSchema.isInterface(ERROR_TYPE.getName())) {
             allErrors = getAllErrors(target.getTypeName());
@@ -75,45 +78,40 @@ public class UpdateContext {
     }
 
     /**
-     * @return List of variable names for the declared and fully set records.
+     * @return Map of variable names and types for the declared and fully set records.
      */
     @NotNull
-    private List<String> parseInputs(List<InputField> specInputs) {
-        var serviceInputs = new ArrayList<String>();
+    private Map<String, FieldType> parseInputs(List<InputField> specInputs) {
+        var serviceInputs = new LinkedHashMap<String, FieldType>();
 
         for (var in : specInputs) {
-            if (processedSchema.isInputType(in.getTypeName())) {
-                serviceInputs.addAll(parseInputs(in, 0));
+            if (Optional.ofNullable(processedSchema.getInputType(in.getTypeName())).map(InputDefinition::hasTable).orElse(false)) {
+                serviceInputs.putAll(parseInputs(in, 0));
             } else {
-                serviceInputs.add(in.getName());
+                serviceInputs.put(in.getName(), in.getFieldType());
             }
         }
         return serviceInputs;
     }
 
     /**
-     * @return List of variable names for the declared records.
+     * @return Map of variable names and types for the declared records.
      */
     @NotNull
-    private List<String> parseInputs(InputField target, int recursion) {
+    private Map<String, FieldType> parseInputs(InputField target, int recursion) {
         recursionCheck(recursion);
 
-        var input = processedSchema.getInputType(target.getTypeName());
-        if (!input.hasTable()) {
-            return List.of();
-        }
-
+        var serviceInputs = new LinkedHashMap<String, FieldType>();
         var targetAsRecordName = asRecordName(target.getName());
-        return Stream
-                .concat(
-                        Stream.of(target.getFieldType().isIterableWrapped() ? asListedName(targetAsRecordName) : targetAsRecordName),
-                        input
-                                .getInputs()
-                                .stream()
-                                .filter(in -> processedSchema.isInputType(in.getTypeName()))
-                                .flatMap(in -> parseInputs(in, recursion + 1).stream())
-                )
-                .collect(Collectors.toList());
+        serviceInputs.put(target.getFieldType().isIterableWrapped() ? asListedName(targetAsRecordName) : targetAsRecordName, target.getFieldType());
+        processedSchema
+                .getInputType(target.getTypeName())
+                .getInputs()
+                .stream()
+                .filter(in -> Optional.ofNullable(processedSchema.getInputType(in.getTypeName())).map(InputDefinition::hasTable).orElse(false))
+                .flatMap(in -> parseInputs(in, recursion + 1).entrySet().stream())
+                .forEach(it -> serviceInputs.put(it.getKey(), it.getValue()));
+        return serviceInputs;
     }
 
     @NotNull
@@ -173,7 +171,7 @@ public class UpdateContext {
         return fields;
     }
 
-    private boolean hasService() {
+    public boolean hasService() {
         return service != null;
     }
 
@@ -181,8 +179,8 @@ public class UpdateContext {
         return service;
     }
 
-    public List<String> getServiceInputNames() {
-        return serviceInputNames;
+    public Map<String, FieldType> getServiceInputs() {
+        return serviceInputs;
     }
 
     public String getServiceInputString() {

@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
-import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
@@ -17,7 +17,7 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 /**
  * Superclass for any select query generator classes.
  */
-abstract public class DBClassGenerator implements ClassGenerator<ObjectDefinition> {
+abstract public class DBClassGenerator<T extends GenerationTarget> implements ClassGenerator<T> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "queries", FILE_NAME_SUFFIX = "DBQueries";
 
     protected final ProcessedSchema processedSchema;
@@ -55,7 +55,7 @@ abstract public class DBClassGenerator implements ClassGenerator<ObjectDefinitio
 
     @Override
     public void writeToFile(TypeSpec generatedClass, String path, String packagePath) throws IOException {
-        writeToFile(generatedClass, path, packagePath, DEFAULT_SAVE_DIRECTORY_NAME);
+        writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
     }
 
     @Override

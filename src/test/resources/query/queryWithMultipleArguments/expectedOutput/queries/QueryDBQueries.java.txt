@@ -1,0 +1,88 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.Integer;
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<PersonProfil> personTwoArgumentsForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, Integer pageSize, String after, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                PERSON.getId().as("id"),
+                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
+                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                select.optional("personkode", PERSON.PERSONKODE).as("personkode")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personTwoArguments")
+                )
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .orderBy(PERSON.getIdFields())
+                .seek(PERSON.getIdValues(after))
+                .limit(pageSize + 1)
+                .fetch(0, PersonProfil.class);
+    }
+
+    public List<PersonProfil> personFiveArgumentsForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode,
+            Integer pageSize, String after, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                PERSON.getId().as("id"),
+                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
+                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                select.optional("personkode", PERSON.PERSONKODE).as("personkode")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personFiveArguments")
+                )
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(fornavn != null ? PERSON.FORNAVN.eq(fornavn) : noCondition())
+                .and(PERSON.ETTERNAVN.eq(etternavn))
+                .and(personkode != null ? PERSON.PERSONKODE.eq(personkode) : noCondition())
+                .orderBy(PERSON.getIdFields())
+                .seek(PERSON.getIdValues(after))
+                .limit(pageSize + 1)
+                .fetch(0, PersonProfil.class);
+    }
+
+
+    public Integer countPersonTwoArgumentsForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .fetchOne(0, Integer.class);
+    }
+
+    public Integer countPersonFiveArgumentsForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(fornavn != null ? PERSON.FORNAVN.eq(fornavn) : noCondition())
+                .and(PERSON.ETTERNAVN.eq(etternavn))
+                .and(personkode != null ? PERSON.PERSONKODE.eq(personkode) : noCondition())
+                .fetchOne(0, Integer.class);
+    }
+}

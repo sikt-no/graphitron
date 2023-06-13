@@ -1,0 +1,32 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<ProgramStudierett> programStudierettForQuery(String id, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                STUDIERETT.getId().as("id")
+                        ).mapping(nullOnAllNull(ProgramStudierett::new)).as("programStudierett")
+                )
+                .from(STUDIERETT)
+                .where(STUDIERETT.ID.eq(id))
+                .orderBy(STUDIERETT.getIdFields())
+                .fetch(0, ProgramStudierett.class);
+    }
+}

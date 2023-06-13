@@ -1,0 +1,45 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.Integer;
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<PersonProfil> personerForQuery(String eierInstitusjonsnummer, Integer pageSize,
+            String after, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                PERSON.getId().as("id"),
+                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personer")
+                )
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .orderBy(PERSON.getIdFields())
+                .seek(PERSON.getIdValues(after))
+                .limit(pageSize + 1)
+                .fetch(0, PersonProfil.class);
+    }
+
+    public Integer countPersonerForQuery(String eierInstitusjonsnummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .fetchOne(0, Integer.class);
+    }
+}

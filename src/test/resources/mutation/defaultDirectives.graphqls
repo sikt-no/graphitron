@@ -1,0 +1,21 @@
+#defines all default mutation directives.
+
+"""Kopi av @node for input-typer som ikke forsøker å implementere node."""
+directive @record(
+  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
+  table: String
+) on INPUT_OBJECT
+
+"""Knytter feltet til en service som har en metode for å utføre denne spørringen."""
+directive @service(
+  """Navn på service som inneholder en metode som heter det samme som dette feltet."""
+  name: String!
+) on FIELD_DEFINITION
+
+directive @error(
+  name: String!
+) on OBJECT
+
+directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
+
+enum MutationType { UPDATE, DELETE }

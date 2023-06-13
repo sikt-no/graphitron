@@ -1,0 +1,13 @@
+type Query {
+  # Dummy query, since the schema insists that there must be at least one.
+  i(id: ID): ID! @notGenerated
+}
+
+input EndreInput @record(table : "PERSON") {
+  fornavn: String
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+}
+
+type Mutation {
+  endrePersonWithoutID(input: EndreInput!): ID! @mutationType(typeName: UPDATE)
+}

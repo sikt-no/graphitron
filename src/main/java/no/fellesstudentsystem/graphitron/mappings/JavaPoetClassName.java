@@ -28,6 +28,7 @@ public enum JavaPoetClassName {
     LIST(ClassName.get(java.util.List.class)),
     ARRAY_LIST(ClassName.get(java.util.ArrayList.class)),
     ILLEGAL_ARGUMENT_EXCEPTION(ClassName.get(IllegalArgumentException.class)),
+    ILLEGAL_STATE_EXCEPTION(ClassName.get(IllegalStateException.class)),
     MAP(ClassName.get(java.util.Map.class)),
     OBJECTS(ClassName.get(java.util.Objects.class)),
     OPTIONAL(ClassName.get(java.util.Optional.class)),

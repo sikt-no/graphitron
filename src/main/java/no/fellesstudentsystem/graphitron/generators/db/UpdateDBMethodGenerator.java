@@ -1,0 +1,115 @@
+package no.fellesstudentsystem.graphitron.generators.db;
+
+import com.squareup.javapoet.*;
+import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
+import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
+import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
+import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+
+/**
+ * Generator that creates the default data mutation methods.
+ */
+public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
+    private static final Map<MutationType, String> mutationConverter = Map.of(
+            MutationType.UPDATE, "batchUpdate",
+            MutationType.DELETE, "batchDelete"
+    );
+
+    private static final String VARIABLE_RECORD_LIST = "recordList";
+
+    private final ObjectField localField;
+    private UpdateContext context;
+
+    public UpdateDBMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
+        super(processedSchema.getMutationType(), processedSchema);
+        this.localField = localField;
+    }
+
+    /**
+     * @param target A {@link ObjectField} for which a mutation method should be generated for.
+     *                       This must reference a field located within the Mutation type and with the
+     *                       "{@link GenerationDirective#MUTATION_TYPE mutationType}" directive set.
+     * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
+     */
+    @Override
+    public MethodSpec generate(ObjectField target) {
+        context = new UpdateContext(target, processedSchema);
+        var recordMethod = mutationConverter.get(target.getMutationType());
+        if (recordMethod == null) {
+            return MethodSpec.methodBuilder(target.getName()).build();
+        }
+
+        var spec = getDefaultSpecBuilder(target.getName(), TypeName.INT);
+
+        var inputs = context.getServiceInputs();
+        inputs.forEach((inputName, inputType) -> spec.addParameter(getParamTypeName(inputType), inputName));
+
+        var recordInputs = inputs
+                .entrySet()
+                .stream()
+                .filter(it -> Optional.ofNullable(processedSchema.getInputType(it.getValue().getName())).map(InputDefinition::hasTable).orElse(false))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        var code = CodeBlock.builder();
+        if (recordInputs.isEmpty()) {
+            code.addStatement("return 0");
+        } else {
+            String batchInputVariable;
+            if (recordInputs.size() == 1) {
+                batchInputVariable = recordInputs.keySet().stream().findFirst().get();
+            } else {
+                batchInputVariable = VARIABLE_RECORD_LIST;
+                code.addStatement("var $L = new $T()", VARIABLE_RECORD_LIST, ARRAY_LIST.className);
+                recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
+            }
+            code.addStatement(
+                    "return $T.stream($N.$L($N).execute()).sum()",
+                    ARRAYS.className,
+                    Dependency.CONTEXT_NAME,
+                    recordMethod,
+                    batchInputVariable
+            );
+        }
+
+        return spec
+                .addCode(code.build())
+                .build();
+    }
+
+    private TypeName getParamTypeName(FieldType inputType) {
+        var inputObject = processedSchema.getInputType(inputType.getName());
+        TypeName type;
+        if (Optional.ofNullable(inputObject).map(InputDefinition::hasTable).orElse(false)) {
+            var className = inputObject.asSQLRecord().getGraphClassName();
+            type = inputType.isIterableWrapped() ? ParameterizedTypeName.get(LIST.className, className) : className;
+        } else {
+            type = inputType.getWrappedTypeClass(processedSchema.getInputTypes());
+        }
+        return type;
+    }
+
+    @Override
+    public List<MethodSpec> generateAll() {
+        if (localField.isGenerated() && localField.hasMutationType() && !localField.hasServiceReference()) {
+            return List.of(generate(localField));
+        }
+        return List.of();
+    }
+
+    @Override
+    public boolean generatesAll() {
+        return localField.isGenerated() && localField.hasMutationType() && !localField.hasServiceReference();
+    }
+}

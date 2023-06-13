@@ -21,7 +21,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
 public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectField> {
     public static final String
             INTERFACE_FILE_NAME_SUFFIX = "MutationResolver",
-            SAVE_DIRECTORY_NAME = ResolverClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + ".mutation";
+            SAVE_DIRECTORY_NAME = "mutation";
 
     private final Map<String, Class<?>> exceptionOverrides, serviceOverrides;
 
@@ -51,7 +51,7 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
                     .collect(Collectors.toList());
 
             for (var generatedClass : classes) {
-                writeToFile(generatedClass, path, packagePath, SAVE_DIRECTORY_NAME);
+                writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
             }
         }
     }
@@ -76,7 +76,7 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
 
     @Override
     public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY_NAME;
+        return ResolverClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
     }
 
     @Override

@@ -1,0 +1,171 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Email;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.Studieretning;
+import no.fellesstudentsystem.graphql.generated.model.StudieretningnavnAllRequired;
+import no.fellesstudentsystem.graphql.generated.model.StudieretningnavnWithOptional;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class ProgramStudierettDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, Studieretning> studieretningForProgramStudierett(
+            Set<String> programStudierettIder, SelectionSets select) {
+        return ctx
+                .select(
+                        STUDIERETT.getId(),
+                        row(
+                                STUDIERETT.studieretning().getId().as("id"),
+                                row(
+                                        select.optional("navn/eng", STUDIERETT.studieretning().STUDIERETNINGNAVN_ENGELSK).as("eng"),
+                                        select.optional("navn/nob", STUDIERETT.studieretning().STUDIERETNINGNAVN_BOKMAL).as("nob"),
+                                        select.optional("navn/nno", STUDIERETT.studieretning().STUDIERETNINGNAVN_NYNORSK).as("nno"),
+                                        select.optional("navn/nob2", STUDIERETT.studieretning().STUDIERETNINGNAVN_BOKMAL).as("nob2")
+                                ).mapping(StudieretningnavnWithOptional::new).as("navn"),
+                                row(
+                                        select.optional("navnOpt/eng", STUDIERETT.studieretning().STUDIERETNINGNAVN_ENGELSK).as("eng"),
+                                        select.optional("navnOpt/nob", STUDIERETT.studieretning().STUDIERETNINGNAVN_BOKMAL).as("nob"),
+                                        select.optional("navnOpt/nno", STUDIERETT.studieretning().STUDIERETNINGNAVN_NYNORSK).as("nno"),
+                                        select.optional("navnOpt/nob2", STUDIERETT.studieretning().STUDIERETNINGNAVN_BOKMAL).as("nob2")
+                                ).mapping(nullOnAllNull(StudieretningnavnWithOptional::new)).as("navnOpt"),
+                                row(
+                                        select.optional("navnReq/nob", STUDIERETT.studieretning().STUDIERETNINGNAVN_BOKMAL).as("nob"),
+                                        select.optional("navnReq/nob2", STUDIERETT.studieretning().STUDIERETNINGNAVN_BOKMAL).as("nob2")
+                                ).mapping(nullOnAllNull(StudieretningnavnAllRequired::new)).as("navnReq")
+                        ).mapping((a0, a1, a2, a3) -> a0 == null && (a1 == null || new StudieretningnavnWithOptional().equals(a1)) && (a2 == null || new StudieretningnavnWithOptional().equals(a2)) && (a3 == null || new StudieretningnavnAllRequired().equals(a3)) ? null : new Studieretning(a0, a1, a2, a3)).as("studieretning")
+                )
+                .from(STUDIERETT)
+                .where(STUDIERETT.hasIds(programStudierettIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, PersonProfil> personProfilForProgramStudierett(
+            Set<String> programStudierettIder, SelectionSets select) {
+        return ctx
+                .select(
+                        STUDIERETT.getId(),
+                        row(
+                                STUDIERETT.person().getId().as("id"),
+                                select.optional("fornavn", STUDIERETT.person().FORNAVN).as("fornavn"),
+                                select.optional("fornavn2", STUDIERETT.person().FORNAVN).as("fornavn2"),
+                                select.optional("fornavn3", STUDIERETT.person().FORNAVN).as("fornavn3"),
+                                select.optional("fornavn4", STUDIERETT.person().FORNAVN).as("fornavn4"),
+                                select.optional("fornavn5", STUDIERETT.person().FORNAVN).as("fornavn5"),
+                                select.optional("fornavn6", STUDIERETT.person().FORNAVN).as("fornavn6"),
+                                select.optional("fornavn7", STUDIERETT.person().FORNAVN).as("fornavn7"),
+                                select.optional("fornavn8", STUDIERETT.person().FORNAVN).as("fornavn8"),
+                                select.optional("fornavn9", STUDIERETT.person().FORNAVN).as("fornavn9"),
+                                select.optional("fornavn10", STUDIERETT.person().FORNAVN).as("fornavn10"),
+                                select.optional("fornavn11", STUDIERETT.person().FORNAVN).as("fornavn11"),
+                                select.optional("fornavn12", STUDIERETT.person().FORNAVN).as("fornavn12"),
+                                select.optional("fornavn13", STUDIERETT.person().FORNAVN).as("fornavn13"),
+                                select.optional("fornavn14", STUDIERETT.person().FORNAVN).as("fornavn14"),
+                                select.optional("fornavn15", STUDIERETT.person().FORNAVN).as("fornavn15"),
+                                select.optional("fornavn16", STUDIERETT.person().FORNAVN).as("fornavn16"),
+                                select.optional("fornavn17", STUDIERETT.person().FORNAVN).as("fornavn17"),
+                                select.optional("fornavn18", STUDIERETT.person().FORNAVN).as("fornavn18"),
+                                select.optional("fornavn19", STUDIERETT.person().FORNAVN).as("fornavn19"),
+                                select.optional("fornavn20", STUDIERETT.person().FORNAVN).as("fornavn20"),
+                                select.optional("fornavn21", STUDIERETT.person().FORNAVN).as("fornavn21"),
+                                select.optional("fornavn22", STUDIERETT.person().FORNAVN).as("fornavn22"),
+                                select.optional("fornavn23", STUDIERETT.person().FORNAVN).as("fornavn23"),
+                                row(
+                                        select.optional("email/privatEpost", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost"),
+                                        select.optional("email/privatEpost2", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost2"),
+                                        select.optional("email/privatEpost3", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost3"),
+                                        select.optional("email/privatEpost4", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost4"),
+                                        select.optional("email/privatEpost5", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost5"),
+                                        select.optional("email/privatEpost6", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost6"),
+                                        select.optional("email/privatEpost7", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost7"),
+                                        select.optional("email/privatEpost8", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost8"),
+                                        select.optional("email/privatEpost9", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost9"),
+                                        select.optional("email/privatEpost10", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost10"),
+                                        select.optional("email/privatEpost11", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost11"),
+                                        select.optional("email/privatEpost12", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost12"),
+                                        select.optional("email/privatEpost13", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost13"),
+                                        select.optional("email/privatEpost14", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost14"),
+                                        select.optional("email/privatEpost15", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost15"),
+                                        select.optional("email/privatEpost16", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost16"),
+                                        select.optional("email/privatEpost17", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost17"),
+                                        select.optional("email/privatEpost18", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost18"),
+                                        select.optional("email/privatEpost19", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost19"),
+                                        select.optional("email/privatEpost20", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost20"),
+                                        select.optional("email/privatEpost21", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost21"),
+                                        select.optional("email/privatEpost22", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost22"),
+                                        select.optional("email/privatEpost23", STUDIERETT.person().EMAILADRESSE_PRIVAT).as("privatEpost23")
+                                ).mapping(Email.class, r ->
+                                        new Email(
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[0]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[1]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[2]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[3]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[4]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[5]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[6]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[7]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[8]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[9]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[10]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[11]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[12]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[13]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[14]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[15]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[16]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[17]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[18]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[19]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[20]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[21]),
+                                                STUDIERETT.person().EMAILADRESSE_PRIVAT.getDataType().convert(r[22])
+                                        )
+                                ).as("email")
+                        ).mapping(PersonProfil.class, r ->
+                                r[0] == null && r[1] == null && r[2] == null && r[3] == null && r[4] == null && r[5] == null && r[6] == null && r[7] == null && r[8] == null && r[9] == null && r[10] == null && r[11] == null && r[12] == null && r[13] == null && r[14] == null && r[15] == null && r[16] == null && r[17] == null && r[18] == null && r[19] == null && r[20] == null && r[21] == null && r[22] == null && r[23] == null && (r[24] == null || new Email().equals(r[24])) ? null : new PersonProfil(
+                                        (String) r[0],
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[1]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[2]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[3]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[4]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[5]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[6]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[7]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[8]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[9]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[10]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[11]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[12]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[13]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[14]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[15]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[16]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[17]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[18]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[19]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[20]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[21]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[22]),
+                                        STUDIERETT.person().FORNAVN.getDataType().convert(r[23]),
+                                        (Email) r[24]
+                                )
+                        ).as("personProfil")
+                )
+                .from(STUDIERETT)
+                .where(STUDIERETT.hasIds(programStudierettIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

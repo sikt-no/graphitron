@@ -34,7 +34,13 @@ public class ProcessedSchema {
     private final ObjectDefinition mutationType;
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
-        new DirectiveDefinitionsValidator(typeRegistry.getDirectiveDefinitions()).warnMismatchedDirectives();
+        this(typeRegistry, true);
+    }
+
+    public ProcessedSchema(TypeDefinitionRegistry typeRegistry, boolean warnDirectives) {
+        if (warnDirectives) {
+            new DirectiveDefinitionsValidator(typeRegistry.getDirectiveDefinitions()).warnMismatchedDirectives();
+        }
 
         var objectTypes = typeRegistry.getTypes(ObjectTypeDefinition.class);
         enums = EnumDefinition.processEnumDefinitions(typeRegistry.getTypes(EnumTypeDefinition.class))

@@ -4,6 +4,7 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
@@ -25,13 +26,18 @@ public class GraphQLGenerator {
     }
 
     public static void generate() throws IOException {
-        var processedSchema = getProcessedSchema();
+        generate(true);
+    }
+
+    public static void generate(boolean warnDirectives) throws IOException {
+        var processedSchema = getProcessedSchema(warnDirectives);
         processedSchema.validate();
 
         var generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
                 new FetchResolverClassGenerator(processedSchema),
-                new UpdateResolverClassGenerator(processedSchema)
+                new UpdateResolverClassGenerator(processedSchema),
+                new UpdateDBClassGenerator(processedSchema)
         );
 
         generate(generators);
@@ -45,10 +51,10 @@ public class GraphQLGenerator {
     }
 
     @NotNull
-    public static ProcessedSchema getProcessedSchema() throws IOException {
+    public static ProcessedSchema getProcessedSchema(boolean warnDirectives) throws IOException {
         GeneratorConfig.loadProperties();
         var schemaLocations = new ArrayList<>(GeneratorConfig.schemaFiles());
         LOGGER.info("Reading graphql schemas {}", schemaLocations);
-        return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations));
+        return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations), warnDirectives);
     }
 }

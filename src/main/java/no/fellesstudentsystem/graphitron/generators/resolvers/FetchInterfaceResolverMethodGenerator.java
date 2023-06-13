@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -78,7 +79,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                             Map.entry("environmentUtils", ENVIRONMENT_UTILS.className),
                             Map.entry("referenceFieldName", capitalize(target.getName()))
                     );
-                    dependencySet.add(new QueryDependency(queryLocation));
+                    dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
                     spec.beginControlFlow("if (tablePartOfId.equals($T.$N.getViewId().toString()))", TABLES.className, implementation.getTable().getName());
                     spec.addStatement(CodeBlock.builder().addNamed(

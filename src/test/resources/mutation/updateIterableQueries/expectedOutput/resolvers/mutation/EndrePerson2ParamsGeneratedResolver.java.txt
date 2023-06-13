@@ -1,0 +1,49 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePerson2ParamsMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.queries.mutation.EndrePerson2ParamsDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePerson2ParamsGeneratedResolver implements EndrePerson2ParamsMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePerson2ParamsDBQueries endrePerson2ParamsDBQueries;
+
+    @Override
+    public CompletableFuture<List<String>> endrePerson2Params(List<EndreInput> input,
+            String etternavn, DataFetchingEnvironment env) throws Exception {
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setFornavn(itInput.getFornavn());
+                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var endrePerson2ParamsResult = endrePerson2ParamsDBQueries.endrePerson2Params(inputRecordList, etternavn);
+
+        return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
+    }
+}

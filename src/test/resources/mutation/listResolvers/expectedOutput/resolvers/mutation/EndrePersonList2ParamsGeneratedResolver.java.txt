@@ -1,0 +1,48 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonList2ParamsMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonList2ParamsGeneratedResolver implements EndrePersonList2ParamsMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Override
+    public CompletableFuture<List<String>> endrePersonList2Params(List<EndreInput> input,
+            List<String> etternavn, DataFetchingEnvironment env) throws Exception {
+        var testPersonService = new TestPersonService(ctx);
+        var select = new SelectionSets(env.getSelectionSet());
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setFornavn(itInput.getFornavn());
+                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var endrePersonList2ParamsResult = testPersonService.endrePersonList2Params(inputRecordList, etternavn);
+
+        return CompletableFuture.completedFuture(endrePersonList2ParamsResult);
+    }
+}

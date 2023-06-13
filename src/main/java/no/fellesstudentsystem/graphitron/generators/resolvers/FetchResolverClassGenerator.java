@@ -15,7 +15,7 @@ import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_
  * Class generator for basic select resolver classes.
  */
 public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDefinition> {
-    public final String SAVE_DIRECTORY_NAME = ResolverClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + ".query";
+    public final String SAVE_DIRECTORY_NAME = "query";
 
     public FetchResolverClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
@@ -33,7 +33,7 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
                 .collect(Collectors.toList());
 
         for (var generatedClass : classes) {
-            writeToFile(generatedClass, path, packagePath, SAVE_DIRECTORY_NAME);
+            writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
         }
     }
 
@@ -50,6 +50,6 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
 
     @Override
     public String getDefaultSaveDirectoryName() {
-        return SAVE_DIRECTORY_NAME;
+        return ResolverClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
     }
 }

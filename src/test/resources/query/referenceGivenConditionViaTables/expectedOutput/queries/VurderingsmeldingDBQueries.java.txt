@@ -1,0 +1,41 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Telefon;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class VurderingsmeldingDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, Telefon> studentPrivatTelefonForVurderingsmelding(
+            Set<String> vurderingsmeldingIder, SelectionSets select) {
+        var person_studentprivattelefon = PERSON_TELEFON.as("person_studentprivattelefon");
+        var vurderingsmelding_student = VURDERINGSMELDING.student().as("vurderingsmelding_student");
+        var vurderingsmelding_student_person = vurderingsmelding_student.person().as("vurderingsmelding_student_person");
+        return ctx
+                .select(
+                        VURDERINGSMELDING.getId(),
+                        row(
+                                person_studentprivattelefon.getId().as("id"),
+                                select.optional("nummer", person_studentprivattelefon.TELEFONNR).as("nummer")
+                        ).mapping(nullOnAllNull(Telefon::new)).as("studentPrivatTelefon")
+                )
+                .from(VURDERINGSMELDING)
+                .leftJoin(person_studentprivattelefon)
+                .on(no.fellesstudentsystem.kjerneapi.conditions.PersonTelefonConditions.personTelefonPrivat(vurderingsmelding_student_person, person_studentprivattelefon))
+                .where(VURDERINGSMELDING.hasIds(vurderingsmeldingIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

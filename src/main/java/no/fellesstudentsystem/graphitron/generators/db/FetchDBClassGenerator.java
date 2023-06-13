@@ -18,7 +18,8 @@ import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_
 /**
  * Class generator for basic select query classes.
  */
-public class FetchDBClassGenerator extends DBClassGenerator {
+public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
+    public static final String SAVE_DIRECTORY_NAME = "query";
 
     private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
 
@@ -81,5 +82,10 @@ public class FetchDBClassGenerator extends DBClassGenerator {
                         new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField, enumOverrides, conditionOverrides)
                 )
         ).build();
+    }
+
+    @Override
+    public String getDefaultSaveDirectoryName() {
+        return DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
     }
 }

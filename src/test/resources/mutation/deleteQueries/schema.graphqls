@@ -1,0 +1,41 @@
+input EndreInput @record(table : "PERSON") {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+}
+
+type EndreResponse {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name : "epostField")
+}
+
+type EndreResponseWithPerson {
+  id: ID!
+  personProfil: PersonProfil @column(name : "persProf")
+  post: Postadresse
+}
+
+type Mutation {
+  slettPersonInput(input: EndreInput!): ID! @mutationType(typeName: DELETE)
+  slettPerson2Params(input: EndreInput!, etternavn: String): ID! @mutationType(typeName: DELETE)
+  slettPersonInputAndResponse(input: EndreInput!): EndreResponse! @mutationType(typeName: DELETE)
+  slettPersonWithProfilResponse(input: EndreInput!): EndreResponseWithPerson! @mutationType(typeName: DELETE)
+}
+
+interface Node {
+  id: ID!
+}
+
+type PersonProfil implements Node @node(table : "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  dod: Boolean @column(name : "STATUS_DOD")
+}
+
+type Query {
+  " Dummy query, since the schema insists that there must be at least one."
+  i(id: ID): ID! @notGenerated
+}

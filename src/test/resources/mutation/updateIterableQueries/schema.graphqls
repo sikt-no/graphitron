@@ -1,0 +1,37 @@
+input EndreInput @record(table : "PERSON") {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+}
+
+type EndreResponse {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name : "epostField")
+}
+
+type EndreResponseWithPerson {
+  id: ID!
+  personProfil: PersonProfil @column(name : "persProf")
+  post: Postadresse
+}
+
+type Mutation {
+  endrePersonInput(input: [EndreInput!]): [ID!] @mutationType(typeName: UPDATE)
+  endrePerson2Params(input: [EndreInput!], etternavn: String): [ID!] @mutationType(typeName: UPDATE)
+  endrePersonInputAndResponse(input: [EndreInput!]): [EndreResponse!] @mutationType(typeName: UPDATE)
+  endrePersonWithProfilResponse(input: [EndreInput!]): [EndreResponseWithPerson!] @mutationType(typeName: UPDATE)
+}
+
+type PersonProfil @node(table : "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  dod: Boolean @column(name : "STATUS_DOD")
+}
+
+type Query {
+  " Dummy query, since the schema insists that there must be at least one."
+  i(id: ID): ID! @notGenerated
+}

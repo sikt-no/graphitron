@@ -1,0 +1,147 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Semesterregistrering;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInput;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInputWithOneField;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminNestedInput;
+import no.fellesstudentsystem.graphql.generated.model.Termintype;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class StudentVedInstitusjonDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, List<Semesterregistrering>> semesterregistreringerForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder, SemesterregistreringsterminInput terminIn,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        SEMESTERREGISTRERING.getStudentId(),
+                        row(
+                                SEMESTERREGISTRERING.getId().as("id"),
+                                select.optional("registrert", SEMESTERREGISTRERING.STATUS_REG_OK).as("registrert")
+                        ).mapping(nullOnAllNull(Semesterregistrering::new)).as("semesterregistreringer")
+                )
+                .from(SEMESTERREGISTRERING)
+                .where(SEMESTERREGISTRERING.hasStudentIds(studentVedInstitusjonIder))
+                .and(SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().MANEDNR_START.eq(terminIn.getManed()))
+                .and(SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(terminIn.getTermintype()))
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, List<Semesterregistrering>> registreringerForInputListForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder,
+            List<SemesterregistreringsterminInput> terminInList, SelectionSets select) {
+        return ctx
+                .select(
+                        SEMESTERREGISTRERING.getStudentId(),
+                        row(
+                                SEMESTERREGISTRERING.getId().as("id"),
+                                select.optional("registrert", SEMESTERREGISTRERING.STATUS_REG_OK).as("registrert")
+                        ).mapping(nullOnAllNull(Semesterregistrering::new)).as("registreringerForInputList")
+                )
+                .from(SEMESTERREGISTRERING)
+                .where(SEMESTERREGISTRERING.hasStudentIds(studentVedInstitusjonIder))
+                .and(terminInList != null && terminInList.size() > 0 ?
+                        row(
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().MANEDNR_START,
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))
+                        ).in(terminInList.stream().map(input -> row(
+                                input.getManed(),
+                                input.getTermintype())
+                        ).collect(Collectors.toList())) :
+                        noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, List<Semesterregistrering>> registreringerForMixOfListAndSingleInputForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder, SemesterregistreringsterminInput terminIn,
+            List<SemesterregistreringsterminInput> terminInList, SelectionSets select) {
+        return ctx
+                .select(
+                        SEMESTERREGISTRERING.getStudentId(),
+                        row(
+                                SEMESTERREGISTRERING.getId().as("id"),
+                                select.optional("registrert", SEMESTERREGISTRERING.STATUS_REG_OK).as("registrert")
+                        ).mapping(nullOnAllNull(Semesterregistrering::new)).as("registreringerForMixOfListAndSingleInput")
+                )
+                .from(SEMESTERREGISTRERING)
+                .where(SEMESTERREGISTRERING.hasStudentIds(studentVedInstitusjonIder))
+                .and(SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().MANEDNR_START.eq(terminIn.getManed()))
+                .and(SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(terminIn.getTermintype()))
+                .and(terminInList != null && terminInList.size() > 0 ?
+                        row(
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().MANEDNR_START,
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))
+                        ).in(terminInList.stream().map(input -> row(
+                                input.getManed(),
+                                input.getTermintype())
+                        ).collect(Collectors.toList())) :
+                        noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, List<Semesterregistrering>> registreringerForInputWithOneFieldListForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder,
+            List<SemesterregistreringsterminInputWithOneField> terminInListOneField,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        SEMESTERREGISTRERING.getStudentId(),
+                        row(
+                                SEMESTERREGISTRERING.getId().as("id"),
+                                select.optional("registrert", SEMESTERREGISTRERING.STATUS_REG_OK).as("registrert")
+                        ).mapping(nullOnAllNull(Semesterregistrering::new)).as("registreringerForInputWithOneFieldList")
+                )
+                .from(SEMESTERREGISTRERING)
+                .where(SEMESTERREGISTRERING.hasStudentIds(studentVedInstitusjonIder))
+                .and(terminInListOneField != null && terminInListOneField.size() > 0 ?
+                        row(
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().MANEDNR_START
+                        ).in(terminInListOneField.stream().map(input -> row(
+                                input.getManed())
+                        ).collect(Collectors.toList())) :
+                        noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, List<Semesterregistrering>> registreringerForInputWithNestedFieldListForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder,
+            List<SemesterregistreringsterminNestedInput> terminInListNestedField,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        SEMESTERREGISTRERING.getStudentId(),
+                        row(
+                                SEMESTERREGISTRERING.getId().as("id"),
+                                select.optional("registrert", SEMESTERREGISTRERING.STATUS_REG_OK).as("registrert")
+                        ).mapping(nullOnAllNull(Semesterregistrering::new)).as("registreringerForInputWithNestedFieldList")
+                )
+                .from(SEMESTERREGISTRERING)
+                .where(SEMESTERREGISTRERING.hasStudentIds(studentVedInstitusjonIder))
+                .and(terminInListNestedField != null && terminInListNestedField.size() > 0 ?
+                        row(
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().MANEDNR_START,
+                                SEMESTERREGISTRERING.semesterregistrering_Har_Termin_Fk().TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))
+                        ).in(terminInListNestedField.stream().map(input -> row(
+                                input.getManedField().getManed(),
+                                input.getTermintype())
+                        ).collect(Collectors.toList())) :
+                        noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

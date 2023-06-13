@@ -1,0 +1,116 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.Integer;
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.PersonEpost;
+import no.fellesstudentsystem.graphql.generated.model.PersonInput;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<PersonProfil> personNoPageForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, PersonInput pin, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                PERSON.getId().as("id"),
+                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
+                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                row(
+                                        select.optional("epost/privatEpost", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost"),
+                                        select.optional("epost/arbeidsEpost", PERSON.EMAILADRESSE_ARBEID).as("arbeidsEpost"),
+                                        select.optional("epost/institusjonsEpost", PERSON.EMAILADRESSE).as("institusjonsEpost")
+                                ).mapping(nullOnAllNull(PersonEpost::new)).as("epost")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personNoPage")
+                )
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
+                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
+                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
+                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
+                .orderBy(PERSON.getIdFields())
+                .fetch(0, PersonProfil.class);
+    }
+
+    public List<PersonProfil> personWithPageForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, PersonInput pin, Integer pageSize, String after,
+            SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                PERSON.getId().as("id"),
+                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
+                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                row(
+                                        select.optional("epost/privatEpost", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost"),
+                                        select.optional("epost/arbeidsEpost", PERSON.EMAILADRESSE_ARBEID).as("arbeidsEpost"),
+                                        select.optional("epost/institusjonsEpost", PERSON.EMAILADRESSE).as("institusjonsEpost")
+                                ).mapping(nullOnAllNull(PersonEpost::new)).as("epost")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personWithPage")
+                )
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
+                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
+                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
+                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
+                .orderBy(PERSON.getIdFields())
+                .seek(PERSON.getIdValues(after))
+                .limit(pageSize + 1)
+                .fetch(0, PersonProfil.class);
+    }
+
+    public List<StudentVedInstitusjon> studenterForQuery(String eierInstitusjonsnummer,
+            Integer pageSize, String after, SelectionSets select) {
+        return ctx
+                .select(
+                        row(
+                                STUDENT.getId().as("id")
+                        ).mapping(nullOnAllNull(StudentVedInstitusjon::new)).as("studenter")
+                )
+                .from(STUDENT)
+                .where(STUDENT.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .orderBy(STUDENT.getIdFields())
+                .seek(STUDENT.getIdValues(after))
+                .limit(pageSize + 1)
+                .fetch(0, StudentVedInstitusjon.class);
+    }
+
+    public Integer countPersonWithPageForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, PersonInput pin) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
+                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
+                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
+                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
+                .fetchOne(0, Integer.class);
+    }
+
+    public Integer countStudenterForQuery(String eierInstitusjonsnummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(STUDENT)
+                .where(STUDENT.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .fetchOne(0, Integer.class);
+    }
+}

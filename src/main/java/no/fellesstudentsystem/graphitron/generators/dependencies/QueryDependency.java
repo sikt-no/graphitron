@@ -9,8 +9,8 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INJEC
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class QueryDependency extends NamedDependency {
-    public QueryDependency(String name) {
-        super(name, GeneratorConfig.outputQueriesPackage());
+    public QueryDependency(String name, String subPath) {
+        super(name, GeneratorConfig.outputQueriesPackage() + "." + subPath);
     }
 
     public FieldSpec getSpec() {

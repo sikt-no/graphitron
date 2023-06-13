@@ -1,0 +1,43 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonInputAndResponseMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
+import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonInputAndResponseDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonInputAndResponseGeneratedResolver implements EndrePersonInputAndResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePersonInputAndResponseDBQueries endrePersonInputAndResponseDBQueries;
+
+    @Override
+    public CompletableFuture<EndreResponse> endrePersonInputAndResponse(EndreInput input,
+            DataFetchingEnvironment env) throws Exception {
+        var inputRecord = new PersonRecord();
+        inputRecord.attach(ctx.configuration());
+
+        if (input != null) {
+            inputRecord.setId(input.getId());
+            inputRecord.setFornavn(input.getFornavn());
+            inputRecord.setEmailadressePrivat(input.getPrivatEpost());
+            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
+        }
+
+        var endrePersonInputAndResponseResult = endrePersonInputAndResponseDBQueries.endrePersonInputAndResponse(inputRecord);
+
+        var endreResponse = new EndreResponse();
+        endreResponse.setId(inputRecord.getId());
+
+        return CompletableFuture.completedFuture(endreResponse);
+    }
+}

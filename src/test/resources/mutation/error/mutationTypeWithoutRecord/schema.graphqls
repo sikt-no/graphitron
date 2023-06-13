@@ -1,0 +1,12 @@
+type EndreResponse {
+  id: ID!
+}
+
+type Mutation {
+  endrePerson(id: ID!): EndreResponse! @mutationType(typeName: UPDATE)
+}
+
+type Query {
+  " Dummy query, since the schema insists that there must be at least one."
+  i(id: ID): ID! @notGenerated
+}
