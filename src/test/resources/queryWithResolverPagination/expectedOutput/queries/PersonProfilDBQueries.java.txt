@@ -38,4 +38,12 @@ public class PersonProfilDBQueries {
                 .limit(pageSize + 1)
                 .fetchGroups(Record2::value1, Record2::value2);
     }
+
+    public Integer countPassForPersonProfil(Set<String> personProfilIder) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PASS)
+                .where(PASS.hasPersonIds(personProfilIder))
+                .fetchOne(0, Integer.class);
+    }
 }

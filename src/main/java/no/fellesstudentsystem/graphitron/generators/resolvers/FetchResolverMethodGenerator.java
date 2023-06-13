@@ -8,8 +8,8 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -17,9 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static java.util.Collections.nCopies;
+import static java.util.Map.entry;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
+import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -31,12 +34,15 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             ENV_NAME = "env",
             BATCHED_ENV_NAME = "batchEnvLoader",
             PAGE_SIZE_NAME = "pageSize",
+            AFTER_NAME = "after",
             MAP_RESULT_NAME = "mapResult",
             QUERY_RESULT_NAME = "dbResult",
             PAGINATION_RESULT_NAME = "pagedResult",
             RESULT_ENTRY_NAME = "resultEntry",
             RESULT_VALUE_NAME = "resultValue",
-            PAGINATION_RESULT_ENTRY_NAME = "pagedResultEntry";
+            PAGINATION_RESULT_ENTRY_NAME = "pagedResultEntry",
+            SELECTION_SET_NAME = "selectionSet";
+    private static final int MAX_NUMBER_OF_NODES_TO_DISPLAY = 1000;
 
     public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -57,7 +63,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         var allQueryInputs = getQueryInputs(spec, target);
         spec.addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME);
 
-        spec.addCode(queryMethodCall(target, returnClassName, allQueryInputs));
+        spec.addCode(queryMethodCalls(target, returnClassName, allQueryInputs));
 
         var currentResultName = (isRootLevel) ? QUERY_RESULT_NAME : MAP_RESULT_NAME;
         if (target.hasForwardPagination()) {
@@ -69,17 +75,20 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                 currentResultName = RESULT_VALUE_NAME;
             }
             var nodeType = processedSchema.getConnectionObject(target.getTypeName()).getNodeType();
-            var paginationInputMap = Map.of(
-                    "math", MATH.className,
-                    "dbResult", currentResultName,
-                    "resultName", (!isRootLevel) ? PAGINATION_RESULT_ENTRY_NAME : PAGINATION_RESULT_NAME,
-                    "pageSize", PAGE_SIZE_NAME,
-                    "connectionClass", RELAY_CONNECTION_IMPL.className,
-                    "connectionCursorClass", RELAY_CONNECTION_CURSOR_IMPL.className,
-                    "pageInfoClass", RELAY_PAGE_INFO_IMPL.className,
-                    "nodeType", nodeType,
-                    "edgeClass", RELAY_EDGE_IMPL.className,
-                    "collectors", COLLECTORS.className
+            var paginationInputMap = Map.ofEntries(
+                    entry("math", MATH.className),
+                    entry("dbResult", currentResultName),
+                    entry("resultName", (!isRootLevel) ? PAGINATION_RESULT_ENTRY_NAME : PAGINATION_RESULT_NAME),
+                    entry("pageSize", PAGE_SIZE_NAME),
+                    entry("connectionClass", RELAY_CONNECTION_IMPL.className),
+                    entry("connectionCursorClass", RELAY_CONNECTION_CURSOR_IMPL.className),
+                    entry("pageInfoClass", RELAY_PAGE_INFO_IMPL.className),
+                    entry("nodeType", nodeType),
+                    entry("edgeClass", RELAY_EDGE_IMPL.className),
+                    entry("collectors", COLLECTORS.className),
+                    entry("integerClass", INTEGER.className),
+                    entry("totalCount", TOTAL_COUNT_NAME),
+                    entry("maxNoOfNodes", MAX_NUMBER_OF_NODES_TO_DISPLAY)
             );
             spec.addNamedCode(getPaginationSegmentString(), paginationInputMap);
             currentResultName = PAGINATION_RESULT_NAME;
@@ -144,37 +153,51 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     }
 
     @NotNull
-    private CodeBlock queryMethodCall(ObjectField referenceField, TypeName returnClassName, List<String> allQueryInputs) {
+    private CodeBlock queryMethodCalls(ObjectField referenceField, TypeName returnClassName, List<String> allQueryInputs) {
         var localObject = getLocalObject();
-        var localName = localObject.getName();
 
-        var extraParameters = String.join(", ", nCopies(allQueryInputs.size(), "$N"));
-        var queryMethodName = referenceField.getName() + "For" + localName;
-        var queryParams = CodeBlock.builder();
+        var queryMethodName = asQueryMethodName(referenceField, localObject);
+        var dbQueryCallCodeBlock = CodeBlock.builder();
 
-        var queryLocation = localName + FILE_NAME_SUFFIX;
-        queryParams.add("var " + QUERY_RESULT_NAME + " = $N.$N(", uncapitalize(queryLocation), queryMethodName);
+        var queryLocation = localObject.getName() + FILE_NAME_SUFFIX;
+
+        var selectionSetDeclaration = CodeBlock.of("var $L = new $T($T.getSelectionSetsFromEnvironment($N))",
+                SELECTION_SET_NAME,
+                referenceField.hasForwardPagination() ? CONNECTION_SELECTION_SETS.className : SELECTION_SETS.className,
+                ENVIRONMENT_UTILS.className,
+                localObject.isRoot() ? ENV_NAME : BATCHED_ENV_NAME);
+        dbQueryCallCodeBlock.addStatement(selectionSetDeclaration);
+
+        dbQueryCallCodeBlock.add("var $L = $N.$L(", QUERY_RESULT_NAME, uncapitalize(queryLocation), queryMethodName);
         dependencySet.add(new QueryDependency(queryLocation));
+
+        allQueryInputs.add(SELECTION_SET_NAME);
+
         if (!localObject.isRoot()) {
-            queryParams.add("idSet, ");
+            allQueryInputs.add(0, "idSet");
         }
 
         if (allQueryInputs.size() > 0) {
-            queryParams.add(extraParameters + ", ", allQueryInputs.toArray());
+            dbQueryCallCodeBlock.addStatement(String.join(", ", allQueryInputs) + ")");
         }
 
-        var params = queryParams.addStatement(
-                "new $T($T.getSelectionSetsFromEnvironment($N)))",
-                referenceField.hasForwardPagination() ? CONNECTION_SELECTION_SETS.className : SELECTION_SETS.className,
-                ENVIRONMENT_UTILS.className,
-                localObject.isRoot() ? ENV_NAME : BATCHED_ENV_NAME
-        ).build();
+        if (referenceField.hasRequiredPaginationFields()) {
+            dbQueryCallCodeBlock.addStatement("var $L = selectionSet.contains($S) ? $N.$L($N) : null",
+                    TOTAL_COUNT_NAME,
+                    TOTAL_COUNT_NAME,
+                    uncapitalize(queryLocation),
+                    "count" + capitalize(queryMethodName),
+                    allQueryInputs.stream()
+                            .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(AFTER_NAME) && !it.equals(SELECTION_SET_NAME))
+                            .collect(Collectors.joining(", ")));
+        }
 
-        var coreQuery = CodeBlock.builder();
+        var methodBodyBuilder = CodeBlock.builder();
+
         if (localObject.isRoot()) {
-            coreQuery.add(params);
+            methodBodyBuilder.add(dbQueryCallCodeBlock.build());
         } else {
-            coreQuery
+            methodBodyBuilder
                     .beginControlFlow(
                             "$T<$T, $T> loader = $N.getDataLoaderRegistry().computeIfAbsent(\""
                                     + queryMethodName
@@ -190,7 +213,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                     .addStatement("var keyToId = keys.stream().collect($W$T.toMap(s -> s, s -> s.substring(s.lastIndexOf($S) + $L)))",
                             COLLECTORS.className, EXECUTION_STEP_PATH_ID_DELIMITER, EXECUTION_STEP_PATH_ID_DELIMITER.length())
                     .addStatement("var idSet = new $T<>(keyToId.values())", HASH_SET.className)
-                    .add(params)
+                    .add(dbQueryCallCodeBlock.build())
                     .addStatement(
                             "var "
                                     + MAP_RESULT_NAME
@@ -203,7 +226,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                             QUERY_RESULT_NAME
                     );
         }
-        return coreQuery.build();
+        return methodBodyBuilder.build();
     }
 
     @NotNull
@@ -252,6 +275,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                 "                        .map(item -> new $edgeClass:T<$nodeType:N>(item, new $connectionCursorClass:T(item.getId())))\n" +
                 "                        .collect($collectors:T.toList())\n" +
                 "        )\n" +
+                "        .setTotalCount($totalCount:N != null ? $math:T.min($maxNoOfNodes:L, $totalCount:N) : null)\n" +
                 "        .build();\n";
     }
 

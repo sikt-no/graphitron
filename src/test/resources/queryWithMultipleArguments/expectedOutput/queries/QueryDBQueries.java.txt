@@ -61,4 +61,28 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(0, PersonProfil.class);
     }
+
+
+    public Integer countPersonTwoArgumentsForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .fetchOne(0, Integer.class);
+    }
+
+    public Integer countPersonFiveArgumentsForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(fornavn != null ? PERSON.FORNAVN.eq(fornavn) : noCondition())
+                .and(PERSON.ETTERNAVN.eq(etternavn))
+                .and(personkode != null ? PERSON.PERSONKODE.eq(personkode) : noCondition())
+                .fetchOne(0, Integer.class);
+    }
 }

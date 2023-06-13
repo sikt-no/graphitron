@@ -21,18 +21,19 @@ import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
 import no.fellesstudentsystem.graphql.queries.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
-import no.fellesstudentsystem.graphql.relay.ConnectionWithNodes;
+import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
-    public CompletableFuture<ConnectionWithNodes<PersonProfil>> person(
-            String eierInstitusjonsnummer, Integer first, String after, DataFetchingEnvironment env)
-            throws Exception {
+    public CompletableFuture<ExtendedConnection<PersonProfil>> person(String eierInstitusjonsnummer,
+            Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = Optional.ofNullable(first).orElse(10);
-        var dbResult = queryDBQueries.personForQuery(eierInstitusjonsnummer, pageSize, after, new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.personForQuery(eierInstitusjonsnummer, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonForQuery(eierInstitusjonsnummer) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
@@ -49,6 +50,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                                 .map(item -> new DefaultEdge<PersonProfil>(item, new DefaultConnectionCursor(item.getId())))
                                 .collect(Collectors.toList())
                 )
+                .setTotalCount(totalCount != null ? Math.min(1000, totalCount) : null)
                 .build();
         return CompletableFuture.completedFuture(pagedResult);
     }
@@ -56,7 +58,8 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<PersonProfil>> person2(String eierInstitusjonsnummer,
             DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.person2ForQuery(eierInstitusjonsnummer, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.person2ForQuery(eierInstitusjonsnummer, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

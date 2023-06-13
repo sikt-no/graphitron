@@ -23,7 +23,7 @@ import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
 import no.fellesstudentsystem.graphql.queries.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
-import no.fellesstudentsystem.graphql.relay.ConnectionWithNodes;
+import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
@@ -33,15 +33,17 @@ public class PersonProfilGeneratedResolver implements PersonProfilResolver {
     private PersonProfilDBQueries personProfilDBQueries;
 
     @Override
-    public CompletableFuture<ConnectionWithNodes<Pass>> pass(PersonProfil personProfil,
+    public CompletableFuture<ExtendedConnection<Pass>> pass(PersonProfil personProfil,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = Optional.ofNullable(first).orElse(10);
-        DataLoader<String, ConnectionWithNodes<Pass>> loader = env.getDataLoaderRegistry().computeIfAbsent("passForPersonProfil", name -> {
-            var batchLoader = (MappedBatchLoaderWithContext<String, ConnectionWithNodes<Pass>>) (keys, batchEnvLoader) -> {
+        DataLoader<String, ExtendedConnection<Pass>> loader = env.getDataLoaderRegistry().computeIfAbsent("passForPersonProfil", name -> {
+            var batchLoader = (MappedBatchLoaderWithContext<String, ExtendedConnection<Pass>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var dbResult = personProfilDBQueries.passForPersonProfil(idSet, pageSize, after, new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var selectionSet = new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var dbResult = personProfilDBQueries.passForPersonProfil(idSet, pageSize, after, selectionSet);
+                var totalCount = selectionSet.contains("totalCount") ? personProfilDBQueries.countPassForPersonProfil(idSet) : null;
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
@@ -63,8 +65,9 @@ public class PersonProfilGeneratedResolver implements PersonProfilResolver {
                                             .map(item -> new DefaultEdge<Pass>(item, new DefaultConnectionCursor(item.getId())))
                                             .collect(Collectors.toList())
                             )
+                            .setTotalCount(totalCount != null ? Math.min(1000, totalCount) : null)
                             .build();
-                    return new AbstractMap.SimpleEntry<String, ConnectionWithNodes<Pass>>(resultEntry.getKey(), pagedResultEntry);
+                    return new AbstractMap.SimpleEntry<String, ExtendedConnection<Pass>>(resultEntry.getKey(), pagedResultEntry);
                 } ).collect(Collectors.toMap(r -> r.getKey(), r -> r.getValue()));
                 return CompletableFuture.completedFuture(pagedResult);
             } ;

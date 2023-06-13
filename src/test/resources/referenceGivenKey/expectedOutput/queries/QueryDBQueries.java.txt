@@ -6,7 +6,6 @@ import static no.fellesstudentsystem.kjerneapi.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
-import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
 import javax.inject.Inject;
@@ -18,8 +17,7 @@ public class QueryDBQueries {
     @Inject
     DSLContext ctx;
 
-    public List<Emne> emnerForQuery(String eierInstitusjonsnummer, Integer pageSize, String after,
-            SelectionSets select) {
+    public List<Emne> emnerForQuery(String eierInstitusjonsnummer, SelectionSets select) {
         return ctx
                 .select(
                         row(
@@ -29,8 +27,6 @@ public class QueryDBQueries {
                 .from(EMNE)
                 .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
                 .orderBy(EMNE.getIdFields())
-                .seek(EMNE.getIdValues(after))
-                .limit(pageSize + 1)
                 .fetch(0, Emne.class);
     }
 }

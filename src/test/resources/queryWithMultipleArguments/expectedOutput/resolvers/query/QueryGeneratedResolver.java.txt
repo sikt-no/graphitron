@@ -20,18 +20,20 @@ import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
 import no.fellesstudentsystem.graphql.queries.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
-import no.fellesstudentsystem.graphql.relay.ConnectionWithNodes;
+import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
-    public CompletableFuture<ConnectionWithNodes<PersonProfil>> personTwoArguments(
+    public CompletableFuture<ExtendedConnection<PersonProfil>> personTwoArguments(
             String eierInstitusjonsnummer, List<Integer> personlopenummer, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = Optional.ofNullable(first).orElse(10);
-        var dbResult = queryDBQueries.personTwoArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, pageSize, after, new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.personTwoArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countPersonTwoArgumentsForQuery(eierInstitusjonsnummer, personlopenummer) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
@@ -48,17 +50,20 @@ public class QueryGeneratedResolver implements QueryResolver {
                                 .map(item -> new DefaultEdge<PersonProfil>(item, new DefaultConnectionCursor(item.getId())))
                                 .collect(Collectors.toList())
                 )
+                .setTotalCount(totalCount != null ? Math.min(1000, totalCount) : null)
                 .build();
         return CompletableFuture.completedFuture(pagedResult);
     }
 
     @Override
-    public CompletableFuture<ConnectionWithNodes<PersonProfil>> personFiveArguments(
+    public CompletableFuture<ExtendedConnection<PersonProfil>> personFiveArguments(
             String eierInstitusjonsnummer, List<Integer> personlopenummer, String fornavn,
             String etternavn, Integer personkode, Integer first, String after,
             DataFetchingEnvironment env) throws Exception {
         int pageSize = Optional.ofNullable(first).orElse(10);
-        var dbResult = queryDBQueries.personFiveArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, fornavn, etternavn, personkode, pageSize, after, new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.personFiveArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, fornavn, etternavn, personkode, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countPersonFiveArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, fornavn, etternavn, personkode) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
@@ -75,6 +80,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                                 .map(item -> new DefaultEdge<PersonProfil>(item, new DefaultConnectionCursor(item.getId())))
                                 .collect(Collectors.toList())
                 )
+                .setTotalCount(totalCount != null ? Math.min(1000, totalCount) : null)
                 .build();
         return CompletableFuture.completedFuture(pagedResult);
     }

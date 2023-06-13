@@ -22,5 +22,5 @@ type PersonProfilConnectionEdge {
 }
 
 type Query {
-  person(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): PersonProfilConnection @connection(for : "PersonProfil")
+  personer(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): PersonProfilConnection @connection(for : "PersonProfil")
 }

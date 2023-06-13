@@ -76,7 +76,8 @@ public class FetchDBClassGenerator extends DBClassGenerator {
         return getSpec(
                 target.getName() + FILE_NAME_SUFFIX,
                 List.of(
-                        new FetchDBMethodGenerator(target, processedSchema, enumOverrides, conditionOverrides),
+                        new FetchMappedObjectDBMethodGenerator(target, processedSchema, enumOverrides, conditionOverrides),
+                        new FetchCountDBMethodGenerator(target, processedSchema),
                         new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField, enumOverrides, conditionOverrides)
                 )
         ).build();

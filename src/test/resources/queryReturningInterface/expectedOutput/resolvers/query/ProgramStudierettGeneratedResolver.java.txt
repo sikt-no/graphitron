@@ -31,7 +31,8 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var dbResult = programStudierettDBQueries.studierettstatusForProgramStudierett(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var dbResult = programStudierettDBQueries.studierettstatusForProgramStudierett(idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

@@ -21,7 +21,8 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<PersonProfil>> personProfil(String eierInstitusjonsnummer,
             List<Integer> personlopenummer, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.personProfilForQuery(eierInstitusjonsnummer, personlopenummer, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.personProfilForQuery(eierInstitusjonsnummer, personlopenummer, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

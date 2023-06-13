@@ -91,4 +91,26 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(0, StudentVedInstitusjon.class);
     }
+
+    public Integer countPersonWithPageForQuery(String eierInstitusjonsnummer,
+            List<Integer> personlopenummer, PersonInput pin) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
+                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
+                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
+                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
+                .fetchOne(0, Integer.class);
+    }
+
+    public Integer countStudenterForQuery(String eierInstitusjonsnummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(STUDENT)
+                .where(STUDENT.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .fetchOne(0, Integer.class);
+    }
 }

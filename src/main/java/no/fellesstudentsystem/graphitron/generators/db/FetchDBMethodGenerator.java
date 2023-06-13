@@ -1,22 +1,13 @@
 package no.fellesstudentsystem.graphitron.generators.db;
 
-import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
-import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
-import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -24,131 +15,26 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.COLLECTORS;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-/**
- * Generator that creates the default data fetching methods.
- */
-public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    private static final String PAGE_SIZE_NAME = "pageSize";
-    private final String idParamName = uncapitalize(getLocalObject().getName()) + "Ider";
-    private final boolean isRoot = getLocalObject().isRoot();
+public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
+
+    final String idParamName = uncapitalize(getLocalObject().getName()) + "Ider";
+    final boolean isRoot = getLocalObject().isRoot();
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
 
-    public FetchDBMethodGenerator(
-            ObjectDefinition localObject,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> enumOverrides,
-            Map<String, Method> conditionOverrides
-    ) {
+    public FetchDBMethodGenerator(ObjectDefinition localObject,
+                                  ProcessedSchema processedSchema,
+                                  Map<String, Class<?>> enumOverrides,
+                                  Map<String, Method> conditionOverrides) {
         super(localObject, processedSchema, enumOverrides, conditionOverrides);
     }
 
-    /**
-     * @param target A {@link ObjectField} for which a method should be generated for.
-     *                       This must reference an object with the
-     *                       "{@link GenerationDirective#NODE table}" directive set.
-     * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
-     */
-    @Override
-    public MethodSpec generate(ObjectField target) {
-        var refObject = ReferenceHelpers.findReferencedObjectDefinition(target, processedSchema);
-        var localObject = getLocalObject();
-
-        var context = new FetchContext(processedSchema, target, localObject, conditionOverrides);
-        var selectRowCode = generateSelectRow(context);
-        var hasKeyReference = context.hasKeyReference();
-
-        var actualRefTable = refObject.getTable().getName();
-        var code = CodeBlock
-                .builder()
-                .add(declareAliasesAndSetInitialCode(context, actualRefTable))
-                .add(selectRowCode)
-                .add(".as($S)\n", target.getName())
-                .unindent()
-                .unindent()
-                .add(")\n")
-                .add(".from(")
-                .add(hasKeyReference || isRoot ? actualRefTable : localObject.getTable().getName())
-                .add(")\n")
-                .add(createSelectJoins(context.getJoinList()))
-                .add(formatWhereContents(target, hasKeyReference, actualRefTable))
-                .add(createSelectConditions(context.getConditionList()))
-                .add(setPaginationAndFetch(target, actualRefTable));
-
-        return getSpecBuilder(target, refObject.getGraphClassName())
-                .addCode(code.build())
-                .build();
-    }
-
-    private CodeBlock declareAliasesAndSetInitialCode(FetchContext context, String actualRefTable) {
-        var code = CodeBlock
-                .builder()
-                .add(createSelectAliases(context.getJoinList(), context.getAliasList()))
-                .add("return ctx\n")
-                .indent()
-                .indent()
-                .add(".select(\n")
-                .indent()
-                .indent();
-        if (!isRoot) {
-            var localTableName = getLocalObject().getTable().getName();
-            var referenceTableName = context.getReferenceTable().getName();
-            var qualifiedId = TableReflection.getQualifiedId(referenceTableName, localTableName);
-
-            code
-                    .add(context.hasKeyReference() ? actualRefTable + String.format(".get%s()", qualifiedId) : localTableName + ".getId()")
-                    .add(",\n");
-        }
-        return code.build();
-    }
-
-    @NotNull
-    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, ClassName refClassName) {
-        var spec = getDefaultSpecBuilder(
-                referenceField.getName() + "For" + getLocalObject().getName(),
-                getReturnType(referenceField, refClassName)
-        );
-        if (!isRoot) {
-            spec.addParameter(ParameterizedTypeName.get(SET.className, STRING.className), idParamName);
-        }
-
-        if (referenceField.hasNonReservedInputFields()) {
-            var allInputs = processedSchema.getInputTypes();
-            referenceField
-                    .getNonReservedInputFields()
-                    .forEach(i -> spec.addParameter(i.getFieldType().getWrappedTypeClass(allInputs), i.getName()));
-        }
-
-        if (referenceField.hasForwardPagination()) {
-            spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
-            spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
-        }
-        spec.addParameter(SELECTION_SETS.className, SELECTION_NAME);
-
-        return spec;
-    }
-
-    @NotNull
-    private ParameterizedTypeName getReturnType(ObjectField referenceField, ClassName refClassName) {
-        if (isRoot) {
-            return ParameterizedTypeName.get(LIST.className, refClassName);
-        } else {
-            return ParameterizedTypeName.get(
-                    MAP.className,
-                    STRING.className,
-                    referenceField.getFieldType().isIterableWrapped() || referenceField.hasForwardPagination()
-                            ? ParameterizedTypeName.get(LIST.className, refClassName)
-                            : refClassName
-            );
-        }
-    }
-
-    private CodeBlock formatWhereContents(ObjectField referenceField, boolean hasKeyReference, String actualRefTable) {
+    CodeBlock formatWhereContents(ObjectField referenceField, boolean hasKeyReference, String actualRefTable) {
         var code = CodeBlock.builder().add(".where(");
 
         if (!isRoot) {
@@ -271,52 +157,5 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             return getAppliedImplicitJoin(field.getImplicitJoin(), refTableName);
         }
         return "";
-    }
-
-    private CodeBlock setPaginationAndFetch(ObjectField referenceField, String actualRefTable) {
-        var refObject = ReferenceHelpers.findReferencedObjectDefinition(referenceField, processedSchema);
-        var refTable = refObject.getTable().getName();
-        var code = CodeBlock.builder();
-        if (isRoot || referenceField.hasForwardPagination()) {
-            code.add(".orderBy($N.getIdFields())\n", actualRefTable);
-        }
-
-        if (referenceField.hasForwardPagination()) {
-            code.add(".seek($N.getIdValues($N))\n", refTable, GraphQLReservedName.PAGINATION_AFTER.getName());
-            code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
-        }
-
-        if (isRoot) {
-            code.addStatement(".fetch(0, $T.class)", refObject.getGraphClassName());
-        } else {
-            code
-                    .add(".")
-                    .add(
-                            referenceField.getFieldType().isIterableWrapped() || referenceField.hasForwardPagination()
-                                    ? "fetchGroups"
-                                    : "fetchMap"
-                    )
-                    .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
-        }
-        return code.unindent().unindent().build();
-    }
-
-    @Override
-    public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getReferredFieldsFromObjectNames(processedSchema.getNamesWithTableOrConnections())
-                .stream()
-                .filter(ObjectField::isGenerated)
-                .filter(it -> !processedSchema.isInterface(it.getTypeName()))
-                .map(this::generate)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        var fieldStream = getLocalObject().getFields().stream();
-        return isRoot
-                ? fieldStream.allMatch(ObjectField::isGenerated)
-                : fieldStream.allMatch(f -> !f.isResolver() || f.isGenerated());
     }
 }

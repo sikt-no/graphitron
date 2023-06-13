@@ -21,35 +21,40 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Emne>> paramCondition(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.paramConditionForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.paramConditionForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> paramConditionOverride(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.paramConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.paramConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldCondition(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.fieldConditionForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldConditionForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldConditionOverride(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldAndParamCondition(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
@@ -57,7 +62,8 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Emne>> fieldAndParamConditionOverride(
             String eierInstitusjonsnummer, List<String> emnekoder, DataFetchingEnvironment env)
             throws Exception {
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
@@ -65,14 +71,16 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Emne>> fieldAndParamConditionOverrideBoth(
             String eierInstitusjonsnummer, List<String> emnekoder, DataFetchingEnvironment env)
             throws Exception {
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(eierInstitusjonsnummer, emnekoder, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldInputCondition(String eierInstitusjonsnummer,
             EmneInput emneInput, DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.fieldInputConditionForQuery(eierInstitusjonsnummer, emneInput, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldInputConditionForQuery(eierInstitusjonsnummer, emneInput, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

@@ -48,4 +48,12 @@ public class QueryDBQueries {
                 .orderBy(PERSON.getIdFields())
                 .fetch(0, PersonProfil.class);
     }
+
+    public Integer countPersonForQuery(String eierInstitusjonsnummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .fetchOne(0, Integer.class);
+    }
 }

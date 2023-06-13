@@ -31,7 +31,8 @@ public class VurderingsmeldingGeneratedResolver implements VurderingsmeldingReso
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var dbResult = vurderingsmeldingDBQueries.emneForVurderingsmelding(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var dbResult = vurderingsmeldingDBQueries.emneForVurderingsmelding(idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

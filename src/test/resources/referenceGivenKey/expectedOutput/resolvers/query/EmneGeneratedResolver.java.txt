@@ -33,7 +33,8 @@ public class EmneGeneratedResolver implements EmneResolver {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var dbResult = emneDBQueries.campuserForEmne(idSet, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var dbResult = emneDBQueries.campuserForEmne(idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import org.jetbrains.annotations.NotNull;
 
@@ -9,6 +11,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class NameFormat {
     private static final String
+            VARIABLE_COUNT_PREFIX = "count",
             VARIABLE_GET_PREFIX = "get",
             VARIABLE_RESULT_SUFFIX = "Result",
             VARIABLE_LIST_SUFFIX = "List",
@@ -21,6 +24,16 @@ public class NameFormat {
     @NotNull
     public static String asGetMethodVariableName(String fieldSourceTypeName, String fieldName) {
         return uncapitalize(fieldSourceTypeName) + capitalize(fieldName);
+    }
+
+    @NotNull
+    public static String asCountMethodName(ObjectField referenceField, ObjectDefinition objectDefinition) {
+        return VARIABLE_COUNT_PREFIX  + capitalize(asQueryMethodName(referenceField, objectDefinition));
+    }
+
+    @NotNull
+    public static String asQueryMethodName(ObjectField referenceField, ObjectDefinition objectDefinition) {
+        return referenceField.getName() + "For" + objectDefinition.getName();
     }
 
     /**

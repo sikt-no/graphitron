@@ -20,7 +20,8 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Rom>> rom(String bygningskode, DataFetchingEnvironment env) throws
             Exception {
-        var dbResult = queryDBQueries.romForQuery(bygningskode, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.romForQuery(bygningskode, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

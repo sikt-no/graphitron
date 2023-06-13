@@ -20,7 +20,8 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<ProgramStudierett>> programStudierett(String id,
             DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.programStudierettForQuery(id, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.programStudierettForQuery(id, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

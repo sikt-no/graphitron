@@ -5,10 +5,12 @@ import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
 import graphql.relay.DefaultPageInfo;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
-import no.fellesstudentsystem.graphql.relay.ConnectionWithNodes;
+import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import org.jooq.Record;
+import org.jooq.Result;
 
 /**
  * Enum of all the classnames in use in the generator, which helps keep track of dependencies.
@@ -47,11 +49,14 @@ public enum JavaPoetClassName {
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
     SELECTION_SETS(ClassName.get(SelectionSets.class)),
     CONNECTION_SELECTION_SETS(ClassName.get(ConnectionSelectionSets.class)),
+    RECORD(ClassName.get(Record.class)),
     RELAY_EDGE_IMPL(ClassName.get(DefaultEdge.class)),
     RELAY_PAGE_INFO_IMPL(ClassName.get(DefaultPageInfo.class)),
-    RELAY_CONNECTION(ClassName.get(ConnectionWithNodes.class)),
+    RELAY_CONNECTION(ClassName.get(ExtendedConnection.class)),
     RELAY_CONNECTION_IMPL(ClassName.get(ConnectionImpl.class)),
-    RELAY_CONNECTION_CURSOR_IMPL(ClassName.get(DefaultConnectionCursor.class));
+    RELAY_CONNECTION_CURSOR_IMPL(ClassName.get(DefaultConnectionCursor.class)),
+    RESULT(ClassName.get(Result.class));
+
 
     public final ClassName className;
 

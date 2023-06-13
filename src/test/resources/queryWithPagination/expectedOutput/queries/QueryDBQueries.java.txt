@@ -18,14 +18,14 @@ public class QueryDBQueries {
     @Inject
     DSLContext ctx;
 
-    public List<PersonProfil> personForQuery(String eierInstitusjonsnummer, Integer pageSize,
+    public List<PersonProfil> personerForQuery(String eierInstitusjonsnummer, Integer pageSize,
             String after, SelectionSets select) {
         return ctx
                 .select(
                         row(
                                 PERSON.getId().as("id"),
                                 select.optional("fornavn", PERSON.FORNAVN).as("fornavn")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("person")
+                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personer")
                 )
                 .from(PERSON)
                 .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
@@ -33,5 +33,13 @@ public class QueryDBQueries {
                 .seek(PERSON.getIdValues(after))
                 .limit(pageSize + 1)
                 .fetch(0, PersonProfil.class);
+    }
+
+    public Integer countPersonerForQuery(String eierInstitusjonsnummer) {
+        return ctx
+                .select(count().as("totalCount"))
+                .from(PERSON)
+                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .fetchOne(0, Integer.class);
     }
 }
