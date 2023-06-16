@@ -3,8 +3,10 @@ package no.fellesstudentsystem.graphitron.mappings;
 import no.fellesstudentsystem.kjerneapi.Keys;
 import no.fellesstudentsystem.kjerneapi.Tables;
 import org.jooq.ForeignKey;
+import org.jooq.Table;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -18,6 +20,32 @@ public class TableReflection {
     public static final Class<Keys> KEYS_CLASS = Keys.class;
     private final static Set<Field> TABLE_FIELDS = Set.of(TABLES_CLASS.getFields());
     private final static Set<String> POSSIBLE_TABLE_NAMES = TABLE_FIELDS.stream().map(Field::getName).collect(Collectors.toSet());
+
+    public static boolean hasSingleReference(String leftTableName, String rightTableName) {
+        try {
+            var leftTable = (Table<?>) Tables.class.getField(leftTableName).get(null);
+            var rightTable = (Table<?>) Tables.class.getField(rightTableName).get(null);
+            var keys = leftTable.getReferencesTo(rightTable);
+            return keys.size() == 1;
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            return false;
+        }
+    }
+
+    public static String getQualifiedId(String leftTableName, String rightTableName) {
+        try {
+            var leftTable = (Table<?>) Tables.class.getField(leftTableName).get(null);
+            var rightTable = (Table<?>) Tables.class.getField(rightTableName).get(null);
+            var keys = leftTable.getReferencesTo(rightTable);
+            if (keys.size() == 1) {
+                var keyName = keys.get(0).getName();
+                return (String) leftTable.getClass().getMethod("getQualifier", String.class).invoke(leftTable, keyName);
+            }
+            return null;
+        } catch (NoSuchFieldException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            return null;
+        }
+    }
 
     public static boolean tableExists(String tableName) {
         return POSSIBLE_TABLE_NAMES.contains(tableName);

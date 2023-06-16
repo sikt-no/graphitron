@@ -41,46 +41,4 @@ public class JOOQTableMapping {
     public String getCodeName() {
         return codeName;
     }
-
-    /**
-     * @return The name as a get(table)Id method call.
-     */
-    public String asGetId() {
-        return getId;
-    }
-
-    /**
-     * @return Format this table name as a .get(table)Id() method call.
-     */
-    public String asGetIdCall() {
-        return getIdCall;
-    }
-
-    /**
-     * @return The name as a has(table)Id method call.
-     */
-    public String asHasId() {
-        return hasId;
-    }
-
-    /**
-     * @return The name as a has(table)Ids method call.
-     */
-    public String asHasIds() {
-        return hasIds;
-    }
-
-    /**
-     * @return Format this table name as a .has(table)Id() method call.
-     */
-    public String asHasIdCall(String input) {
-        return hasIdCallPart + input + ")";
-    }
-
-    /**
-     * @return Format this table name as a .has(table)Ids() method call.
-     */
-    public String asHasIdsCall(String input) {
-        return hasIdsCallPart + input + ")";
-    }
 }

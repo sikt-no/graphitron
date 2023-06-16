@@ -12,6 +12,7 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
@@ -95,10 +96,12 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 .indent()
                 .indent();
         if (!isRoot) {
-            var localTableObject = getLocalObject().getTable();
-            var localTable = localTableObject.getName();
+            var localTableName = getLocalObject().getTable().getName();
+            var referenceTableName = context.getReferenceTable().getName();
+            var qualifiedId = TableReflection.getQualifiedId(referenceTableName, localTableName);
+
             code
-                    .add(context.hasKeyReference() ? actualRefTable + localTableObject.asGetIdCall() : localTable + ".getId()")
+                    .add(context.hasKeyReference() ? actualRefTable + String.format(".get%s()", qualifiedId) : localTableName + ".getId()")
                     .add(",\n");
         }
         return code.build();
@@ -149,12 +152,14 @@ public class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         var code = CodeBlock.builder().add(".where(");
 
         if (!isRoot) {
-            var localTableObject = getLocalObject().getTable();
+            var localTableName = getLocalObject().getTable().getName();
+            var qualifiedId = TableReflection.getQualifiedId(actualRefTable, localTableName);
+
             code
                     .add(
                             hasKeyReference
-                                    ? actualRefTable + localTableObject.asHasIdsCall("$N")
-                                    : localTableObject.getName() + ".hasIds($N)",
+                                    ? actualRefTable + String.format(".has%ss($N)", qualifiedId)
+                                    : localTableName + ".hasIds($N)",
                             idParamName
                     )
                     .add(")\n");

@@ -5,8 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableExists;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
 public class ReferenceHelpers {
     /**
@@ -33,20 +32,17 @@ public class ReferenceHelpers {
             return false;
         }
 
+        // Denne er suspekt. Så vidt jeg kan forstå så forhindrer den self-joins, noe som er et gyldig use case.
         if (localTableName.equals(refTableName)) {
             return false;
         }
 
-        var implicitJoinIsPossible = tableHasMethod(localTableName, referenceObjectTable.getCodeName());
-        var hasKeyReference = false;
-        if (!implicitJoinIsPossible) {
-            hasKeyReference = tableHasMethod(refTableName, sourceObjectTable.asGetId());
-        }
-
-        if (!implicitJoinIsPossible && !hasKeyReference) {
+        if (!(hasSingleReference(localTableName, refTableName) || hasSingleReference(refTableName, localTableName))) {
             throw new IllegalStateException("Can not automatically infer join of '" + localTableName +  "' and '" + refTableName + "'.");
         }
-        return hasKeyReference;
+
+        var implicitJoinIsPossible = tableHasMethod(localTableName, referenceObjectTable.getCodeName());
+        return !implicitJoinIsPossible;
     }
 
     public static ObjectDefinition findReferencedObjectDefinition(AbstractField referenceField, ProcessedSchema processedSchema) {

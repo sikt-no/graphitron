@@ -16,6 +16,7 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
@@ -261,8 +262,15 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             var hasKeyReference = !field.hasImplicitJoin()
                     && !context.hasJoinedAlreadyOrWillJoin()
                     && ReferenceHelpers.usesIDReference(context.getPreviousTableObject(), refObject.getTable());
+            var qualifiedId = "";
+            if (hasKeyReference) {
+                var localTableName = getLocalObject().getTable().getName();
+                var referenceTableName = context.getReferenceTable().getName();
+                qualifiedId = TableReflection.getQualifiedId(localTableName, referenceTableName);
+            }
+
             return codeBlockBuilder
-                    .add(joinedFieldSource + (hasKeyReference ? context.getReferenceTable().asGetIdCall() : ".getId()"))
+                    .add(joinedFieldSource + (hasKeyReference ? String.format(".get%s()", qualifiedId) : ".getId()"))
                     .build();
         }
 
