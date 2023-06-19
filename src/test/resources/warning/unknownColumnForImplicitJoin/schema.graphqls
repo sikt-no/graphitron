@@ -1,0 +1,13 @@
+type Query {
+  student(id: ID!): Student
+}
+
+type Student @node {
+  id: ID!
+  fornavn: Fornavn!
+}
+
+type Fornavn  {
+  navn1: String @column(name: "Fornavn", table: "Person")
+  navn2: String @column(name: "Baknavn", table: "Person")
+}

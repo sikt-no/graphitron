@@ -323,6 +323,14 @@ public class GraphQLGeneratorTest {
     }
 
     @Test
+    void generate_whenUnknownColumnForImplicitJoin_shouldLogWarning() throws IOException {
+        generateFiles("warning/unknownColumnForImplicitJoin");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "No column(s) with name(s) 'BAKNAVN' found in table 'PERSON'"
+        );
+    }
+
+    @Test
     void generate_whenUnknownEnum_shouldLogWarning() throws IOException {
         generateFiles("warning/unknownEnum");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(

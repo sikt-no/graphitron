@@ -58,6 +58,19 @@ public class ProcessedDefinitionsValidator {
                 .forEach(this::validateGeneratedField)
         );
 
+        Map<String, Set<String>> columnsByTableHavingImplicitJoin = new HashMap<>();
+        objects.values().forEach(objectDefinition -> objectDefinition
+                .getFields()
+                .stream()
+                .filter(ObjectField::hasImplicitJoin)
+                .forEach(objectField -> addColumnForTable(
+                        columnsByTableHavingImplicitJoin,
+                        objectField.getImplicitJoin().getTable().getName(),
+                        objectField.getUpperCaseName())
+                )
+        );
+        columnsByTableHavingImplicitJoin.forEach(this::validateTableExistsAndHasMethods);
+
         var enumValueSet = Stream.of(GeneratorEnum.values()).map(Enum::name).collect(Collectors.toSet());
         enums.values()
                 .stream()
@@ -156,7 +169,11 @@ public class ProcessedDefinitionsValidator {
                                 fieldNames.addAll(getDbNamesForFieldsThatShouldBeValidated(objectDefinition.getFields()));
                             }
                         },
-                        () -> fieldNames.add(objectField.getUpperCaseName())
+                        () -> {
+                            if (!objectField.hasImplicitJoin()) {
+                                fieldNames.add(objectField.getUpperCaseName());
+                            }
+                        }
                 ));
         return fieldNames;
     }
@@ -187,5 +204,12 @@ public class ProcessedDefinitionsValidator {
                 );
             }
         }
+    }
+
+    private void addColumnForTable(Map<String, Set<String>> columnsByTable, String table, String column) {
+        Optional.ofNullable(columnsByTable.get(table)).ifPresentOrElse(
+                columns -> columns.add(column),
+                () -> columnsByTable.put(table, Sets.newHashSet(column))
+        );
     }
 }
