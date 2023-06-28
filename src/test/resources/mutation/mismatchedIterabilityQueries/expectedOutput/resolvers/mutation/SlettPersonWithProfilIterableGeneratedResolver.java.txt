@@ -1,0 +1,80 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.SlettPersonWithProfilIterableMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.generated.model.Response;
+import no.fellesstudentsystem.graphql.generated.model.Result;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.queries.mutation.SlettPersonWithProfilIterableDBQueries;
+import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class SlettPersonWithProfilIterableGeneratedResolver implements SlettPersonWithProfilIterableMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Inject
+    private SlettPersonWithProfilIterableDBQueries slettPersonWithProfilIterableDBQueries;
+
+    @Override
+    public CompletableFuture<Response> slettPersonWithProfilIterable(List<EndreInput> input,
+            DataFetchingEnvironment env) throws Exception {
+        var select = new SelectionSet(env.getSelectionSet());
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setFornavn(itInput.getFornavn());
+                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = slettPersonWithProfilIterableDBQueries.slettPersonWithProfilIterable(inputRecordList);
+        var inputRecordPersonProfil = getResultPersonProfil(inputRecordList, select);
+
+        var response = new Response();
+
+        var resultList = new ArrayList<Result>();
+        for (var itInputRecordList : inputRecordList) {
+            var result = new Result();
+            result.setPersonProfil(inputRecordPersonProfil.get(itInputRecordList.getId()));
+            resultList.add(result);
+        }
+        response.setResult(resultList.stream.findFirst().orElse(List.of()));
+
+        return CompletableFuture.completedFuture(response);
+    }
+
+    private Map<String, PersonProfil> getResultPersonProfil(List<PersonRecord> idContainer,
+            SelectionSet select) {
+        if (!select.contains("result/personProfil") || idContainer == null) {
+            return Map.of();
+        }
+
+        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("result/personProfil"));
+    }
+}

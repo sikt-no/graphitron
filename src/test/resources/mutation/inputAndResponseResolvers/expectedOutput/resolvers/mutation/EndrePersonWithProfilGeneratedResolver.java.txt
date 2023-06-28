@@ -34,13 +34,13 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
     }
 
     private PersonProfil getPersonProfilEndrePersonWithProfil(
-            no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord result,
+            no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord idContainer,
             SelectionSet select) {
-        if (!select.contains("endrePersonWithProfil") || result == null) {
+        if (!select.contains("endrePersonWithProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(result.getId()), select.withPrefix("endrePersonWithProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("endrePersonWithProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

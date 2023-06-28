@@ -1,0 +1,9 @@
+#defines all default query directives.
+
+directive @connection(for: String) on FIELD_DEFINITION
+directive @mapEnum(name: String!) on ENUM | ENUM_VALUE
+directive @reference(table: String, key: String, condition: String, via: [ReferenceElement!]) on FIELD_DEFINITION
+
+input ReferenceElement { table: String!, key: String, condition: String }
+
+directive @condition(name: String,override: Boolean = false) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION

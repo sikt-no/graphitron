@@ -3,12 +3,16 @@ package no.fellesstudentsystem.graphql.resolvers.mutation;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilResponseMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreInput;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponseWithPerson;
+import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonWithProfilResponseDBQueries;
+import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -20,9 +24,13 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     @Inject
     private EndrePersonWithProfilResponseDBQueries endrePersonWithProfilResponseDBQueries;
 
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
     @Override
     public CompletableFuture<EndreResponseWithPerson> endrePersonWithProfilResponse(
             EndreInput input, DataFetchingEnvironment env) throws Exception {
+        var select = new SelectionSet(env.getSelectionSet());
         var inputRecord = new PersonRecord();
         inputRecord.attach(ctx.configuration());
 
@@ -33,11 +41,22 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var endrePersonWithProfilResponseResult = endrePersonWithProfilResponseDBQueries.endrePersonWithProfilResponse(inputRecord);
+        var rowsUpdated = endrePersonWithProfilResponseDBQueries.endrePersonWithProfilResponse(inputRecord);
+        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(inputRecord, select);
 
         var endreResponseWithPerson = new EndreResponseWithPerson();
-        endreResponseWithPerson.setId(inputRecord.getId());
+        endreResponseWithPerson.setPersonProfil(inputRecordPersonProfil);
 
         return CompletableFuture.completedFuture(endreResponseWithPerson);
+    }
+
+    private PersonProfil getEndreResponseWithPersonPersonProfil(PersonRecord idContainer,
+            SelectionSet select) {
+        if (!select.contains("personProfil") || idContainer == null) {
+            return null;
+        }
+
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("personProfil"));
+        return nodes.values().stream().findFirst().orElse(null);
     }
 }

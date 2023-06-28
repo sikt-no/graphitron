@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,7 +13,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.LIST;
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 
 public class ServiceWrapper {
     private final boolean returnIsIterable, returnTypeInService;
@@ -62,9 +61,7 @@ public class ServiceWrapper {
     @NotNull
     public static TypeName getServiceReturnClassName(String serviceReturnTypeName, boolean isIterable) {
         var serviceReturnClassName = ClassName.get("", serviceReturnTypeName.replace("$", "."));
-        return isIterable
-                ? ParameterizedTypeName.get(LIST.className, serviceReturnClassName)
-                : serviceReturnClassName;
+        return wrapListIf(serviceReturnClassName, isIterable);
     }
 
     public static Class<?> extractType(Type type) {

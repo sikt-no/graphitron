@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.COLLECTORS;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.collectToList;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
@@ -135,9 +135,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .map(it -> "input" + it.getNameWithPath().replaceFirst(argumentName, ""))
                         .collect(Collectors.joining(",\n")))
                 .unindent().unindent()
-                .add(")\n")
-                .add(").collect($T.toList()))",  COLLECTORS.className)
-                .add(" :\n")
+                .add(")\n)")
+                .add(collectToList())
+                .add(") :\n")
                 .add("noCondition()")
                 .unindent().unindent()
                 .add(")\n");

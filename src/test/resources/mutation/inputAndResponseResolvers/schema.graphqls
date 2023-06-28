@@ -28,10 +28,6 @@ type Mutation {
   endrePersonWithProfilResponse(id: ID!): EndreResponseWithPerson! @service(name : "TEST_PERSON")
 }
 
-interface Node {
-  id: ID!
-}
-
 type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
@@ -47,9 +43,4 @@ type Postadresse implements Node @table(name : "STUDENT") {
   gate: String @column(name : "ADRLIN2_SEMADR")
   postnummerOgSted: String @column(name : "ADRLIN3_SEMADR")
   land: String @column(name : "ADRESSELAND_SEMADR")
-}
-
-type Query {
-  " Dummy query, since the schema insists that there must be at least one."
-  i(id: ID): ID! @notGenerated
 }

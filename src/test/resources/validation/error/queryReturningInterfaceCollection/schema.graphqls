@@ -1,7 +1,3 @@
-interface Node {
-  id: ID!
-}
-
 type ProgramStudierett implements Node @table(name : "STUDIERETT") {
   id: ID!
 }

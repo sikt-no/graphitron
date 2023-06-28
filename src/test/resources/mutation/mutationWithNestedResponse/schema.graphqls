@@ -1,0 +1,34 @@
+input EndreInput @record(table : "PERSON") {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+}
+
+type Response {
+  results: Result
+}
+
+type ListedResponse {
+  results: [Result]
+}
+
+type Result {
+  id: ID!
+  personProfil: PersonProfil @column(name : "persProf")
+  post: Postadresse
+}
+
+type Mutation {
+  endrePersonWithProfil(input: EndreInput!): Response! @mutationType(typeName: UPDATE)
+  slettPersonWithProfil(input: EndreInput!): Response! @mutationType(typeName: DELETE)
+  endrePersonWithProfilIterable(input: [EndreInput]!): ListedResponse! @mutationType(typeName: UPDATE)
+  slettPersonWithProfilIterable(input: [EndreInput]!): ListedResponse! @mutationType(typeName: DELETE)
+}
+
+type PersonProfil implements Node @table(name : "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  dod: Boolean @column(name : "STATUS_DOD")
+}

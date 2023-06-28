@@ -63,13 +63,18 @@ public class GraphQLGeneratorMutationTest {
     }
 
     @Test
+    void generate_mutation_shouldGenerateResolversAndQueriesWithSimpleInputsAndResponses() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("simpleResolverWithMutationType");
+    }
+
+    @Test
     void generate_mutationWithListFields_shouldGenerateResolversForLists() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("listResolvers");
     }
 
     @Test
     void generate_mutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("nestedResolvers");
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedTypes");
     }
 
     @Test
@@ -100,6 +105,16 @@ public class GraphQLGeneratorMutationTest {
     @Test
     void generate_whenHasSetDeleteType_shouldGenerateIterableDeleteQueriesAndResolvers() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("deleteIterableQueries");
+    }
+
+    @Test
+    void generate_whenHasSetMutationType_shouldGenerateNestedQueriesAndResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationWithNestedResponse");
+    }
+
+    @Test
+    void generate_whenHasSetMutationTypeWithMismatchedIterability_shouldGenerateAdjustedNestedQueriesAndResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mismatchedIterabilityQueries");
     }
 
     @Test

@@ -1,0 +1,51 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonRecord1MutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse1;
+import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonRecord1DBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonRecord1GeneratedResolver implements EndrePersonRecord1MutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePersonRecord1DBQueries endrePersonRecord1DBQueries;
+
+    @Override
+    public CompletableFuture<EndreResponse1> endrePersonRecord1(List<String> id,
+            List<EndreInput> in, DataFetchingEnvironment env) throws Exception {
+        var inRecordList = new ArrayList<PersonRecord>();
+
+
+        if (in != null) {
+            for (var itIn : in) {
+                if (itIn == null) continue;
+                var inRecord = new PersonRecord();
+                inRecord.attach(ctx.configuration());
+                inRecord.setFornavn(itIn.getFornavn());
+                inRecordList.add(inRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecordList);
+
+        var rowsUpdated = endrePersonRecord1DBQueries.endrePersonRecord1(id, inRecordList);
+
+        var endreResponse1 = new EndreResponse1();
+        endreResponse1.setId1(id.stream().map(it -> it.getId()).collect(Collectors.toList()));
+
+        return CompletableFuture.completedFuture(endreResponse1);
+    }
+}

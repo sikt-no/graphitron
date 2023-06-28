@@ -33,7 +33,7 @@ public class EndrePerson2ParamsGeneratedResolver implements EndrePerson2ParamsMu
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var endrePerson2ParamsResult = endrePerson2ParamsDBQueries.endrePerson2Params(inputRecord, etternavn);
+        var rowsUpdated = endrePerson2ParamsDBQueries.endrePerson2Params(inputRecord, etternavn);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

@@ -1,7 +1,3 @@
-interface Node {
-  id: ID!
-}
-
 type PageInfo {
   hasPreviousPage: Boolean!
   hasNextPage: Boolean!

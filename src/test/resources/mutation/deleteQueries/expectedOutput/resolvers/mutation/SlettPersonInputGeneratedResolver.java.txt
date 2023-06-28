@@ -33,7 +33,7 @@ public class SlettPersonInputGeneratedResolver implements SlettPersonInputMutati
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var slettPersonInputResult = slettPersonInputDBQueries.slettPersonInput(inputRecord);
+        var rowsUpdated = slettPersonInputDBQueries.slettPersonInput(inputRecord);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

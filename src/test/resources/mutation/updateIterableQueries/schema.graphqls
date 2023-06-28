@@ -23,15 +23,10 @@ type Mutation {
   endrePersonWithProfilResponse(input: [EndreInput!]): [EndreResponseWithPerson!] @mutationType(typeName: UPDATE)
 }
 
-type PersonProfil @table(name : "PERSON") {
+type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
   etternavn: String!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   dod: Boolean @column(name : "STATUS_DOD")
-}
-
-type Query {
-  " Dummy query, since the schema insists that there must be at least one."
-  i(id: ID): ID! @notGenerated
 }

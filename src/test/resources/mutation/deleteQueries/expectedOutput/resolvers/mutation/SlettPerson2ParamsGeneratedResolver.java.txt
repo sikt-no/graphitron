@@ -33,7 +33,7 @@ public class SlettPerson2ParamsGeneratedResolver implements SlettPerson2ParamsMu
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var slettPerson2ParamsResult = slettPerson2ParamsDBQueries.slettPerson2Params(inputRecord, etternavn);
+        var rowsUpdated = slettPerson2ParamsDBQueries.slettPerson2Params(inputRecord, etternavn);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

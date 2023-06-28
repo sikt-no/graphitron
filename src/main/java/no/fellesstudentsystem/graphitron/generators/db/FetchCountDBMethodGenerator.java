@@ -2,7 +2,6 @@ package no.fellesstudentsystem.graphitron.generators.db;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
@@ -14,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.getStringSetTypeName;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asCountMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
@@ -66,18 +66,17 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @NotNull
     private MethodSpec.Builder getSpecBuilder(ObjectField referenceField) {
         var spec = getDefaultSpecBuilder(
-                asCountMethodName(referenceField, getLocalObject()),
+                asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 INTEGER.className
         );
         if (!isRoot) {
-            spec.addParameter(ParameterizedTypeName.get(SET.className, STRING.className), idParamName);
+            spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
         if (referenceField.hasNonReservedInputFields()) {
-            var allInputs = processedSchema.getInputTypes();
             referenceField
                     .getNonReservedInputFields()
-                    .forEach(i -> spec.addParameter(i.getFieldType().getWrappedTypeClass(allInputs), i.getName()));
+                    .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
         }
         return spec;
     }
@@ -89,7 +88,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .stream()
                 .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasRequiredPaginationFields)
-                .filter(it -> !processedSchema.isInterface(it.getTypeName()))
+                .filter(it -> !processedSchema.isInterface(it))
                 .map(this::generate)
                 .collect(Collectors.toList());
     }

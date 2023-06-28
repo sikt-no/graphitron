@@ -113,6 +113,13 @@ public abstract class AbstractField {
     }
 
     /**
+     * @return Is this field wrapped in a list?
+     */
+    public boolean isIterableWrapped() {
+        return fieldType.isIterableWrapped();
+    }
+
+    /**
      * @return The FieldType object containing information about the underlying data type and its nullability and wrapping configuration.
      */
     public FieldType getFieldType() {

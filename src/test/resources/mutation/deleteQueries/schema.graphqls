@@ -23,19 +23,10 @@ type Mutation {
   slettPersonWithProfilResponse(input: EndreInput!): EndreResponseWithPerson! @mutationType(typeName: DELETE)
 }
 
-interface Node {
-  id: ID!
-}
-
 type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
   etternavn: String!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   dod: Boolean @column(name : "STATUS_DOD")
-}
-
-type Query {
-  " Dummy query, since the schema insists that there must be at least one."
-  i(id: ID): ID! @notGenerated
 }

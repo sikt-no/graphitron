@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 
 import static java.util.Map.entry;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnCompletedFuture;
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
@@ -75,7 +77,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                         .addStatement("var $L = $N.getValue()", RESULT_VALUE_NAME, RESULT_ENTRY_NAME);
                 currentResultName = RESULT_VALUE_NAME;
             }
-            var nodeType = processedSchema.getConnectionObject(target.getTypeName()).getNodeType();
+            var nodeType = processedSchema.getConnectionObject(target).getNodeType();
             var paginationInputMap = Map.ofEntries(
                     entry("math", MATH.className),
                     entry("dbResult", currentResultName),
@@ -109,7 +111,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         } // TODO: Backwards pagination if necessary.
 
         return spec
-                .addStatement("return $T.completedFuture($N)", COMPLETABLE_FUTURE.className, currentResultName)
+                .addCode(returnCompletedFuture(currentResultName))
                 .addCode(getMethodCallTail(target))
                 .build();
     }
@@ -117,10 +119,9 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     @NotNull
     private ArrayList<String> getQueryInputs(MethodSpec.Builder spec, ObjectField referenceField) {
         var allQueryInputs = new ArrayList<String>();
-        var allInputs = processedSchema.getInputTypes();
         for (var input : referenceField.getNonReservedInputFields()) {
             var name = input.getName();
-            spec.addParameter(input.getFieldType().getWrappedTypeClass(allInputs), name);
+            spec.addParameter(inputIterableWrap(input), name);
             allQueryInputs.add(name);
         }
         if (referenceField.hasForwardPagination()) {
@@ -139,14 +140,14 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     }
 
     private TypeName getReturnTypeName(ObjectField referenceField) {
-        var refClassName = processedSchema.getObject(referenceField.getTypeName()).getGraphClassName();
+        var refClassName = processedSchema.getObject(referenceField).getGraphClassName();
         var hasFPagination = referenceField.hasForwardPagination();
-        TypeName returnClassName = referenceField.getFieldType().isIterableWrapped()
-                || getLocalObject().isRoot() && !hasFPagination
-                ? ParameterizedTypeName.get(LIST.className, refClassName)
-                : refClassName;
+        TypeName returnClassName = wrapListIf(
+                refClassName,
+                referenceField.isIterableWrapped() || getLocalObject().isRoot() && !hasFPagination
+        );
         if (hasFPagination) {
-            var connectionObject = processedSchema.getConnectionObject(referenceField.getTypeName());
+            var connectionObject = processedSchema.getConnectionObject(referenceField);
             TypeName nodeClassName = processedSchema.getObject(connectionObject.getNodeType()).getGraphClassName();
             returnClassName = ParameterizedTypeName.get(RELAY_CONNECTION.className, nodeClassName);
         }
@@ -157,7 +158,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     private CodeBlock queryMethodCalls(ObjectField referenceField, TypeName returnClassName, List<String> allQueryInputs) {
         var localObject = getLocalObject();
 
-        var queryMethodName = asQueryMethodName(referenceField, localObject);
+        var queryMethodName = asQueryMethodName(referenceField.getName(), localObject.getName());
         var dbQueryCallCodeBlock = CodeBlock.builder();
 
         var queryLocation = localObject.getName() + FILE_NAME_SUFFIX;
@@ -178,7 +179,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             allQueryInputs.add(0, "idSet");
         }
 
-        if (allQueryInputs.size() > 0) {
+        if (!allQueryInputs.isEmpty()) {
             dbQueryCallCodeBlock.addStatement(String.join(", ", allQueryInputs) + ")");
         }
 

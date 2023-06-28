@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.TypeName;
 import graphql.language.TypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
@@ -11,7 +12,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecificat
  */
 public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>> implements ObjectSpecification<T> {
     private final String name;
-    private final ClassName graphClassName;
+    private final TypeName graphClassName;
     private final T objectTypeDefinition;
 
     public AbstractObjectDefinition(T objectDefinition) {
@@ -24,7 +25,7 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>> impl
         return name;
     }
 
-    public ClassName getGraphClassName() {
+    public TypeName getGraphClassName() {
         return graphClassName;
     }
 

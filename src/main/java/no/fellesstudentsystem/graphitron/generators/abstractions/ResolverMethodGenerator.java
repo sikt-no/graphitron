@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.abstractions;
 
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
@@ -9,6 +8,7 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapFuture;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -27,6 +27,6 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
                 .addAnnotation(OVERRIDE.className)
                 .addModifiers(Modifier.PUBLIC)
                 .addException(EXCEPTION.className)
-                .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE.className, returnType));
+                .returns(wrapFuture(returnType));
     }
 }

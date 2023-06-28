@@ -3,10 +3,6 @@ type Kull implements Node @table {
   navn: String! @column(name : "STUDIEKULLNAVN")
 }
 
-interface Node {
-  id: ID!
-}
-
 type Query {
   nodes(id: ID!, navn: String): Node
 }

@@ -9,7 +9,6 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonRecord0MutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponse0;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class EndrePersonRecord0GeneratedResolver implements EndrePersonRecord0MutationResolver {
@@ -20,7 +19,6 @@ public class EndrePersonRecord0GeneratedResolver implements EndrePersonRecord0Mu
     public CompletableFuture<EndreResponse0> endrePersonRecord0(String id,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSet(env.getSelectionSet());
 
         var endrePersonRecord0Result = testPersonService.endrePersonRecord0(id);
 

@@ -13,10 +13,6 @@ enum Maalform {
   ENG
 }
 
-interface Node {
-  id: ID!
-}
-
 type Permisjon implements Node @table {
   id: ID!
   programStudieretter: [ProgramStudierett!]! @splitQuery @reference(condition : "PERMISJON_STUDIERETT")

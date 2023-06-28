@@ -1,16 +1,19 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.TypeName;
 import graphql.language.InputObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLRecord;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.SchemaHelpers;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.RECORDS_PACKAGE_PATH;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordClassName;
 import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.RECORD;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.TABLE;
@@ -19,9 +22,9 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     private final JOOQTableMapping table;
     private final boolean hasTable;
     private final List<InputField> inputs;
-    private final SQLRecord record;
+    private final TypeName recordClassName;
 
-    public InputDefinition(InputObjectTypeDefinition inputType) { // TODO: Add info about this to readme.
+    public InputDefinition(InputObjectTypeDefinition inputType) {
         super(inputType);
         inputs = inputType.getInputValueDefinitions().stream().map(InputField::new).collect(Collectors.toList());
 
@@ -38,7 +41,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
             table = null;
         }
         this.hasTable = hasTable || hasRecord;
-        record = new SQLRecord(new RecordMethodMapping(tableName));
+        recordClassName = ClassName.get(RECORDS_PACKAGE_PATH, asRecordClassName(new RecordMethodMapping(tableName).getName()));
     }
 
     /**
@@ -64,10 +67,10 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     }
 
     /**
-     * @return Record-side method name mappings based on the DB equivalent of this input.
+     * @return The {@link TypeName} for the generated record that corresponds to this input.
      */
-    public SQLRecord asSQLRecord() {
-        return record;
+    public TypeName getRecordClassName() {
+        return recordClassName;
     }
 
     /**

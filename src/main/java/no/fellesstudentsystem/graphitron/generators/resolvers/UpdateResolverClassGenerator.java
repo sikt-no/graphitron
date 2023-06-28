@@ -70,7 +70,10 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
     public TypeSpec generate(ObjectField target) {
         return getSpec(
                 capitalize(target.getName()),
-                List.of(new UpdateResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides))
+                List.of(
+                        new ServiceUpdateResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides),
+                        new MutationTypeResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides)
+                )
         ).build();
     }
 

@@ -46,11 +46,11 @@ public class ReferenceHelpers {
     }
 
     public static ObjectDefinition findReferencedObjectDefinition(AbstractField referenceField, ProcessedSchema processedSchema) {
-        if (processedSchema.isConnectionObject(referenceField.getTypeName())) {
-            var objectDefinition = processedSchema.getConnectionObject(referenceField.getTypeName());
+        if (processedSchema.isConnectionObject(referenceField)) {
+            var objectDefinition = processedSchema.getConnectionObject(referenceField);
             return processedSchema.getObject(objectDefinition.getNodeType());
         } else {
-            return processedSchema.getObject(referenceField.getTypeName());
+            return processedSchema.getObject(referenceField);
         }
     }
 }

@@ -1,13 +1,9 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
-import com.squareup.javapoet.ParameterizedTypeName;
 import graphql.language.*;
-import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 
 import java.util.ArrayList;
 import java.util.Map;
-
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.LIST;
 
 /**
  * Class that contains all the necessary information about a field's type and nullability.
@@ -106,18 +102,5 @@ public class FieldType {
      */
     public com.squareup.javapoet.TypeName getTypeClass() {
         return typeClass;
-    }
-
-    /**
-     * @return {@link com.squareup.javapoet.TypeName} for this field, including any iterable wrapping.
-     */
-    public <T extends ObjectSpecification> com.squareup.javapoet.TypeName getWrappedTypeClass(Map<String, T> potentialObjects) {
-        var type = getName();
-        var typeName = potentialObjects.containsKey(type)
-                ? potentialObjects.get(type).getGraphClassName()
-                : getTypeClass();
-        return isIterableWrapped()
-                ? ParameterizedTypeName.get(LIST.className, typeName)
-                : typeName;
     }
 }

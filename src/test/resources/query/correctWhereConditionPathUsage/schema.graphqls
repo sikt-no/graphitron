@@ -1,7 +1,3 @@
-interface Node {
-  id: ID!
-}
-
 input In {
   bool: [Boolean] @column(name: "STATUS_GYLDIG")
 }

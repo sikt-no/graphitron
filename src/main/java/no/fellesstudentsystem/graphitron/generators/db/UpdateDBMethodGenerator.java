@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.db;
 
 import com.squareup.javapoet.*;
-import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
+import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -59,7 +61,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         var recordInputs = inputs
                 .entrySet()
                 .stream()
-                .filter(it -> Optional.ofNullable(processedSchema.getInputType(it.getValue().getName())).map(InputDefinition::hasTable).orElse(false))
+                .filter(it -> processedSchema.isTableInputType(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
         var code = CodeBlock.builder();
@@ -71,7 +73,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 batchInputVariable = recordInputs.keySet().stream().findFirst().get();
             } else {
                 batchInputVariable = VARIABLE_RECORD_LIST;
-                code.addStatement("var $L = new $T()", VARIABLE_RECORD_LIST, ARRAY_LIST.className);
+                code.add(declareVariable(VARIABLE_RECORD_LIST, ARRAY_LIST.className));
                 recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
             }
             code.addStatement(
@@ -88,16 +90,13 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 .build();
     }
 
-    private TypeName getParamTypeName(FieldType inputType) {
-        var inputObject = processedSchema.getInputType(inputType.getName());
-        TypeName type;
+    private TypeName getParamTypeName(InputField inputType) {
+        var inputObject = processedSchema.getInputType(inputType.getTypeName());
         if (Optional.ofNullable(inputObject).map(InputDefinition::hasTable).orElse(false)) {
-            var className = inputObject.asSQLRecord().getGraphClassName();
-            type = inputType.isIterableWrapped() ? ParameterizedTypeName.get(LIST.className, className) : className;
+            return wrapListIf(inputObject.getRecordClassName(), inputType.isIterableWrapped());
         } else {
-            type = inputType.getWrappedTypeClass(processedSchema.getInputTypes());
+            return inputIterableWrap(inputType);
         }
-        return type;
     }
 
     @Override

@@ -11,7 +11,6 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonList2ParamsMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreInput;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -24,7 +23,6 @@ public class EndrePersonList2ParamsGeneratedResolver implements EndrePersonList2
     public CompletableFuture<List<String>> endrePersonList2Params(List<EndreInput> input,
             List<String> etternavn, DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSet(env.getSelectionSet());
         var inputRecordList = new ArrayList<PersonRecord>();
 
 

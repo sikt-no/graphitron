@@ -37,7 +37,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        InterfaceDefinition interfaceDefinition = processedSchema.getInterface(target.getTypeName());
+        InterfaceDefinition interfaceDefinition = processedSchema.getInterface(target);
         TypeName returnClassName = interfaceDefinition.getGraphClassName();
 
         var spec = getDefaultSpecBuilder(target.getName(), returnClassName);
@@ -47,10 +47,9 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         }
 
         var inputField = target.getInputFields().get(0);
-        var type = inputField.getFieldType().getWrappedTypeClass(processedSchema.getInputTypes());
         String inputFieldName = inputField.getName();
         spec
-                .addParameter(type, inputFieldName)
+                .addParameter(inputIterableWrap(inputField), inputFieldName)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
                 .addStatement("String tablePartOfId = $T.getTablePartOf($N)", FIELD_HELPERS.className, inputFieldName)
                 .addCode("\n");

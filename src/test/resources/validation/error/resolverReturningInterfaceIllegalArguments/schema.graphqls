@@ -4,10 +4,6 @@ type Kull implements Node @table {
   referertNode: Node @splitQuery
 }
 
-interface Node {
-  id: ID!
-}
-
 type ProgramStudierett implements Node @table(name : "STUDIERETT") {
   id: ID!
   navn: String!

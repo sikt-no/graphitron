@@ -41,7 +41,7 @@ public class SlettPersonInputAndResponseGeneratedResolver implements SlettPerson
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var slettPersonInputAndResponseResult = slettPersonInputAndResponseDBQueries.slettPersonInputAndResponse(inputRecordList);
+        var rowsUpdated = slettPersonInputAndResponseDBQueries.slettPersonInputAndResponse(inputRecordList);
 
         var endreResponseList = new ArrayList<EndreResponse>();
         for (var itInputRecordList : inputRecordList) {

@@ -33,7 +33,7 @@ public class EndrePersonInputGeneratedResolver implements EndrePersonInputMutati
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var endrePersonInputResult = endrePersonInputDBQueries.endrePersonInput(inputRecord);
+        var rowsUpdated = endrePersonInputDBQueries.endrePersonInput(inputRecord);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

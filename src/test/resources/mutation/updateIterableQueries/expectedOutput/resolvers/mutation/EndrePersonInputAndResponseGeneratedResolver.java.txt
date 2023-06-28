@@ -41,7 +41,7 @@ public class EndrePersonInputAndResponseGeneratedResolver implements EndrePerson
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var endrePersonInputAndResponseResult = endrePersonInputAndResponseDBQueries.endrePersonInputAndResponse(inputRecordList);
+        var rowsUpdated = endrePersonInputAndResponseDBQueries.endrePersonInputAndResponse(inputRecordList);
 
         var endreResponseList = new ArrayList<EndreResponse>();
         for (var itInputRecordList : inputRecordList) {

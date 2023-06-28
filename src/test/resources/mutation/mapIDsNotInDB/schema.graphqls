@@ -1,8 +1,3 @@
-type Query {
-  # Dummy query, since the schema insists that there must be at least one.
-  i(id: ID): ID! @notGenerated
-}
-
 type Mutation {
   endrePermisjon(in: EndreInput!): EndreResponse! @service(name: "TEST_PERMISJON")
 }

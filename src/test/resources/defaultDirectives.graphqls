@@ -1,9 +1,0 @@
-#defines all common directives.
-
-directive @splitQuery on FIELD_DEFINITION
-directive @notGenerated on FIELD_DEFINITION
-directive @table(name: String) on OBJECT
-directive @column(name: String!,table: String,key: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
-
-scalar Date
-scalar BigDecimal

@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
@@ -48,8 +49,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 .map(ObjectDefinition::getFields)
                 .flatMap(List::stream)
                 .filter(ObjectField::isGenerated)
-                .filter(it -> processedSchema.isInterface(it.getTypeName()))
-                .collect(Collectors.toMap(it -> it, it -> processedSchema.getInterface(it.getTypeName())));
+                .filter(processedSchema::isInterface)
+                .collect(Collectors.toMap(Function.identity(), processedSchema::getInterface));
     }
 
     @Override

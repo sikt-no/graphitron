@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.dependencies;
 
 import com.squareup.javapoet.FieldSpec;
+import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 
 import javax.lang.model.element.Modifier;
 
@@ -10,6 +11,10 @@ public class ServiceDependency extends NamedDependency {
 
     public ServiceDependency(String name, String path) {
         super(name, path);
+    }
+
+    public ServiceDependency(ServiceWrapper wrapper) {
+        super(wrapper.getServiceName(), wrapper.getPackageName());
     }
 
     public FieldSpec getSpec() {

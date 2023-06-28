@@ -1,0 +1,42 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonRecord0MutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreInput;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse0;
+import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonRecord0DBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonRecord0GeneratedResolver implements EndrePersonRecord0MutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePersonRecord0DBQueries endrePersonRecord0DBQueries;
+
+    @Override
+    public CompletableFuture<EndreResponse0> endrePersonRecord0(String id, EndreInput in,
+            DataFetchingEnvironment env) throws Exception {
+        var inRecord = new PersonRecord();
+        inRecord.attach(ctx.configuration());
+
+        if (in != null) {
+            inRecord.setFornavn(in.getFornavn());
+            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecord);
+        }
+
+        var rowsUpdated = endrePersonRecord0DBQueries.endrePersonRecord0(id, inRecord);
+
+        var endreResponse0 = new EndreResponse0();
+        endreResponse0.setId0(id);
+
+        return CompletableFuture.completedFuture(endreResponse0);
+    }
+}

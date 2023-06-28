@@ -4,11 +4,13 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
 import org.jetbrains.annotations.NotNull;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INJECT;
 
 public class ContextDependency implements Dependency, Comparable<Dependency> {
     private static final ContextDependency instance = new ContextDependency();
+    private final static CodeBlock declaration = declareVariable(CONTEXT_NAME, DSL_CONTEXT.className);
 
     private ContextDependency() {}
 
@@ -23,7 +25,7 @@ public class ContextDependency implements Dependency, Comparable<Dependency> {
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return CodeBlock.of("var $L = new $T()", CONTEXT_NAME, DSL_CONTEXT.className);
+        return declaration;
     }
 
     @Override

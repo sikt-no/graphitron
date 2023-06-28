@@ -1,9 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.db;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
@@ -19,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
@@ -101,20 +99,19 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     @NotNull
-    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, ClassName refClassName) {
+    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName) {
         var spec = getDefaultSpecBuilder(
-                asQueryMethodName(referenceField, getLocalObject()),
-                getReturnType(referenceField, refClassName)
+                asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
+                getReturnType(referenceField, refTypeName)
         );
         if (!isRoot) {
-            spec.addParameter(ParameterizedTypeName.get(SET.className, STRING.className), idParamName);
+            spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
         if (referenceField.hasNonReservedInputFields()) {
-            var allInputs = processedSchema.getInputTypes();
             referenceField
                     .getNonReservedInputFields()
-                    .forEach(i -> spec.addParameter(i.getFieldType().getWrappedTypeClass(allInputs), i.getName()));
+                    .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
         }
 
         if (referenceField.hasForwardPagination()) {
@@ -127,16 +124,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     @NotNull
-    private ParameterizedTypeName getReturnType(ObjectField referenceField, ClassName refClassName) {
+    private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
         if (isRoot) {
-            return ParameterizedTypeName.get(LIST.className, refClassName);
+            return wrapList(refClassName);
         } else {
-            return ParameterizedTypeName.get(
-                    MAP.className,
-                    STRING.className,
-                    referenceField.getFieldType().isIterableWrapped() || referenceField.hasForwardPagination()
-                            ? ParameterizedTypeName.get(LIST.className, refClassName)
-                            : refClassName
+            return wrapStringMap(
+                    wrapListIf(refClassName, referenceField.isIterableWrapped() || referenceField.hasForwardPagination())
             );
         }
     }
@@ -160,7 +153,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             code
                     .add(".")
                     .add(
-                            referenceField.getFieldType().isIterableWrapped() || referenceField.hasForwardPagination()
+                            referenceField.isIterableWrapped() || referenceField.hasForwardPagination()
                                     ? "fetchGroups"
                                     : "fetchMap"
                     )
@@ -175,7 +168,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .getReferredFieldsFromObjectNames(processedSchema.getNamesWithTableOrConnections())
                 .stream()
                 .filter(ObjectField::isGenerated)
-                .filter(it -> !processedSchema.isInterface(it.getTypeName()))
+                .filter(it -> !processedSchema.isInterface(it))
                 .map(this::generate)
                 .collect(Collectors.toList());
     }

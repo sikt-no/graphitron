@@ -9,7 +9,6 @@ import no.fellesstudentsystem.graphitron.services.TestPermisjonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePermisjonMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreInput;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PermisjonRecord;
 import org.jooq.DSLContext;
@@ -22,7 +21,6 @@ public class EndrePermisjonGeneratedResolver implements EndrePermisjonMutationRe
     public CompletableFuture<EndreResponse> endrePermisjon(EndreInput in,
             DataFetchingEnvironment env) throws Exception {
         var testPermisjonService = new TestPermisjonService(ctx);
-        var select = new SelectionSet(env.getSelectionSet());
         var inRecord = new PermisjonRecord();
         inRecord.attach(ctx.configuration());
 

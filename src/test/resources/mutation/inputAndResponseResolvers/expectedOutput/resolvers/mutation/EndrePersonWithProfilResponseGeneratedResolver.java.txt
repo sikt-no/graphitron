@@ -47,24 +47,24 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     }
 
     private PersonProfil getEndreResponseWithPersonPersonProfil(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse result,
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse idContainer,
             SelectionSet select) {
-        if (!select.contains("personProfil") || result == null) {
+        if (!select.contains("personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(result.getPersProf().getId()), select.withPrefix("personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getPersProf().getId()), select.withPrefix("personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 
     private Postadresse getEndreResponseWithPersonPost(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse result,
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse idContainer,
             SelectionSet select) {
-        if (!select.contains("post") || result == null) {
+        if (!select.contains("post") || idContainer == null) {
             return null;
         }
 
-        var nodes = postadresseDBQueries.loadPostadresseByIdsAsNode(Set.of(result.getPost().getId()), select.withPrefix("post"));
+        var nodes = postadresseDBQueries.loadPostadresseByIdsAsNode(Set.of(idContainer.getPost().getId()), select.withPrefix("post"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

@@ -21,9 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestCommon {
     public static final String
-            DIRECTIVES_NAME = "defaultDirectives.graphqls",
+            DEFAULT_NAME = "default.graphqls",
             SRC_ROOT = "src/test/resources/",
-            SRC_DIRECTIVES = SRC_ROOT + DIRECTIVES_NAME;
+            SRC_DEFAULT = SRC_ROOT + DEFAULT_NAME;
 
     private final Path tempOutputDirectory;
 
@@ -31,7 +31,7 @@ public class TestCommon {
 
     public TestCommon(String schemaParentFolder, String testSubpath, Path tempOutputDirectory) {
         this.tempOutputDirectory = tempOutputDirectory;
-        var schemaFiles = SRC_DIRECTIVES + "," + SRC_ROOT + "/" + testSubpath + "/" + DIRECTIVES_NAME + "," + SRC_ROOT + "/" + testSubpath + "/" + schemaParentFolder + "/schema.graphqls";
+        var schemaFiles = SRC_DEFAULT + "," + SRC_ROOT + "/" + testSubpath + "/" + DEFAULT_NAME + "," + SRC_ROOT + "/" + testSubpath + "/" + schemaParentFolder + "/schema.graphqls";
         System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_FILES, schemaFiles);
         System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
     }

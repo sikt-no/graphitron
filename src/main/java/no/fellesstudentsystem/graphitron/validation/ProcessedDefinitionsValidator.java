@@ -98,7 +98,7 @@ public class ProcessedDefinitionsValidator {
             Validate.isTrue(generatedField.getInputFields().size() == 1,
                     "Only exactly one input field is currently supported for fields returning interfaces. " +
                             "'%s' has %s input fields", generatedField.getName(), generatedField.getInputFields().size());
-            Validate.isTrue(!generatedField.getFieldType().isIterableWrapped(),
+            Validate.isTrue(!generatedField.isIterableWrapped(),
                     "Generating fields returning collections/lists of interfaces is not supported. " +
                             "'%s' must return only one %s", generatedField.getName(), generatedField.getFieldType().getName());
             if (!(generatedField instanceof TopLevelObjectField)) {
@@ -150,7 +150,7 @@ public class ProcessedDefinitionsValidator {
             if (field.getFieldType().isNullable()) {
                 optionalFields.add(field.getName());
             }
-            if (field.getFieldType().isIterableWrapped()) {
+            if (field.isIterableWrapped()) {
                 throw new IllegalArgumentException(String.format("%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)", messageStart, field.getName()));
             }
         });

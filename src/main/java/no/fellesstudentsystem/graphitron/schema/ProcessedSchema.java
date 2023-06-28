@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.schema;
 
 import graphql.language.*;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
@@ -11,6 +12,7 @@ import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -121,10 +123,24 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this field point to an enum type in the schema?
+     */
+    public boolean isEnum(AbstractField field) {
+        return enums.containsKey(field.getTypeName());
+    }
+
+    /**
      * @return Get an enum with this name.
      */
     public EnumDefinition getEnum(String name) {
         return enums.get(name);
+    }
+
+    /**
+     * @return Get the enum that this field points to.
+     */
+    public EnumDefinition getEnum(AbstractField field) {
+        return enums.get(field.getTypeName());
     }
 
     /**
@@ -142,10 +158,24 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this field point to an interface type in the schema?
+     */
+    public boolean isInterface(AbstractField field) {
+        return interfaces.containsKey(field.getTypeName());
+    }
+
+    /**
      * @return Get an interface with this name.
      */
     public InterfaceDefinition getInterface(String name) {
         return interfaces.get(name);
+    }
+
+    /**
+     * @return Get the interface that this field points to.
+     */
+    public InterfaceDefinition getInterface(AbstractField field) {
+        return interfaces.get(field.getTypeName());
     }
 
     /**
@@ -163,10 +193,45 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this field point to an object type in the schema?
+     */
+    public boolean isObject(AbstractField field) {
+        return objects.containsKey(field.getTypeName());
+    }
+
+    /**
+     * @return Does this field point to an object type in the schema that is connected to a database table?
+     */
+    public boolean isTableObject(AbstractField field) {
+        return isObject(field) && getObject(field).hasTable();
+    }
+
+    /**
+     * @return Does this name point to an object type in the schema which implements the Node interface?
+     */
+    public boolean implementsNode(String name) {
+        return isObject(name) && getObject(name).implementsInterface(NODE_TYPE.getName());
+    }
+
+    /**
+     * @return Does this field point to an object type in the schema which implements the Node interface?
+     */
+    public boolean implementsNode(AbstractField field) {
+        return isObject(field) && getObject(field).implementsInterface(NODE_TYPE.getName());
+    }
+
+    /**
      * @return Get an object with this name.
      */
     public ObjectDefinition getObject(String name) {
         return objects.get(name);
+    }
+
+    /**
+     * @return Get the object that this field points to.
+     */
+    public ObjectDefinition getObject(AbstractField field) {
+        return objects.get(field.getTypeName());
     }
 
     /**
@@ -184,6 +249,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this field point to a connection object type in the schema?
+     */
+    public boolean isConnectionObject(AbstractField field) {
+        return connectionObjects.containsKey(field.getTypeName());
+    }
+
+    /**
      * @return Get a connection object with this name.
      */
     public ConnectionObjectDefinition getConnectionObject(String name) {
@@ -191,9 +263,16 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Get the connection object that this field points to.
+     */
+    public ConnectionObjectDefinition getConnectionObject(AbstractField field) {
+        return connectionObjects.get(field.getTypeName());
+    }
+
+    /**
      * @return Map of all the exceptions in the schema by name.
      */
-    public Map<String, ExceptionDefinition> getException() {
+    public Map<String, ExceptionDefinition> getExceptions() {
         return exceptions;
     }
 
@@ -227,10 +306,31 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this field point to an input type in the schema?
+     */
+    public boolean isInputType(AbstractField field) {
+        return inputs.containsKey(field.getTypeName());
+    }
+
+    /**
+     * @return Does this field point to an input type with a table set in the schema?
+     */
+    public boolean isTableInputType(AbstractField field) {
+        return Optional.ofNullable(inputs.get(field.getTypeName())).map(InputDefinition::hasTable).orElse(false);
+    }
+
+    /**
      * @return Get an input type with this name.
      */
     public InputDefinition getInputType(String name) {
         return inputs.get(name);
+    }
+
+    /**
+     * @return Get the input type that this field points to.
+     */
+    public InputDefinition getInputType(AbstractField field) {
+        return inputs.get(field.getTypeName());
     }
 
     /**

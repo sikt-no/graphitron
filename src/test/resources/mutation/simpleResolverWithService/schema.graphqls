@@ -6,9 +6,21 @@ type EndreResponse1 {
   id1: [ID!]! @column(name: "ID")
 }
 
+type EndreResponse2 {
+  id2: [ID!]! @column(name: "ID")
+  personProfiler: [PersonProfil!]!
+}
+
 type Mutation {
   endrePerson0(id: ID!): EndreResponse0! @service(name : "TEST_PERSON")
   endrePerson1(id: [ID!]!): EndreResponse1! @service(name : "TEST_PERSON")
   endrePersonRecord0(id: ID!): EndreResponse0! @service(name : "TEST_PERSON")
   endrePersonRecord1(id: [ID!]!): EndreResponse1! @service(name : "TEST_PERSON")
+  endrePersonRecord2(id: [ID!]!): EndreResponse2! @service(name : "TEST_PERSON") # Also map one node type.
+}
+
+type PersonProfil implements Node @table(name : "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String!
 }

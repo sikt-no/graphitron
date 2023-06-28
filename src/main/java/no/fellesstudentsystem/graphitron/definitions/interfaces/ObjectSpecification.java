@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.interfaces;
 
-import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.TypeName;
 import graphql.language.TypeDefinition;
 
 /**
@@ -13,9 +13,9 @@ public interface ObjectSpecification<T extends TypeDefinition<T>> {
     String getName();
 
     /**
-     * @return The javapoet {@link ClassName} for the imported generated GraphQL object.
+     * @return The javapoet {@link TypeName} for the imported generated GraphQL object.
      */
-    ClassName getGraphClassName();
+    TypeName getGraphClassName();
 
     /**
      * @return The original interpretation of this object as provided by GraphQL.

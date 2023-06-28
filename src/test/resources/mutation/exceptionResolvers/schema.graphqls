@@ -9,11 +9,6 @@ input EndreInput2 @record(table : "PERSON") {
   privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
 }
 
-interface Error {
-  path: [String!]!
-  message: String!
-}
-
 type SomeErrorA implements Error @error(name: "EXCEPTION_TEST") {
   path: [String!]!
   message: String!
@@ -64,10 +59,6 @@ type Mutation {
   endreErrorUnion2(input: EndreInput!): EndreResponseUnion2! @service(name : "TEST_PERSON")
 }
 
-interface Node {
-  id: ID!
-}
-
 type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
@@ -75,9 +66,4 @@ type PersonProfil implements Node @table(name : "PERSON") {
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   postadresse: Postadresse @splitQuery @notGenerated
   dod: Boolean @column(name : "STATUS_DOD")
-}
-
-type Query {
-  " Dummy query, since the schema insists that there must be at least one."
-  i(id: ID): ID! @notGenerated
 }

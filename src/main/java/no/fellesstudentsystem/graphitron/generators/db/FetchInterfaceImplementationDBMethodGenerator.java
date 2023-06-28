@@ -2,7 +2,6 @@ package no.fellesstudentsystem.graphitron.generators.db;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
 import graphql.language.FieldDefinition;
 import graphql.language.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -19,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.getStringSetTypeName;
+import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMap;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -83,7 +84,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                         argumentName
                 )
                 .add(createSelectConditions(context.getConditionList()))
-                .addStatement("." + (!target.getFieldType().isIterableWrapped() ? "fetchMap" : "fetchGroups")
+                .addStatement("." + (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups")
                                 + "($T::value1, $T::value2)",
                         RECORD2.className,
                         RECORD2.className
@@ -93,9 +94,9 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
 
         return getDefaultSpecBuilder(
                 "load" + localName + "By" + StringUtils.capitalize(argumentName) + "As" + StringUtils.capitalize(target.getName()),
-                ParameterizedTypeName.get(MAP.className, STRING.className, returnType)
+                wrapStringMap(returnType)
         )
-                .addParameter(ParameterizedTypeName.get(SET.className, STRING.className), argumentName)
+                .addParameter(getStringSetTypeName(), argumentName)
                 .addParameter(SELECTION_SET.className, SELECTION_NAME)
                 .addCode(code.build())
                 .build();
@@ -117,7 +118,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         return getLocalObject()
                 .getFields()
                 .stream()
-                .filter(it -> processedSchema.isInterface(it.getTypeName()))
+                .filter(processedSchema::isInterface)
                 .allMatch(ObjectField::isGenerated);
     }
 }

@@ -32,6 +32,10 @@ public class TestPersonService {
         return null;
     }
 
+    public List<PersonRecord> endrePersonRecord2(List<String> id) {
+        return null;
+    }
+
     public String endrePersonSimple(String id) {
         return null;
     }

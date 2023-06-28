@@ -1,8 +1,3 @@
-type Query {
-  # Dummy query, since the schema insists that there must be at least one.
-  i(id: ID): ID! @notGenerated
-}
-
 type Mutation {
   endrePersonListSimple(id: [ID!]!): [ID!]! @service(name: "TEST_PERSON")
   endrePersonListInput(input: [EndreInput!]): [ID!]! @service(name: "TEST_PERSON") # Note: Two methods have the same name, but it resolves correctly based on number of arguments. Doesn't check the types though.

@@ -118,14 +118,14 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                 .getFields()
                 .stream()
                 .filter(f -> !(f.isResolver() &&
-                        (processedSchema.isObject(f.getTypeName()) || processedSchema.isInterface(f.getTypeName()))))
+                        (processedSchema.isObject(f) || processedSchema.isInterface(f))))
                 .collect(Collectors.toList());
         var fieldsWithoutTableSize = fieldsWithoutTable.size();
         for (int i = 0; i < fieldsWithoutTableSize; i++) {
             var field = fieldsWithoutTable.get(i);
 
             codeBlockBuilder.add(
-                    processedSchema.isObject(field.getTypeName())
+                    processedSchema.isObject(field)
                             ? generateSelectRow(context.nextContext(field))
                             : generateForScalarField(field, context)
             );
@@ -172,7 +172,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         }
     }
 
-    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<ObjectField> fieldsWithoutTable, ClassName graphClassName, boolean maxTypeSafeFieldSizeIsExeeded) {
+    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<ObjectField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExeeded) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
 
@@ -190,8 +190,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             }
             ObjectField field = fieldsWithoutTable.get(i);
 
-            if (processedSchema.isObject(field.getTypeName()))  {
-                codeBlockConditions.add("($L == null || new $T().equals($L))", argumentName, processedSchema.getObject(field.getTypeName()).getGraphClassName(), argumentName);
+            if (processedSchema.isObject(field))  {
+                codeBlockConditions.add("($L == null || new $T().equals($L))", argumentName, processedSchema.getObject(field).getGraphClassName(), argumentName);
             } else {
                 codeBlockConditions.add("$L == null", argumentName);
             }
@@ -224,14 +224,13 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         for (int i = 0; i < fieldsWithoutTable.size(); i++) {
             var field = fieldsWithoutTable.get(i);
-            var fieldType = field.getTypeName();
 
-            if (processedSchema.isObject(fieldType)) {
-                codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(fieldType).getGraphClassName(), i);
+            if (processedSchema.isObject(field)) {
+                codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i);
             } else if (field.getFieldType().isID()) {
                 codeBlockBuilder.add("($T) r[$L]", STRING.className, i);
-            } else if (processedSchema.isEnum(fieldType)) {
-                var enumDefinition = processedSchema.getEnum(fieldType);
+            } else if (processedSchema.isEnum(field)) {
+                var enumDefinition = processedSchema.getEnum(field);
                 codeBlockBuilder.add("($T) r[$L]", enumDefinition.getGraphClassName(), i);
             } else {
                 var fieldString = context.getCurrentJoinSequence() +
@@ -368,11 +367,11 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
             var inputData = inputBuffer.poll();
             var input = inputData.getInput();
-            if (processedSchema.isInputType(input.getTypeName())) {
+            if (processedSchema.isInputType(input)) {
                 inputBuffer.addAll(
                         0,
                         processedSchema
-                                .getInputType(input.getTypeName())
+                                .getInputType(input)
                                 .getInputs()
                                 .stream()
                                 .map(inputData::iterate)
@@ -391,8 +390,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
     private Map<InputField, List<InputCondition>> getConditionTuples(List<InputField> inputFields, ArrayList<InputCondition> flatInputs) {
         return inputFields.stream()
-                .filter(inputField -> inputField.getFieldType().isIterableWrapped() &&
-                        processedSchema.isInputType(inputField.getTypeName()))
+                .filter(inputField -> inputField.isIterableWrapped() &&
+                        processedSchema.isInputType(inputField))
                 .collect(Collectors.toMap(
                         Function.identity(),
                         inputField -> flatInputs.stream()

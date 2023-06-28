@@ -142,35 +142,35 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     }
 
     private PersonProfil getEndreResponse2PersonProfil(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 result,
+            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 idContainer,
             SelectionSet select) {
-        if (!select.contains("endreResponse2/personProfil") || result == null) {
+        if (!select.contains("endreResponse2/personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(result.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 
     private Map<String, PersonProfil> getEndreResponse3PersonProfil(
-            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> result,
+            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> idContainer,
             SelectionSet select) {
-        if (!select.contains("endreResponse3/personProfil") || result == null) {
+        if (!select.contains("endreResponse3/personProfil") || idContainer == null) {
             return Map.of();
         }
 
-        var ids = result.stream().map(it -> it.getPers3().getId()).collect(Collectors.toSet());
+        var ids = idContainer.stream().map(it -> it.getPers3().getId()).collect(Collectors.toSet());
         return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("endreResponse3/personProfil"));
     }
 
     private Map<String, Postadresse> getEndreResponse4Post(
-            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse4> result,
+            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse4> idContainer,
             SelectionSet select) {
-        if (!select.contains("endreResponse3/endreResponse4/post") || result == null) {
+        if (!select.contains("endreResponse3/endreResponse4/post") || idContainer == null) {
             return Map.of();
         }
 
-        var ids = result.stream().map(it -> it.getPostAdr4().getId()).collect(Collectors.toSet());
+        var ids = idContainer.stream().map(it -> it.getPostAdr4().getId()).collect(Collectors.toSet());
         return postadresseDBQueries.loadPostadresseByIdsAsNode(ids, select.withPrefix("endreResponse3/endreResponse4/post"));
     }
 }

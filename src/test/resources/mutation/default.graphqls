@@ -1,0 +1,18 @@
+#defines all default mutation directives.
+
+directive @record(table: String) on INPUT_OBJECT
+directive @service(name: String!) on FIELD_DEFINITION
+directive @error(name: String!) on OBJECT
+directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
+
+enum MutationType { UPDATE, DELETE }
+
+interface Error {
+  path: [String!]!
+  message: String!
+}
+
+type Query {
+  "Dummy query, since the schema insists that there must be at least one."
+  i(id: ID): ID! @notGenerated
+}
