@@ -9,7 +9,7 @@ type PageInfo {
   endCursor: String
 }
 
-type Pass implements Node @node(table : "PASS") {
+type Pass implements Node @table(name : "PASS") {
   id: ID!
   passnummer: String! @column(name : "NUMMER")
 }
@@ -25,7 +25,7 @@ type PassConnectionEdge {
   node: Pass
 }
 
-type PersonProfil implements Node @node(table : "PERSON") {
+type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   pass(first: Int = 10, after: String): PassConnection @splitQuery
   fornavn: String!

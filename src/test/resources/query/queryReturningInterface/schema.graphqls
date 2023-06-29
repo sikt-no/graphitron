@@ -1,4 +1,4 @@
-type Kull implements Terminbasert & Node @node {
+type Kull implements Terminbasert & Node @table {
   id: ID!
   terminId: String! @column(name : "TERMINKODE")
   navn: String! @column(name : "STUDIEKULLNAVN")
@@ -8,7 +8,7 @@ interface Node {
   id: ID!
 }
 
-type ProgramStudierett implements Node @node(table : "STUDIERETT") {
+type ProgramStudierett implements Node @table(name : "STUDIERETT") {
   id: ID!
   kull: Kull!
   studierettperiode: Studierettperiode!
@@ -26,7 +26,7 @@ type Studierettperiode {
   tilDato: Date @column(name : "DATO_STUDIERETT_GYLDIG_TIL")
 }
 
-type Studierettstatus implements Node @node {
+type Studierettstatus implements Node @table {
   id: ID!
 }
 

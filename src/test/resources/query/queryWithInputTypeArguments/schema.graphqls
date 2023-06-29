@@ -28,7 +28,7 @@ input PersonInputEpost {
   arbeidsEpost: String! @column(name : "EMAILADRESSE_ARBEID")
 }
 
-type PersonProfil implements Node @node(table : "PERSON") {
+type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
   etternavn: String!
@@ -63,7 +63,7 @@ type QueryStudentVedInstitusjonConnectionEdge {
   node: StudentVedInstitusjon
 }
 
-type Semesterregistrering implements Node @node {
+type Semesterregistrering implements Node @table {
   id: ID!
   registrert: Boolean! @column(name : "STATUS_REG_OK")
 }
@@ -82,7 +82,7 @@ input SemesterregistreringsterminNestedInput {
   termintype: Termintype! @column(name : "TERMINKODE", table : "TERMIN", key : "SEMESTERREGISTRERING__HAR__TERMIN__FK")
 }
 
-type StudentVedInstitusjon implements Node @node(table : "STUDENT") {
+type StudentVedInstitusjon implements Node @table(name : "STUDENT") {
   id: ID!
   semesterregistreringer(terminIn: SemesterregistreringsterminInput!): [Semesterregistrering!]! @splitQuery
   registreringerForInputList(terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @splitQuery

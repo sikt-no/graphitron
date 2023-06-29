@@ -15,7 +15,7 @@ type Query {
     ): PersonProfil @notGenerated #should not trigger warning when marked with '@notGenerated'
 }
 
-type Rom @node {
+type Rom @table {
     id: ID!
     romId: ID! #No ROMID column, but ID types should not trigger warning
     romvesen: String! #No ROMVESEN column, should trigger warning
@@ -26,7 +26,7 @@ type Rom @node {
     merknad: Merknad
 }
 
-type RomKapasitet @node(table: "ROM") {
+type RomKapasitet @table(name: "ROM") {
     id: ID!
     eksamenskapasitet: Int @column(name: "TALL_KAPASITET_EKS") #should NOT trigger warning
     undervisningskapasitet: Int #should trigger warning
@@ -44,7 +44,7 @@ type NynorskMerknad {
     generell: Int @column(name: "KVERKNADTEKST_NYNORSK") #should trigger warning
 }
 
-type PersonProfil @node(table: "PERSON") {
+type PersonProfil @table(name: "PERSON") {
     id: ID!
     fodselsnummer: String @column(name: "FODSELSNR") #should NOT trigger warning
     fodselsnummer2: String @column(name: "FODSELSNR2") #should trigger warning

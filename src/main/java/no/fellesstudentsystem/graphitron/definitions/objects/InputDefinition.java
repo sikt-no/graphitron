@@ -11,8 +11,8 @@ import no.fellesstudentsystem.graphql.schema.SchemaHelpers;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.NODE;
 import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.RECORD;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
 import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.TABLE;
 
 public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDefinition> {
@@ -25,11 +25,11 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         super(inputType);
         inputs = inputType.getInputValueDefinitions().stream().map(InputField::new).collect(Collectors.toList());
 
-        var hasNode = inputType.hasDirective(NODE.getName());
+        var hasTable = inputType.hasDirective(GenerationDirective.TABLE.getName());
         var hasRecord = inputType.hasDirective(RECORD.getName());
         String tableName = getName().toUpperCase();
-        if (hasNode) {
-            tableName = SchemaHelpers.getOptionalDirectiveArgumentString(inputType, NODE, NODE.getParamName(TABLE)).orElse(tableName);
+        if (hasTable) {
+            tableName = SchemaHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME)).orElse(tableName);
             table = new JOOQTableMapping(tableName);
         } else if (hasRecord) {
             tableName = SchemaHelpers.getOptionalDirectiveArgumentString(inputType, RECORD, RECORD.getParamName(TABLE)).orElse(tableName);
@@ -37,7 +37,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         } else {
             table = null;
         }
-        hasTable = hasNode || hasRecord;
+        this.hasTable = hasTable || hasRecord;
         record = new SQLRecord(new RecordMethodMapping(tableName));
     }
 
@@ -49,7 +49,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     }
 
     /**
-     * @return Does this object have the "{@link GenerationDirective#NODE node}" or "{@link GenerationDirective#RECORD record}" directive
+     * @return Does this object have the "{@link GenerationDirective#TABLE node}" or "{@link GenerationDirective#RECORD record}" directive
      * which implies a connection to a database table?
      */
     public boolean hasTable() {

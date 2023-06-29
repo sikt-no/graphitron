@@ -2,7 +2,7 @@ type Query {
   vurderingsmelding(id: ID!): Vurderingsmelding
 }
 
-type Vurderingsmelding @node {
+type Vurderingsmelding @table {
   id: ID!
   #join path: VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE -> TERMIN(via key)
   forsteTerminForVurdering: Termin! @splitQuery @reference(
@@ -10,7 +10,7 @@ type Vurderingsmelding @node {
     key: "EMNE__EKS_FORSTE__TERMIN__FK")
 }
 
-type Termin @node {
+type Termin @table {
   id: ID!
   arstall: Int!
 }

@@ -2,13 +2,13 @@ type Query {
   vurderingsmelding(id: ID!): Vurderingsmelding
 }
 
-type Vurderingsmelding @node {
+type Vurderingsmelding @table {
   id: ID!
   #via tables starting from the referring type (VURDERINGSMELDING): VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE
   emne: Emne! @splitQuery @reference(via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}])
 }
 
-type Emne @node {
+type Emne @table {
   id: ID!
   kode: String! @column(name: "EMNEKODE")
 }

@@ -2,7 +2,7 @@ interface Node {
   id: ID!
 }
 
-type ProgramStudierett implements Node @node(table : "STUDIERETT") {
+type ProgramStudierett implements Node @table(name : "STUDIERETT") {
   id: ID!
 }
 

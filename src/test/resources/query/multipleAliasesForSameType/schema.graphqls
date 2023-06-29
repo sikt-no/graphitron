@@ -2,7 +2,7 @@ type Query {
   emnevalgstatus(id: ID!): Emnevalgstatus
 }
 
-type Emnevalgstatus @node {
+type Emnevalgstatus @table {
   id: ID!
   minimumsvekting: MinimumVektingForEmnevalgstatus
   maksimumsvekting: MaksimumVektingForEmnevalgstatus
@@ -18,7 +18,7 @@ type MaksimumVektingForEmnevalgstatus{
   vektingstype: Vektingstype @reference(key: "EMNEVALGSTATUS__MAX__VEKTINGSTYPE__FK") #reference 2 for emnevalgstatus_vektingstype
 }
 
-type Vektingstype @node {
+type Vektingstype @table {
   id: ID!
 }
 

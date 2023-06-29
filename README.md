@@ -7,7 +7,7 @@ Annoteringen skjer via direktiver direkte i GraphQL-skjemaet. Direktivene må le
 mot, per default er dette i _schema_ i modulen _fs-graphql-spec_ under _resources/schema_. I schema er direktivene og deres
 parametre beskrevet med kommentarer. Ytterligere forklaring med enkelte eksempler finnes nedenfor i denne readme-fila.
 
-De viktigste direktivene er _splitQuery_, _notGenerated_ og _node_. 
+De viktigste direktivene er _splitQuery_, _notGenerated_ og _table_. 
 
 **SplitQuery**-direktivet forteller maven-pluginen (io.github.kobylynskyi) at den skal lage et interface for en
 resolver-metode på feltet der direktivet er plassert. 
@@ -16,9 +16,9 @@ resolver-metode på feltet der direktivet er plassert.
 Å sette _splitQuery_ i kombinasjon med _notGenerated_ gir oppførsel slik den hadde vært uten Graphitron,
 altså at det blir generert et interface som må implementeres.
 
-**Node** knytter et GraphQL-objekt til en tabell i KjerneAPI. Dersom objektet har et annet navn enn tabellen i KjerneAPI,
-brukes _table_-parameteret for å angi navnet på tabellen det skal knyttes mot.
-Objektet blir gjort til en implementasjon av node-interfacet. Alle slike noder kan hentes ut basert på ID i API-et, ved
+**Table** knytter et GraphQL-objekt til en tabell i KjerneAPI. Dersom objektet har et annet navn enn tabellen i KjerneAPI,
+brukes _name_-parameteret for å angi navnet på tabellen det skal knyttes mot.
+Objekt som i tillegg implementerer node-interfacet får også en implementasjon for dette. Alle slike noder kan hentes ut basert på ID i API-et, ved
 hjelp av node-resolveren. Dette er i tråd med GraphQLs mønster for [Global Object Identification](https://graphql.org/learn/global-object-identification/).
 
 ## Bygg
@@ -36,7 +36,7 @@ generert siden den ikke er abstrakt. GraphQL vil da klage på at det finnes to r
 ## Funksjonalitet og direktiver for Queries
 ### Tables & Joins
 #### Automatic reference detection
-Generatoren klarer å utlede mange av databaseforbindelsene via typene i skjemaet som er annotert med _node_-direktivet.
+Generatoren klarer å utlede mange av databaseforbindelsene via typene i skjemaet som er annotert med _table_-direktivet.
 Ved bruk av reflection på koden generert av jOOQ i KjerneAPI, sjekkes det både for implisitte joins og eventuelle `get(Tabellnavn)Id`-metoder
 som peker til måltabellen.
 
@@ -249,7 +249,7 @@ public class TestPersonService {
 
 ### Field Mapping
 På grunn av at node interfacet krever at typer tar med ID-felt, introduseres det et nytt direktiv for å mappe input-typer
-opp mot jOOQ records. Direktivet **record** anvendes helt likt som _node_, men kan bare settes på input-typer.
+opp mot jOOQ records. Direktivet **record** anvendes helt likt som _table_, men kan bare settes på input-typer.
 Hvis input-typen blir brukt i en _Query_-spørring, vil ikke direktivet ha noen effekt. Direktivet _column_
 (skal endre navn senere) gjenbrukes her for å koble enkeltfelt opp til jOOQ-navn, slik at records kan konstrueres.
 For returtyper som ikke implementerer node, brukes også _column_ for å mappe navnene på feltene i returtypen mot

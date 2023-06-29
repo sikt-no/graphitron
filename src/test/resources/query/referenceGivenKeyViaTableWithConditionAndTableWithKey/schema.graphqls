@@ -2,7 +2,7 @@ type Query {
   student(id: ID!): StudentVedInstitusjon
 }
 
-type StudentVedInstitusjon @node(table: "STUDENT") {
+type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
   #join path: STUDENT -> INSTITUSJON (via condition) -> LAND (via key) -> LANDTYPE (via key)
   institusjonslandtype: Landtype! @splitQuery @reference(
@@ -10,7 +10,7 @@ type StudentVedInstitusjon @node(table: "STUDENT") {
     key: "LAND__HAR__LANDTYPE__FK")
 }
 
-type Landtype @node {
+type Landtype @table {
   id: ID!
   navn: String! @column(name: "LANDTYPENAVN")
 }

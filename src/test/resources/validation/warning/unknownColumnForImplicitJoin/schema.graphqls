@@ -2,7 +2,7 @@ type Query {
   student(id: ID!): Student
 }
 
-type Student @node {
+type Student @table {
   id: ID!
   fornavn: Fornavn!
 }

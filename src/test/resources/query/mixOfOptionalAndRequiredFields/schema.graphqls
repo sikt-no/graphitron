@@ -4,13 +4,13 @@ type Query {
   ): ProgramStudierett
 }
 
-type ProgramStudierett @node(table: "STUDIERETT") {
+type ProgramStudierett @table(name: "STUDIERETT") {
   id: ID!
   studieretning: Studieretning @splitQuery
   personProfil: PersonProfil @splitQuery
 }
 
-type Studieretning @node {
+type Studieretning @table {
   id: ID!
   navn: StudieretningnavnWithOptional!   #required, with optional "sub fields"
   navnOpt: StudieretningnavnWithOptional #optional, with optional "sub fields"
@@ -32,7 +32,7 @@ type StudieretningnavnAllRequired {
 #### case for more than 22 fields:
 
 """Type med flere enn 22 felter"""
-type PersonProfil @node(table: "PERSON") {
+type PersonProfil @table(name: "PERSON") {
   id: ID!
   fornavn: String!
   fornavn2: String! @column(name: "FORNAVN")

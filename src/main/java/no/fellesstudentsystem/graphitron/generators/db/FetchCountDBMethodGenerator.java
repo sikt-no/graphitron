@@ -31,7 +31,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     /**
      * @param target A {@link ObjectField} for which a method should be generated for.
      *                       This must reference an object with the
-     *                       "{@link GenerationDirective#NODE table}" directive set.
+     *                       "{@link GenerationDirective#TABLE table}" directive set.
      * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
      */
     @Override

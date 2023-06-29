@@ -2,7 +2,7 @@ type Query {
   rom(bygningskode: String!): Rom
 }
 
-type Rom @node {
+type Rom @table {
   id: ID!
   romnavn: String!
   bygningskode: String!

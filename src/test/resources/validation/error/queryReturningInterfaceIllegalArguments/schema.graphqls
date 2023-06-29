@@ -1,4 +1,4 @@
-type Kull implements Node @node {
+type Kull implements Node @table {
   id: ID!
   navn: String! @column(name : "STUDIEKULLNAVN")
 }

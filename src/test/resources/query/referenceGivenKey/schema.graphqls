@@ -1,8 +1,8 @@
-type Campusemne @node(table : "CAMPUS_EMNE") {
+type Campusemne @table(name : "CAMPUS_EMNE") {
   id: ID!
 }
 
-type Emne @node {
+type Emne @table {
   id: ID!
   campuser: [Campusemne!]! @splitQuery @reference(key : "CAMPUS_EMNE__HAR__EMNE__FK")
 }

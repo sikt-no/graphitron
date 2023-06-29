@@ -2,7 +2,7 @@ type Query {
   student(id: ID!): StudentVedInstitusjon
 }
 
-type StudentVedInstitusjon @node(table: "STUDENT") {
+type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
   studentnummer: String! @column(name: "STUDENTNR_TILDELT")
   #via tables starting from the referred type (EKSAMENSTILPASNING): EKSAMENSTILPASNING -> VURDERINGSMELDING -> STUDENT
@@ -10,13 +10,13 @@ type StudentVedInstitusjon @node(table: "STUDENT") {
   via: [{table: "EKSAMENSTILPASNING"}, {table: "VURDERINGSMELDING"}, {table: "STUDENT"}])
 }
 
-type Eksamenstilpasningssoknad @node(table: "EKSAMENSTILPASNING") {
+type Eksamenstilpasningssoknad @table(name: "EKSAMENSTILPASNING") {
   id: ID!
   vurderingsmelding: Vurderingsmelding! @splitQuery @notGenerated
   soknadsdato: Date @column(name: "DATO_SOKNAD")
 }
 
-type Vurderingsmelding @node {
+type Vurderingsmelding @table {
   id: ID!
   studentVedInstitusjon: StudentVedInstitusjon! @splitQuery @notGenerated
 }

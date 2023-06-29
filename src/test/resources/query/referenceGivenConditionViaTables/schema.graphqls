@@ -2,7 +2,7 @@ type Query {
   vurderingsmelding(id: ID!): Vurderingsmelding
 }
 
-type Vurderingsmelding @node {
+type Vurderingsmelding @table {
   id: ID!
   # join path: VURDERINGSMELDING -> STUDENT -> PERSON -> PERSON_TELEFON(via condition)
   studentPrivatTelefon: Telefon @splitQuery @reference(
@@ -10,7 +10,7 @@ type Vurderingsmelding @node {
     condition: "PERSON_TELEFON_PRIVAT")
 }
 
-type Telefon implements Node @node(table : "PERSON_TELEFON") {
+type Telefon implements Node @table(name : "PERSON_TELEFON") {
   id: ID!
   nummer: String! @column(name : "TELEFONNR")
 }

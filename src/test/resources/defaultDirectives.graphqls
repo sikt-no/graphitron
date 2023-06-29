@@ -1,26 +1,9 @@
 #defines all common directives.
 
-"""Defines that there is supposed to be a resolver for this field."""
 directive @splitQuery on FIELD_DEFINITION
-"""Defines that the generator shouldn't attempt to generate a method for this field."""
 directive @notGenerated on FIELD_DEFINITION
-
-"""Knytter objektet til en tabell i KjerneAPI. Dette gjør objektet til en Node i grafen."""
-directive @node(
-  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
-  table: String
-) on OBJECT
-
-"""Knytter feltet (eller argumentet) til en kolonne i KjerneAPI."""
-directive @column(
-  """Kolonnenavn i KjerneAPI."""
-  name: String!,
-
-  """Slå opp navnet i en relatert tabell i stedet. Tabellnavn i KjerneAPI."""
-  table: String,
-  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
-  key: String
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+directive @table(name: String) on OBJECT
+directive @column(name: String!,table: String,key: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 scalar Date
 scalar BigDecimal

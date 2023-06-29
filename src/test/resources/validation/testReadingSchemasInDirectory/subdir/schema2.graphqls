@@ -1,4 +1,4 @@
-type PersonProfil @node(table: "PERSON")  {
+type PersonProfil @table(name: "PERSON")  {
   id: ID!
   fornavn: String!
   kontaktinformasjon: Personkontaktinformasjon @splitQuery

@@ -2,17 +2,17 @@ type Query {
   student(id: ID!): StudentVedInstitusjon
 }
 
-type StudentVedInstitusjon @node(table: "STUDENT") {
+type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
   #there is no path from LAND to EKSAMENSTILPASNING
   emner: [Emne!]! @splitQuery @reference(via: [{table: "PERSON"}, {table: "INSITITUSJON"}, {table: "LAND"}  {table: "EKSAMENSTILPASNING"}])
 }
 
-type Eksamenstilpasningssoknad @node(table: "EKSAMENSTILPASNING") {
+type Eksamenstilpasningssoknad @table(name: "EKSAMENSTILPASNING") {
   id: ID!
 }
 
-type Emne @node {
+type Emne @table {
   id: ID!
 }
 

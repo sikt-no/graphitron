@@ -1,6 +1,6 @@
 #defines all default mutation directives.
 
-"""Kopi av @node for input-typer som ikke forsøker å implementere node."""
+"""Kopi av @table for input-typer som ikke forsøker å implementere node."""
 directive @record(
   """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
   table: String

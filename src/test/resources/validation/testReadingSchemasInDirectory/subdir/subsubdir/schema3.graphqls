@@ -1,4 +1,4 @@
-type Personkontaktinformasjon @node(table: "PERSON") {
+type Personkontaktinformasjon @table(name: "PERSON") {
   id: ID!
   privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
 }

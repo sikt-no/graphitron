@@ -1,4 +1,4 @@
-type Kull implements Node @node {
+type Kull implements Node @table {
   id: ID!
 }
 
@@ -6,7 +6,7 @@ interface Node {
   id: ID!
 }
 
-type ProgramStudierett implements Node @node(table : "STUDIERETT") {
+type ProgramStudierett implements Node @table(name : "STUDIERETT") {
   id: ID!
   kull: Kull!
   referertNode(id: ID!): Node! @splitQuery

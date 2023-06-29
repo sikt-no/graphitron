@@ -40,7 +40,7 @@ type Query {
   ): [Emne] @condition(name: "TEST_EMNE_INPUT_ALL")
 }
 
-type Emne @node {
+type Emne @table {
   id: ID!
   kode: String! @column(name: "EMNEKODE")
   navn: Emnenavn!

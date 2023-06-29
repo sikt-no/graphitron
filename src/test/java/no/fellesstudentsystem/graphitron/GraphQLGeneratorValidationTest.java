@@ -122,7 +122,7 @@ public class GraphQLGeneratorValidationTest {
         Set<String> logMessages = getLogMessagesWithLevelWarn();
         assertThat(logMessages).containsOnly(
                 "The following directives are declared in the code generator, but were not found in the GraphQL schema files: " +
-                        "reference, condition, mapEnum, service, mutationType, record, column, error");
+                        "reference, condition, mapEnum, service, mutationType, record, column, error, table");
     }
 
     @Test

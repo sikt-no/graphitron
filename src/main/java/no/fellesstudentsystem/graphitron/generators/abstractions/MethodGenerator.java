@@ -12,7 +12,7 @@ import java.util.Set;
 /**
  * A method generator uses a GraphQL object and its fields in order to generate methods for said object.
  * Methods are only generated for referred objects with the
- * "{@link GenerationDirective#NODE Table}" directive set.
+ * "{@link GenerationDirective#TABLE Table}" directive set.
  * @param <T> Field type that this generator operates on.
  */
 public interface MethodGenerator<T extends GenerationTarget> {

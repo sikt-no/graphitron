@@ -6,19 +6,19 @@ type Query {
   ): StudentVedInstitusjon
 }
 
-type StudentVedInstitusjon @node(table: "STUDENT") {
+type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
   studentVedInstitusjonId: ID!
   studentkort: [Studentkort!] @splitQuery # Should be ok, exists key join between STUDENT and STUDENTKORT.
   studentkort2: [Studentkort2!] @splitQuery # Should fail, no join can be deduced between STUDENT and KULL.
 }
 
-type Studentkort @node(table: "STUDENTKORT") {
+type Studentkort @table(name: "STUDENTKORT") {
   id: ID!
   studentkortnummer: String! @column(name: "STUDENTKORTNR")
 }
 
-type Studentkort2 @node(table: "KULL") {
+type Studentkort2 @table(name: "KULL") {
   id: ID!
   studentkortnummer: String! @column(name: "STUDENTKORTNR")
 }

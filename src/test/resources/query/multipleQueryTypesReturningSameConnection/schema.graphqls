@@ -12,7 +12,7 @@ type Query {
   ): PersonProfilConnection @connection(for: "PersonProfil")
 }
 
-type PersonProfil @node(table: "PERSON")  {
+type PersonProfil @table(name: "PERSON")  {
   id: ID!
   fornavn: String!
 }

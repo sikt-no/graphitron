@@ -2,7 +2,7 @@ type Adresse {
   gate: String @column(name : "ADRLIN2_HJEMSTED")
 }
 
-type Kull implements Node @node {
+type Kull implements Node @table {
   id: ID!
   termin: Termin!
 }
@@ -17,7 +17,7 @@ interface Node {
   id: ID!
 }
 
-type Permisjon implements Node @node {
+type Permisjon implements Node @table {
   id: ID!
   programStudieretter: [ProgramStudierett!]! @splitQuery @reference(condition : "PERMISJON_STUDIERETT")
   permisjonsperiode: Permisjonsperiode!
@@ -28,7 +28,7 @@ type Permisjonsperiode {
   til: Date! @column(name : "DATO_TIL")
 }
 
-type PersonProfil implements Node @node(table : "PERSON") {
+type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   institusjonsEpost: String @column(name : "EMAILADRESSE")
@@ -37,7 +37,7 @@ type PersonProfil implements Node @node(table : "PERSON") {
   studieretter: [ProgramStudierett!]! @splitQuery
 }
 
-type ProgramStudierett implements Node @node(table : "STUDIERETT") {
+type ProgramStudierett implements Node @table(name : "STUDIERETT") {
   id: ID!
   personProfil: PersonProfil! @splitQuery
   kull: Kull!
@@ -50,18 +50,18 @@ type Query {
   errors: [AllErrors!] @notGenerated
 }
 
-type StudentVedInstitusjon implements Node @node(table : "STUDENT") {
+type StudentVedInstitusjon implements Node @table(name : "STUDENT") {
   id: ID!
   studentnummer: String! @column(name : "STUDENTNR_TILDELT")
   permisjoner: [Permisjon!]! @splitQuery
 }
 
-type Telefon implements Node @node(table : "PERSON_TELEFON") {
+type Telefon implements Node @table(name : "PERSON_TELEFON") {
   id: ID!
   nummer: String! @column(name : "TELEFONNR")
 }
 
-type Termin implements Node @node {
+type Termin implements Node @table {
   id: ID!
   termintype: Termintype! @column(name : "TERMINKODE")
   arstall: Int!

@@ -280,7 +280,7 @@ public class ProcessedSchema {
 
     /**
      * @return Set of all the objects with the
-     * "{@link GenerationDirective#NODE table}" directive set and root objects.
+     * "{@link GenerationDirective#TABLE table}" directive set and root objects.
      */
     public Set<String> getNamesWithTableOrConnections() {
         return objectsWithTableOrConnection;

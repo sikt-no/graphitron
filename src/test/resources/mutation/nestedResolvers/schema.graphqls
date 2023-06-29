@@ -59,7 +59,7 @@ interface Node {
   id: ID!
 }
 
-type PersonProfil implements Node @node(table : "PERSON") {
+type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
   etternavn: String!
@@ -68,7 +68,7 @@ type PersonProfil implements Node @node(table : "PERSON") {
   dod: Boolean @column(name : "STATUS_DOD")
 }
 
-type Postadresse implements Node @node(table : "STUDENT") {
+type Postadresse implements Node @table(name : "STUDENT") {
   id: ID!
   co: String @column(name : "ADRLIN1_SEMADR")
   gate: String @column(name : "ADRLIN2_SEMADR")

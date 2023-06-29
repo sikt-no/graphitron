@@ -23,7 +23,7 @@ type Mutation {
   endrePersonWithProfilResponse(input: [EndreInput!]): [EndreResponseWithPerson!] @mutationType(typeName: UPDATE)
 }
 
-type PersonProfil @node(table : "PERSON") {
+type PersonProfil @table(name : "PERSON") {
   id: ID!
   fornavn: String!
   etternavn: String!

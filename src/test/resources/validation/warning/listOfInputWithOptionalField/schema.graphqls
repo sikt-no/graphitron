@@ -6,7 +6,7 @@ type Query {
   ): QueryStudentVedInstitusjonConnection @connection(for: "StudentVedInstitusjon")
 }
 
-type StudentVedInstitusjon @node(table: "STUDENT") {
+type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
   registreringerForInputWithListField(inputWithOptionalField: [InputWithOptionalField!]): [Semesterregistrering!]! @splitQuery
 }
@@ -16,7 +16,7 @@ input InputWithOptionalField {
   termintype: Termintype @column(name: "TERMINKODE", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK") #Optional
 }
 
-type Semesterregistrering @node {
+type Semesterregistrering @table {
   id: ID!
   registrert: Boolean! @column(name: "STATUS_REG_OK")
 }

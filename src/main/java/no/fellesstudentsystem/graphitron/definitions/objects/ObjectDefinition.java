@@ -12,10 +12,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.NODE;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.TABLE;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_QUERY;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.*;
 import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getOptionalDirectiveArgumentString;
 
 /**
@@ -25,19 +23,17 @@ import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getOptionalDir
  */
 public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition> implements GenerationTarget {
     private final JOOQTableMapping table;
-    private final boolean hasTable;
-    private final boolean isGenerated;
-    private final boolean isRoot;
+    private final boolean hasTable, isGenerated, isRoot;
     private final List<ObjectField> objectFields;
     private final Set<String> implementsInterfaces;
 
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
-        hasTable = objectDefinition.hasDirective(NODE.getName());
+        hasTable = objectDefinition.hasDirective(GenerationDirective.TABLE.getName());
         if (hasTable) {
             table = new JOOQTableMapping(
-                    getOptionalDirectiveArgumentString(objectDefinition, NODE, NODE.getParamName(TABLE))
+                    getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME))
                             .orElse(getName().toUpperCase())
             );
         } else {
@@ -65,7 +61,7 @@ public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinit
     }
 
     /**
-     * @return Does this object have the "{@link GenerationDirective#NODE table}" directive
+     * @return Does this object have the "{@link GenerationDirective#TABLE table}" directive
      * which implies a connection to a database table?
      */
     public boolean hasTable() {
@@ -109,10 +105,6 @@ public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinit
                 .stream()
                 .map(ObjectDefinition::new)
                 .collect(Collectors.toList());
-    }
-
-    public Set<String> implementsInterfaces() {
-        return implementsInterfaces;
     }
 
     /**

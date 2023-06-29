@@ -5,13 +5,13 @@ type Query {
   ): PersonProfil
 }
 
-type PersonProfil @node(table: "PERSON") {
+type PersonProfil @table(name: "PERSON") {
   id: ID!
   fornavn: String!
   kontaktinformasjon: Personkontaktinformasjon @splitQuery @notGenerated
 }
 
-type Personkontaktinformasjon @node(table: "PERSON") {
+type Personkontaktinformasjon @table(name: "PERSON") {
   id: ID!
   privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
 }

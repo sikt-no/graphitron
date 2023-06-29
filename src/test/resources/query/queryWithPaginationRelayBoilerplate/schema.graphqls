@@ -5,7 +5,7 @@ type PageInfo {
   endCursor: String
 }
 
-type PersonProfil @node(table : "PERSON") {
+type PersonProfil @table(name : "PERSON") {
   id: ID!
   fornavn: String!
 }

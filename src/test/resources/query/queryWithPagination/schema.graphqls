@@ -9,7 +9,7 @@ type PageInfo {
   endCursor: String
 }
 
-type PersonProfil implements Node @node(table : "PERSON") {
+type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   fornavn: String!
 }
