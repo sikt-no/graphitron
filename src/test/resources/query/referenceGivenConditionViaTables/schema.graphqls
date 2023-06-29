@@ -5,7 +5,7 @@ type Query {
 type Vurderingsmelding @node {
   id: ID!
   # join path: VURDERINGSMELDING -> STUDENT -> PERSON -> PERSON_TELEFON(via condition)
-  studentPrivatTelefon: Telefon @resolver @reference(
+  studentPrivatTelefon: Telefon @splitQuery @reference(
     via: [{table: "STUDENT"}, {table: "PERSON"}],
     condition: "PERSON_TELEFON_PRIVAT")
 }

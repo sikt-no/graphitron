@@ -5,7 +5,7 @@ type Query {
 type Vurderingsmelding @node {
   id: ID!
   #via tables starting from the referring type (VURDERINGSMELDING): VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE
-  emne: Emne! @resolver @reference(via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}])
+  emne: Emne! @splitQuery @reference(via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}])
 }
 
 type Emne @node {

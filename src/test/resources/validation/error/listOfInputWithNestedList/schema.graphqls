@@ -8,7 +8,7 @@ type Query {
 
 type StudentVedInstitusjon @node(table: "STUDENT") {
   id: ID!
-  registreringerForInputWithListField(inputWithListField: [InputWithListField!]): [Semesterregistrering!]! @resolver
+  registreringerForInputWithListField(inputWithListField: [InputWithListField!]): [Semesterregistrering!]! @splitQuery
 }
 
 input InputWithListField {

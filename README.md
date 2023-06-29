@@ -7,13 +7,13 @@ Annoteringen skjer via direktiver direkte i GraphQL-skjemaet. Direktivene må le
 mot, per default er dette i _schema_ i modulen _fs-graphql-spec_ under _resources/schema_. I schema er direktivene og deres
 parametre beskrevet med kommentarer. Ytterligere forklaring med enkelte eksempler finnes nedenfor i denne readme-fila.
 
-De viktigste direktivene er _resolver_, _notGenerated_ og _node_. 
+De viktigste direktivene er _splitQuery_, _notGenerated_ og _node_. 
 
-**Resolver**-direktivet forteller maven-pluginen (io.github.kobylynskyi) at den skal lage et interface for en
+**SplitQuery**-direktivet forteller maven-pluginen (io.github.kobylynskyi) at den skal lage et interface for en
 resolver-metode på feltet der direktivet er plassert. 
 
 **NotGenerated** settes på et felt for å instruere generatoren om å IKKE generere noen metode for dette feltet.
-Å sette _resolver_ i kombinasjon med _notGenerated_ gir oppførsel slik den hadde vært uten Graphitron,
+Å sette _splitQuery_ i kombinasjon med _notGenerated_ gir oppførsel slik den hadde vært uten Graphitron,
 altså at det blir generert et interface som må implementeres.
 
 **Node** knytter et GraphQL-objekt til en tabell i KjerneAPI. Dersom objektet har et annet navn enn tabellen i KjerneAPI,
@@ -64,7 +64,7 @@ _Column_-direktivet har også et par ekstra parametere for spesialtilfeller:
 Kan være enklere å oppgi en en referanse hvis bare det ene feltet skal hentes derfra.
 * _key_ - Hvis _table_ er oppgitt brukes denne nøkkelen til å finne koblingen mellom de to tabellene.
 
-Felt som har _resolver_-direktivet blir ikke tatt med, siden det genereres egne resolvere for disse.
+Felt som har _splitQuery_-direktivet blir ikke tatt med, siden det genereres egne resolvere for disse.
 
 ### Conditions
 Direktivet **condition** muliggjør mer avanserte begrensninger for spørringen.

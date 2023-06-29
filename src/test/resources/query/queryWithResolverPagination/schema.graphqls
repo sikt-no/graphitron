@@ -27,7 +27,7 @@ type PassConnectionEdge {
 
 type PersonProfil implements Node @node(table : "PERSON") {
   id: ID!
-  pass(first: Int = 10, after: String): PassConnection @resolver
+  pass(first: Int = 10, after: String): PassConnection @splitQuery
   fornavn: String!
 }
 

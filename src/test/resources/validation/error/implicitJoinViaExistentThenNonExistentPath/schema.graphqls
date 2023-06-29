@@ -5,7 +5,7 @@ type Query {
 type StudentVedInstitusjon @node(table: "STUDENT") {
   id: ID!
   #there is no path from LAND to EKSAMENSTILPASNING
-  emner: [Emne!]! @resolver @reference(via: [{table: "PERSON"}, {table: "INSITITUSJON"}, {table: "LAND"}  {table: "EKSAMENSTILPASNING"}])
+  emner: [Emne!]! @splitQuery @reference(via: [{table: "PERSON"}, {table: "INSITITUSJON"}, {table: "LAND"}  {table: "EKSAMENSTILPASNING"}])
 }
 
 type Eksamenstilpasningssoknad @node(table: "EKSAMENSTILPASNING") {

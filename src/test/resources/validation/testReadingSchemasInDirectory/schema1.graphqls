@@ -1,5 +1,5 @@
 """Defines that there is supposed to be a resolver for this field."""
-directive @resolver on FIELD_DEFINITION
+directive @splitQuery on FIELD_DEFINITION
 """Defines that the generator should attempt to generate a method for this field."""
 directive @generated on FIELD_DEFINITION
 """Connects the object to a DB table."""

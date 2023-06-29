@@ -12,7 +12,7 @@ type ProgramStudierett implements Node @node(table : "STUDIERETT") {
   id: ID!
   kull: Kull!
   studierettperiode: Studierettperiode!
-  studierettstatus: Studierettstatus! @resolver
+  studierettstatus: Studierettstatus! @splitQuery
 }
 
 type Query {

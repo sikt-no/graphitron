@@ -9,7 +9,7 @@ interface Node {
 type ProgramStudierett implements Node @node(table : "STUDIERETT") {
   id: ID!
   kull: Kull!
-  referertNode(id: ID!): Node! @resolver
+  referertNode(id: ID!): Node! @splitQuery
 }
 
 type Query {

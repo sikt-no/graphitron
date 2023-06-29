@@ -8,7 +8,7 @@ type Query {
 type PersonProfil @node(table: "PERSON") {
   id: ID!
   fornavn: String!
-  kontaktinformasjon: Personkontaktinformasjon @resolver @notGenerated
+  kontaktinformasjon: Personkontaktinformasjon @splitQuery @notGenerated
 }
 
 type Personkontaktinformasjon @node(table: "PERSON") {

@@ -64,7 +64,7 @@ type PersonProfil implements Node @node(table : "PERSON") {
   fornavn: String!
   etternavn: String!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  postadresse: Postadresse @resolver @notGenerated
+  postadresse: Postadresse @splitQuery @notGenerated
   dod: Boolean @column(name : "STATUS_DOD")
 }
 

@@ -4,7 +4,7 @@ type Campusemne @node(table : "CAMPUS_EMNE") {
 
 type Emne @node {
   id: ID!
-  campuser: [Campusemne!]! @resolver @reference(key : "CAMPUS_EMNE__HAR__EMNE__FK")
+  campuser: [Campusemne!]! @splitQuery @reference(key : "CAMPUS_EMNE__HAR__EMNE__FK")
 }
 
 type Query {

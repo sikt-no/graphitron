@@ -1,7 +1,7 @@
 type Kull implements Node @node {
   id: ID!
   navn: String! @column(name : "STUDIEKULLNAVN")
-  referertNode: Node @resolver
+  referertNode: Node @splitQuery
 }
 
 interface Node {

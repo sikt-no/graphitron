@@ -1,7 +1,7 @@
 #defines all common directives.
 
 """Defines that there is supposed to be a resolver for this field."""
-directive @resolver on FIELD_DEFINITION
+directive @splitQuery on FIELD_DEFINITION
 """Defines that the generator shouldn't attempt to generate a method for this field."""
 directive @notGenerated on FIELD_DEFINITION
 

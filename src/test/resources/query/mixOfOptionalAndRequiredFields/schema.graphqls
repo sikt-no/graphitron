@@ -6,8 +6,8 @@ type Query {
 
 type ProgramStudierett @node(table: "STUDIERETT") {
   id: ID!
-  studieretning: Studieretning @resolver
-  personProfil: PersonProfil @resolver
+  studieretning: Studieretning @splitQuery
+  personProfil: PersonProfil @splitQuery
 }
 
 type Studieretning @node {

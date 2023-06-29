@@ -20,7 +20,7 @@ interface Node {
 
 type Permisjon implements Node @node {
   id: ID!
-  programStudieretter: [ProgramStudierett!]! @resolver @reference(condition : "PERMISJON_STUDIERETT")
+  programStudieretter: [ProgramStudierett!]! @splitQuery @reference(condition : "PERMISJON_STUDIERETT")
   permisjonsperiode: Permisjonsperiode!
 }
 
@@ -35,18 +35,18 @@ type PersonProfil implements Node @node(table : "PERSON") {
   etternavn: String!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   arbeidsEpost: String @column(name : "EMAILADRESSE_ARBEID")
-  mobilTelefon: Telefon @resolver @reference(condition : "PERSON_TELEFON_MOBIL")
+  mobilTelefon: Telefon @splitQuery @reference(condition : "PERSON_TELEFON_MOBIL")
   folkeregistrertAdresse: Adresse
   fodselsdato: Date! @column(name : "DATO_FODT")
   fodselsnummer: String! @column(name : "FODSELSNR")
   morsmaal: String @column(name : "SPRAKKODE_MORSMAL")
   maalform: Maalform @column(name : "SPRAKKODE_639_2", table : "SPRAK", key : "PERSON__MALFORM__SPRAK__FK")
-  studieretter: [ProgramStudierett!]! @resolver
+  studieretter: [ProgramStudierett!]! @splitQuery
 }
 
 type ProgramStudierett implements Node @node(table : "STUDIERETT") {
   id: ID!
-  personProfil: PersonProfil! @resolver
+  personProfil: PersonProfil! @splitQuery
   kull: Kull!
 }
 
@@ -59,7 +59,7 @@ type Query {
 type StudentVedInstitusjon implements Node @node(table : "STUDENT") {
   id: ID!
   studentnummer: String! @column(name : "STUDENTNR_TILDELT")
-  permisjoner: [Permisjon!]! @resolver
+  permisjoner: [Permisjon!]! @splitQuery
 }
 
 type Telefon implements Node @node(table : "PERSON_TELEFON") {

@@ -9,8 +9,8 @@ type Query {
 type StudentVedInstitusjon @node(table: "STUDENT") {
   id: ID!
   studentVedInstitusjonId: ID!
-  studentkort: [Studentkort!] @resolver # Should be ok, exists key join between STUDENT and STUDENTKORT.
-  studentkort2: [Studentkort2!] @resolver # Should fail, no join can be deduced between STUDENT and KULL.
+  studentkort: [Studentkort!] @splitQuery # Should be ok, exists key join between STUDENT and STUDENTKORT.
+  studentkort2: [Studentkort2!] @splitQuery # Should fail, no join can be deduced between STUDENT and KULL.
 }
 
 type Studentkort @node(table: "STUDENTKORT") {

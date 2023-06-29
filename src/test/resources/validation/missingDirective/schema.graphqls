@@ -19,7 +19,7 @@ interface Node {
 
 type Permisjon implements Node @node {
   id: ID!
-  programStudieretter: [ProgramStudierett!]! @resolver @reference(condition : "PERMISJON_STUDIERETT")
+  programStudieretter: [ProgramStudierett!]! @splitQuery @reference(condition : "PERMISJON_STUDIERETT")
   permisjonsperiode: Permisjonsperiode!
 }
 
@@ -32,14 +32,14 @@ type PersonProfil implements Node @node(table : "PERSON") {
   id: ID!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   institusjonsEpost: String @column(name : "EMAILADRESSE")
-  mobilTelefon: Telefon @resolver @reference(condition : "PERSON_TELEFON_MOBIL")
+  mobilTelefon: Telefon @splitQuery @reference(condition : "PERSON_TELEFON_MOBIL")
   folkeregistrertAdresse: Adresse
-  studieretter: [ProgramStudierett!]! @resolver
+  studieretter: [ProgramStudierett!]! @splitQuery
 }
 
 type ProgramStudierett implements Node @node(table : "STUDIERETT") {
   id: ID!
-  personProfil: PersonProfil! @resolver
+  personProfil: PersonProfil! @splitQuery
   kull: Kull!
 }
 
@@ -53,7 +53,7 @@ type Query {
 type StudentVedInstitusjon implements Node @node(table : "STUDENT") {
   id: ID!
   studentnummer: String! @column(name : "STUDENTNR_TILDELT")
-  permisjoner: [Permisjon!]! @resolver
+  permisjoner: [Permisjon!]! @splitQuery
 }
 
 type Telefon implements Node @node(table : "PERSON_TELEFON") {

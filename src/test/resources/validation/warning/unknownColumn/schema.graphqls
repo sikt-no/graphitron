@@ -22,7 +22,7 @@ type Rom @node {
     romkode: String @column(name: "ROMKAMERAT") #No ROMKAMERAT column, should trigger warning
     bygningskode: String! #BYGNINGSKODE column name should NOT trigger warning
     typekode: String! @column(name: "ROMTYPEKODE") #ROMTYPEKODE column name should NOT trigger warning
-    romKapasitet: RomKapasitet @resolver #No ROMKAPASITET column, but references should not trigger warning
+    romKapasitet: RomKapasitet @splitQuery #No ROMKAPASITET column, but references should not trigger warning
     merknad: Merknad
 }
 

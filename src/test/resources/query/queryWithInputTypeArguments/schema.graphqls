@@ -84,11 +84,11 @@ input SemesterregistreringsterminNestedInput {
 
 type StudentVedInstitusjon implements Node @node(table : "STUDENT") {
   id: ID!
-  semesterregistreringer(terminIn: SemesterregistreringsterminInput!): [Semesterregistrering!]! @resolver
-  registreringerForInputList(terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @resolver
-  registreringerForMixOfListAndSingleInput(terminIn: SemesterregistreringsterminInput!, terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @resolver
-  registreringerForInputWithOneFieldList(terminInListOneField: [SemesterregistreringsterminInputWithOneField!]): [Semesterregistrering!]! @resolver
-  registreringerForInputWithNestedFieldList(terminInListNestedField: [SemesterregistreringsterminNestedInput!]): [Semesterregistrering!]! @resolver
+  semesterregistreringer(terminIn: SemesterregistreringsterminInput!): [Semesterregistrering!]! @splitQuery
+  registreringerForInputList(terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @splitQuery
+  registreringerForMixOfListAndSingleInput(terminIn: SemesterregistreringsterminInput!, terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @splitQuery
+  registreringerForInputWithOneFieldList(terminInListOneField: [SemesterregistreringsterminInputWithOneField!]): [Semesterregistrering!]! @splitQuery
+  registreringerForInputWithNestedFieldList(terminInListNestedField: [SemesterregistreringsterminNestedInput!]): [Semesterregistrering!]! @splitQuery
 }
 
 enum Termintype {
