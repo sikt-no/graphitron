@@ -17,7 +17,7 @@ import no.fellesstudentsystem.graphql.generated.model.Semesterregistreringstermi
 import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInputWithOneField;
 import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminNestedInput;
 import no.fellesstudentsystem.graphql.generated.model.Termintype;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -27,7 +27,7 @@ public class StudentVedInstitusjonDBQueries {
 
     public Map<String, List<Semesterregistrering>> semesterregistreringerForStudentVedInstitusjon(
             Set<String> studentVedInstitusjonIder, SemesterregistreringsterminInput terminIn,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         SEMESTERREGISTRERING.getStudentId(),
@@ -45,7 +45,7 @@ public class StudentVedInstitusjonDBQueries {
 
     public Map<String, List<Semesterregistrering>> registreringerForInputListForStudentVedInstitusjon(
             Set<String> studentVedInstitusjonIder,
-            List<SemesterregistreringsterminInput> terminInList, SelectionSets select) {
+            List<SemesterregistreringsterminInput> terminInList, SelectionSet select) {
         return ctx
                 .select(
                         SEMESTERREGISTRERING.getStudentId(),
@@ -70,7 +70,7 @@ public class StudentVedInstitusjonDBQueries {
 
     public Map<String, List<Semesterregistrering>> registreringerForMixOfListAndSingleInputForStudentVedInstitusjon(
             Set<String> studentVedInstitusjonIder, SemesterregistreringsterminInput terminIn,
-            List<SemesterregistreringsterminInput> terminInList, SelectionSets select) {
+            List<SemesterregistreringsterminInput> terminInList, SelectionSet select) {
         return ctx
                 .select(
                         SEMESTERREGISTRERING.getStudentId(),
@@ -98,7 +98,7 @@ public class StudentVedInstitusjonDBQueries {
     public Map<String, List<Semesterregistrering>> registreringerForInputWithOneFieldListForStudentVedInstitusjon(
             Set<String> studentVedInstitusjonIder,
             List<SemesterregistreringsterminInputWithOneField> terminInListOneField,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         SEMESTERREGISTRERING.getStudentId(),
@@ -122,7 +122,7 @@ public class StudentVedInstitusjonDBQueries {
     public Map<String, List<Semesterregistrering>> registreringerForInputWithNestedFieldListForStudentVedInstitusjon(
             Set<String> studentVedInstitusjonIder,
             List<SemesterregistreringsterminNestedInput> terminInListNestedField,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         SEMESTERREGISTRERING.getStudentId(),

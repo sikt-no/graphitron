@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Studierettstatus;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -20,7 +20,7 @@ public class StudierettstatusDBQueries {
     DSLContext ctx;
 
     public Map<String, Studierettstatus> loadStudierettstatusByIdsAsNode(Set<String> ids,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETTSTATUS.getId(),

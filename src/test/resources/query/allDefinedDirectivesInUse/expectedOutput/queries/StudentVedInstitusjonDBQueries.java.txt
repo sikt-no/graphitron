@@ -13,7 +13,7 @@ import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Permisjon;
 import no.fellesstudentsystem.graphql.generated.model.Permisjonsperiode;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -22,7 +22,7 @@ public class StudentVedInstitusjonDBQueries {
     DSLContext ctx;
 
     public Map<String, List<Permisjon>> permisjonerForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, SelectionSets select) {
+            Set<String> studentVedInstitusjonIder, SelectionSet select) {
         return ctx
                 .select(
                         PERMISJON.getStudentId(),

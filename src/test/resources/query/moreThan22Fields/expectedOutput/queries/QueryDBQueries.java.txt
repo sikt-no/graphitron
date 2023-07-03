@@ -17,7 +17,7 @@ import no.fellesstudentsystem.graphql.generated.model.Email;
 import no.fellesstudentsystem.graphql.generated.model.FolkeregistrertAdresse;
 import no.fellesstudentsystem.graphql.generated.model.Maalform;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
@@ -25,7 +25,7 @@ public class QueryDBQueries {
     DSLContext ctx;
 
     public List<PersonProfil> personProfilForQuery(String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, SelectionSets select) {
+            List<Integer> personlopenummer, SelectionSet select) {
         return ctx
                 .select(
                         row(

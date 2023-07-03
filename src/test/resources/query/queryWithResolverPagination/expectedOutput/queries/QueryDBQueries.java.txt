@@ -11,7 +11,7 @@ import java.lang.String;
 import java.util.List;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
@@ -19,7 +19,7 @@ public class QueryDBQueries {
     DSLContext ctx;
 
     public List<PersonProfil> personForQuery(String eierInstitusjonsnummer, Integer pageSize,
-            String after, SelectionSets select) {
+            String after, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -35,7 +35,7 @@ public class QueryDBQueries {
                 .fetch(0, PersonProfil.class);
     }
 
-    public List<PersonProfil> person2ForQuery(String eierInstitusjonsnummer, SelectionSets select) {
+    public List<PersonProfil> person2ForQuery(String eierInstitusjonsnummer, SelectionSet select) {
         return ctx
                 .select(
                         row(

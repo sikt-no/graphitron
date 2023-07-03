@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Termin;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -20,7 +20,7 @@ public class VurderingsmeldingDBQueries {
     DSLContext ctx;
 
     public Map<String, Termin> forsteTerminForVurderingForVurderingsmelding(
-            Set<String> vurderingsmeldingIder, SelectionSets select) {
+            Set<String> vurderingsmeldingIder, SelectionSet select) {
         var vurderingsmelding_vurderingsenhet = VURDERINGSMELDING.vurderingsenhet().as("vurderingsmelding_vurderingsenhet");
         var vurderingsmelding_vurderingsenhet_vurderingskombinasjon = vurderingsmelding_vurderingsenhet.vurderingskombinasjon().as("vurderingsmelding_vurderingsenhet_vurderingskombinasjon");
         var vurderingsmelding_vurderingsenhet_vurderingskombinasjon_emne = vurderingsmelding_vurderingsenhet_vurderingskombinasjon.emne().as("vurderingsmelding_vurderingsenhet_vurderingskombinasjon_emne");

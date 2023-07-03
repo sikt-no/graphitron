@@ -12,7 +12,7 @@ import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.QueryDBQueries;
 
 public abstract class QueryGeneratedResolver implements QueryResolver {
@@ -22,7 +22,7 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<PersonProfil>> personProfil(String eierInstitusjonsnummer,
             List<Integer> personlopenummer, DataFetchingEnvironment env) throws Exception {
-        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.personProfilForQuery(eierInstitusjonsnummer, personlopenummer, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
@@ -30,7 +30,7 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<StudentVedInstitusjon>> studenter(String eierInstitusjonsnummer,
             DataFetchingEnvironment env) throws Exception {
-        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.studenterForQuery(eierInstitusjonsnummer, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }

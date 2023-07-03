@@ -12,7 +12,7 @@ import no.fellesstudentsystem.graphql.generated.model.Kull;
 import no.fellesstudentsystem.graphql.generated.model.Node;
 import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.KullDBQueries;
 import no.fellesstudentsystem.graphql.queries.query.ProgramStudierettDBQueries;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
@@ -35,13 +35,13 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsReferertNode(keys, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsReferertNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ProgramStudierett>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(keys, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);

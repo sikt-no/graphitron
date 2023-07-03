@@ -75,7 +75,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                             Map.entry("implName", implementation.getName()),
                             Map.entry("inputFieldName", inputFieldName),
                             Map.entry("inputFieldNameCap", capitalize(inputFieldName)),
-                            Map.entry("selectionSets", SELECTION_SETS.className),
+                            Map.entry("selectionSets", SELECTION_SET.className),
                             Map.entry("environmentUtils", ENVIRONMENT_UTILS.className),
                             Map.entry("referenceFieldName", capitalize(target.getName()))
                     );

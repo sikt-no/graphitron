@@ -20,7 +20,7 @@ import no.fellesstudentsystem.graphql.generated.api.PersonProfilResolver;
 import no.fellesstudentsystem.graphql.generated.model.Pass;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
@@ -41,7 +41,7 @@ public class PersonProfilGeneratedResolver implements PersonProfilResolver {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
                 var dbResult = personProfilDBQueries.passForPersonProfil(idSet, pageSize, after, selectionSet);
                 var totalCount = selectionSet.contains("totalCount") ? personProfilDBQueries.countPassForPersonProfil(idSet) : null;
                 var mapResult = keyToId.entrySet().stream()

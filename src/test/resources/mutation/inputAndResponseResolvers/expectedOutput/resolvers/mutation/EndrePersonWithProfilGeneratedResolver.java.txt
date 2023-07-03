@@ -10,7 +10,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
 import org.jooq.DSLContext;
 
@@ -25,7 +25,7 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
     public CompletableFuture<PersonProfil> endrePersonWithProfil(String id,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSets(env.getSelectionSet());
+        var select = new SelectionSet(env.getSelectionSet());
 
         var terminatorResult = testPersonService.endrePersonWithProfil(id);
         var personProfilEndrePersonWithProfil = getPersonProfilEndrePersonWithProfil(terminatorResult, select);
@@ -35,7 +35,7 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
 
     private PersonProfil getPersonProfilEndrePersonWithProfil(
             no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("endrePersonWithProfil") || result == null) {
             return null;
         }

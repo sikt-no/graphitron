@@ -96,7 +96,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 ParameterizedTypeName.get(MAP.className, STRING.className, returnType)
         )
                 .addParameter(ParameterizedTypeName.get(SET.className, STRING.className), argumentName)
-                .addParameter(SELECTION_SETS.className, SELECTION_NAME)
+                .addParameter(SELECTION_SET.className, SELECTION_NAME)
                 .addCode(code.build())
                 .build();
     }

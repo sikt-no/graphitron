@@ -14,7 +14,7 @@ import no.fellesstudentsystem.graphql.generated.model.Kull;
 import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.generated.model.Studierettperiode;
 import no.fellesstudentsystem.graphql.generated.model.Studierettstatus;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -23,7 +23,7 @@ public class ProgramStudierettDBQueries {
     DSLContext ctx;
 
     public Map<String, Studierettstatus> studierettstatusForProgramStudierett(
-            Set<String> programStudierettIder, SelectionSets select) {
+            Set<String> programStudierettIder, SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getId(),
@@ -37,7 +37,7 @@ public class ProgramStudierettDBQueries {
     }
 
     public Map<String, ProgramStudierett> loadProgramStudierettByIdsAsNode(Set<String> ids,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getId(),

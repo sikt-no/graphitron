@@ -10,7 +10,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
 import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.QueryDBQueries;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -20,7 +20,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<ProgramStudierett>> programStudierett(String id,
             DataFetchingEnvironment env) throws Exception {
-        var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.programStudierettForQuery(id, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }

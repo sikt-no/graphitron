@@ -11,7 +11,7 @@ import java.lang.String;
 import java.util.List;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
@@ -19,7 +19,7 @@ public class QueryDBQueries {
     DSLContext ctx;
 
     public List<PersonProfil> personTwoArgumentsForQuery(String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, Integer pageSize, String after, SelectionSets select) {
+            List<Integer> personlopenummer, Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -40,7 +40,7 @@ public class QueryDBQueries {
 
     public List<PersonProfil> personFiveArgumentsForQuery(String eierInstitusjonsnummer,
             List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode,
-            Integer pageSize, String after, SelectionSets select) {
+            Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         row(

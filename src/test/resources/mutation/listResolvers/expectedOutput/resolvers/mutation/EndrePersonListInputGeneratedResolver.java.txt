@@ -11,7 +11,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import no.fellesstudentsystem.graphql.generated.api.EndrePersonListInputMutationResolver;
 import no.fellesstudentsystem.graphql.generated.model.EndreInput;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -24,7 +24,7 @@ public class EndrePersonListInputGeneratedResolver implements EndrePersonListInp
     public CompletableFuture<List<String>> endrePersonListInput(List<EndreInput> input,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSets(env.getSelectionSet());
+        var select = new SelectionSet(env.getSelectionSet());
         var inputRecordList = new ArrayList<PersonRecord>();
 
 

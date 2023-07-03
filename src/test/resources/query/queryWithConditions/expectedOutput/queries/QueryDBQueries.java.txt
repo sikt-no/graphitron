@@ -12,7 +12,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Emne;
 import no.fellesstudentsystem.graphql.generated.model.EmneInput;
 import no.fellesstudentsystem.graphql.generated.model.Emnenavn;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
@@ -20,7 +20,7 @@ public class QueryDBQueries {
     DSLContext ctx;
 
     public List<Emne> paramConditionForQuery(String eierInstitusjonsnummer, List<String> emnekoder,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -44,7 +44,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> paramConditionOverrideForQuery(String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSets select) {
+            List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -67,7 +67,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> fieldConditionForQuery(String eierInstitusjonsnummer, List<String> emnekoder,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -91,7 +91,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> fieldConditionOverrideForQuery(String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSets select) {
+            List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -113,7 +113,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> fieldAndParamConditionForQuery(String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSets select) {
+            List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -138,7 +138,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> fieldAndParamConditionOverrideForQuery(String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSets select) {
+            List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -161,7 +161,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> fieldAndParamConditionOverrideBothForQuery(String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSets select) {
+            List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
                         row(
@@ -184,7 +184,7 @@ public class QueryDBQueries {
     }
 
     public List<Emne> fieldInputConditionForQuery(String eierInstitusjonsnummer,
-            EmneInput emneInput, SelectionSets select) {
+            EmneInput emneInput, SelectionSet select) {
         return ctx
                 .select(
                         row(

@@ -13,7 +13,7 @@ import no.fellesstudentsystem.graphql.generated.api.VurderingsmeldingResolver;
 import no.fellesstudentsystem.graphql.generated.model.Termin;
 import no.fellesstudentsystem.graphql.generated.model.Vurderingsmelding;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.VurderingsmeldingDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
@@ -31,7 +31,7 @@ public class VurderingsmeldingGeneratedResolver implements VurderingsmeldingReso
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
                 var dbResult = vurderingsmeldingDBQueries.forsteTerminForVurderingForVurderingsmelding(idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)

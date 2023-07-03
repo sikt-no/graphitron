@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Kull;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -19,7 +19,7 @@ public class KullDBQueries {
     @Inject
     DSLContext ctx;
 
-    public Map<String, Kull> loadKullByIdsAsNode(Set<String> ids, SelectionSets select) {
+    public Map<String, Kull> loadKullByIdsAsNode(Set<String> ids, SelectionSet select) {
         return ctx
                 .select(
                         KULL.getId(),
@@ -35,7 +35,7 @@ public class KullDBQueries {
     }
 
     public Map<String, Kull> loadKullByTerminIdsAsTerminNode(Set<String> terminIds,
-            SelectionSets select) {
+            SelectionSet select) {
         return ctx
                 .select(
                         KULL.getId(),

@@ -13,14 +13,14 @@ import no.fellesstudentsystem.graphql.generated.model.Emnevalgstatus;
 import no.fellesstudentsystem.graphql.generated.model.MaksimumVektingForEmnevalgstatus;
 import no.fellesstudentsystem.graphql.generated.model.MinimumVektingForEmnevalgstatus;
 import no.fellesstudentsystem.graphql.generated.model.Vektingstype;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
     @Inject
     DSLContext ctx;
 
-    public List<Emnevalgstatus> emnevalgstatusForQuery(String id, SelectionSets select) {
+    public List<Emnevalgstatus> emnevalgstatusForQuery(String id, SelectionSet select) {
         var emnevalgstatus_minimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Minimum_Vektingstype_Fk().as("emnevalgstatus_minimumsvekting_vektingstype");
         var emnevalgstatus_maksimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Max_Vektingstype_Fk().as("emnevalgstatus_maksimumsvekting_vektingstype");
         return ctx

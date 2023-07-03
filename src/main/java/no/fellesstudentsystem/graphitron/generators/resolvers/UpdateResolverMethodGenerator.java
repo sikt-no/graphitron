@@ -94,7 +94,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
         context = new UpdateContext(target, processedSchema, exceptionOverrides, serviceOverrides);
         var code = CodeBlock.builder();
         if (target.hasServiceReference()) {
-            code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SETS.className, PARAM_ENV);
+            code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SET.className, PARAM_ENV);
         }
         code
                 .add(declareRecords(specInputs))
@@ -804,7 +804,7 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
                                         .builder(getServiceReturnClassName(previousTypeClass.getName(), previousIsIterable), VARIABLE_RESULT_PARAM)
                                         .build()
                         )
-                        .addParameter(SELECTION_SETS.className, VARIABLE_SELECT)
+                        .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
                         .returns(returnType)
                         .addCode(methodCode)
                         .build()

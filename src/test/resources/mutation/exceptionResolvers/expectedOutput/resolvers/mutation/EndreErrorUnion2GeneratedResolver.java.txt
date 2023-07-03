@@ -23,7 +23,7 @@ import no.fellesstudentsystem.graphql.generated.model.EndreResponseUnion2;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.generated.model.SomeErrorA;
 import no.fellesstudentsystem.graphql.generated.model.SomeErrorB;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
@@ -40,7 +40,7 @@ public class EndreErrorUnion2GeneratedResolver implements EndreErrorUnion2Mutati
     public CompletableFuture<EndreResponseUnion2> endreErrorUnion2(EndreInput input,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSets(env.getSelectionSet());
+        var select = new SelectionSet(env.getSelectionSet());
         var inputRecord = new PersonRecord();
         inputRecord.attach(ctx.configuration());
         var endre2Record = new PersonRecord();
@@ -111,7 +111,7 @@ public class EndreErrorUnion2GeneratedResolver implements EndreErrorUnion2Mutati
 
     private PersonProfil getEndreResponse2PersonProfil(
             no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("endreResponse2/personProfil") || result == null) {
             return null;
         }
@@ -122,7 +122,7 @@ public class EndreErrorUnion2GeneratedResolver implements EndreErrorUnion2Mutati
 
     private Map<String, PersonProfil> getEndreResponse3PersonProfil(
             List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("endreResponse3/personProfil") || result == null) {
             return Map.of();
         }

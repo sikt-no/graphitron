@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Land;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -20,7 +20,7 @@ public class StudentVedInstitusjonDBQueries {
     DSLContext ctx;
 
     public Map<String, Land> privatTelefonLandForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, SelectionSets select) {
+            Set<String> studentVedInstitusjonIder, SelectionSet select) {
         var person_privattelefonland = PERSON_TELEFON.as("person_privattelefonland");
         var student_person = STUDENT.person().as("student_person");
         var person_privattelefonland_land = person_privattelefonland.land().as("person_privattelefonland_land");

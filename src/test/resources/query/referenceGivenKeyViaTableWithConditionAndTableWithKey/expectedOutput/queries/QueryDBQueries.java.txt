@@ -10,14 +10,14 @@ import java.lang.String;
 import java.util.List;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
     @Inject
     DSLContext ctx;
 
-    public List<StudentVedInstitusjon> studentForQuery(String id, SelectionSets select) {
+    public List<StudentVedInstitusjon> studentForQuery(String id, SelectionSet select) {
         return ctx
                 .select(
                         row(

@@ -15,7 +15,7 @@ import no.fellesstudentsystem.graphql.generated.model.Kull;
 import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.generated.model.Termin;
 import no.fellesstudentsystem.graphql.generated.model.Termintype;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -24,7 +24,7 @@ public class PermisjonDBQueries {
     DSLContext ctx;
 
     public Map<String, List<ProgramStudierett>> programStudieretterForPermisjon(
-            Set<String> permisjonIder, SelectionSets select) {
+            Set<String> permisjonIder, SelectionSet select) {
         var permisjon_programstudieretter = STUDIERETT.as("permisjon_programstudieretter");
         return ctx
                 .select(

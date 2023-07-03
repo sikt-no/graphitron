@@ -121,7 +121,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
             spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
         }
-        spec.addParameter(SELECTION_SETS.className, SELECTION_NAME);
+        spec.addParameter(SELECTION_SET.className, SELECTION_NAME);
 
         return spec;
     }

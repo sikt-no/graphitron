@@ -20,7 +20,7 @@ import no.fellesstudentsystem.graphql.generated.model.EndreResponse3;
 import no.fellesstudentsystem.graphql.generated.model.EndreResponseUnion1;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.generated.model.SomeErrorA;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
 import org.jooq.DSLContext;
 
@@ -35,7 +35,7 @@ public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1Mutati
     public CompletableFuture<EndreResponseUnion1> endreErrorUnion1(String navn,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSets(env.getSelectionSet());
+        var select = new SelectionSet(env.getSelectionSet());
 
         no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse endreErrorUnion1Result = null;
         var endreErrorsUnion1List = new ArrayList<EndreErrorsUnion1>();
@@ -83,7 +83,7 @@ public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1Mutati
 
     private PersonProfil getEndreResponse2PersonProfil(
             no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("endreResponse2/personProfil") || result == null) {
             return null;
         }
@@ -94,7 +94,7 @@ public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1Mutati
 
     private Map<String, PersonProfil> getEndreResponse3PersonProfil(
             List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("endreResponse3/personProfil") || result == null) {
             return Map.of();
         }

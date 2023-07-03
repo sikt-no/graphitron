@@ -12,7 +12,7 @@ import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilRespons
 import no.fellesstudentsystem.graphql.generated.model.EndreResponseWithPerson;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.generated.model.Postadresse;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.queries.query.PostadresseDBQueries;
 import org.jooq.DSLContext;
@@ -31,7 +31,7 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     public CompletableFuture<EndreResponseWithPerson> endrePersonWithProfilResponse(String id,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
-        var select = new SelectionSets(env.getSelectionSet());
+        var select = new SelectionSet(env.getSelectionSet());
 
         var endrePersonWithProfilResponseResult = testPersonService.endrePersonWithProfilResponse(id);
 
@@ -48,7 +48,7 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
 
     private PersonProfil getEndreResponseWithPersonPersonProfil(
             no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("personProfil") || result == null) {
             return null;
         }
@@ -59,7 +59,7 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
 
     private Postadresse getEndreResponseWithPersonPost(
             no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse result,
-            SelectionSets select) {
+            SelectionSet select) {
         if (!select.contains("post") || result == null) {
             return null;
         }

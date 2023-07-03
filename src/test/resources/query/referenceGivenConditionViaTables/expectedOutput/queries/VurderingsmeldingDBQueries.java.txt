@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Telefon;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -20,7 +20,7 @@ public class VurderingsmeldingDBQueries {
     DSLContext ctx;
 
     public Map<String, Telefon> studentPrivatTelefonForVurderingsmelding(
-            Set<String> vurderingsmeldingIder, SelectionSets select) {
+            Set<String> vurderingsmeldingIder, SelectionSet select) {
         var person_studentprivattelefon = PERSON_TELEFON.as("person_studentprivattelefon");
         var vurderingsmelding_student = VURDERINGSMELDING.student().as("vurderingsmelding_student");
         var vurderingsmelding_student_person = vurderingsmelding_student.person().as("vurderingsmelding_student_person");

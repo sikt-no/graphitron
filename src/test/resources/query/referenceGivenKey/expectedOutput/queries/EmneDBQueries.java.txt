@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Campusemne;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -21,7 +21,7 @@ public class EmneDBQueries {
     DSLContext ctx;
 
     public Map<String, List<Campusemne>> campuserForEmne(Set<String> emneIder,
-            SelectionSets select) {
+            SelectionSet select) {
         var emne_campuser = CAMPUS_EMNE.as("emne_campuser");
         return ctx
                 .select(

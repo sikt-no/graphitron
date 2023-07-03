@@ -164,7 +164,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
         var selectionSetDeclaration = CodeBlock.of("var $L = new $T($T.getSelectionSetsFromEnvironment($N))",
                 SELECTION_SET_NAME,
-                referenceField.hasForwardPagination() ? CONNECTION_SELECTION_SETS.className : SELECTION_SETS.className,
+                referenceField.hasForwardPagination() ? CONNECTION_SELECTION_SET.className : SELECTION_SET.className,
                 ENVIRONMENT_UTILS.className,
                 localObject.isRoot() ? ENV_NAME : BATCHED_ENV_NAME);
         dbQueryCallCodeBlock.addStatement(selectionSetDeclaration);

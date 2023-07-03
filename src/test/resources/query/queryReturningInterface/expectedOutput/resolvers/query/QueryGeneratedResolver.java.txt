@@ -14,7 +14,7 @@ import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.generated.model.Studierettstatus;
 import no.fellesstudentsystem.graphql.generated.model.Terminbasert;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.KullDBQueries;
 import no.fellesstudentsystem.graphql.queries.query.ProgramStudierettDBQueries;
 import no.fellesstudentsystem.graphql.queries.query.StudierettstatusDBQueries;
@@ -40,19 +40,19 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsNode(keys, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ProgramStudierett>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsNode(keys, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         if (tablePartOfId.equals(Tables.STUDIERETTSTATUS.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Studierettstatus>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(studierettstatusDBQueries.loadStudierettstatusByIdsAsNode(keys, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(studierettstatusDBQueries.loadStudierettstatusByIdsAsNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);
@@ -66,7 +66,7 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Terminbasert>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByTerminIdsAsTerminNode(keys, new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(kullDBQueries.loadKullByTerminIdsAsTerminNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(terminId, env);
         }
         throw new IllegalArgumentException("could not find dataloader for terminId with prefix " + tablePartOfId);

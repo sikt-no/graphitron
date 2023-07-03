@@ -16,7 +16,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
 import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
@@ -30,7 +30,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             String eierInstitusjonsnummer, Integer first, String after, DataFetchingEnvironment env)
             throws Exception {
         int pageSize = Optional.ofNullable(first).orElse(10);
-        var selectionSet = new ConnectionSelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.personerForQuery(eierInstitusjonsnummer, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonerForQuery(eierInstitusjonsnummer) : null;
         var size = Math.min(dbResult.size(), pageSize);

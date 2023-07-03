@@ -13,7 +13,7 @@ import no.fellesstudentsystem.graphql.generated.api.StudentVedInstitusjonResolve
 import no.fellesstudentsystem.graphql.generated.model.Landtype;
 import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.queries.query.StudentVedInstitusjonDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
@@ -32,7 +32,7 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new SelectionSets(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
+                var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
                 var dbResult = studentVedInstitusjonDBQueries.institusjonslandtypeForStudentVedInstitusjon(idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)

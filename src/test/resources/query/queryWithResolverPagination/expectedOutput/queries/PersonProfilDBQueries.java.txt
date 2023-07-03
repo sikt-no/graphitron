@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.model.Pass;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -22,7 +22,7 @@ public class PersonProfilDBQueries {
     DSLContext ctx;
 
     public Map<String, List<Pass>> passForPersonProfil(Set<String> personProfilIder,
-            Integer pageSize, String after, SelectionSets select) {
+            Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         PASS.getPersonId(),

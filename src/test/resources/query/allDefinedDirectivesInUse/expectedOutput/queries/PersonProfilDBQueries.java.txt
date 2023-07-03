@@ -16,7 +16,7 @@ import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.generated.model.Telefon;
 import no.fellesstudentsystem.graphql.generated.model.Termin;
 import no.fellesstudentsystem.graphql.generated.model.Termintype;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
@@ -25,7 +25,7 @@ public class PersonProfilDBQueries {
     DSLContext ctx;
 
     public Map<String, Telefon> mobilTelefonForPersonProfil(Set<String> personProfilIder,
-            SelectionSets select) {
+            SelectionSet select) {
         var person_mobiltelefon = PERSON_TELEFON.as("person_mobiltelefon");
         return ctx
                 .select(
@@ -44,7 +44,7 @@ public class PersonProfilDBQueries {
     }
 
     public Map<String, List<ProgramStudierett>> studieretterForPersonProfil(
-            Set<String> personProfilIder, SelectionSets select) {
+            Set<String> personProfilIder, SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getPersonId(),

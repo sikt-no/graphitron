@@ -7,8 +7,8 @@ import graphql.relay.DefaultPageInfo;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSets;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSets;
+import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.Record;
 import org.jooq.Result;
 
@@ -48,8 +48,8 @@ public enum JavaPoetClassName {
     DATA_LOADER_FACTORY(ClassName.get(org.dataloader.DataLoaderFactory.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
-    SELECTION_SETS(ClassName.get(SelectionSets.class)),
-    CONNECTION_SELECTION_SETS(ClassName.get(ConnectionSelectionSets.class)),
+    SELECTION_SET(ClassName.get(SelectionSet.class)),
+    CONNECTION_SELECTION_SET(ClassName.get(ConnectionSelectionSet.class)),
     RECORD(ClassName.get(Record.class)),
     RELAY_EDGE_IMPL(ClassName.get(DefaultEdge.class)),
     RELAY_PAGE_INFO_IMPL(ClassName.get(DefaultPageInfo.class)),
