@@ -34,8 +34,9 @@ public abstract class AbstractField {
     private <T extends NamedNode<T> & DirectivesContainer<T>> AbstractField(T field, FieldType fieldType) {
         name = field.getName();
         if (field.hasDirective(COLUMN.getName())) {
-            unprocessedNameInput = getDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(NAME));
-            upperCaseName = unprocessedNameInput.toUpperCase();
+            var columnValue = getDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(NAME));
+            unprocessedNameInput = fieldType.isID() ? columnValue.toLowerCase() : columnValue;
+            upperCaseName = columnValue.toUpperCase();
         } else {
             unprocessedNameInput = name;
             upperCaseName = name.toUpperCase();

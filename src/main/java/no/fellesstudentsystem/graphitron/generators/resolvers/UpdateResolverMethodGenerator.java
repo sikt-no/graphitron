@@ -669,19 +669,37 @@ public class UpdateResolverMethodGenerator extends ResolverMethodGenerator<Objec
             return mapToSimpleSetCall(field, previousTypeNameLower);
         }
 
-        var code = CodeBlock.builder();
-        if (processedSchema.isObject(fieldTypeName)) {
-            code.add(mapToObjectSetCall(field, previousField));
-        } else {
-            code.addStatement(
-                    "$N" + field.getMappingFromFieldName().asSetCall("$N" + field.getMappingFromColumn().asGetCall()),
-                    previousTypeNameLower,
-                    previousField.getFieldType().isIterableWrapped()
-                            ? asIterableResultName(previousField.getUnprocessedNameInput())
-                            : asResultName(previousField.getUnprocessedNameInput())
-            );
+        return processedSchema.isObject(fieldTypeName)
+                ? mapToObjectSetCall(field, previousField)
+                : mapToFieldSetCall(field, previousField);
+    }
+
+    @NotNull
+    private CodeBlock mapToFieldSetCall(ObjectField field, ObjectField previousField) {
+        var getCode = CodeBlock.builder().add(
+                "$N",
+                previousField.getFieldType().isIterableWrapped()
+                        ? asIterableResultName(previousField.getUnprocessedNameInput())
+                        : asResultName(previousField.getUnprocessedNameInput())
+        );
+
+        var service = context.getService();
+        var returnIsMappable = context.hasService() && (service.getReturnType().getName().endsWith(RECORD_NAME_SUFFIX) || service.isReturnTypeInService());
+        if (processedSchema.isObject(previousField.getTypeName()) && returnIsMappable) {
+            var getCall = field.getMappingFromColumn().asGetCall();
+            if (field.getFieldType().isIterableWrapped() && !previousField.getFieldType().isIterableWrapped()) {
+                var iterationName = asIterable(field.getName());
+                getCode.add(".stream().map($L -> $N" + getCall + ").collect($T.toList())", iterationName, iterationName, COLLECTORS.className);
+            } else {
+                getCode.add(getCall);
+            }
         }
-        return code.build();
+
+        return CodeBlock
+                .builder()
+                .add("$N", uncapitalize(previousField.getTypeName()))
+                .addStatement(field.getMappingFromFieldName().asSetCall("$L"), getCode.build())
+                .build();
     }
 
     @NotNull

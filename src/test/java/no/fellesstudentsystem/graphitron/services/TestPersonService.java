@@ -16,6 +16,22 @@ public class TestPersonService {
         this.context = context;
     }
 
+    public String endrePerson0(String id) {
+        return null;
+    }
+
+    public List<String> endrePerson1(List<String> id) {
+        return null;
+    }
+
+    public PersonRecord endrePersonRecord0(String id) {
+        return null;
+    }
+
+    public List<PersonRecord> endrePersonRecord1(List<String> id) {
+        return null;
+    }
+
     public String endrePersonSimple(String id) {
         return null;
     }

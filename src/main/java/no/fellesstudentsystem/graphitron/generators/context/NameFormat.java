@@ -10,7 +10,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class NameFormat {
-    private static final String
+    public static final String
             VARIABLE_COUNT_PREFIX = "count",
             VARIABLE_GET_PREFIX = "get",
             VARIABLE_RESULT_SUFFIX = "Result",

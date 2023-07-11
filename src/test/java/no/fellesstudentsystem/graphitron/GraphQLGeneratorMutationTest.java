@@ -58,6 +58,11 @@ public class GraphQLGeneratorMutationTest {
     }
 
     @Test
+    void generate_mutation_shouldGenerateResolversWithSimpleInputsAndResponses() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("simpleResolverWithService");
+    }
+
+    @Test
     void generate_mutationWithListFields_shouldGenerateResolversForLists() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("listResolvers");
     }

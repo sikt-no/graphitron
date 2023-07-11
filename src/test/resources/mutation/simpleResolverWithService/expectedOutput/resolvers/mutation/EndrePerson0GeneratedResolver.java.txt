@@ -1,0 +1,32 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphitron.services.TestPersonService;
+import no.fellesstudentsystem.graphql.generated.api.EndrePerson0MutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.EndreResponse0;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+
+public class EndrePerson0GeneratedResolver implements EndrePerson0MutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Override
+    public CompletableFuture<EndreResponse0> endrePerson0(String id, DataFetchingEnvironment env)
+            throws Exception {
+        var testPersonService = new TestPersonService(ctx);
+        var select = new SelectionSet(env.getSelectionSet());
+
+        var endrePerson0Result = testPersonService.endrePerson0(id);
+
+        var endreResponse0 = new EndreResponse0();
+        endreResponse0.setId0(endrePerson0Result);
+
+        return CompletableFuture.completedFuture(endreResponse0);
+    }
+}

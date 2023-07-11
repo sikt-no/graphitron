@@ -1,0 +1,14 @@
+type EndreResponse0 {
+  id0: ID! @column(name: "ID")
+}
+
+type EndreResponse1 {
+  id1: [ID!]! @column(name: "ID")
+}
+
+type Mutation {
+  endrePerson0(id: ID!): EndreResponse0! @service(name : "TEST_PERSON")
+  endrePerson1(id: [ID!]!): EndreResponse1! @service(name : "TEST_PERSON")
+  endrePersonRecord0(id: ID!): EndreResponse0! @service(name : "TEST_PERSON")
+  endrePersonRecord1(id: [ID!]!): EndreResponse1! @service(name : "TEST_PERSON")
+}
