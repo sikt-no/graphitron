@@ -1,0 +1,53 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndreStudentBildeIterableMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.BildeInput;
+import no.fellesstudentsystem.graphql.generated.model.ListedResponse;
+import no.fellesstudentsystem.graphql.generated.model.StudentbildeFiltype;
+import no.fellesstudentsystem.graphql.queries.mutation.EndreStudentBildeIterableDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonbildeRecord;
+import org.jooq.DSLContext;
+
+public class EndreStudentBildeIterableGeneratedResolver implements EndreStudentBildeIterableMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndreStudentBildeIterableDBQueries endreStudentBildeIterableDBQueries;
+
+    @Override
+    public CompletableFuture<ListedResponse> endreStudentBildeIterable(List<BildeInput> input,
+            DataFetchingEnvironment env) throws Exception {
+        var inputRecordList = new ArrayList<PersonbildeRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonbildeRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setFilextension(itInput.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(itInput.getFiltype(), null));
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = endreStudentBildeIterableDBQueries.endreStudentBildeIterable(inputRecordList);
+
+        var listedResponse = new ListedResponse();
+        listedResponse.setIder(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
+
+        return CompletableFuture.completedFuture(listedResponse);
+    }
+}

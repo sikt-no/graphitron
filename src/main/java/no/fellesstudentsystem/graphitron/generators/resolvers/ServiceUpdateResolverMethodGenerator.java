@@ -50,16 +50,17 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
 
     public ServiceUpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
-        super(localField, processedSchema, Map.of(), Map.of());
+        super(localField, processedSchema, Map.of(), Map.of(), Map.of());
     }
 
     public ServiceUpdateResolverMethodGenerator(
             ObjectField localField,
             ProcessedSchema processedSchema,
             Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides
+            Map<String, Class<?>> serviceOverrides,
+            Map<String, Class<?>> enumOverrides
     ) {
-        super(localField, processedSchema, exceptionOverrides, serviceOverrides);
+        super(localField, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides);
     }
 
     /**

@@ -23,20 +23,22 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
             INTERFACE_FILE_NAME_SUFFIX = "MutationResolver",
             SAVE_DIRECTORY_NAME = "mutation";
 
-    private final Map<String, Class<?>> exceptionOverrides, serviceOverrides;
+    private final Map<String, Class<?>> exceptionOverrides, serviceOverrides, enumOverrides;
 
     public UpdateResolverClassGenerator(ProcessedSchema processedSchema) {
-        this(processedSchema, Map.of(), Map.of());
+        this(processedSchema, Map.of(), Map.of(), Map.of());
     }
 
     public UpdateResolverClassGenerator(
             ProcessedSchema processedSchema,
             Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides
+            Map<String, Class<?>> serviceOverrides,
+            Map<String, Class<?>> enumOverrides
     ) {
         super(processedSchema);
         this.exceptionOverrides = exceptionOverrides;
         this.serviceOverrides = serviceOverrides;
+        this.enumOverrides = enumOverrides;
     }
 
     @Override
@@ -71,8 +73,8 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
         return getSpec(
                 capitalize(target.getName()),
                 List.of(
-                        new ServiceUpdateResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides),
-                        new MutationTypeResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides)
+                        new ServiceUpdateResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides),
+                        new MutationTypeResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides)
                 )
         ).build();
     }

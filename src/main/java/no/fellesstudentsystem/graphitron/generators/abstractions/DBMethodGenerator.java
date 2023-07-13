@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.generators.abstractions;
 
-import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
@@ -9,7 +8,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
-import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
@@ -19,7 +17,6 @@ import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependen
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
-import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
 import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
@@ -275,7 +272,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         return codeBlockBuilder
                 .add("$N.optional(\"" + context.getGraphPath() + field.getName() + "\", " + fieldString, SELECTION_NAME)
-                .add(toEnumConverter(fieldType))
+                .add(toJOOQEnumConverter(fieldType, enumOverrides))
                 .add(")")
                 .build();
     }
@@ -300,61 +297,6 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             }
         }
         return "";
-    }
-
-    /**
-     * @return Code block containing the enum conversion method call with an anonymous function declaration.
-     */
-    protected CodeBlock toEnumConverter(String enumType) {
-        if (!processedSchema.isEnum(enumType)) {
-            return CodeBlock.of("");
-        }
-        var enumEntry = processedSchema.getEnum(enumType);
-        return CodeBlock
-                .builder()
-                .add(".convert($T.class, s -> s == null ? null : $T.of(", enumEntry.getGraphClassName(), MAP.className)
-                .add(renderMapElements(enumEntry, true))
-                .add(").getOrDefault(s, null), s -> s == null ? null : $T.of(", MAP.className)
-                .add(renderMapElements(enumEntry, false))
-                .add(").getOrDefault(s, null))")
-                .build();
-    }
-
-    private CodeBlock renderMapElements(EnumDefinition enumEntry, boolean flipDirection) {
-        var code = CodeBlock.builder();
-        var hasEnumReference = enumEntry.hasDbEnumMapping();
-        var dbName = enumEntry.getDbName();
-        var entryClassName = enumEntry.getGraphClassName();
-        var entrySet = new ArrayList<>(enumEntry.getValuesMap().entrySet());
-        var entrySetSize = entrySet.size();
-        for (int i = 0; i < entrySetSize; i++) {
-            var enumValue = entrySet.get(i);
-            if (flipDirection) {
-                code
-                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName()))
-                        .add(", $T.$L", entryClassName, enumValue.getKey());
-            } else {
-                code
-                        .add("$T.$L, ", entryClassName, enumValue.getKey())
-                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName()));
-            }
-            if (i < entrySetSize - 1) {
-                code.add(", ");
-            }
-        }
-        return code.build();
-    }
-
-    private CodeBlock renderValueSide(boolean hasEnumReference, String dbName, String valueName) {
-        var code = CodeBlock.builder();
-        if (hasEnumReference) {
-            var enumName = dbName.toUpperCase();
-            var apiEnumType = enumOverrides.containsKey(enumName) ?  enumOverrides.get(enumName) : GeneratorEnum.valueOf(enumName).getEnumType();
-            code.add("$T.$L", ClassName.get(apiEnumType.getPackageName(), apiEnumType.getSimpleName()), valueName);
-        } else {
-            code.add("$S", valueName);
-        }
-        return code.build();
     }
 
     @NotNull

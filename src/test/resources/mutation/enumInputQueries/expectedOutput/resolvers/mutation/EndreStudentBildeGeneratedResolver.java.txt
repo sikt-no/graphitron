@@ -1,0 +1,44 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndreStudentBildeMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.BildeInput;
+import no.fellesstudentsystem.graphql.generated.model.Response;
+import no.fellesstudentsystem.graphql.generated.model.StudentbildeFiltype;
+import no.fellesstudentsystem.graphql.queries.mutation.EndreStudentBildeDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonbildeRecord;
+import org.jooq.DSLContext;
+
+public class EndreStudentBildeGeneratedResolver implements EndreStudentBildeMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndreStudentBildeDBQueries endreStudentBildeDBQueries;
+
+    @Override
+    public CompletableFuture<Response> endreStudentBilde(BildeInput input,
+            DataFetchingEnvironment env) throws Exception {
+        var inputRecord = new PersonbildeRecord();
+        inputRecord.attach(ctx.configuration());
+
+        if (input != null) {
+            inputRecord.setId(input.getId());
+            inputRecord.setFilextension(input.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(input.getFiltype(), null));
+            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
+        }
+
+        var rowsUpdated = endreStudentBildeDBQueries.endreStudentBilde(inputRecord);
+
+        var response = new Response();
+        response.setId(inputRecord.getId());
+
+        return CompletableFuture.completedFuture(response);
+    }
+}

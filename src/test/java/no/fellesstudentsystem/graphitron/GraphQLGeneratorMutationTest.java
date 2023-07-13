@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.enums.FileTest;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
 import no.fellesstudentsystem.graphitron.exceptions.TestException;
 import no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
@@ -27,7 +29,8 @@ public class GraphQLGeneratorMutationTest {
 
     private final Map<String, Class<?>>
             exceptionOverrides = Map.of("EXCEPTION_TEST", TestException.class, "EXCEPTION_TEST_CAUSE", TestExceptionCause.class),
-            serviceOverrides = Map.of("TEST_PERSON", TestPersonService.class, "TEST_PERMISJON", TestPermisjonService.class);
+            serviceOverrides = Map.of("TEST_PERSON", TestPersonService.class, "TEST_PERMISJON", TestPermisjonService.class),
+            enumOverrides = Map.of("FILE_TEST", FileTest.class, "KJONN_TEST", KjonnTest.class);
 
     @AfterEach
     void teardown() {
@@ -44,7 +47,7 @@ public class GraphQLGeneratorMutationTest {
         var processedSchema = GraphQLGenerator.getProcessedSchema(warnDirectives);
         processedSchema.validate();
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new UpdateResolverClassGenerator(processedSchema, exceptionOverrides, serviceOverrides),
+                new UpdateResolverClassGenerator(processedSchema, exceptionOverrides, serviceOverrides, enumOverrides),
                 new UpdateDBClassGenerator(processedSchema)
         );
 
@@ -110,6 +113,11 @@ public class GraphQLGeneratorMutationTest {
     @Test
     void generate_whenHasSetMutationType_shouldGenerateNestedQueriesAndResolvers() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationWithNestedResponse");
+    }
+
+    @Test
+    void generate_whenHasSetMutationType_shouldGenerateQueriesWithEnumInputs() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("enumInputQueries");
     }
 
     @Test

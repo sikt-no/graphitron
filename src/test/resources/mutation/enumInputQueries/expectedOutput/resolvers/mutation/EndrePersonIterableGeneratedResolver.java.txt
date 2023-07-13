@@ -1,0 +1,53 @@
+package no.fellesstudentsystem.graphql.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.EndrePersonIterableMutationResolver;
+import no.fellesstudentsystem.graphql.generated.model.Kjonn;
+import no.fellesstudentsystem.graphql.generated.model.ListedResponse;
+import no.fellesstudentsystem.graphql.generated.model.PersonInput;
+import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonIterableDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonIterableGeneratedResolver implements EndrePersonIterableMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePersonIterableDBQueries endrePersonIterableDBQueries;
+
+    @Override
+    public CompletableFuture<ListedResponse> endrePersonIterable(List<PersonInput> input,
+            DataFetchingEnvironment env) throws Exception {
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, no.fellesstudentsystem.kjerneapi.enums.Kjonn.MANN, Kjonn.KVINNE, no.fellesstudentsystem.kjerneapi.enums.Kjonn.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = endrePersonIterableDBQueries.endrePersonIterable(inputRecordList);
+
+        var listedResponse = new ListedResponse();
+        listedResponse.setIder(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
+
+        return CompletableFuture.completedFuture(listedResponse);
+    }
+}

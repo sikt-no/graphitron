@@ -1,0 +1,28 @@
+input BildeInput @record(table: "PERSONBILDE") {
+  id: ID!
+  filtype: StudentbildeFiltype! @column(name: "FILEXTENSION")
+}
+
+input PersonInput @record(table: "PERSON") {
+  id: ID!
+  kjonn: Kjonn!
+}
+
+type Response {
+  id: ID
+}
+
+type ListedResponse {
+  ider: [ID!]!
+}
+
+type Mutation {
+  endreStudentBilde(input: BildeInput!): Response! @mutationType(typeName: UPDATE)
+  endreStudentBildeIterable(input: [BildeInput!]!): ListedResponse! @mutationType(typeName: UPDATE)
+  endrePerson(input: PersonInput!): Response! @mutationType(typeName: UPDATE)
+  endrePersonIterable(input: [PersonInput!]!): ListedResponse! @mutationType(typeName: UPDATE)
+}
+
+enum StudentbildeFiltype { JPG, PNG } # No jOOQ converter.
+
+enum Kjonn @mapEnum(name: "Kjonn") { MANN, KVINNE } # With jOOQ converter.

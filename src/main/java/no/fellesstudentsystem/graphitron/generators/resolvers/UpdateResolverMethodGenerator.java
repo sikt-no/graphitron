@@ -40,26 +40,28 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             VARIABLE_SELECT = "select",
             METHOD_SET_PK = "setPersonKeysFromPlattformIds"; // Hardcoded method name. Should be generalized as a transform on records.
 
-    protected final Map<String, Class<?>> exceptionOverrides, serviceOverrides;
+    protected final Map<String, Class<?>> exceptionOverrides, serviceOverrides, enumOverrides;
 
     protected final ObjectField localField;
     protected UpdateContext context;
 
     public UpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
-        this(localField, processedSchema, Map.of(), Map.of());
+        this(localField, processedSchema, Map.of(), Map.of(), Map.of());
     }
 
     public UpdateResolverMethodGenerator(
             ObjectField localField,
             ProcessedSchema processedSchema,
             Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides
+            Map<String, Class<?>> serviceOverrides,
+            Map<String, Class<?>> enumOverrides
     ) {
         super(processedSchema.getMutationType(), processedSchema);
         dependencySet.add(ContextDependency.getInstance());
         this.localField = localField;
         this.exceptionOverrides = exceptionOverrides;
         this.serviceOverrides = serviceOverrides;
+        this.enumOverrides = enumOverrides;
     }
 
     @Override
@@ -166,11 +168,14 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                         .addStatement("var $L = $N.get$L()", in.getName(), iterableInputName, capitalize(in.getName()))
                         .add(fillRecords(in, name, recursion + 1));
             } else {
-                code.addStatement(
-                        "$N" + in.getRecordSetCall("$N" + in.getMappingFromFieldName().asGetCall()),
-                        recordName,
-                        iterableInputName
-                );
+                var getCall = CodeBlock.of("$N" + in.getMappingFromFieldName().asGetCall(), iterableInputName);
+                var setCall = in.getRecordSetCall("$L");
+                code.add("$N", recordName);
+                if (processedSchema.isEnum(in.getTypeName())) {
+                    code.addStatement(setCall, toGraphEnumConverter(in.getTypeName(), getCall, enumOverrides));
+                } else {
+                    code.addStatement(setCall, getCall);
+                }
             }
         }
 

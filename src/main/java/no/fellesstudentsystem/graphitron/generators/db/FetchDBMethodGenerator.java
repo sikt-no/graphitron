@@ -75,7 +75,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
                         .add(currentJoinSequence + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
-                        .add(toEnumConverter(fieldTypeName))
+                        .add(toJOOQEnumConverter(fieldTypeName, enumOverrides))
                         .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name)
                         .add(checksNotEmpty ? " : noCondition()" : "")
                         .add(")\n");
@@ -123,7 +123,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             codeBlockBuilder
                     .add(actualRefTable + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
-                    .add(toEnumConverter(fieldTypeName))
+                    .add(toJOOQEnumConverter(fieldTypeName, enumOverrides))
                     .add(i < conditions.size()-1 ? ",\n" : "");
         }
         codeBlockBuilder
