@@ -1,0 +1,21 @@
+interface Node {
+  id: ID!
+}
+
+input In {
+  bool: [Boolean] @column(name: "STATUS_GYLDIG")
+}
+
+type StudentVedInstitusjon implements Node @table(name: "STUDENT") {
+  id: ID!
+  vurdering(b: [Boolean] @column(name: "STATUS_GYLDIG")): [Vurderingsresultat!]! @splitQuery @reference(key: "STUDENTVURDKOMBPROTOKOLL__HAR__STUDENT__FK")
+  vurderingInput(b: In): [Vurderingsresultat!]! @splitQuery @reference(key: "STUDENTVURDKOMBPROTOKOLL__HAR__STUDENT__FK")
+}
+
+type Vurderingsresultat @node @table(name: "STUDENTVURDKOMBPROTOKOLL") {
+  id: ID!
+}
+
+type Query {
+  student: StudentVedInstitusjon
+}

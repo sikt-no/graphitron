@@ -53,7 +53,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(actualRefTable)
                 .add(")\n")
                 .add(createSelectJoins(context.getJoinList()))
-                .add(formatWhereContents(target, hasKeyReference, actualRefTable))
+                .add(formatWhereContents(target, context.getCurrentJoinSequence(), hasKeyReference, actualRefTable))
                 .add(createSelectConditions(context.getConditionList()))
                 .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
                 .unindent().unindent();

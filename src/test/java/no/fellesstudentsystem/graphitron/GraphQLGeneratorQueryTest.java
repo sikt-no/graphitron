@@ -111,6 +111,11 @@ public class GraphQLGeneratorQueryTest {
     }
 
     @Test
+    void generate_queryWithArguments_shouldUseCorrectPathForWhere() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("correctWhereConditionPathUsage");
+    }
+
+    @Test
     void generate_queryWithInputTypes_shouldCreateQueryResolverThatHandlesInputTypes() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithInputTypeArguments");
     }

@@ -34,7 +34,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         super(localObject, processedSchema, enumOverrides, conditionOverrides);
     }
 
-    CodeBlock formatWhereContents(ObjectField referenceField, boolean hasKeyReference, String actualRefTable) {
+    CodeBlock formatWhereContents(ObjectField referenceField, String currentJoinSequence, boolean hasKeyReference, String actualRefTable) {
         var code = CodeBlock.builder().add(".where(");
 
         if (!isRoot) {
@@ -51,14 +51,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     .add(")\n");
         }
         if (referenceField.hasNonReservedInputFields()) {
-            code.add(createWhere(actualRefTable, referenceField, !isRoot));
+            code.add(createWhere(actualRefTable, referenceField, currentJoinSequence, !isRoot));
         } else if (isRoot) {
             return CodeBlock.builder().build();
         }
         return code.build();
     }
 
-    private CodeBlock createWhere(String actualRefTable, ObjectField referenceField, boolean hasWhere) {
+    private CodeBlock createWhere(String actualRefTable, ObjectField referenceField, String currentJoinSequence, boolean hasWhere) {
         var inputConditions = getInputConditions(referenceField.getNonReservedInputFields());
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
@@ -74,7 +74,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 codeBlockBuilder
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
-                        .add(actualRefTable + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
+                        .add(currentJoinSequence + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
                         .add(toEnumConverter(fieldTypeName))
                         .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name)
                         .add(checksNotEmpty ? " : noCondition()" : "")

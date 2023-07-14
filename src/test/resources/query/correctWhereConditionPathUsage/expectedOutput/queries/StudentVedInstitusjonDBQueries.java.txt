@@ -1,0 +1,60 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.Boolean;
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.In;
+import no.fellesstudentsystem.graphql.generated.model.Vurderingsresultat;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class StudentVedInstitusjonDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public Map<String, List<Vurderingsresultat>> vurderingForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder, List<Boolean> b, SelectionSet select) {
+        var student_vurdering = STUDENTVURDKOMBPROTOKOLL.as("student_vurdering");
+        return ctx
+                .select(
+                        STUDENT.getId(),
+                        row(
+                                student_vurdering.getId().as("id")
+                        ).mapping(nullOnAllNull(Vurderingsresultat::new)).as("vurdering")
+                )
+                .from(STUDENT)
+                .join(student_vurdering)
+                .onKey(STUDENTVURDKOMBPROTOKOLL__HAR__STUDENT__FK)
+                .where(STUDENT.hasIds(studentVedInstitusjonIder))
+                .and(b != null && b.size() > 0 ? student_vurdering.STATUS_GYLDIG.in(b) : noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, List<Vurderingsresultat>> vurderingInputForStudentVedInstitusjon(
+            Set<String> studentVedInstitusjonIder, In b, SelectionSet select) {
+        var student_vurderinginput = STUDENTVURDKOMBPROTOKOLL.as("student_vurderinginput");
+        return ctx
+                .select(
+                        STUDENT.getId(),
+                        row(
+                                student_vurderinginput.getId().as("id")
+                        ).mapping(nullOnAllNull(Vurderingsresultat::new)).as("vurderingInput")
+                )
+                .from(STUDENT)
+                .join(student_vurderinginput)
+                .onKey(STUDENTVURDKOMBPROTOKOLL__HAR__STUDENT__FK)
+                .where(STUDENT.hasIds(studentVedInstitusjonIder))
+                .and(b != null && b.getBool() != null && b.getBool().size() > 0 ? student_vurderinginput.STATUS_GYLDIG.in(b.getBool()) : noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

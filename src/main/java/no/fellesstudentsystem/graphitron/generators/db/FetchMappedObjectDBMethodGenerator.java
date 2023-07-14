@@ -69,7 +69,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(hasKeyReference || isRoot ? actualRefTable : localObject.getTable().getName())
                 .add(")\n")
                 .add(createSelectJoins(context.getJoinList()))
-                .add(formatWhereContents(target, hasKeyReference, actualRefTable))
+                .add(formatWhereContents(target, context.getCurrentJoinSequence(), hasKeyReference, actualRefTable))
                 .add(createSelectConditions(context.getConditionList()))
                 .add(setPaginationAndFetch(target, actualRefTable));
 
