@@ -10,10 +10,8 @@ import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 import no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam;
 import org.jetbrains.annotations.Nullable;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.COLUMN;
@@ -165,14 +163,6 @@ public abstract class AbstractField {
 
     public SQLCondition getCondition() {
         return condition;
-    }
-
-    public String applyCondition(List<String> inputs) {
-        return condition.formatToString(inputs);
-    }
-
-    public String applyCondition(List<String> inputs, Map<String, Method> conditionOverrides) {
-        return condition.formatToString(inputs, conditionOverrides);
     }
 
     public boolean hasCondition() {

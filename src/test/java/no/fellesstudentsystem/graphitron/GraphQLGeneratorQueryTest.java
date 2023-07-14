@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import no.fellesstudentsystem.graphitron.conditions.EmneTestConditions;
+import no.fellesstudentsystem.graphitron.conditions.TerminTestConditions;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.enums.KjonnTest;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
@@ -11,6 +12,7 @@ import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
 import no.fellesstudentsystem.kjerneapi.tables.Emne;
+import no.fellesstudentsystem.kjerneapi.tables.Termin;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -40,7 +42,10 @@ public class GraphQLGeneratorQueryTest {
             "TEST_EMNE_KODE", EmneTestConditions.class.getMethod("emneKode", Emne.class, String.class),
             "TEST_EMNE_KODER", EmneTestConditions.class.getMethod("emneKoder", Emne.class, List.class),
             "TEST_EMNE_ALL", EmneTestConditions.class.getMethod("emneAll", Emne.class, String.class, List.class),
-            "TEST_EMNE_INPUT_ALL", EmneTestConditions.class.getMethod("emneInputAll", Emne.class, String.class, String.class, String.class)
+            "TEST_EMNE_INPUT_ALL", EmneTestConditions.class.getMethod("emneInputAll", Emne.class, String.class, String.class, String.class),
+            "TEST_TERMIN", TerminTestConditions.class.getMethod("terminer", Termin.class, String.class),
+            "TEST_TERMIN_ALL", TerminTestConditions.class.getMethod("terminAll", Termin.class, String.class, Integer.class),
+            "TEST_TERMIN_INPUT_ALL", TerminTestConditions.class.getMethod("terminInputAll", Termin.class, Integer.class, String.class, Integer.class)
     );
 
     public GraphQLGeneratorQueryTest() throws NoSuchMethodException {
@@ -123,6 +128,11 @@ public class GraphQLGeneratorQueryTest {
     @Test
     void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithConditions");
+    }
+
+    @Test
+    void generate_queryWithConditions_shouldCreateQueriesWithEnumConditionInputs() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumConditions");
     }
 
     @Test

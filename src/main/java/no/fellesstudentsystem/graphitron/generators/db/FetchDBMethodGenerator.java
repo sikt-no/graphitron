@@ -80,10 +80,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(checksNotEmpty ? " : noCondition()" : "")
                         .add(")\n");
             }
+            if (!codeBlockBuilder.isEmpty()) {
+                hasWhere = true;
+            }
 
             if (field.hasCondition()) {
-                var conditionInputs = List.of(actualRefTable, inputCondition.getCheckedNameWithPath());
-                codeBlockBuilder.add(wrapCondition(field.applyCondition(conditionInputs, conditionOverrides), hasWhere));
+                var conditionInputs = List.of(CodeBlock.of(actualRefTable), getCheckedNameWithPath(inputCondition));
+                codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs, conditionOverrides), hasWhere));
             }
             if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
@@ -97,12 +100,22 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (referenceField.hasCondition()) {
             var inputs = Stream.concat(
-                    Stream.of(actualRefTable),
-                    flatInputs.stream().map(InputCondition::getCheckedNameWithPath)
+                    Stream.of(CodeBlock.of(actualRefTable)),
+                    flatInputs.stream().map(this::getCheckedNameWithPath)
             ).collect(Collectors.toList());
-            codeBlockBuilder.add(wrapCondition(referenceField.applyCondition(inputs, conditionOverrides), hasWhere));
+            codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs, conditionOverrides), hasWhere));
         }
         return codeBlockBuilder.build();
+    }
+
+    private CodeBlock getCheckedNameWithPath(InputCondition condition) {
+        var nameWithPath = condition.getNameWithPath();
+        var checks = condition.getChecksAsSequence();
+        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), CodeBlock.of(nameWithPath), enumOverrides);
+        return CodeBlock.of(
+                !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
+                enumConverter.isEmpty() ? nameWithPath : enumConverter
+        );
     }
 
     private CodeBlock createTupleCondition(String actualRefTable, boolean hasWhere, InputField argumentInputField, List<InputCondition> conditions) {
@@ -145,9 +158,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return codeBlockBuilder.build();
     }
 
-    private String wrapCondition(String condition, boolean hasWhere) {
+    private CodeBlock wrapCondition(CodeBlock condition, boolean hasWhere) {
         if (!condition.isEmpty()) {
-            return (hasWhere ? ".and(" : "") + condition + ")\n";
+            return CodeBlock.of((hasWhere ? ".and(" : "") + "$L)\n", condition);
         }
         return condition;
     }

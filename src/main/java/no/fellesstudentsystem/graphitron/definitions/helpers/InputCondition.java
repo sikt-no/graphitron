@@ -55,12 +55,6 @@ public class InputCondition {
         return !nullChecks.isEmpty() ? nullChecks.stream().sorted().collect(Collectors.joining(" && ")) : "";
     }
 
-    public String getCheckedNameWithPath() {
-        var nameWithPath = getNameWithPath();
-        var checks = getChecksAsSequence();
-        return !checks.isEmpty() && !namePath.isEmpty() ? checks + " ? " + nameWithPath + " : null" : nameWithPath;
-    }
-
     public InputCondition iterate(InputField input) {
         return new InputCondition(input, getNameWithPath(), nullChecks);
     }

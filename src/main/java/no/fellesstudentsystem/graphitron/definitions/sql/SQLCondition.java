@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition;
+import org.apache.commons.lang3.StringUtils;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -25,11 +27,11 @@ public class SQLCondition {
         this.override = override;
     }
 
-    public String formatToString(List<String> methodInputs) {
+    public CodeBlock formatToString(List<CodeBlock> methodInputs) {
         return formatToString(methodInputs, Map.of());
     }
 
-    public String formatToString(List<String> methodInputs, Map<String, Method> methodOverrides) {
+    public CodeBlock formatToString(List<CodeBlock> methodInputs, Map<String, Method> methodOverrides) {
         var overrideExists = methodOverrides.containsKey(conditionName);
         if (condition == null && !overrideExists) {
             throw new IllegalArgumentException("Condition with name '" + conditionName + "' does not exist.");
@@ -45,7 +47,12 @@ public class SQLCondition {
                     "Too few inputs for method '" + methodName + "' in class '" + declaringName + "'."
             );
         }
-        return declaringName + "." + methodName + "(" + String.join(", ", methodInputs) + ")";
+
+        return CodeBlock
+                .builder()
+                .add("$N.$L(", declaringName, methodName)
+                .add(StringUtils.repeat("$L", ", ", methodInputs.size()) + ")", methodInputs.toArray())
+                .build();
     }
 
     public boolean isOverride() {

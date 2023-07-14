@@ -1,0 +1,57 @@
+type Query {
+  paramCondition(
+    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN"),
+    arstall: Int!
+  ): [Termin]
+
+  paramConditionOverride(
+    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN", override: true),
+    arstall: Int!
+  ): [Termin]
+
+  fieldCondition(
+    termintype: Termintype! @column(name: "TERMINKODE"),
+    arstall: Int!
+  ): [Termin] @condition(name: "TEST_TERMIN_ALL")
+
+  fieldConditionOverride(
+    termintype: Termintype! @column(name: "TERMINKODE"),
+    arstall: Int!
+  ): [Termin] @condition(name: "TEST_TERMIN_ALL", override: true)
+
+  fieldAndParamCondition(
+    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN"),
+    arstall: Int!
+  ): [Termin] @condition(name: "TEST_TERMIN_ALL")
+
+  fieldAndParamConditionOverride(
+    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN"),
+    arstall: Int!
+  ): [Termin] @condition(name: "TEST_TERMIN_ALL", override: true)
+
+  fieldAndParamConditionOverrideBoth(
+    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN", override: true),
+    arstall: Int!
+  ): [Termin] @condition(name: "TEST_TERMIN_ALL", override: true)
+
+  fieldInputCondition(
+    termintypeIn: TerminInput, # Potentially support: @condition(name: "TEST_TERMIN_INPUT")
+    arstall: Int!
+  ): [Termin] @condition(name: "TEST_TERMIN_INPUT_ALL")
+}
+
+input TerminInput {
+  arstall: Int!
+  termintype: Termintype! @column(name: "TERMINKODE")
+}
+
+type Termin @node @table {
+  id: ID!
+  termintype: Termintype! @column(name: "TERMINKODE")
+}
+
+enum Termintype {
+  VAR @mapEnum(name: "VÅR")
+  SOM @mapEnum(name: "SOM")
+  HOST @mapEnum(name: "HØST")
+}

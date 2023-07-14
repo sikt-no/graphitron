@@ -1,0 +1,85 @@
+package no.fellesstudentsystem.graphql.resolvers.query;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Integer;
+import java.lang.Override;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
+import no.fellesstudentsystem.graphql.generated.model.Termin;
+import no.fellesstudentsystem.graphql.generated.model.TerminInput;
+import no.fellesstudentsystem.graphql.generated.model.Termintype;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.queries.query.QueryDBQueries;
+
+public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    private QueryDBQueries queryDBQueries;
+
+    @Override
+    public CompletableFuture<List<Termin>> paramCondition(Termintype termintype, Integer arstall,
+            DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.paramConditionForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> paramConditionOverride(Termintype termintype,
+            Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.paramConditionOverrideForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> fieldCondition(Termintype termintype, Integer arstall,
+            DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldConditionForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> fieldConditionOverride(Termintype termintype,
+            Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> fieldAndParamCondition(Termintype termintype,
+            Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> fieldAndParamConditionOverride(Termintype termintype,
+            Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> fieldAndParamConditionOverrideBoth(Termintype termintype,
+            Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(termintype, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Termin>> fieldInputCondition(TerminInput termintypeIn,
+            Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldInputConditionForQuery(termintypeIn, arstall, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+}

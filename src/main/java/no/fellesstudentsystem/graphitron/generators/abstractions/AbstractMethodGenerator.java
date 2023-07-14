@@ -42,13 +42,21 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
     }
 
     protected TypeName inputIterableWrap(InputField field) {
-        var typeName = processedSchema.isInputType(field.getTypeName()) ? processedSchema.getInputType(field.getTypeName()).getGraphClassName() : field.getFieldType().getTypeClass();
-        return wrapListIf(typeName, field.isIterableWrapped());
+        var typeName = field.getTypeName();
+        var typeClass = processedSchema.isInputType(typeName) ? processedSchema.getInputType(typeName).getGraphClassName() : field.getFieldType().getTypeClass();
+        if (typeClass == null && processedSchema.isEnum(typeName)) {
+            typeClass = processedSchema.getEnum(typeName).getGraphClassName();
+        }
+        return wrapListIf(typeClass, field.isIterableWrapped());
     }
 
     protected TypeName objectIterableWrap(ObjectField field) {
-        var typeName = processedSchema.isObject(field.getTypeName()) ? processedSchema.getObject(field.getTypeName()).getGraphClassName() : field.getFieldType().getTypeClass();
-        return wrapListIf(typeName, field.isIterableWrapped());
+        var typeName = field.getTypeName();
+        var typeClass = processedSchema.isObject(typeName) ? processedSchema.getObject(typeName).getGraphClassName() : field.getFieldType().getTypeClass();
+        if (typeClass == null && processedSchema.isEnum(typeName)) {
+            typeClass = processedSchema.getEnum(typeName).getGraphClassName();
+        }
+        return wrapListIf(typeClass, field.isIterableWrapped());
     }
 
     /**

@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import com.squareup.javapoet.CodeBlock;
+
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
@@ -55,26 +57,26 @@ public class SQLJoin {
      * @param aliasName The name of the table alias to be used for this particular join statement.
      * @return A string that contains a complete join statement followed by all conditions set for this join.
      */
-    public String toJoinString(String aliasName, Map<String, Method> conditionOverrides) {
-        var sb = new StringBuilder();
-        sb
-                .append(".")
-                .append(joinType == SQLJoinType.LEFT ? "leftJoin" : "join")
-                .append("(")
-                .append(aliasName)
-                .append(")\n");
+    public CodeBlock toJoinString(String aliasName, Map<String, Method> conditionOverrides) {
+        var code = CodeBlock
+                .builder()
+                .add(".")
+                .add(joinType == SQLJoinType.LEFT ? "leftJoin" : "join")
+                .add("(")
+                .add(aliasName)
+                .add(")\n");
 
         var fields = getJoinFields();
         for (int i = 0; i < fields.size(); i++) {
             var joinField = fields.get(i);
-            sb
-                    .append(".")
-                    .append(i == 0 ? joinField.getMethodCallName() : "and")
-                    .append("(")
-                    .append(joinField.toJoinString(joinSourceTable, aliasName, conditionOverrides))
-                    .append(")\n");
+            code
+                    .add(".")
+                    .add(i == 0 ? joinField.getMethodCallName() : "and")
+                    .add("(")
+                    .add(joinField.toJoinString(joinSourceTable, aliasName, conditionOverrides))
+                    .add(")\n");
         }
-        return sb.toString();
+        return code.build();
     }
 
     /**

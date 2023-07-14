@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import com.squareup.javapoet.CodeBlock;
+
 import java.lang.reflect.Method;
 import java.util.Map;
 
@@ -35,12 +37,12 @@ public class SQLJoinOnKey extends SQLJoinField {
     }
 
     @Override
-    public String toJoinString(String joinSourceTable, String aliasName) {
-        return getKey();
+    public CodeBlock toJoinString(String joinSourceTable, String aliasName) {
+        return CodeBlock.of(getKey());
     }
 
     @Override
-    public String toJoinString(String joinSourceTable, String aliasName, Map<String, Method> conditionOverrides) {
-        return getKey();
+    public CodeBlock toJoinString(String joinSourceTable, String aliasName, Map<String, Method> conditionOverrides) {
+        return CodeBlock.of(getKey());
     }
 }

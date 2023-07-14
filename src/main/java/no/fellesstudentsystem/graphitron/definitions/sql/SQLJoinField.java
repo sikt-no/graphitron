@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import com.squareup.javapoet.CodeBlock;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
@@ -35,12 +36,12 @@ public abstract class SQLJoinField implements Comparable<SQLJoinField> {
      * @param aliasName The name of the table alias to be used for this particular join statement.
      * @return A string that contains a complete condition statement.
      */
-    abstract public String toJoinString(String joinSourceTable, String aliasName);
+    abstract public CodeBlock toJoinString(String joinSourceTable, String aliasName);
 
     /**
      * @param joinSourceTable The table that from which the join is originating. In other words, the left side of the join.
      * @param aliasName The name of the table alias to be used for this particular join statement.
      * @return A string that contains a complete condition statement.
      */
-    abstract public String toJoinString(String joinSourceTable, String aliasName, Map<String, Method> conditionOverrides);
+    abstract public CodeBlock toJoinString(String joinSourceTable, String aliasName, Map<String, Method> conditionOverrides);
 }

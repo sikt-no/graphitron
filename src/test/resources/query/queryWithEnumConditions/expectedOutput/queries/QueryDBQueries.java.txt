@@ -1,0 +1,155 @@
+package no.fellesstudentsystem.graphql.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import java.lang.Integer;
+import java.util.List;
+import java.util.Map;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.generated.model.Termin;
+import no.fellesstudentsystem.graphql.generated.model.TerminInput;
+import no.fellesstudentsystem.graphql.generated.model.Termintype;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<Termin> paramConditionForQuery(Termintype termintype, Integer arstall,
+            SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("paramCondition")
+                )
+                .from(TERMIN)
+                .where(TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintype))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
+                .and(TERMIN.ARSTALL.eq(arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> paramConditionOverrideForQuery(Termintype termintype, Integer arstall,
+            SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("paramConditionOverride")
+                )
+                .from(TERMIN)
+                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
+                .and(TERMIN.ARSTALL.eq(arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> fieldConditionForQuery(Termintype termintype, Integer arstall,
+            SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("fieldCondition")
+                )
+                .from(TERMIN)
+                .where(TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintype))
+                .and(TERMIN.ARSTALL.eq(arstall))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> fieldConditionOverrideForQuery(Termintype termintype, Integer arstall,
+            SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("fieldConditionOverride")
+                )
+                .from(TERMIN)
+                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> fieldAndParamConditionForQuery(Termintype termintype, Integer arstall,
+            SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("fieldAndParamCondition")
+                )
+                .from(TERMIN)
+                .where(TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintype))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
+                .and(TERMIN.ARSTALL.eq(arstall))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> fieldAndParamConditionOverrideForQuery(Termintype termintype,
+            Integer arstall, SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("fieldAndParamConditionOverride")
+                )
+                .from(TERMIN)
+                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> fieldAndParamConditionOverrideBothForQuery(Termintype termintype,
+            Integer arstall, SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("fieldAndParamConditionOverrideBoth")
+                )
+                .from(TERMIN)
+                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+
+    public List<Termin> fieldInputConditionForQuery(TerminInput termintypeIn, Integer arstall,
+            SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
+                        ).mapping(nullOnAllNull(Termin::new)).as("fieldInputCondition")
+                )
+                .from(TERMIN)
+                .where(termintypeIn != null ? TERMIN.ARSTALL.eq(termintypeIn.getArstall()) : noCondition())
+                .and(termintypeIn != null ? TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintypeIn.getTermintype()) : noCondition())
+                .and(TERMIN.ARSTALL.eq(arstall))
+                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminInputAll(TERMIN, termintypeIn != null ? termintypeIn.getArstall() : null, termintypeIn != null ? termintypeIn.getTermintype() == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintypeIn.getTermintype(), null) : null, arstall))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+}

@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
+import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldReference;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
@@ -271,7 +272,7 @@ public class FetchContext {
                     if (fRef.hasTableKey() || hasDirectJoin(table, previousTableName)) {
                         this.conditionList.add(
                                 ".and(" + fRef.getTableCondition().formatToString(
-                                        List.of(previousTableName, table.getName()),
+                                        List.of(CodeBlock.of(previousTableName), CodeBlock.of(table.getName())),
                                         conditionOverrides
                                 ) + ")"
                         );
