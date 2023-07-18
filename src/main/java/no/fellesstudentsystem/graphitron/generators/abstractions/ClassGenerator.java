@@ -4,7 +4,6 @@ import com.squareup.javapoet.TypeSpec;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 
-import java.io.IOException;
 import java.util.List;
 
 /**
@@ -23,7 +22,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
      * @param path The path to the output directory.
      * @param packagePath The package path that this class should be written to.
      */
-    void generateQualifyingObjectsToDirectory(String path, String packagePath) throws IOException;
+    void generateQualifyingObjectsToDirectory(String path, String packagePath);
 
     /**
      * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
@@ -31,7 +30,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
      * @param path           The path to the output directory.
      * @param packagePath    The package path that this class should be written to.
      */
-    void writeToFile(TypeSpec generatedClass, String path, String packagePath) throws IOException;
+    void writeToFile(TypeSpec generatedClass, String path, String packagePath);
 
     /**
      * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
@@ -40,7 +39,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
      * @param packagePath    The package path that this class should be written to.
      * @param directoryOverride Override the directory within the package where the class is saved to.
      */
-    void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) throws IOException;
+    void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride);
 
     /**
      * @return The final directory path within the package where the classes are ultimately saved.

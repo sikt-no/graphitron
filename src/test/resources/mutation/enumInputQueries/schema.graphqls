@@ -25,4 +25,4 @@ type Mutation {
 
 enum StudentbildeFiltype { JPG, PNG } # No jOOQ converter.
 
-enum Kjonn @mapEnum(name: "Kjonn") { MANN, KVINNE } # With jOOQ converter.
+enum Kjonn @mapEnum(name: "KJONN_TEST") { MANN, KVINNE } # With jOOQ converter.

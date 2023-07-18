@@ -7,7 +7,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -39,7 +39,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var refObject = ReferenceHelpers.findReferencedObjectDefinition(target, processedSchema);
         var localObject = getLocalObject();
 
-        var context = new FetchContext(processedSchema, target, localObject, conditionOverrides);
+        var context = new FetchContext(processedSchema, target, localObject);
         var hasKeyReference = context.hasKeyReference();
 
         var actualRefTable = refObject.getTable().getName();

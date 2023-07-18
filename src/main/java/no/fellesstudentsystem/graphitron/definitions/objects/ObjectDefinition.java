@@ -6,15 +6,15 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.TopLevelObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.*;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getOptionalDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 
 /**
  * Represents the default GraphQL object.

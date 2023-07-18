@@ -8,8 +8,8 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecificat
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.validation.DirectiveDefinitionsValidator;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 
 import java.util.Map;
 import java.util.Optional;
@@ -18,7 +18,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
 
 /**
  * This class represents a fully processed GraphQL schema.
@@ -101,11 +101,7 @@ public class ProcessedSchema {
     }
 
     public void validate() {
-        validate(Map.of());
-    }
-
-    public void validate(Map<String, Class<?>> enumOverrides) {
-        new ProcessedDefinitionsValidator(this, enumOverrides).validateThatProcessedDefinitionsConformToDatabaseNaming();
+        new ProcessedDefinitionsValidator(this).validateThatProcessedDefinitionsConformToDatabaseNaming();
     }
 
     /**

@@ -2,20 +2,19 @@ package no.fellesstudentsystem.graphitron.validation;
 
 import graphql.com.google.common.collect.Sets;
 import no.fellesstudentsystem.graphitron.GraphQLGenerator;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
-import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class ProcessedDefinitionsValidator {
 
@@ -25,15 +24,13 @@ public class ProcessedDefinitionsValidator {
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, InputDefinition> inputs;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
-    private final Map<String, Class<?>> enumOverrides;
 
-    public ProcessedDefinitionsValidator(ProcessedSchema schema, Map<String, Class<?>> enumOverrides) {
+    public ProcessedDefinitionsValidator(ProcessedSchema schema) {
         objects = schema.getObjects();
         connectionObjects = schema.getConnectionObjects();
         enums = schema.getEnums();
         interfaces = schema.getInterfaces();
         inputs = schema.getInputTypes();
-        this.enumOverrides = enumOverrides;
     }
 
     public void validateThatProcessedDefinitionsConformToDatabaseNaming() {
@@ -71,13 +68,13 @@ public class ProcessedDefinitionsValidator {
         );
         columnsByTableHavingImplicitJoin.forEach(this::validateTableExistsAndHasMethods);
 
-        var enumValueSet = Stream.of(GeneratorEnum.values()).map(Enum::name).collect(Collectors.toSet());
+        var enumValueSet = GeneratorConfig.getExternalEnums();
         enums.values()
                 .stream()
                 .filter(EnumDefinition::hasDbEnumMapping)
                 .map(EnumDefinition::getDbName)
-                .filter(e -> !enumValueSet.contains(e.toUpperCase()) && !enumOverrides.containsKey(e.toUpperCase()))
-                .forEach(e -> LOGGER.warn("No enum with name '{}' found in {}", e, GeneratorEnum.class.getName()));
+                .filter(e -> !enumValueSet.contains(e.toUpperCase()))
+                .forEach(e -> LOGGER.warn("No enum with name '{}' found.", e));
 
         inputs.values()
                 .stream()

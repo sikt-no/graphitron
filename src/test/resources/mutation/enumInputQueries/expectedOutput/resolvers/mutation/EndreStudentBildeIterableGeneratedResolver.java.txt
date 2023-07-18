@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -9,11 +9,11 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.EndreStudentBildeIterableMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.BildeInput;
-import no.fellesstudentsystem.graphql.generated.model.ListedResponse;
-import no.fellesstudentsystem.graphql.generated.model.StudentbildeFiltype;
-import no.fellesstudentsystem.graphql.queries.mutation.EndreStudentBildeIterableDBQueries;
+import fake.graphql.example.package.api.EndreStudentBildeIterableMutationResolver;
+import fake.graphql.example.package.model.BildeInput;
+import fake.graphql.example.package.model.ListedResponse;
+import fake.graphql.example.package.model.StudentbildeFiltype;
+import fake.code.example.package.queries.mutation.EndreStudentBildeIterableDBQueries;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonbildeRecord;
 import org.jooq.DSLContext;

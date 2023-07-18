@@ -12,7 +12,9 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
@@ -40,28 +42,16 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             VARIABLE_SELECT = "select",
             METHOD_SET_PK = "setPersonKeysFromPlattformIds"; // Hardcoded method name. Should be generalized as a transform on records.
 
-    protected final Map<String, Class<?>> exceptionOverrides, serviceOverrides, enumOverrides;
-
     protected final ObjectField localField;
     protected UpdateContext context;
 
-    public UpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
-        this(localField, processedSchema, Map.of(), Map.of(), Map.of());
-    }
-
     public UpdateResolverMethodGenerator(
             ObjectField localField,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides,
-            Map<String, Class<?>> enumOverrides
+            ProcessedSchema processedSchema
     ) {
         super(processedSchema.getMutationType(), processedSchema);
         dependencySet.add(ContextDependency.getInstance());
         this.localField = localField;
-        this.exceptionOverrides = exceptionOverrides;
-        this.serviceOverrides = serviceOverrides;
-        this.enumOverrides = enumOverrides;
     }
 
     @Override
@@ -71,7 +61,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         var specInputs = target.getInputFields();
         specInputs.forEach(input -> spec.addParameter(inputIterableWrap(input), input.getName()));
 
-        context = new UpdateContext(target, processedSchema, exceptionOverrides, serviceOverrides);
+        context = new UpdateContext(target, processedSchema);
         var code = CodeBlock.builder();
         if (context.mutationReturnsNodes()) {
             code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SET.className, PARAM_ENV);
@@ -172,7 +162,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 var setCall = in.getRecordSetCall("$L");
                 code.add("$N", recordName);
                 if (processedSchema.isEnum(in.getTypeName())) {
-                    code.addStatement(setCall, toGraphEnumConverter(in.getTypeName(), getCall, enumOverrides));
+                    code.addStatement(setCall, toGraphEnumConverter(in.getTypeName(), getCall));
                 } else {
                     code.addStatement(setCall, getCall);
                 }
@@ -187,7 +177,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         if (!code.isEmpty()) {
             code.addStatement(
                     "$T.$L($N, $N)",
-                    FIELD_HELPERS.className,
+                    FIELD_HELPERS_EXTERNAL.className,
                     METHOD_SET_PK,
                     ContextDependency.CONTEXT_NAME,
                     isIterable ? potentialArrayListName : recordName

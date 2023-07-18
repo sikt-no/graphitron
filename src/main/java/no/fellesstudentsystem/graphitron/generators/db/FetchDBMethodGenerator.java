@@ -9,7 +9,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerat
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -25,13 +24,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
-    }
-
-    public FetchDBMethodGenerator(ObjectDefinition localObject,
-                                  ProcessedSchema processedSchema,
-                                  Map<String, Class<?>> enumOverrides,
-                                  Map<String, Method> conditionOverrides) {
-        super(localObject, processedSchema, enumOverrides, conditionOverrides);
     }
 
     CodeBlock formatWhereContents(ObjectField referenceField, String currentJoinSequence, boolean hasKeyReference, String actualRefTable) {
@@ -75,7 +67,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
                         .add(currentJoinSequence + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
-                        .add(toJOOQEnumConverter(fieldTypeName, enumOverrides))
+                        .add(toJOOQEnumConverter(fieldTypeName))
                         .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name)
                         .add(checksNotEmpty ? " : noCondition()" : "")
                         .add(")\n");
@@ -86,7 +78,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             if (field.hasCondition()) {
                 var conditionInputs = List.of(CodeBlock.of(actualRefTable), getCheckedNameWithPath(inputCondition));
-                codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs, conditionOverrides), hasWhere));
+                codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
             }
             if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
@@ -103,7 +95,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     Stream.of(CodeBlock.of(actualRefTable)),
                     flatInputs.stream().map(this::getCheckedNameWithPath)
             ).collect(Collectors.toList());
-            codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs, conditionOverrides), hasWhere));
+            codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs), hasWhere));
         }
         return codeBlockBuilder.build();
     }
@@ -111,7 +103,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
         var nameWithPath = condition.getNameWithPath();
         var checks = condition.getChecksAsSequence();
-        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), CodeBlock.of(nameWithPath), enumOverrides);
+        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), CodeBlock.of(nameWithPath));
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
                 enumConverter.isEmpty() ? nameWithPath : enumConverter
@@ -136,7 +128,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             codeBlockBuilder
                     .add(actualRefTable + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
-                    .add(toJOOQEnumConverter(fieldTypeName, enumOverrides))
+                    .add(toJOOQEnumConverter(fieldTypeName))
                     .add(i < conditions.size()-1 ? ",\n" : "");
         }
         codeBlockBuilder

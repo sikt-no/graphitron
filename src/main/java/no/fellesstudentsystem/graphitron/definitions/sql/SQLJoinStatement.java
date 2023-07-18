@@ -1,10 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
-
-import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Map;
 
 /**
  * An extension of {@link SQLJoin} with additional data on which table to join towards and which alias should be used.
@@ -49,13 +46,6 @@ public class SQLJoinStatement extends SQLJoin {
      * @return A string that contains a complete join statement followed by all conditions set for this join.
      */
     public CodeBlock toJoinString() {
-        return super.toJoinString(joinAlias, Map.of());
-    }
-
-    /**
-     * @return A string that contains a complete join statement followed by all conditions set for this join.
-     */
-    public CodeBlock toJoinString(Map<String, Method> conditionOverrides) {
-        return super.toJoinString(joinAlias, conditionOverrides);
+        return super.toJoinString(joinAlias);
     }
 }

@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -6,11 +6,12 @@ import java.lang.Override;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.EndrePersonMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.Kjonn;
-import no.fellesstudentsystem.graphql.generated.model.PersonInput;
-import no.fellesstudentsystem.graphql.generated.model.Response;
-import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonDBQueries;
+import fake.graphql.example.package.api.EndrePersonMutationResolver;
+import fake.graphql.example.package.model.Kjonn;
+import fake.graphql.example.package.model.PersonInput;
+import fake.graphql.example.package.model.Response;
+import fake.code.example.package.queries.mutation.EndrePersonDBQueries;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -30,7 +31,7 @@ public class EndrePersonGeneratedResolver implements EndrePersonMutationResolver
 
         if (input != null) {
             inputRecord.setId(input.getId());
-            inputRecord.setKjonn(input.getKjonn() == null ? null : Map.of(Kjonn.MANN, no.fellesstudentsystem.kjerneapi.enums.Kjonn.MANN, Kjonn.KVINNE, no.fellesstudentsystem.kjerneapi.enums.Kjonn.KVINNE).getOrDefault(input.getKjonn(), null));
+            inputRecord.setKjonn(input.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(input.getKjonn(), null));
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 

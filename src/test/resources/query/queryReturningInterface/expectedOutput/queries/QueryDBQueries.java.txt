@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;

@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
-import no.fellesstudentsystem.codegenenums.GeneratorException;
-import no.fellesstudentsystem.codegenenums.GeneratorService;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -17,7 +16,7 @@ import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.ERROR_TYPE;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 
 public class UpdateContext {
     private final ServiceWrapper service;
@@ -27,27 +26,16 @@ public class UpdateContext {
     private final List<ObjectField> allErrors;
     private final ProcessedSchema processedSchema;
     private final boolean mutationReturnsNodes;
-    private final Map<String, Class<?>> exceptionOverrides;
 
     public UpdateContext(ObjectField target, ProcessedSchema processedSchema) {
-        this(target, processedSchema, Map.of(), Map.of());
-    }
-
-    public UpdateContext(
-            ObjectField target,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides
-    ) {
         this.processedSchema = processedSchema;
-        this.exceptionOverrides = exceptionOverrides;
 
         if (target.hasServiceReference()) {
             var reference = target.getServiceReference();
             service = new ServiceWrapper(
                     target.getName(),
                     countParams(target.getInputFields(), false, processedSchema),
-                    serviceOverrides.containsKey(reference) ? serviceOverrides.get(reference) :  GeneratorService.valueOf(reference).getService()
+                    GeneratorConfig.getExternalServices().get(reference)
             );
         } else {
             service = null;
@@ -161,11 +149,6 @@ public class UpdateContext {
                 .stream()
                 .map(processedSchema::getException)
                 .collect(Collectors.toList());
-    }
-
-    @NotNull
-    public Class<?> getExceptionClass(String key) {
-        return exceptionOverrides.containsKey(key) ? exceptionOverrides.get(key) : GeneratorException.valueOf(key).getException();
     }
 
     @NotNull

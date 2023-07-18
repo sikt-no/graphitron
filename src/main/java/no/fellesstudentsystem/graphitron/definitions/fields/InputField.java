@@ -5,7 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.COLUMN;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.COLUMN;
 
 /**
  * An argument for a {@link ObjectField}.

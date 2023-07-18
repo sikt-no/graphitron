@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -10,14 +10,14 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.SlettPersonWithProfilIterableMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.EndreInput;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.generated.model.Response;
-import no.fellesstudentsystem.graphql.generated.model.Result;
+import fake.graphql.example.package.api.SlettPersonWithProfilIterableMutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.Response;
+import fake.graphql.example.package.model.Result;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.mutation.SlettPersonWithProfilIterableDBQueries;
-import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
+import fake.code.example.package.queries.mutation.SlettPersonWithProfilIterableDBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;

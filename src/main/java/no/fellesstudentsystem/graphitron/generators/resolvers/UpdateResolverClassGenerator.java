@@ -8,9 +8,7 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverClassGe
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -23,26 +21,12 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
             INTERFACE_FILE_NAME_SUFFIX = "MutationResolver",
             SAVE_DIRECTORY_NAME = "mutation";
 
-    private final Map<String, Class<?>> exceptionOverrides, serviceOverrides, enumOverrides;
-
     public UpdateResolverClassGenerator(ProcessedSchema processedSchema) {
-        this(processedSchema, Map.of(), Map.of(), Map.of());
-    }
-
-    public UpdateResolverClassGenerator(
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides,
-            Map<String, Class<?>> enumOverrides
-    ) {
         super(processedSchema);
-        this.exceptionOverrides = exceptionOverrides;
-        this.serviceOverrides = serviceOverrides;
-        this.enumOverrides = enumOverrides;
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) throws IOException {
+    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
         var mutation = processedSchema.getMutationType();
         if (mutation != null && mutation.isGenerated()) {
             var classes = mutation
@@ -73,8 +57,8 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
         return getSpec(
                 capitalize(target.getName()),
                 List.of(
-                        new ServiceUpdateResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides),
-                        new MutationTypeResolverMethodGenerator(target, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides)
+                        new ServiceUpdateResolverMethodGenerator(target, processedSchema),
+                        new MutationTypeResolverMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

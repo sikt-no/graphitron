@@ -10,7 +10,6 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -20,7 +19,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -34,17 +33,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             VARIABLE_RECORD_LIST = "recordList";
 
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
-        super(localField, processedSchema, Map.of(), Map.of(), Map.of());
-    }
-
-    public MutationTypeResolverMethodGenerator(
-            ObjectField localField,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides,
-            Map<String, Class<?>> enumOverrides
-    ) {
-        super(localField, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides);
+        super(localField, processedSchema);
     }
 
     /**
@@ -306,7 +295,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             return List.of();
         }
 
-        context = new UpdateContext(localField, processedSchema, exceptionOverrides, serviceOverrides);
+        context = new UpdateContext(localField, processedSchema);
         return generateGetMethod(target, target, "", null, null, Set.of());
     }
 

@@ -9,10 +9,8 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.findReferencedObjectDefinition;
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesIDReference;
@@ -36,7 +34,6 @@ public class FetchContext {
 
     private boolean hasKeyReference = false;
     private final ProcessedSchema processedSchema;
-    private final Map<String, Method> conditionOverrides;
 
     /**
      * @param referenceObjectField The referring field that contains an object.
@@ -57,15 +54,13 @@ public class FetchContext {
             ArrayList<String> conditionList,
             String pastGraphPath,
             int recCounter,
-            FetchContext previousContext,
-            Map<String, Method> conditionOverrides
+            FetchContext previousContext
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
             throw new RuntimeException("Recursion depth has reached the integer max value.");
         }
         this.recCounter = recCounter;
         this.processedSchema = processedSchema;
-        this.conditionOverrides = conditionOverrides;
         hasJoinedAlready = recCounter == 0 && (!joinList.isEmpty() || !aliasList.isEmpty());
         referenceObject = findReferencedObjectDefinition(referenceObjectField, processedSchema);
         this.joinList = joinList;
@@ -120,19 +115,6 @@ public class FetchContext {
             AbstractField referenceObjectField,
             ObjectDefinition localObject
     ) {
-        this(processedSchema, referenceObjectField, localObject, Map.of());
-    }
-
-    /**
-     * @param referenceObjectField The referring field that contains an object.
-     * @param localObject          Object of origin for this context.
-     */
-    public FetchContext(
-            ProcessedSchema processedSchema,
-            AbstractField referenceObjectField,
-            ObjectDefinition localObject,
-            Map<String, Method> conditionOverrides
-    ) {
         this(
                 processedSchema,
                 referenceObjectField,
@@ -144,8 +126,7 @@ public class FetchContext {
                 new ArrayList<>(),
                 "",
                 0,
-                null,
-                conditionOverrides
+                null
         );
     }
 
@@ -222,8 +203,7 @@ public class FetchContext {
                 conditionList,
                 graphPath + referenceObjectField.getName(),
                 recCounter + 1,
-                this,
-                conditionOverrides
+                this
         );
     }
     public String iterateSourceMultipleSequences(String pastJoinSequence) {
@@ -271,10 +251,7 @@ public class FetchContext {
                 if (fRef.hasTableCondition()) {
                     if (fRef.hasTableKey() || hasDirectJoin(table, previousTableName)) {
                         this.conditionList.add(
-                                ".and(" + fRef.getTableCondition().formatToString(
-                                        List.of(CodeBlock.of(previousTableName), CodeBlock.of(table.getName())),
-                                        conditionOverrides
-                                ) + ")"
+                                ".and(" + fRef.getTableCondition().formatToString(List.of(CodeBlock.of(previousTableName), CodeBlock.of(table.getName()))) + ")"
                         );
                     } else {
                         currentJoinSequence = processConditionJoinReference(fRef, currentJoinSequence, table, table.getCodeName(), previousJoinSequence, previousTableName);

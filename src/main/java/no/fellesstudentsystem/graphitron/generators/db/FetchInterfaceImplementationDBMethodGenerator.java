@@ -12,7 +12,6 @@ import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 
-import java.lang.reflect.Method;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -29,18 +28,12 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
 
     private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
 
-    public FetchInterfaceImplementationDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema, Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField) {
-        this(localObject, processedSchema, interfacesReturnedByObjectField, Map.of(), Map.of());
-    }
-
     public FetchInterfaceImplementationDBMethodGenerator(
             ObjectDefinition localObject,
             ProcessedSchema processedSchema,
-            Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField,
-            Map<String, Class<?>> enumOverrides,
-            Map<String, Method> conditionOverrides
+            Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField
     ) {
-        super(localObject, processedSchema, enumOverrides, conditionOverrides);
+        super(localObject, processedSchema);
         this.interfacesReturnedByObjectField = interfacesReturnedByObjectField;
     }
 
@@ -53,7 +46,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         ObjectField implementationReference = new ObjectField(new FieldDefinition(getLocalObject().getName(),
                 new TypeName(getLocalObject().getName())));
 
-        var context = new FetchContext(processedSchema, implementationReference, implementation, conditionOverrides);
+        var context = new FetchContext(processedSchema, implementationReference, implementation);
         var selectCode = generateSelectRow(context);
         var returnType = implementation.getGraphClassName();
         var localName = implementation.getName();

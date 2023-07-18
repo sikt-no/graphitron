@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -11,8 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Permisjon;
-import no.fellesstudentsystem.graphql.generated.model.Permisjonsperiode;
+import fake.graphql.example.package.model.Permisjon;
+import fake.graphql.example.package.model.Permisjonsperiode;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;

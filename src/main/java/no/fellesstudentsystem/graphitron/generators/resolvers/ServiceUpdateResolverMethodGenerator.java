@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers;
 
 import com.squareup.javapoet.*;
-import no.fellesstudentsystem.codegenenums.GeneratorService;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
@@ -10,13 +10,11 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import org.apache.commons.lang3.EnumUtils;
 import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -26,8 +24,8 @@ import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.context.UpdateContext.countParams;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.ERROR_TYPE;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -50,17 +48,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
 
     public ServiceUpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
-        super(localField, processedSchema, Map.of(), Map.of(), Map.of());
-    }
-
-    public ServiceUpdateResolverMethodGenerator(
-            ObjectField localField,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> exceptionOverrides,
-            Map<String, Class<?>> serviceOverrides,
-            Map<String, Class<?>> enumOverrides
-    ) {
-        super(localField, processedSchema, exceptionOverrides, serviceOverrides, enumOverrides);
+        super(localField, processedSchema);
     }
 
     /**
@@ -137,7 +125,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         for (var errorField : context.getAllErrors()) {
             var errorListName = asListedName(context.getErrorTypeDefinition(errorField.getTypeName()).getName());
             for (var exc : context.getExceptionDefinitions(errorField.getTypeName())) {
-                var exception = context.getExceptionClass(exc.getExceptionReference());
+                var exception = GeneratorConfig.getExternalExceptions().get(exc.getExceptionReference());
                 var exceptionJavaClassName = ClassName.get(exception.getPackageName(), exception.getSimpleName());
                 code
                         .nextControlFlow("catch ($T $L)", exceptionJavaClassName, VARIABLE_EXCEPTION)
@@ -461,7 +449,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
             return List.of();
         }
 
-        context = new UpdateContext(localField, processedSchema, exceptionOverrides, serviceOverrides);
+        context = new UpdateContext(localField, processedSchema);
         var service = context.getService();
         var serviceReturnType = service.getReturnType();
         return generateGetMethod(target, target, "", serviceReturnType, serviceReturnType, service.getInternalClasses());
@@ -471,17 +459,16 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
      * Look for class object of the type returned by the specified service. Throw exception if not found.
      */
     private void checkService(ObjectField target) {
+        Validate.isTrue(localField.hasServiceReference(),
+                "Requested to generate a method for '%s' in type '%s' without providing a service to call.",
+                localField.getName(), localObject.getName());
+
         var ref = localField.getServiceReference();
-        Class<?> generatorService;
-        if (!serviceOverrides.containsKey(ref)) {
-            var service = EnumUtils.getEnum(GeneratorService.class, ref);
-            Validate.isTrue(service != null,
-                    "Requested to generate a method for '%s' that calls service '%s', but no such service was found in '%s'",
-                    localField.getName(), localField.getServiceReference(), GeneratorService.class.getName());
-            generatorService = service.getService();
-        } else {
-            generatorService = serviceOverrides.get(ref);
-        }
+        var services = GeneratorConfig.getExternalServices();
+        Validate.isTrue(services.contains(ref),
+                "Requested to generate a method for '%s' that calls service '%s', but no such service was found.",
+                localField.getName(), localField.getServiceReference());
+        var generatorService = services.get(ref);
 
         var service = new ServiceWrapper(target.getName(), countParams(target.getInputFields(), false, processedSchema), generatorService);
         Validate.isTrue(service.getMethod() != null,

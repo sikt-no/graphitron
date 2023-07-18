@@ -3,17 +3,16 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.*;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirective.RESOLVER;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.TYPE;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveArgumentEnum;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.TYPE;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentEnum;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 
 /**
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.

@@ -14,13 +14,12 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -35,23 +34,10 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractMethodGenerator<T> {
     protected final static String SELECTION_NAME = "select";
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
-    protected final Map<String, Class<?>> enumOverrides;
-    protected final Map<String, Method> conditionOverrides;
 
     public DBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        this(localObject, processedSchema, Map.of(), Map.of());
-    }
-
-    public DBMethodGenerator(
-            ObjectDefinition localObject,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> enumOverrides,
-            Map<String, Method> conditionOverrides
-    ) {
         super(localObject, processedSchema);
         dependencySet.add(ContextDependency.getInstance());
-        this.enumOverrides = enumOverrides;
-        this.conditionOverrides = conditionOverrides;
     }
 
     @Override
@@ -85,7 +71,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      */
     protected CodeBlock createSelectJoins(List<SQLJoinStatement> joinList) {
         var codeBuilder = CodeBlock.builder();
-        joinList.forEach(join -> codeBuilder.add(join.toJoinString(conditionOverrides)));
+        joinList.forEach(join -> codeBuilder.add(join.toJoinString()));
         return codeBuilder.build();
     }
 
@@ -272,7 +258,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         return codeBlockBuilder
                 .add("$N.optional(\"" + context.getGraphPath() + field.getName() + "\", " + fieldString, SELECTION_NAME)
-                .add(toJOOQEnumConverter(fieldType, enumOverrides))
+                .add(toJOOQEnumConverter(fieldType))
                 .add(")")
                 .build();
     }

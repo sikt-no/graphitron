@@ -3,7 +3,7 @@ package no.fellesstudentsystem.graphitron.generators.context;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import org.jetbrains.annotations.NotNull;
 
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.NODE_TYPE;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.*;
 
 public class NameFormat {

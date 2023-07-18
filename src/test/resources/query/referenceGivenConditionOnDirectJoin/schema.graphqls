@@ -6,7 +6,7 @@ type Student @table {
   id: ID!
   # Dette vil ikke gi kjørbar kode da den faktiske conditionen angår INSTITUSJON og ikke EIERINSTIUSJON,
   # men det tester kodegrenen som sørger for å håndtere tilsvarende tilfeller.
-  institiusjon: [Eierinstitusjon!]! @splitQuery @reference(condition : "STUDENT_INSTITUSJON_EQUALS")
+  institiusjon: [Eierinstitusjon!]! @splitQuery @reference(condition : "TEST_STUDENT_INSTITUSJON_EQUALS")
 }
 
 type Eierinstitusjon @table(name : "EIERINSTITUSJON") {

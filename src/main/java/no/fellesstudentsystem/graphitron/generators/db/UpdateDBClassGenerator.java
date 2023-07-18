@@ -5,7 +5,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -22,7 +21,7 @@ public class UpdateDBClassGenerator extends DBClassGenerator<ObjectField> {
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) throws IOException {
+    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
         var mutation = processedSchema.getMutationType();
         if (mutation != null && mutation.isGenerated()) {
             var classes = mutation

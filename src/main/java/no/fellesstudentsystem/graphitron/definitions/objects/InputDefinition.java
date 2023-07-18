@@ -3,20 +3,20 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeName;
 import graphql.language.InputObjectTypeDefinition;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
-import no.fellesstudentsystem.graphql.schema.SchemaHelpers;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.RECORDS_PACKAGE_PATH;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordClassName;
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.RECORD;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.TABLE;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.RECORD;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.TABLE;
 
 public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDefinition> {
     private final JOOQTableMapping table;
@@ -32,16 +32,16 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         var hasRecord = inputType.hasDirective(RECORD.getName());
         String tableName = getName().toUpperCase();
         if (hasTable) {
-            tableName = SchemaHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME)).orElse(tableName);
+            tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME)).orElse(tableName);
             table = new JOOQTableMapping(tableName);
         } else if (hasRecord) {
-            tableName = SchemaHelpers.getOptionalDirectiveArgumentString(inputType, RECORD, RECORD.getParamName(TABLE)).orElse(tableName);
+            tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, RECORD, RECORD.getParamName(TABLE)).orElse(tableName);
             table = new JOOQTableMapping(tableName);
         } else {
             table = null;
         }
         this.hasTable = hasTable || hasRecord;
-        recordClassName = ClassName.get(RECORDS_PACKAGE_PATH, asRecordClassName(new RecordMethodMapping(tableName).getName()));
+        recordClassName = ClassName.get(GeneratorConfig.getGeneratedJooqRecordsPackage(), asRecordClassName(new RecordMethodMapping(tableName).getName()));
     }
 
     /**

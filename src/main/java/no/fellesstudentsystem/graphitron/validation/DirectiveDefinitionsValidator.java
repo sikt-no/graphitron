@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron.validation;
 
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.GraphQLGenerator;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -9,10 +9,10 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.EndrePerson1MutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.EndreInput;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponse1;
-import no.fellesstudentsystem.graphql.queries.mutation.EndrePerson1DBQueries;
+import fake.graphql.example.package.api.EndrePerson1MutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.EndreResponse1;
+import fake.code.example.package.queries.mutation.EndrePerson1DBQueries;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;

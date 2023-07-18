@@ -15,7 +15,7 @@ enum Maalform {
 
 type Permisjon implements Node @table {
   id: ID!
-  programStudieretter: [ProgramStudierett!]! @splitQuery @reference(condition : "PERMISJON_STUDIERETT")
+  programStudieretter: [ProgramStudierett!]! @splitQuery @reference(condition : "TEST_PERMISJON_STUDIERETT")
   permisjonsperiode: Permisjonsperiode!
 }
 
@@ -28,7 +28,7 @@ type PersonProfil implements Node @table(name : "PERSON") {
   id: ID!
   privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
   institusjonsEpost: String @column(name : "EMAILADRESSE")
-  mobilTelefon: Telefon @splitQuery @reference(condition : "PERSON_TELEFON_MOBIL")
+  mobilTelefon: Telefon @splitQuery @reference(condition : "TEST_PERSON_TELEFON_MOBIL")
   folkeregistrertAdresse: Adresse
   studieretter: [ProgramStudierett!]! @splitQuery
 }

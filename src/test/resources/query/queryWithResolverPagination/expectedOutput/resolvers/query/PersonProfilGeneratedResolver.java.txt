@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.query;
+package fake.code.example.package.resolvers.query;
 
 import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
@@ -16,12 +16,12 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.PersonProfilResolver;
-import no.fellesstudentsystem.graphql.generated.model.Pass;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import fake.graphql.example.package.api.PersonProfilResolver;
+import fake.graphql.example.package.model.Pass;
+import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.dataloader.DataLoader;

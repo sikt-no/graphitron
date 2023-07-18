@@ -21,10 +21,15 @@ public class SchemaReader {
     // If the error about preventing DoS attacks shows up again, increase this value here.
     private final static int MAX_TOKENS = 60000;
 
-    public static Document readSchemas(List<String> sources) throws IOException {
+    public static Document readSchemas(List<String> sources) {
         MultiSourceReader.Builder builder = MultiSourceReader.newMultiSourceReader();
         for (String path : sources) {
-            String content = Files.readString(Paths.get(path), StandardCharsets.UTF_8) + System.lineSeparator();
+            String content;
+            try {
+                content = Files.readString(Paths.get(path), StandardCharsets.UTF_8) + System.lineSeparator();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
             builder.string(content, path);
         }
 
@@ -32,7 +37,7 @@ public class SchemaReader {
         return new Parser().parseDocument(builder.trackData(true).build(), parseOptions);
     }
 
-    public static TypeDefinitionRegistry getTypeDefinitionRegistry(List<String> schemas) throws IOException {
+    public static TypeDefinitionRegistry getTypeDefinitionRegistry(List<String> schemas) {
         // https://github.com/kobylynskyi/graphql-java-codegen/blob/master/src/main/java/com/kobylynskyi/graphql/codegen/parser/GraphQLDocumentParser.java
         return new SchemaParser().buildRegistry(readSchemas(schemas));
     }

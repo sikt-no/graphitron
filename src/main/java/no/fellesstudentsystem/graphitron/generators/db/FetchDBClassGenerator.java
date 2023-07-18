@@ -7,14 +7,12 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
 
 /**
  * Class generator for basic select query classes.
@@ -24,22 +22,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
 
     private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
 
-    private final Map<String, Class<?>> enumOverrides;
-    private final Map<String, Method> conditionOverrides;
-
     public FetchDBClassGenerator(ProcessedSchema processedSchema) {
-        this(processedSchema, Map.of(), Map.of());
-    }
-
-    public FetchDBClassGenerator(
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> enumOverrides,
-            Map<String, Method> conditionOverrides
-    ) {
         super(processedSchema);
-        this.enumOverrides = enumOverrides;
-        this.conditionOverrides = conditionOverrides;
-
         interfacesReturnedByObjectField = processedSchema
                 .getObjects()
                 .values()
@@ -54,7 +38,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) throws IOException {
+    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
         var classes = processedSchema
                 .getObjects()
                 .values()
@@ -78,9 +62,9 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
         return getSpec(
                 target.getName() + FILE_NAME_SUFFIX,
                 List.of(
-                        new FetchMappedObjectDBMethodGenerator(target, processedSchema, enumOverrides, conditionOverrides),
+                        new FetchMappedObjectDBMethodGenerator(target, processedSchema),
                         new FetchCountDBMethodGenerator(target, processedSchema),
-                        new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField, enumOverrides, conditionOverrides)
+                        new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField)
                 )
         ).build();
     }

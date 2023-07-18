@@ -9,7 +9,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;

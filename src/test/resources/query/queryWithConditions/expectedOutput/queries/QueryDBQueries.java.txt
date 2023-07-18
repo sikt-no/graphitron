@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -9,9 +9,9 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.List;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Emne;
-import no.fellesstudentsystem.graphql.generated.model.EmneInput;
-import no.fellesstudentsystem.graphql.generated.model.Emnenavn;
+import fake.graphql.example.package.model.Emne;
+import fake.graphql.example.package.model.EmneInput;
+import fake.graphql.example.package.model.Emnenavn;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 

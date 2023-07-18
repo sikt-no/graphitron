@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -12,10 +12,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Semesterregistrering;
-import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringBetaltInstitusjon;
-import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringBetaltInstitusjonNested;
-import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringBetaltInstitusjonWithOneField;
+import fake.graphql.example.package.model.Semesterregistrering;
+import fake.graphql.example.package.model.SemesterregistreringBetaltInstitusjon;
+import fake.graphql.example.package.model.SemesterregistreringBetaltInstitusjonNested;
+import fake.graphql.example.package.model.SemesterregistreringBetaltInstitusjonWithOneField;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;

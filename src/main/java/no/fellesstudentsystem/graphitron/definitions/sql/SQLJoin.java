@@ -1,10 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
-
-import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -57,7 +54,7 @@ public class SQLJoin {
      * @param aliasName The name of the table alias to be used for this particular join statement.
      * @return A string that contains a complete join statement followed by all conditions set for this join.
      */
-    public CodeBlock toJoinString(String aliasName, Map<String, Method> conditionOverrides) {
+    public CodeBlock toJoinString(String aliasName) {
         var code = CodeBlock
                 .builder()
                 .add(".")
@@ -73,7 +70,7 @@ public class SQLJoin {
                     .add(".")
                     .add(i == 0 ? joinField.getMethodCallName() : "and")
                     .add("(")
-                    .add(joinField.toJoinString(joinSourceTable, aliasName, conditionOverrides))
+                    .add(joinField.toJoinString(joinSourceTable, aliasName))
                     .add(")\n");
         }
         return code.build();

@@ -5,11 +5,10 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
 
 /**
  * Class generator for basic select resolver classes.
@@ -22,7 +21,7 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) throws IOException {
+    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
         var classes = processedSchema
                 .getObjects()
                 .values()

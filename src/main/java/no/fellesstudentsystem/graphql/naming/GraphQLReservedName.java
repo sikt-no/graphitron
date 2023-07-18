@@ -1,0 +1,33 @@
+package no.fellesstudentsystem.graphql.naming;
+
+/**
+ * Enum of various names or substrings that have special meanings in the schema.
+ */
+public enum GraphQLReservedName {
+    PAGINATION_FIRST("first"),
+    PAGINATION_AFTER("after"),
+    PAGINATION_LAST("last"),
+    PAGINATION_BEFORE("before"),
+
+    CONNECTION_NODE_FIELD("node"),
+    CONNECTION_NODES_FIELD("nodes"),
+    CONNECTION_CURSOR_FIELD("cursor"),
+    CONNECTION_EDGE_FIELD("edges"),
+    CONNECTION_PAGE_INFO_NODE("PageInfo"),
+
+    NODE_TYPE("Node"),
+    ERROR_TYPE("Error"),
+    SCHEMA_CONNECTION_SUFFIX("Connection"),
+    SCHEMA_ROOT_NODE_QUERY("Query"),
+    SCHEMA_ROOT_NODE_MUTATION("Mutation");
+
+    private final String name;
+
+    GraphQLReservedName(String name) {
+        this.name = name;
+    }
+
+    public String getName() {
+        return name;
+    }
+}

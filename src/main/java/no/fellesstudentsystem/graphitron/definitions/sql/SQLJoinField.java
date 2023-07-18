@@ -3,9 +3,6 @@ package no.fellesstudentsystem.graphitron.definitions.sql;
 import com.squareup.javapoet.CodeBlock;
 import org.jetbrains.annotations.NotNull;
 
-import java.lang.reflect.Method;
-import java.util.Map;
-
 /**
  * Abstraction that allows to apply different join conditions more smoothly.
  * Join conditions are ordered such that the conditions appear in the order required by jOOQ.
@@ -34,14 +31,7 @@ public abstract class SQLJoinField implements Comparable<SQLJoinField> {
     /**
      * @param joinSourceTable The table that from which the join is originating. In other words, the left side of the join.
      * @param aliasName The name of the table alias to be used for this particular join statement.
-     * @return A string that contains a complete condition statement.
+     * @return A CodeBlock that contains a complete condition statement.
      */
     abstract public CodeBlock toJoinString(String joinSourceTable, String aliasName);
-
-    /**
-     * @param joinSourceTable The table that from which the join is originating. In other words, the left side of the join.
-     * @param aliasName The name of the table alias to be used for this particular join statement.
-     * @return A string that contains a complete condition statement.
-     */
-    abstract public CodeBlock toJoinString(String joinSourceTable, String aliasName, Map<String, Method> conditionOverrides);
 }

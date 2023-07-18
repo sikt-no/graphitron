@@ -6,18 +6,18 @@ import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
-import no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.COLUMN;
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.REFERENCE;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.*;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.COLUMN;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.REFERENCE;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
 
 /**
  * This class represents the general functionality associated with GraphQLs object fields.
@@ -51,7 +51,7 @@ public abstract class AbstractField {
 
             if (refrenceDirective.getArguments().stream()
                     .map(Argument::getName)
-                    .anyMatch(it -> it.equals(TABLE.getName()) || it.equals(GraphQLDirectiveParam.CONDITION.getName()) || it.equals(KEY.getName()))) {
+                    .anyMatch(it -> it.equals(TABLE.getName()) || it.equals(GenerationDirectiveParam.CONDITION.getName()) || it.equals(KEY.getName()))) {
                 fieldReferences.add(new FieldReference(field));
             } else if (fieldType != null && !fieldReferencesContainsReferredFieldType(fieldType)) {
                 fieldReferences.add(new FieldReference(new JOOQTableMapping(fieldType.getName()), "", null));
@@ -60,7 +60,7 @@ public abstract class AbstractField {
 
         if (field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null) {
             condition = new SQLCondition(
-                    getDirectiveArgumentString(field, GenerationDirective.CONDITION, GenerationDirective.CONDITION.getParamName(GraphQLDirectiveParam.NAME)),
+                    getDirectiveArgumentString(field, GenerationDirective.CONDITION, GenerationDirective.CONDITION.getParamName(GenerationDirectiveParam.NAME)),
                     getOptionalDirectiveArgumentBoolean(field, GenerationDirective.CONDITION, GenerationDirective.CONDITION.getParamName(OVERRIDE)).orElse(false)
             );
         } else {
@@ -80,7 +80,7 @@ public abstract class AbstractField {
                     List<ObjectField> objectFields = ((ObjectValue) value).getObjectFields();
                     Optional<ObjectField> table = getObjectFieldByName(objectFields, TABLE.getName());
                     Optional<ObjectField> key = getObjectFieldByName(objectFields, KEY.getName());
-                    Optional<ObjectField> condition = getObjectFieldByName(objectFields, GraphQLDirectiveParam.CONDITION.getName());
+                    Optional<ObjectField> condition = getObjectFieldByName(objectFields, GenerationDirectiveParam.CONDITION.getName());
 
                     fieldReferences.add(
                             new FieldReference(

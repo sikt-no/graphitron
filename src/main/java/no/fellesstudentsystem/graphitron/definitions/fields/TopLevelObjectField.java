@@ -5,7 +5,7 @@ import graphql.language.FieldDefinition;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.NOT_GENERATED;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;
 
 /**
  * Represents an object field type placed on a top level object, for example the Query type.

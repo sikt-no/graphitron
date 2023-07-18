@@ -6,9 +6,9 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.*;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 
 /**
  * Represents the default GraphQL object, parsed as an exception type.

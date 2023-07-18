@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -9,8 +9,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
-import no.fellesstudentsystem.graphql.generated.api.EndrePersonListResponseMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
+import fake.graphql.example.package.api.EndrePersonListResponseMutationResolver;
+import fake.graphql.example.package.model.EndreResponse;
 import org.jooq.DSLContext;
 
 public class EndrePersonListResponseGeneratedResolver implements EndrePersonListResponseMutationResolver {

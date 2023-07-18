@@ -66,17 +66,21 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> impleme
     }
 
     @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath) throws IOException {
+    public void writeToFile(TypeSpec generatedClass, String path, String packagePath) {
         writeToFile(generatedClass, path, packagePath, DEFAULT_SAVE_DIRECTORY_NAME);
     }
 
     @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) throws IOException {
-        JavaFile
+    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
+        var file = JavaFile
                 .builder(packagePath + "." + directoryOverride, generatedClass)
                 .indent("    ")
-                .build()
-                .writeTo(new File(path));
+                .build();
+        try {
+            file.writeTo(new File(path));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public String getExpectedInterfaceSuffix() {

@@ -11,9 +11,9 @@ import java.util.Optional;
 
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForMethodByKey;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.REFERENCE;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.*;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getOptionalDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.REFERENCE;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 
 public class FieldReference {
     private final JOOQTableMapping table;

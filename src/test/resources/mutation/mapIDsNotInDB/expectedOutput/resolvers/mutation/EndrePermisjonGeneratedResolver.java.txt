@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -6,9 +6,9 @@ import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPermisjonService;
-import no.fellesstudentsystem.graphql.generated.api.EndrePermisjonMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.EndreInput;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponse;
+import fake.graphql.example.package.api.EndrePermisjonMutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.EndreResponse;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PermisjonRecord;
 import org.jooq.DSLContext;

@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.query;
+package fake.code.example.package.resolvers.query;
 
 import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
@@ -14,14 +14,14 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
-import no.fellesstudentsystem.graphql.generated.model.PersonInput;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
+import fake.graphql.example.package.api.QueryResolver;
+import fake.graphql.example.package.model.PersonInput;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.QueryDBQueries;
+import fake.code.example.package.queries.query.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 

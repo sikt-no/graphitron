@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -9,11 +9,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.EndrePersonIterableMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.Kjonn;
-import no.fellesstudentsystem.graphql.generated.model.ListedResponse;
-import no.fellesstudentsystem.graphql.generated.model.PersonInput;
-import no.fellesstudentsystem.graphql.queries.mutation.EndrePersonIterableDBQueries;
+import fake.graphql.example.package.api.EndrePersonIterableMutationResolver;
+import fake.graphql.example.package.model.Kjonn;
+import fake.graphql.example.package.model.ListedResponse;
+import fake.graphql.example.package.model.PersonInput;
+import fake.code.example.package.queries.mutation.EndrePersonIterableDBQueries;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -37,7 +38,7 @@ public class EndrePersonIterableGeneratedResolver implements EndrePersonIterable
                 var inputRecord = new PersonRecord();
                 inputRecord.attach(ctx.configuration());
                 inputRecord.setId(itInput.getId());
-                inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, no.fellesstudentsystem.kjerneapi.enums.Kjonn.MANN, Kjonn.KVINNE, no.fellesstudentsystem.kjerneapi.enums.Kjonn.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(itInput.getKjonn(), null));
                 inputRecordList.add(inputRecord);
             }
         }

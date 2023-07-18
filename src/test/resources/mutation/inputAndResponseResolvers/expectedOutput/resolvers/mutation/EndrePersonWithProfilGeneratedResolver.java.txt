@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -8,10 +8,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
-import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
+import fake.graphql.example.package.api.EndrePersonWithProfilMutationResolver;
+import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
 import org.jooq.DSLContext;
 
 public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithProfilMutationResolver {

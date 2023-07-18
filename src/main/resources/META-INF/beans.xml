@@ -1,6 +1,0 @@
-<!--
-Dette skrur på automatisk bean discovery mode i denne modulen. Uten dette klarer ikke
-wildfly/weld å gjøre dependency injection av den genererte graphql-implementasjonen.
--->
-
-<beans />

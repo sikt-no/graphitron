@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Eierinstitusjon;
+import fake.graphql.example.package.model.Eierinstitusjon;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
@@ -31,7 +31,7 @@ public class StudentDBQueries {
                 )
                 .from(STUDENT)
                 .where(STUDENT.hasIds(studentIder))
-                .and(no.fellesstudentsystem.kjerneapi.conditions.StudentConditions.studentEierinstitusjon(STUDENT, EIERINSTITUSJON))
+                .and(no.fellesstudentsystem.graphitron.conditions.StudentTestConditions.studentEierinstitusjon(STUDENT, EIERINSTITUSJON))
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

@@ -3,17 +3,16 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
@@ -62,7 +61,7 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
     /**
      * @return Code block containing the enum conversion method call with an anonymous function declaration.
      */
-    protected CodeBlock toJOOQEnumConverter(String enumType, Map<String, Class<?>> enumOverrides) {
+    protected CodeBlock toJOOQEnumConverter(String enumType) {
         if (!processedSchema.isEnum(enumType)) {
             return CodeBlock.of("");
         }
@@ -71,9 +70,9 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return CodeBlock
                 .builder()
                 .add(".convert($T.class, s -> s == null ? null : $T.of(", enumEntry.getGraphClassName(), MAP.className)
-                .add(renderMapElements(enumEntry, true, enumOverrides))
+                .add(renderMapElements(enumEntry, true))
                 .add(").getOrDefault(s, null), s -> s == null ? null : $T.of(", MAP.className)
-                .add(renderMapElements(enumEntry, false, enumOverrides))
+                .add(renderMapElements(enumEntry, false))
                 .add(").getOrDefault(s, null))")
                 .build();
     }
@@ -81,7 +80,7 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
     /**
      * @return Code block containing the enum conversion method call.
      */
-    protected CodeBlock toGraphEnumConverter(String enumType, CodeBlock field, Map<String, Class<?>> enumOverrides) {
+    protected CodeBlock toGraphEnumConverter(String enumType, CodeBlock field) {
         if (!processedSchema.isEnum(enumType)) {
             return CodeBlock.of("");
         }
@@ -90,12 +89,12 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return CodeBlock
                 .builder()
                 .add("$L == null ? null : $T.of(", field, MAP.className)
-                .add(renderMapElements(enumEntry, false, enumOverrides))
+                .add(renderMapElements(enumEntry, false))
                 .add(").getOrDefault($L, null)", field)
                 .build();
     }
 
-    private CodeBlock renderMapElements(EnumDefinition enumEntry, boolean flipDirection, Map<String, Class<?>> enumOverrides) {
+    private CodeBlock renderMapElements(EnumDefinition enumEntry, boolean flipDirection) {
         var code = CodeBlock.builder();
         var hasEnumReference = enumEntry.hasDbEnumMapping();
         var dbName = enumEntry.getDbName();
@@ -106,12 +105,12 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
             var enumValue = entrySet.get(i);
             if (flipDirection) {
                 code
-                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName(), enumOverrides))
+                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName()))
                         .add(", $T.$L", entryClassName, enumValue.getKey());
             } else {
                 code
                         .add("$T.$L, ", entryClassName, enumValue.getKey())
-                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName(), enumOverrides));
+                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName()));
             }
             if (i < entrySetSize - 1) {
                 code.add(", ");
@@ -120,11 +119,11 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return code.build();
     }
 
-    private CodeBlock renderValueSide(boolean hasEnumReference, String dbName, String valueName, Map<String, Class<?>> enumOverrides) {
+    private CodeBlock renderValueSide(boolean hasEnumReference, String dbName, String valueName) {
         var code = CodeBlock.builder();
         if (hasEnumReference) {
             var enumName = dbName.toUpperCase();
-            var apiEnumType = enumOverrides.containsKey(enumName) ? enumOverrides.get(enumName) : GeneratorEnum.valueOf(enumName).getEnumType();
+            var apiEnumType = GeneratorConfig.getExternalEnums().get(enumName);
             code.add("$T.$L", ClassName.get(apiEnumType.getPackageName(), apiEnumType.getSimpleName()), valueName);
         } else {
             code.add("$S", valueName);

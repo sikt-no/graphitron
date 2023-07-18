@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
 import java.util.List;
 

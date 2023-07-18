@@ -1,0 +1,98 @@
+"""Avslutter gjeldende spørringskontekst og oppretter en ny. Kodegeneratoren oppretter dermed en ny SQL-spørring fra dette punktet."""
+directive @splitQuery on FIELD_DEFINITION
+
+"""Definerer at generatoren skal unnlate å generere en metode for dette feltet."""
+directive @notGenerated on FIELD_DEFINITION
+
+"""
+Objektet blir gjort til en implementasjon av Node-interfacet som må ha et påkrevd felt 'id: ID!'
+"""
+directive @node on OBJECT
+
+"""
+Knytter objektet til en tabell i KjerneAPI. Dette gjør objektet til en Node i grafen.
+"""
+directive @table(
+  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
+  name: String
+) on OBJECT
+
+"""Knytter en input-type til en tabell. Har bare effekt på input-typer brukt i mutasjoner."""
+directive @record(
+  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
+  table: String
+) on INPUT_OBJECT
+
+"""Knytter feltet (eller argumentet) til en kolonne i KjerneAPI."""
+directive @column(
+  """Kolonnenavn i KjerneAPI."""
+  name: String!,
+
+  """Slå opp navnet i en relatert tabell i stedet. Tabellnavn i KjerneAPI."""
+  table: String,
+  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
+  key: String
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Lenker denne enumen til en API enum eller DB-kolonneverdi."""
+directive @mapEnum(name: String!) on ENUM | ENUM_VALUE
+
+"""
+Knytter feltet til et service som inneholder en metode for å utføre denne spørringen.
+Servicemetoden må ha en signatur som matcher antall inputs og hete det samme som feltet.
+"""
+directive @service(
+  """
+  Navn på service som inneholder en metode som heter det samme som dette feltet.
+  Tilgjengelige service finnes i kjerneapi-service under codegen_enums/GeneratorService.
+  """
+  name: String!
+) on FIELD_DEFINITION
+
+"""
+Knytter feltet til en exception som skal fanges for dette denne feiltypen.
+Virker bare på typer som implementerer Error-interfacet.
+"""
+directive @error(
+  """
+  Navn på exception som inneholder en metode som heter det samme som dette feltet.
+  Tilgjengelige service finnes i kjerneapi-service under codegen_enums/GeneratorException.
+  """
+  name: String!
+) on OBJECT
+
+"""Knytter feltet til en relatert tabell i KjerneAPI."""
+directive @reference(
+  """Tabellen i KjerneAPI."""
+  table: String
+
+  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
+  key: String,
+
+  """
+  En skranke i KjerneAPI som begrenser hvilke rader som er av relevans for koblingen.
+  Tilgjengelige metoder finnes i no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition.
+  """
+  condition: String,
+
+  """Eventuelle referanser som knytningen går via"""
+  via: [ReferenceElement!]
+
+) on FIELD_DEFINITION
+
+input ReferenceElement { table: String!, key: String, condition: String }
+
+"""Legger på ekstra begrensninger for dette feltet eller verdien."""
+directive @condition(
+  """
+  En skranke i KjerneAPI.
+  Tilgjengelige metoder finnes i no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition.
+  """
+  name: String,
+  """Hvis sant, overskriver det som ville vanligvis blitt generert av conditions for dette."""
+  override: Boolean = false
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
+
+enum MutationType { UPDATE, DELETE }

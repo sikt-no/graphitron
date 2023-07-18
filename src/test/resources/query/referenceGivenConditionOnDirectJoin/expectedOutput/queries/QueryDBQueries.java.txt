@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -9,7 +9,7 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.List;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Student;
+import fake.graphql.example.package.model.Student;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 

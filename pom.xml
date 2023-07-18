@@ -3,43 +3,32 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
     <properties>
-        <generatedSourcesOutputDirectory>${project.build.directory}/generated-sources</generatedSourcesOutputDirectory>
-        <generatorPackagePath>no/fellesstudentsystem/graphitron/**</generatorPackagePath>
-        <schemaLocation>${project.basedir}/../fs-graphql-spec/target/generated-sources</schemaLocation>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
     </properties>
+    <artifactId>graphitron-maven-plugin</artifactId>
+    <packaging>maven-plugin</packaging>
+    <version>${revision}${changelist}</version>
+
+    <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>no.fellesstudentsystem</groupId>
         <artifactId>fs-plattform-parent</artifactId>
         <version>${revision}${changelist}</version>
     </parent>
 
-    <artifactId>graphitron</artifactId>
-    <packaging>jar</packaging>
-
     <dependencies>
-        <dependency>
+        <dependency> <!--Can only be removed after a complete DB separation.-->
             <groupId>no.fellesstudentsystem</groupId>
             <artifactId>kjerneapi</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>no.fellesstudentsystem</groupId>
-            <artifactId>kjerneapi-db</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>no.fellesstudentsystem</groupId>
-            <artifactId>kjerneapi-service</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>no.fellesstudentsystem</groupId>
-            <artifactId>fs-graphql-spec</artifactId>
-            <version>${project.version}</version>
+            <version>${revision}${changelist}</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>java-dataloader</artifactId>
@@ -53,106 +42,80 @@
             <artifactId>logback-classic</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.squareup</groupId>
-            <artifactId>javapoet</artifactId>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
+            <groupId>com.squareup</groupId>
+            <artifactId>javapoet</artifactId>
         </dependency>
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.jooq.pro-java-11</groupId>
+            <artifactId>jooq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+            <version>24.0.1</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-plugin-api</artifactId>
+            <!--<version>3.9.3</version>-->
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugin-tools</groupId>
+            <artifactId>maven-plugin-annotations</artifactId>
+            <!--<version>3.9.0</version>-->
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-core</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Code generation, executed after the first compiler pass -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>generate-graphql-implementation</id>
-                        <phase>process-sources</phase>
-                        <goals>
-                            <goal>java</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <mainClass>no.fellesstudentsystem.graphitron.GraphQLGenerator</mainClass>
-                    <systemProperties>
-                        <systemProperty>
-                            <key>schemaFiles</key>
-                            <value>${schemaLocation}/generator-schema.graphql</value>
-                        </systemProperty>
-                        <systemProperty>
-                            <key>outputDirectory</key>
-                            <value>${generatedSourcesOutputDirectory}</value>
-                        </systemProperty>
-                        <systemProperty>
-                            <key>outputPackage</key>
-                            <value>no.fellesstudentsystem.graphql</value>
-                        </systemProperty>
-                        <systemProperty>
-                            <key>generatedResolversPackage</key>
-                            <value>no.fellesstudentsystem.graphql.generated.api</value>
-                        </systemProperty>
-                        <systemProperty>
-                            <key>generatedModelsPackage</key>
-                            <value>no.fellesstudentsystem.graphql.generated.model</value>
-                        </systemProperty>
-                    </systemProperties>
-                    <additionalClasspathElements>
-                        ${generatedSourcesOutputDirectory}
-                    </additionalClasspathElements>
-                    <sourceRoot>
-                        ${generatedSourcesOutputDirectory}
-                    </sourceRoot>
-                </configuration>
-            </plugin>
-
-            <!-- Custom compilation mode. Need to compile twice:
-                 1. before executing code generation (to run compiled java generator classes)
-                 2. after code has been generated (to add compiled, generated sources to the jar) -->
-            <plugin>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-compile</id>
-                        <phase>generate-sources</phase>
-                    </execution>
-                    <execution>
-                        <id>build-generated-sources</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                        <configuration>
-                            <generatedSourcesDirectory>${generatedSourcesOutputDirectory}</generatedSourcesDirectory>
-                            <excludes>
-                                <!-- No need to compile generator classes again -->
-                                <exclude>${generatorPackagePath}</exclude>
-                            </excludes>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <!-- No need to include the generator classes in the output jar. We only want the generated code -->
-                        <exclude>${generatorPackagePath}</exclude>
-                    </excludes>
-                </configuration>
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>3.9.0</version>
+                <executions>
+                    <execution>
+                        <id>mojo-descriptor</id>
+                        <goals>
+                            <goal>descriptor</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>help-mojo</id>
+                        <goals>
+                            <goal>helpmojo</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
+
+        <resources>
+            <resource>
+                <directory>src/main/resources/schema</directory>
+            </resource>
+        </resources>
     </build>
+
 </project>

@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -10,7 +10,7 @@ import java.lang.String;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Landtype;
+import fake.graphql.example.package.model.Landtype;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
@@ -34,7 +34,7 @@ public class StudentVedInstitusjonDBQueries {
                 )
                 .from(STUDENT)
                 .join(student_institusjonslandtype)
-                .on(no.fellesstudentsystem.kjerneapi.conditions.StudentConditions.studentEierinstitusjon(STUDENT, student_institusjonslandtype))
+                .on(no.fellesstudentsystem.graphitron.conditions.StudentTestConditions.studentEierinstitusjon(STUDENT, student_institusjonslandtype))
                 .where(STUDENT.hasIds(studentVedInstitusjonIder))
                 .fetchMap(Record2::value1, Record2::value2);
     }

@@ -2,77 +2,68 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import no.fellesstudentsystem.graphitron.conditions.EmneTestConditions;
-import no.fellesstudentsystem.graphitron.conditions.TerminTestConditions;
-import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphitron.conditions.*;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.enums.KjonnTest;
-import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
-import no.fellesstudentsystem.kjerneapi.tables.Emne;
-import no.fellesstudentsystem.kjerneapi.tables.Termin;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import no.fellesstudentsystem.kjerneapi.tables.*;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Paths;
+import java.util.AbstractMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class GraphQLGeneratorQueryTest {
+public class GraphQLGeneratorQueryTest extends TestCommon {
     public static final String
             SRC_TEST_RESOURCES_PATH = "query",
             SRC_TEST_RESOURCES = "src/test/resources/" + SRC_TEST_RESOURCES_PATH + "/";
-    @TempDir
-    Path tempOutputDirectory;
 
-    private ListAppender<ILoggingEvent> logWatcher;
-
-    private final Map<String, Class<?>> enumOverrides = Map.of("KJONN_TEST", KjonnTest.class);
-    private final Map<String, Method> conditionOverrides = Map.of(
-            "TEST_EMNE_KODE", EmneTestConditions.class.getMethod("emneKode", Emne.class, String.class),
-            "TEST_EMNE_KODER", EmneTestConditions.class.getMethod("emneKoder", Emne.class, List.class),
-            "TEST_EMNE_ALL", EmneTestConditions.class.getMethod("emneAll", Emne.class, String.class, List.class),
-            "TEST_EMNE_INPUT_ALL", EmneTestConditions.class.getMethod("emneInputAll", Emne.class, String.class, String.class, String.class),
-            "TEST_TERMIN", TerminTestConditions.class.getMethod("terminer", Termin.class, String.class),
-            "TEST_TERMIN_ALL", TerminTestConditions.class.getMethod("terminAll", Termin.class, String.class, Integer.class),
-            "TEST_TERMIN_INPUT_ALL", TerminTestConditions.class.getMethod("terminInputAll", Termin.class, Integer.class, String.class, Integer.class)
+    private final Map<String, Class<?>> enums = Map.of("KJONN_TEST", KjonnTest.class);
+    private final Map<String, Method> conditions = Map.ofEntries(
+            new AbstractMap.SimpleEntry<>("TEST_EMNE_KODE", EmneTestConditions.class.getMethod("emneKode",Emne.class, String.class)),
+            new AbstractMap.SimpleEntry<>("TEST_EMNE_KODER", EmneTestConditions.class.getMethod("emneKoder", Emne.class, List.class)),
+            new AbstractMap.SimpleEntry<>("TEST_EMNE_ALL", EmneTestConditions.class.getMethod("emneAll", Emne.class, String.class, List.class)),
+            new AbstractMap.SimpleEntry<>("TEST_EMNE_INPUT_ALL", EmneTestConditions.class.getMethod("emneInputAll", Emne.class, String.class, String.class, String.class)),
+            new AbstractMap.SimpleEntry<>("TEST_STUDENT_INSTITUSJON_EQUALS", StudentTestConditions.class.getMethod("studentEierinstitusjon", Student.class, Institusjon.class)),
+            new AbstractMap.SimpleEntry<>("TEST_PERMISJON_STUDIERETT", PermisjonTestConditions.class.getMethod("permisjonStudierettJoin", Permisjon.class, Studierett.class)),
+            new AbstractMap.SimpleEntry<>("TEST_PERSON_TELEFON_PRIVAT", PersonTelefonTestConditions.class.getMethod("personTelefonPrivat", Person.class, PersonTelefon.class)),
+            new AbstractMap.SimpleEntry<>("TEST_PERSON_TELEFON_MOBIL", PersonTelefonTestConditions.class.getMethod("personTelefonMobil", Person.class, PersonTelefon.class)),
+            new AbstractMap.SimpleEntry<>("TEST_TERMIN", TerminTestConditions.class.getMethod("terminer", Termin.class, String.class)),
+            new AbstractMap.SimpleEntry<>("TEST_TERMIN_ALL", TerminTestConditions.class.getMethod("terminAll", Termin.class, String.class, Integer.class)),
+            new AbstractMap.SimpleEntry<>("TEST_TERMIN_INPUT_ALL", TerminTestConditions.class.getMethod("terminInputAll", Termin.class, Integer.class, String.class, Integer.class))
     );
 
     public GraphQLGeneratorQueryTest() throws NoSuchMethodException {
+        super(SRC_TEST_RESOURCES_PATH);
     }
 
-    @BeforeEach
-    void setup() {
-        logWatcher = TestCommon.setup();
-    }
-
-    @AfterEach
-    void teardown() {
-        TestCommon.teardown();
-    }
-
-    private Map<String, String> generateFiles(String schemaParentFolder) throws IOException {
-        var test = new TestCommon(schemaParentFolder, SRC_TEST_RESOURCES_PATH, tempOutputDirectory);
-
-        var processedSchema = GraphQLGenerator.getProcessedSchema(false);
-        processedSchema.validate(enumOverrides);
-        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new FetchDBClassGenerator(processedSchema, enumOverrides, conditionOverrides),
-                new FetchResolverClassGenerator(processedSchema)
+    @Override
+    protected void setProperties() {
+        GeneratorConfig.setProperties(
+                List.of(),
+                tempOutputDirectory.toString(),
+                DEFAULT_OUTPUT_PACKAGE,
+                enums,
+                conditions,
+                Map.of(),
+                Map.of()
         );
+    }
 
-        test.setGenerators(generators);
-        return test.generateFiles();
+    private Set<String> getLogMessagesWithLevelWarn() {
+        return logWatcher.list.stream()
+                .filter(it -> it.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.toSet());
     }
 
     @Test
@@ -198,7 +189,7 @@ public class GraphQLGeneratorQueryTest {
          */
     void allDefinedDirectivesAreInUseAndTested() throws IOException {
         String testSchemaPath = SRC_TEST_RESOURCES + "allDefinedDirectivesInUse/schema.graphqls";
-        String testSchema = TestCommon.readFileAsString(Paths.get(testSchemaPath));
+        String testSchema = String.join("\n", TestCommon.readFileAsString(Paths.get(testSchemaPath)));
 
         var mutationDirectives = Set.of("service", "record", "mutationType", "error");
         Stream
@@ -206,21 +197,5 @@ public class GraphQLGeneratorQueryTest {
                 .map(GenerationDirective::getName)
                 .filter(it -> !mutationDirectives.contains(it)) // Skip new mutation stuff, those are tested separately.
                 .forEach(directiveName -> assertThat(testSchema).contains(directiveName));
-    }
-
-    private Set<String> getLogMessagesWithLevelWarn() {
-        return logWatcher.list.stream()
-                .filter(it -> it.getLevel() == Level.WARN)
-                .map(ILoggingEvent::getFormattedMessage)
-                .collect(Collectors.toSet());
-    }
-
-    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String schemaFolder, String expectedOutputFolder) throws IOException {
-        Map<String, String> generatedFiles = generateFiles(schemaFolder);
-        TestCommon.assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(SRC_TEST_RESOURCES + expectedOutputFolder, generatedFiles);
-    }
-
-    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String resourceRootFolder) throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(resourceRootFolder, resourceRootFolder);
     }
 }

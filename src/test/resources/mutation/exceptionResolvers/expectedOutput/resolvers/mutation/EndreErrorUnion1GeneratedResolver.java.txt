@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -13,15 +13,15 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.exceptions.TestException;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
-import no.fellesstudentsystem.graphql.generated.api.EndreErrorUnion1MutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.EndreErrorsUnion1;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponse2;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponse3;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponseUnion1;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.generated.model.SomeErrorA;
+import fake.graphql.example.package.api.EndreErrorUnion1MutationResolver;
+import fake.graphql.example.package.model.EndreErrorsUnion1;
+import fake.graphql.example.package.model.EndreResponse2;
+import fake.graphql.example.package.model.EndreResponse3;
+import fake.graphql.example.package.model.EndreResponseUnion1;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.SomeErrorA;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
 import org.jooq.DSLContext;
 
 public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1MutationResolver {

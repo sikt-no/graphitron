@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.queries.query;
+package fake.code.example.package.queries.query;
 
 import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
@@ -11,11 +11,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.model.Kull;
-import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
-import no.fellesstudentsystem.graphql.generated.model.Telefon;
-import no.fellesstudentsystem.graphql.generated.model.Termin;
-import no.fellesstudentsystem.graphql.generated.model.Termintype;
+import fake.graphql.example.package.model.Kull;
+import fake.graphql.example.package.model.ProgramStudierett;
+import fake.graphql.example.package.model.Telefon;
+import fake.graphql.example.package.model.Termin;
+import fake.graphql.example.package.model.Termintype;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
@@ -38,7 +38,7 @@ public class PersonProfilDBQueries {
                 )
                 .from(PERSON)
                 .leftJoin(person_mobiltelefon)
-                .on(no.fellesstudentsystem.kjerneapi.conditions.PersonTelefonConditions.personTelefonMobil(PERSON, person_mobiltelefon))
+                .on(no.fellesstudentsystem.graphitron.conditions.PersonTelefonTestConditions.personTelefonMobil(PERSON, person_mobiltelefon))
                 .where(PERSON.hasIds(personProfilIder))
                 .fetchMap(Record2::value1, Record2::value2);
     }

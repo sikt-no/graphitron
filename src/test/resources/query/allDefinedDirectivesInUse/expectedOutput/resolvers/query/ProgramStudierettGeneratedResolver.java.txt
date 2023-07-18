@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.query;
+package fake.code.example.package.resolvers.query;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -9,12 +9,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.ProgramStudierettResolver;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.generated.model.ProgramStudierett;
+import fake.graphql.example.package.api.ProgramStudierettResolver;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.ProgramStudierettDBQueries;
+import fake.code.example.package.queries.query.ProgramStudierettDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;

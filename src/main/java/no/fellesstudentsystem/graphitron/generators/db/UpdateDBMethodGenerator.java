@@ -9,7 +9,7 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerat
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 
 import java.util.List;
 import java.util.Map;

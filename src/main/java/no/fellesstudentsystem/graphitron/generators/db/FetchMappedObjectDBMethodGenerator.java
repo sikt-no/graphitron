@@ -7,13 +7,11 @@ import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
-import no.fellesstudentsystem.graphql.mapping.GenerationDirective;
-import no.fellesstudentsystem.graphql.mapping.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
-import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.*;
@@ -30,15 +28,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         super(localObject, processedSchema);
     }
 
-    public FetchMappedObjectDBMethodGenerator(
-            ObjectDefinition localObject,
-            ProcessedSchema processedSchema,
-            Map<String, Class<?>> enumOverrides,
-            Map<String, Method> conditionOverrides
-    ) {
-        super(localObject, processedSchema, enumOverrides, conditionOverrides);
-    }
-
     /**
      * @param target A {@link ObjectField} for which a method should be generated for.
      *                       This must reference an object with the
@@ -50,7 +39,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var refObject = ReferenceHelpers.findReferencedObjectDefinition(target, processedSchema);
         var localObject = getLocalObject();
 
-        var context = new FetchContext(processedSchema, target, localObject, conditionOverrides);
+        var context = new FetchContext(processedSchema, target, localObject);
         var selectRowCode = generateSelectRow(context);
         var hasKeyReference = context.hasKeyReference();
 

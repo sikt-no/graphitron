@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.mutation;
+package fake.code.example.package.resolvers.mutation;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -8,13 +8,13 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
-import no.fellesstudentsystem.graphql.generated.api.EndrePersonWithProfilResponseMutationResolver;
-import no.fellesstudentsystem.graphql.generated.model.EndreResponseWithPerson;
-import no.fellesstudentsystem.graphql.generated.model.PersonProfil;
-import no.fellesstudentsystem.graphql.generated.model.Postadresse;
+import fake.graphql.example.package.api.EndrePersonWithProfilResponseMutationResolver;
+import fake.graphql.example.package.model.EndreResponseWithPerson;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.Postadresse;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.PersonProfilDBQueries;
-import no.fellesstudentsystem.graphql.queries.query.PostadresseDBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
+import fake.code.example.package.queries.query.PostadresseDBQueries;
 import org.jooq.DSLContext;
 
 public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePersonWithProfilResponseMutationResolver {

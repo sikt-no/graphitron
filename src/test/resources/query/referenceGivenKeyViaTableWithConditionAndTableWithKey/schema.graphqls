@@ -6,7 +6,7 @@ type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
   #join path: STUDENT -> INSTITUSJON (via condition) -> LAND (via key) -> LANDTYPE (via key)
   institusjonslandtype: Landtype! @splitQuery @reference(
-    via: [{table: "INSTITUSJON", condition: "STUDENT_INSTITUSJON_EQUALS"}, {table: "LAND", key: "INSTITUSJON__HAR__LAND__FK"}],
+    via: [{table: "INSTITUSJON", condition: "TEST_STUDENT_INSTITUSJON_EQUALS"}, {table: "LAND", key: "INSTITUSJON__HAR__LAND__FK"}],
     key: "LAND__HAR__LANDTYPE__FK")
 }
 

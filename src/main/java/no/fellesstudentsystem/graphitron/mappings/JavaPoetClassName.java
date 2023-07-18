@@ -4,6 +4,7 @@ import com.squareup.javapoet.ClassName;
 import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
 import graphql.relay.DefaultPageInfo;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
@@ -37,10 +38,11 @@ public enum JavaPoetClassName {
     COMPLETABLE_FUTURE(ClassName.get(java.util.concurrent.CompletableFuture.class)),
     INJECT(ClassName.get(javax.inject.Inject.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
-    FIELD_HELPERS(ClassName.get(no.fellesstudentsystem.kjerneapi.FieldHelpers.class)),
-    TABLES(ClassName.get(no.fellesstudentsystem.kjerneapi.Tables.class)),
+    FIELD_HELPERS_EXTERNAL(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "FieldHelpers")), // TODO: Need more generic and external record transform functions before this can be removed.
+    FIELD_HELPERS(ClassName.get(no.fellesstudentsystem.graphql.helpers.FieldHelpers.class)),
+    TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), GeneratorConfig.CLASS_TABLES)),
     FUNCTIONS(ClassName.get(org.jooq.Functions.class)),
-    KEYS(ClassName.get(no.fellesstudentsystem.kjerneapi.Keys.class)),
+    KEYS(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), GeneratorConfig.CLASS_KEYS)),
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
     ENVIRONMENT_UTILS(ClassName.get(EnvironmentUtils.class)),
     DATA_LOADER(ClassName.get(org.dataloader.DataLoader.class)),

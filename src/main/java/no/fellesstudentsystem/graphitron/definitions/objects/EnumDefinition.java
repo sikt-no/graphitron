@@ -1,17 +1,17 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.EnumTypeDefinition;
+import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 import no.fellesstudentsystem.graphitron.definitions.fields.EnumField;
-import no.fellesstudentsystem.graphql.schema.SchemaHelpers;
 
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.MAP_ENUM;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 import static no.fellesstudentsystem.graphitron.definitions.fields.EnumField.from;
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.MAP_ENUM;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
 
 /**
  * Representation of a GraphQL enum type.
@@ -23,7 +23,7 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition>
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {
         super(enumTypeDefinition);
         this.dbName = enumTypeDefinition.hasDirective(MAP_ENUM.getName())
-                ? SchemaHelpers.getDirectiveArgumentString(enumTypeDefinition, MAP_ENUM, MAP_ENUM.getParamName(NAME))
+                ? DirectiveHelpers.getDirectiveArgumentString(enumTypeDefinition, MAP_ENUM, MAP_ENUM.getParamName(NAME))
                 : null;
         this.valuesMap = from(enumTypeDefinition)
                 .stream()

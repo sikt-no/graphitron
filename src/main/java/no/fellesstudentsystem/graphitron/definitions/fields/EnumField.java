@@ -7,9 +7,9 @@ import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.mapping.GenerationDirective.MAP_ENUM;
-import static no.fellesstudentsystem.graphql.mapping.GraphQLDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.MAP_ENUM;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 
 /**
  * An enum value within a {@link EnumDefinition}.

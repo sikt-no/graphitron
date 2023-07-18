@@ -54,21 +54,25 @@ abstract public class DBClassGenerator<T extends GenerationTarget> implements Cl
     }
 
     @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath) throws IOException {
+    public void writeToFile(TypeSpec generatedClass, String path, String packagePath) {
         writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
     }
 
     @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) throws IOException {
-        JavaFile
+    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
+        var file = JavaFile
                 .builder(packagePath + "." + directoryOverride, generatedClass)
-                .addStaticImport(FIELD_HELPERS.className, "*")
+                .addStaticImport(FIELD_HELPERS_EXTERNAL.className, "*")
                 .addStaticImport(TABLES.className, "*")
                 .addStaticImport(KEYS.className, "*")
                 .addStaticImport(DSL.className, "*")
                 .addStaticImport(FUNCTIONS.className, "*")
                 .indent("    ")
-                .build()
-                .writeTo(new File(path));
+                .build();
+        try {
+            file.writeTo(new File(path));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

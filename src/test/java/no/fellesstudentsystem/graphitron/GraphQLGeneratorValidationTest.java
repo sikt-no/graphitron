@@ -2,20 +2,15 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import no.fellesstudentsystem.graphitron.conditions.PermisjonTestConditions;
+import no.fellesstudentsystem.graphitron.conditions.PersonTelefonTestConditions;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.enums.KjonnTest;
-import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import no.fellesstudentsystem.kjerneapi.tables.*;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.file.Path;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,43 +19,32 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class GraphQLGeneratorValidationTest {
+public class GraphQLGeneratorValidationTest extends TestCommon {
     public static final String
             SRC_TEST_RESOURCES_PATH = "validation",
             SRC_TEST_RESOURCES = "src/test/resources/" + SRC_TEST_RESOURCES_PATH + "/";
-    @TempDir
-    Path tempOutputDirectory;
 
-    private ListAppender<ILoggingEvent> logWatcher;
+    private final Map<String, Class<?>> enums = Map.of("KJONN_TEST", KjonnTest.class);
+    private final Map<String, Method> conditions = Map.of(
+            "TEST_PERMISJON_STUDIERETT", PermisjonTestConditions.class.getMethod("permisjonStudierettJoin", Permisjon.class, Studierett.class),
+            "TEST_PERSON_TELEFON_MOBIL", PersonTelefonTestConditions.class.getMethod("personTelefonMobil", Person.class, PersonTelefon.class)
+    );
 
-    private final Map<String, Class<?>> enumOverrides = Map.of("KJONN_TEST", KjonnTest.class);
-
-    @BeforeEach
-    void setup() {
-        logWatcher = TestCommon.setup();
+    public GraphQLGeneratorValidationTest() throws NoSuchMethodException {
+        super(SRC_TEST_RESOURCES_PATH);
     }
 
-    @AfterEach
-    void teardown() {
-        TestCommon.teardown();
-    }
-
-    private Map<String, String> generateFiles(String schemaParentFolder) throws IOException {
-        return generateFiles(schemaParentFolder, false);
-    }
-
-    private Map<String, String> generateFiles(String schemaParentFolder, boolean warnDirectives) throws IOException {
-        var test = new TestCommon(schemaParentFolder, SRC_TEST_RESOURCES_PATH, tempOutputDirectory);
-
-        var processedSchema = GraphQLGenerator.getProcessedSchema(warnDirectives);
-        processedSchema.validate(enumOverrides);
-        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new FetchDBClassGenerator(processedSchema, enumOverrides, Map.of()),
-                new FetchResolverClassGenerator(processedSchema)
+    @Override
+    protected void setProperties() {
+        GeneratorConfig.setProperties(
+                List.of(),
+                tempOutputDirectory.toString(),
+                DEFAULT_OUTPUT_PACKAGE,
+                enums,
+                conditions,
+                Map.of(),
+                Map.of()
         );
-
-        test.setGenerators(generators);
-        return test.generateFiles();
     }
 
     @Test
@@ -115,9 +99,8 @@ public class GraphQLGeneratorValidationTest {
     }
 
     @Test
-    void generate_whenRecognizedDirectivesNotUsedInSchema_shouldLogWarning() throws IOException {
-        System.setProperty(GeneratorConfig.PROPERTY_SCHEMA_FILES, SRC_TEST_RESOURCES + "warning/unusedDirective/schema.graphqls");
-        System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
+    void generate_whenRecognizedDirectivesNotUsedInSchema_shouldLogWarning() {
+        GeneratorConfig.setSchemaFiles(SRC_TEST_RESOURCES + "warning/unusedDirective/schema.graphqls");
         GraphQLGenerator.generate();
         Set<String> logMessages = getLogMessagesWithLevelWarn();
         assertThat(logMessages).containsOnly(
@@ -126,13 +109,10 @@ public class GraphQLGeneratorValidationTest {
     }
 
     @Test
-    void generate_whenSpecifiedSchemaRootDirectory_shouldInfoLogAllExpectedSchemaFiles() throws IOException {
+    void generate_whenSpecifiedSchemaRootDirectory_shouldInfoLogAllExpectedSchemaFiles() {
         var testDirectory = SRC_TEST_RESOURCES + "testReadingSchemasInDirectory";
-        System.setProperty(
-                GeneratorConfig.PROPERTY_SCHEMA_FILES,
-                testDirectory + "/schema1.graphqls," + testDirectory + "/subdir/schema2.graphqls," + testDirectory + "/subdir/subsubdir/schema3.graphqls"
-        );
-        System.setProperty(GeneratorConfig.PROPERTY_OUTPUT_DIRECTORY, tempOutputDirectory.toString());
+        GeneratorConfig.setSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
+
         GraphQLGenerator.generate();
         Set<String> logMessages = getLogMessagesWithLevel(Level.INFO);
         assertThat(logMessages.stream().anyMatch(msg ->
@@ -195,7 +175,7 @@ public class GraphQLGeneratorValidationTest {
     void generate_whenUnknownEnum_shouldLogWarning() throws IOException {
         generateFiles("warning/unknownEnum");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No enum with name 'KJONN_TEST2' found in no.fellesstudentsystem.kjerneapi.enums.GeneratorEnum"
+                "No enum with name 'KJONN_TEST2' found."
         );
     }
 
@@ -230,10 +210,5 @@ public class GraphQLGeneratorValidationTest {
                 .filter(it -> it.getLevel() == level)
                 .map(ILoggingEvent::getFormattedMessage)
                 .collect(Collectors.toSet());
-    }
-
-    private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String schemaFolder, String expectedOutputFolder) throws IOException {
-        Map<String, String> generatedFiles = generateFiles(schemaFolder);
-        TestCommon.assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(SRC_TEST_RESOURCES + expectedOutputFolder, generatedFiles);
     }
 }
