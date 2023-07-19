@@ -19,8 +19,8 @@ import static no.fellesstudentsystem.graphql.schema.SchemaHelpers.getDirectiveAr
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.
  */
 public class ObjectField extends AbstractField implements GenerationTarget {
-    private int afterDefault = 10;
-    private int beforeDefault = 10;
+    private int firstDefault = 100;
+    private int lastDefault = 100;
     private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
     private final List<InputField> inputFields;
     private final List<InputField> nonReservedFields;
@@ -67,18 +67,18 @@ public class ObjectField extends AbstractField implements GenerationTarget {
 
             if (name.equals(GraphQLReservedName.PAGINATION_FIRST.getName())) {
                 hasFirst = true;
+                if (in.getDefaultValue() != null) {
+                    firstDefault = ((IntValue) (in.getDefaultValue())).getValue().intValue();
+                }
             } else if (name.equals(GraphQLReservedName.PAGINATION_AFTER.getName())) {
                 hasAfter = true;
-                if (in.getDefaultValue() != null) {
-                    afterDefault = ((IntValue) (in.getDefaultValue())).getValue().intValue();
-                }
             } else if (name.equals(GraphQLReservedName.PAGINATION_LAST.getName())) {
                 hasLast = true;
+                if (in.getDefaultValue() != null) {
+                    lastDefault = ((IntValue) (in.getDefaultValue())).getValue().intValue();
+                }
             } else if (name.equals(GraphQLReservedName.PAGINATION_BEFORE.getName())) {
                 hasBefore = true;
-                if (in.getDefaultValue() != null) {
-                    beforeDefault = ((IntValue) (in.getDefaultValue())).getValue().intValue();
-                }
             }
             inputFields.add(new InputField(in));
         }
@@ -173,15 +173,15 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     /**
      * @return Default value set for the after parameter.
      */
-    public int getAfterDefault() {
-        return afterDefault;
+    public int getFirstDefault() {
+        return firstDefault;
     }
 
     /**
      * @return Default value set for the before parameter.
      */
-    public int getBeforeDefault() {
-        return beforeDefault;
+    public int getLastDefault() {
+        return lastDefault;
     }
 
     /**

@@ -30,7 +30,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<PersonProfil>> personTwoArguments(
             String eierInstitusjonsnummer, List<Integer> personlopenummer, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
-        int pageSize = Optional.ofNullable(first).orElse(10);
+        int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.personTwoArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countPersonTwoArgumentsForQuery(eierInstitusjonsnummer, personlopenummer) : null;
@@ -60,7 +60,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             String eierInstitusjonsnummer, List<Integer> personlopenummer, String fornavn,
             String etternavn, Integer personkode, Integer first, String after,
             DataFetchingEnvironment env) throws Exception {
-        int pageSize = Optional.ofNullable(first).orElse(10);
+        int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.personFiveArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, fornavn, etternavn, personkode, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countPersonFiveArgumentsForQuery(eierInstitusjonsnummer, personlopenummer, fornavn, etternavn, personkode) : null;

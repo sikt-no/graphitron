@@ -42,7 +42,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<PersonProfil>> personWithPage(
             String eierInstitusjonsnummer, List<Integer> personlopenummer, PersonInput pin,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
-        int pageSize = Optional.ofNullable(first).orElse(10);
+        int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.personWithPageForQuery(eierInstitusjonsnummer, personlopenummer, pin, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countPersonWithPageForQuery(eierInstitusjonsnummer, personlopenummer, pin) : null;
@@ -71,7 +71,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<StudentVedInstitusjon>> studenter(
             String eierInstitusjonsnummer, Integer first, String after, DataFetchingEnvironment env)
             throws Exception {
-        int pageSize = Optional.ofNullable(first).orElse(10);
+        int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.studenterForQuery(eierInstitusjonsnummer, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countStudenterForQuery(eierInstitusjonsnummer) : null;

@@ -127,7 +127,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             spec
                     .addParameter(INTEGER.className, GraphQLReservedName.PAGINATION_FIRST.getName())
                     .addStatement(
-                            "int " + PAGE_SIZE_NAME + " = $T.ofNullable($N).orElse(" + referenceField.getAfterDefault() + ")",
+                            "int " + PAGE_SIZE_NAME + " = $T.ofNullable($N).orElse(" + referenceField.getFirstDefault() + ")",
                             OPTIONAL.className,
                             GraphQLReservedName.PAGINATION_FIRST.getName()
                     );

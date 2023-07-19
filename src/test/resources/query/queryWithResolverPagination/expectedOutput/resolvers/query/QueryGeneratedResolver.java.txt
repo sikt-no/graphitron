@@ -30,7 +30,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<ExtendedConnection<PersonProfil>> person(String eierInstitusjonsnummer,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
-        int pageSize = Optional.ofNullable(first).orElse(10);
+        int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.personForQuery(eierInstitusjonsnummer, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonForQuery(eierInstitusjonsnummer) : null;
