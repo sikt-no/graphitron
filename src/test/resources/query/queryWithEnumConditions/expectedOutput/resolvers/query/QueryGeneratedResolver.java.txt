@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.resolvers.query;
+package fake.code.example.package.resolvers.query;
 
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -7,13 +7,13 @@ import java.lang.Override;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.generated.api.QueryResolver;
-import no.fellesstudentsystem.graphql.generated.model.Termin;
-import no.fellesstudentsystem.graphql.generated.model.TerminInput;
-import no.fellesstudentsystem.graphql.generated.model.Termintype;
+import fake.graphql.example.package.api.QueryResolver;
+import fake.graphql.example.package.model.Termin;
+import fake.graphql.example.package.model.TerminInput;
+import fake.graphql.example.package.model.Termintype;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.queries.query.QueryDBQueries;
+import fake.code.example.package.queries.query.QueryDBQueries;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Inject

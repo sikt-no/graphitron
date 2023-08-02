@@ -1,0 +1,9 @@
+type Query {
+  termin(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER")): Termin
+}
+
+type Termin @table {
+  id: ID!
+  termintype: Termintype! @column(name : "TERMINKODE")
+  arstall: Int!
+}

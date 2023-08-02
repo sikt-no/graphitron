@@ -8,13 +8,12 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 
 import java.lang.reflect.Method;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class GeneratorConfig {
     public static final String
-            SYSTEM_PACKAGE = "no.fellesstudentsystem", // Read this from pom.xml?
             CLASS_TABLES = "Tables",
             CLASS_KEYS = "Keys",
             PACKAGE_RECORDS = "tables.records",
@@ -22,29 +21,30 @@ public class GeneratorConfig {
     ;
 
     private static final String
-            DEFAULT_OUTPUT_PACKAGE = SYSTEM_PACKAGE + ".graphql",
             TEMP_GRAPHQL_GENERATED_PACKAGE = "fake.graphql.example.package", // Once codegen is fully contained in this module, this will be redundant.
-            TEMP_JOOQ_GENERATED_PACKAGE = SYSTEM_PACKAGE + ".kjerneapi", // Remove once Graphitron is no longer dependent on DB.
             DEFAULT_API_SUFFIX = ".api",
             DEFAULT_MODEL_SUFFIX = ".model";
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
 
     public static void setProperties(
-            List<String> files,
+            String topPackage,
+            Set<String> files,
             String outputDir,
             String outputPkg,
+            String jooqPkg,
             Map<String, Class<?>> enums,
             Map<String, Method> conditions,
             Map<String, Class<?>> services,
             Map<String, Class<?>> exceptions
     ) {
+        systemPackage = topPackage;
         schemaFiles = files;
         outputDirectory = outputDir;
         outputPackage = outputPkg;
 
         generatedSchemaResolversPackage = TEMP_GRAPHQL_GENERATED_PACKAGE + DEFAULT_API_SUFFIX;
         generatedSchemaModelsPackage = TEMP_GRAPHQL_GENERATED_PACKAGE + DEFAULT_MODEL_SUFFIX;
-        generatedJooqPackage = TEMP_JOOQ_GENERATED_PACKAGE;
+        generatedJooqPackage = jooqPkg;
         generatedJooqTablesPackage = generatedJooqPackage + "." + CLASS_TABLES;
         generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
         generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
@@ -55,23 +55,20 @@ public class GeneratorConfig {
         externalExceptions = new ExternalExceptions(exceptions);
     }
 
-    public static void setSchemaFiles(String file) {
-        schemaFiles = List.of(file);
-    }
-
-    public static void setSchemaFiles(String... files) {
-        schemaFiles = List.of(files);
-    }
-
     public static void loadProperties(GenerateMojo mojo) {
-        var inputFiles = new ArrayList<>(mojo.getSchemaFiles());
-        if (GENERATOR_DIRECTIVES_PATH != null) {
-            inputFiles.add(GENERATOR_DIRECTIVES_PATH.getPath());
+        var files = mojo.getSchemaFiles();
+        Set<String> inputFiles = Set.of();
+        if (files != null) {
+            inputFiles = new HashSet<>(files);
+            if (GENERATOR_DIRECTIVES_PATH != null) {
+                inputFiles.add(GENERATOR_DIRECTIVES_PATH.getPath());
+            }
         }
 
+        systemPackage = mojo.getTopPackage();
         schemaFiles = inputFiles;
         outputDirectory = mojo.getOutputPath() + "/" + PLUGIN_OUTPUT_PATH;
-        outputPackage = DEFAULT_OUTPUT_PACKAGE;
+        outputPackage = mojo.getOutputPackage();
 
         var graphQLGeneratedPackage = mojo.getGeneratedSchemaCodePackage();
         generatedSchemaResolversPackage = graphQLGeneratedPackage + DEFAULT_API_SUFFIX; // Once codegen is fully contained in this module, this will be redundant.
@@ -87,8 +84,27 @@ public class GeneratorConfig {
         externalExceptions = new ExternalExceptions(mojo.getExternalExceptions());
     }
 
-    private static List<String> schemaFiles;
+    public static void clear() {
+        systemPackage = null;
+        schemaFiles = null;
+        outputDirectory = null;
+        outputPackage = null;
+        generatedSchemaResolversPackage = null;
+        generatedSchemaModelsPackage = null;
+        generatedJooqPackage = null;
+        generatedJooqTablesPackage = null;
+        generatedJooqKeysPackage = null;
+        generatedJooqRecordsPackage = null;
+        externalEnums = null;
+        externalConditions = null;
+        externalServices = null;
+        externalExceptions = null;
+    }
+
+    private static Set<String> schemaFiles;
+
     private static String
+            systemPackage,
             outputDirectory,
             outputPackage,
             generatedSchemaResolversPackage,
@@ -103,7 +119,11 @@ public class GeneratorConfig {
     private static ExternalServices externalServices;
     private static ExternalExceptions externalExceptions;
 
-    public static List<String> schemaFiles() {
+    public static String getSystemPackage() {
+        return systemPackage;
+    }
+
+    public static Set<String> schemaFiles() {
         return schemaFiles;
     }
 
@@ -154,5 +174,21 @@ public class GeneratorConfig {
 
     public static ExternalExceptions getExternalExceptions() {
         return externalExceptions;
+    }
+
+    public static void setSchemaFiles(String file) {
+        schemaFiles = Set.of(file);
+    }
+
+    public static void setSchemaFiles(String... files) {
+        schemaFiles = Set.of(files);
+    }
+
+    public static void setSchemaFiles(Set<String> files) {
+        schemaFiles = files;
+    }
+
+    public static void setOutputDirectory(String path) {
+        outputDirectory = path + "/" + PLUGIN_OUTPUT_PATH;
     }
 }

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Class for reading schema files from disk.
@@ -21,7 +22,7 @@ public class SchemaReader {
     // If the error about preventing DoS attacks shows up again, increase this value here.
     private final static int MAX_TOKENS = 60000;
 
-    public static Document readSchemas(List<String> sources) {
+    public static Document readSchemas(Set<String> sources) {
         MultiSourceReader.Builder builder = MultiSourceReader.newMultiSourceReader();
         for (String path : sources) {
             String content;
@@ -37,7 +38,7 @@ public class SchemaReader {
         return new Parser().parseDocument(builder.trackData(true).build(), parseOptions);
     }
 
-    public static TypeDefinitionRegistry getTypeDefinitionRegistry(List<String> schemas) {
+    public static TypeDefinitionRegistry getTypeDefinitionRegistry(Set<String> schemas) {
         // https://github.com/kobylynskyi/graphql-java-codegen/blob/master/src/main/java/com/kobylynskyi/graphql/codegen/parser/GraphQLDocumentParser.java
         return new SchemaParser().buildRegistry(readSchemas(schemas));
     }

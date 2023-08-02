@@ -30,17 +30,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class TestCommon {
     public static final String
             DIRECTIVES_NAME = "default.graphqls",
-            DEFAULT_OUTPUT_PACKAGE = "fake.code.example.package",
+            DEFAULT_SYSTEM_PACKAGE = "fake.code",
+            DEFAULT_OUTPUT_PACKAGE = DEFAULT_SYSTEM_PACKAGE + ".example.package",
+            DEFAULT_JOOQ_PACKAGE = "no.fellesstudentsystem.kjerneapi", // Replace this with something else when we have a test DB.
             SRC_ROOT = "src/test/resources",
-            SRC_DIRECTIVES = SRC_ROOT + "/" + DIRECTIVES_NAME;
+            SRC_DIRECTIVES = SRC_ROOT + "/" + DIRECTIVES_NAME,
+            EXPECTED_OUTPUT_NAME = "expectedOutput";
+
     @TempDir
     protected Path tempOutputDirectory;
+
     private final String sourceTestPath, subpathDirectives;
     protected ListAppender<ILoggingEvent> logWatcher;
 
     public TestCommon(String testSubpath) {
         subpathDirectives = SRC_ROOT + "/" + testSubpath + "/" + DIRECTIVES_NAME;
         sourceTestPath = SRC_ROOT + "/" + testSubpath + "/";
+    }
+
+    public String getSourceTestPath() {
+        return sourceTestPath;
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
@@ -59,12 +68,17 @@ public abstract class TestCommon {
 
     public Map<String, List<String>> generateFiles(List<ClassGenerator<? extends GenerationTarget>> generators) throws IOException {
         GraphQLGenerator.generate(generators);
+        return readGeneratedFiles(tempOutputDirectory);
+    }
+
+    @NotNull
+    public static Map<String, List<String>> readGeneratedFiles(Path outputDirectory) throws IOException {
         Map<String, List<String>> generatedFiles = new HashMap<>();
-        Files.walkFileTree(tempOutputDirectory, new SimpleFileVisitor<>() {
+        Files.walkFileTree(outputDirectory, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                 if (!Files.isDirectory(file)) {
-                    generatedFiles.put(file.getFileName().toString(), readFileAsString(file));
+                    generatedFiles.put(file.getFileName().toString(), readFileAsStrings(file));
                 }
                 return FileVisitResult.CONTINUE;
             }
@@ -72,15 +86,15 @@ public abstract class TestCommon {
         return generatedFiles;
     }
 
-    protected static void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String expectedOutputFolder, Map<String, List<String>> generatedFiles) throws IOException {
+    public static void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String expectedOutputFolder, Map<String, List<String>> generatedFiles) throws IOException {
         var expectedFileNames = new HashSet<String>();
 
-        Files.walkFileTree(Paths.get(expectedOutputFolder + "/expectedOutput"), new SimpleFileVisitor<>() {
+        Files.walkFileTree(Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME), new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) throws IOException {
                 String expectedFileName = expectedOutputFile.getFileName().toString().replace(".txt", "");
                 expectedFileNames.add(expectedFileName);
-                var expectedFile = readFileAsString(expectedOutputFile);
+                var expectedFile = readFileAsStrings(expectedOutputFile);
                 assertThat(generatedFiles.keySet()).contains(expectedFileName);
                 var generatedFile = generatedFiles.get(expectedFileName);
 
@@ -136,6 +150,11 @@ public abstract class TestCommon {
         setProperties();
     }
 
+    @AfterEach
+    public void destroy() {
+        GeneratorConfig.clear(); // To prevent any config from remaining when running multiple tests.
+    }
+
     abstract protected void setProperties();
 
     @AfterEach
@@ -143,7 +162,7 @@ public abstract class TestCommon {
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
     }
 
-    protected static List<String> readFileAsString(Path file) throws IOException {
+    protected static List<String> readFileAsStrings(Path file) throws IOException {
         return Files.readAllLines(file, StandardCharsets.UTF_8);
     }
 }

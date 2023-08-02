@@ -1,0 +1,33 @@
+package fake.code.example.package.queries.query;
+
+import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
+import static no.fellesstudentsystem.kjerneapi.Keys.*;
+import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+import fake.code.example.package.model.Termin;
+import java.lang.String;
+import java.util.List;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+
+public class QueryDBQueries {
+    @Inject
+    DSLContext ctx;
+
+    public List<Termin> terminForQuery(String eierInstitusjonsnummer, SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                TERMIN.getId().as("id"),
+                                select.optional("termintype", TERMIN.TERMINKODE).as("termintype"),
+                                select.optional("arstall", TERMIN.ARSTALL).as("arstall")
+                        ).mapping(nullOnAllNull(Termin::new)).as("termin")
+                )
+                .from(TERMIN)
+                .where(TERMIN.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .orderBy(TERMIN.getIdFields())
+                .fetch(0, Termin.class);
+    }
+}

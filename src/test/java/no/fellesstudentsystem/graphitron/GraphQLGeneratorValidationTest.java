@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -20,9 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class GraphQLGeneratorValidationTest extends TestCommon {
-    public static final String
-            SRC_TEST_RESOURCES_PATH = "validation",
-            SRC_TEST_RESOURCES = "src/test/resources/" + SRC_TEST_RESOURCES_PATH + "/";
+    public static final String SRC_TEST_RESOURCES_PATH = "validation";
 
     private final Map<String, Class<?>> enums = Map.of("KJONN_TEST", KjonnTest.class);
     private final Map<String, Method> conditions = Map.of(
@@ -37,9 +34,11 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     @Override
     protected void setProperties() {
         GeneratorConfig.setProperties(
-                List.of(),
+                DEFAULT_SYSTEM_PACKAGE,
+                Set.of(),
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
+                DEFAULT_JOOQ_PACKAGE,
                 enums,
                 conditions,
                 Map.of(),
@@ -100,7 +99,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenRecognizedDirectivesNotUsedInSchema_shouldLogWarning() {
-        GeneratorConfig.setSchemaFiles(SRC_TEST_RESOURCES + "warning/unusedDirective/schema.graphqls");
+        GeneratorConfig.setSchemaFiles(getSourceTestPath() + "warning/unusedDirective/schema.graphqls");
         GraphQLGenerator.generate();
         Set<String> logMessages = getLogMessagesWithLevelWarn();
         assertThat(logMessages).containsOnly(
@@ -110,7 +109,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenSpecifiedSchemaRootDirectory_shouldInfoLogAllExpectedSchemaFiles() {
-        var testDirectory = SRC_TEST_RESOURCES + "testReadingSchemasInDirectory";
+        var testDirectory = getSourceTestPath() + "testReadingSchemasInDirectory";
         GeneratorConfig.setSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
 
         GraphQLGenerator.generate();

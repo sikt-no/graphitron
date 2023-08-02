@@ -23,9 +23,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class GraphQLGeneratorQueryTest extends TestCommon {
-    public static final String
-            SRC_TEST_RESOURCES_PATH = "query",
-            SRC_TEST_RESOURCES = "src/test/resources/" + SRC_TEST_RESOURCES_PATH + "/";
+    public static final String SRC_TEST_RESOURCES_PATH = "query";
 
     private final Map<String, Class<?>> enums = Map.of("KJONN_TEST", KjonnTest.class);
     private final Map<String, Method> conditions = Map.ofEntries(
@@ -49,9 +47,11 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     @Override
     protected void setProperties() {
         GeneratorConfig.setProperties(
-                List.of(),
+                DEFAULT_SYSTEM_PACKAGE,
+                Set.of(),
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
+                DEFAULT_JOOQ_PACKAGE,
                 enums,
                 conditions,
                 Map.of(),
@@ -188,8 +188,8 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
          and thus tested in the most exhaustive test schema.
          */
     void allDefinedDirectivesAreInUseAndTested() throws IOException {
-        String testSchemaPath = SRC_TEST_RESOURCES + "allDefinedDirectivesInUse/schema.graphqls";
-        String testSchema = String.join("\n", TestCommon.readFileAsString(Paths.get(testSchemaPath)));
+        String testSchemaPath = getSourceTestPath() + "allDefinedDirectivesInUse/schema.graphqls";
+        String testSchema = String.join("\n", TestCommon.readFileAsStrings(Paths.get(testSchemaPath)));
 
         var mutationDirectives = Set.of("service", "record", "mutationType", "error");
         Stream

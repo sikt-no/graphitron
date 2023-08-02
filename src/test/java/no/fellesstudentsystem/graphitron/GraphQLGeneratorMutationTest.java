@@ -44,9 +44,11 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     @Override
     protected void setProperties() {
         GeneratorConfig.setProperties(
-                List.of(),
+                DEFAULT_SYSTEM_PACKAGE,
+                Set.of(),
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
+                DEFAULT_JOOQ_PACKAGE,
                 enums,
                 Map.of(),
                 services,

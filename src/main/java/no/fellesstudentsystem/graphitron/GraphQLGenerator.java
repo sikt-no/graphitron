@@ -52,7 +52,7 @@ public class GraphQLGenerator {
 
     public static ProcessedSchema getProcessedSchema(boolean warnDirectives) {
         // GeneratorConfig.loadProperties();
-        var schemaLocations = new ArrayList<>(GeneratorConfig.schemaFiles());
+        var schemaLocations = GeneratorConfig.schemaFiles();
         LOGGER.info("Reading graphql schemas {}", schemaLocations);
         return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations), warnDirectives);
     }

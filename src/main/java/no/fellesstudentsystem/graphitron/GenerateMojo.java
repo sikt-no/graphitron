@@ -6,10 +6,16 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
-import java.util.List;
+import java.util.Set;
 
 @Mojo(name = "generate")
 public class GenerateMojo extends AbstractMojo {
+    /**
+     * Package root for this project. This is temporary and should be replaced once Graphitron is unlinked from FS.
+     */
+    @Parameter(property = "generate.topPackage", defaultValue = "no.fellesstudentsystem", required = true)
+    private String topPackage;
+
     /**
      * The location where the code should be exported to.
      */
@@ -17,10 +23,16 @@ public class GenerateMojo extends AbstractMojo {
     private String outputPath;
 
     /**
+     * The package where the code should be exported to.
+     */
+    @Parameter(property = "generate.outputPackage", defaultValue = "no.fellesstudentsystem.graphql")
+    private String outputPackage;
+
+    /**
      * The comma-separated locations of the schema files to use for code generation.
      */
     @Parameter(property = "generate.schemaFiles", defaultValue = "${project.basedir}/target/generated-sources/schema.graphql", required = true)
-    private List<String> schemaFiles;
+    private Set<String> schemaFiles;
 
     /**
      * Package of previously generated schema code.
@@ -64,11 +76,19 @@ public class GenerateMojo extends AbstractMojo {
         GraphQLGenerator.generate();
     }
 
+    public String getTopPackage() {
+        return topPackage;
+    }
+
     public String getOutputPath() {
         return outputPath;
     }
 
-    public List<String> getSchemaFiles() {
+    public String getOutputPackage() {
+        return outputPackage;
+    }
+
+    public Set<String> getSchemaFiles() {
         return schemaFiles;
     }
 
@@ -94,5 +114,29 @@ public class GenerateMojo extends AbstractMojo {
 
     public String getExternalExceptions() {
         return externalExceptions;
+    }
+
+    public void setTopPackage(String topPackage) {
+        this.topPackage = topPackage;
+    }
+
+    public void setOutputPath(String outputPath) {
+        this.outputPath = outputPath;
+    }
+
+    public void setOutputPackage(String outputPackage) {
+        this.outputPackage = outputPackage;
+    }
+
+    public void setSchemaFiles(Set<String> schemaFiles) {
+        this.schemaFiles = schemaFiles;
+    }
+
+    public void setGeneratedSchemaCodePackage(String generatedSchemaCodePackage) {
+        this.generatedSchemaCodePackage = generatedSchemaCodePackage;
+    }
+
+    public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
+        this.jooqGeneratedPackage = jooqGeneratedPackage;
     }
 }
