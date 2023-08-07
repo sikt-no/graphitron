@@ -145,7 +145,7 @@ public class GraphQLGeneratorValidationTest {
     void generate_whenArgumentHasListOfInputsWithListField_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/listOfInputWithNestedList"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'arstall' are not supported on such types (used for generating condition tuples)");
+                .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'institusjonsnummer' are not supported on such types (used for generating condition tuples)");
     }
 
     @Test

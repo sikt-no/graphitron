@@ -13,9 +13,9 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.generated.api.StudentVedInstitusjonResolver;
 import no.fellesstudentsystem.graphql.generated.model.Semesterregistrering;
-import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInput;
-import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminInputWithOneField;
-import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringsterminNestedInput;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringBetaltInstitusjon;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringBetaltInstitusjonNested;
+import no.fellesstudentsystem.graphql.generated.model.SemesterregistreringBetaltInstitusjonWithOneField;
 import no.fellesstudentsystem.graphql.generated.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
@@ -30,8 +30,9 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
 
     @Override
     public CompletableFuture<List<Semesterregistrering>> semesterregistreringer(
-            StudentVedInstitusjon studentVedInstitusjon, SemesterregistreringsterminInput terminIn,
-            DataFetchingEnvironment env) throws Exception {
+            StudentVedInstitusjon studentVedInstitusjon,
+            SemesterregistreringBetaltInstitusjon terminIn, DataFetchingEnvironment env) throws
+            Exception {
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("semesterregistreringerForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
@@ -52,8 +53,8 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
     @Override
     public CompletableFuture<List<Semesterregistrering>> registreringerForInputList(
             StudentVedInstitusjon studentVedInstitusjon,
-            List<SemesterregistreringsterminInput> terminInList, DataFetchingEnvironment env) throws
-            Exception {
+            List<SemesterregistreringBetaltInstitusjon> terminInList, DataFetchingEnvironment env)
+            throws Exception {
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputListForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
@@ -73,9 +74,10 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
 
     @Override
     public CompletableFuture<List<Semesterregistrering>> registreringerForMixOfListAndSingleInput(
-            StudentVedInstitusjon studentVedInstitusjon, SemesterregistreringsterminInput terminIn,
-            List<SemesterregistreringsterminInput> terminInList, DataFetchingEnvironment env) throws
-            Exception {
+            StudentVedInstitusjon studentVedInstitusjon,
+            SemesterregistreringBetaltInstitusjon terminIn,
+            List<SemesterregistreringBetaltInstitusjon> terminInList, DataFetchingEnvironment env)
+            throws Exception {
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForMixOfListAndSingleInputForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
@@ -96,7 +98,7 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
     @Override
     public CompletableFuture<List<Semesterregistrering>> registreringerForInputWithOneFieldList(
             StudentVedInstitusjon studentVedInstitusjon,
-            List<SemesterregistreringsterminInputWithOneField> terminInListOneField,
+            List<SemesterregistreringBetaltInstitusjonWithOneField> terminInListOneField,
             DataFetchingEnvironment env) throws Exception {
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputWithOneFieldListForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
@@ -118,7 +120,7 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
     @Override
     public CompletableFuture<List<Semesterregistrering>> registreringerForInputWithNestedFieldList(
             StudentVedInstitusjon studentVedInstitusjon,
-            List<SemesterregistreringsterminNestedInput> terminInListNestedField,
+            List<SemesterregistreringBetaltInstitusjonNested> terminInListNestedField,
             DataFetchingEnvironment env) throws Exception {
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputWithNestedFieldListForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {

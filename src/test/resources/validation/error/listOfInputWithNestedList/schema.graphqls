@@ -12,9 +12,9 @@ type StudentVedInstitusjon @table(name: "STUDENT") {
 }
 
 input InputWithListField {
-  arstall: [Int!]! @column(name: "ARSTALL", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
-  maned: Int! @column(name: "MANEDNR_START", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
-  termintype: Termintype! @column(name: "TERMINKODE", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+  institusjonsnummer: [Int!]! @column(name: "INSTITUSJONSNR", table: "INSTITUSJON", key: "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
+  betaltSemesteravgift: Boolean! @column(name: "STATUS_BET_OK", table: "INSTITUSJON", key: "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
+  navn: Institusjonsnavn! @column(name : "NAVN", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK") # Note: was testing an enum before. This is now lost.
 }
 
 type Semesterregistrering @table {
@@ -22,8 +22,9 @@ type Semesterregistrering @table {
   registrert: Boolean! @column(name: "STATUS_REG_OK")
 }
 
-enum Termintype {
-  VAR @mapEnum(name: "VÅR"),
-  SOM @mapEnum(name: "SOM"),
-  HOST @mapEnum(name: "HØST")
+type Institusjonsnavn {
+  eng: String @column(name: "INSTITUSJONSNAVN_ENGELSK")
+  nob: String! @column(name: "INSTITUSJONSNAVN_BOKMAL")
+  nno: String @column(name: "INSTITUSJONSNAVN_NYNORSK")
+  sme: String @column(name: "INSTITUSJONSNAVN_SAMISK")
 }

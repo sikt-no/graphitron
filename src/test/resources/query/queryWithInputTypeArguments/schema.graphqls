@@ -64,31 +64,32 @@ type Semesterregistrering implements Node @table {
   registrert: Boolean! @column(name : "STATUS_REG_OK")
 }
 
-input SemesterregistreringsterminInput {
-  maned: Int! @column(name : "MANEDNR_START", table : "TERMIN", key : "SEMESTERREGISTRERING__HAR__TERMIN__FK")
-  termintype: Termintype! @column(name : "TERMINKODE", table : "TERMIN", key : "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+input SemesterregistreringBetaltInstitusjon {
+  institusjonsnummer: Int! @column(name : "INSTITUSJONSNR", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
+  navn: Institusjonsnavn! @column(name : "NAVN", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK") # Note: was testing an enum before. This is now lost.
 }
 
-input SemesterregistreringsterminInputWithOneField {
-  maned: Int! @column(name : "MANEDNR_START", table : "TERMIN", key : "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+input SemesterregistreringBetaltInstitusjonWithOneField {
+  institusjonsnummer: Int! @column(name : "INSTITUSJONSNR", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
 }
 
-input SemesterregistreringsterminNestedInput {
-  manedField: SemesterregistreringsterminInputWithOneField!
-  termintype: Termintype! @column(name : "TERMINKODE", table : "TERMIN", key : "SEMESTERREGISTRERING__HAR__TERMIN__FK")
+input SemesterregistreringBetaltInstitusjonNested {
+  institusjonsnummerField: SemesterregistreringBetaltInstitusjonWithOneField!
+  navn: Institusjonsnavn! @column(name : "NAVN", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
 }
 
 type StudentVedInstitusjon implements Node @table(name : "STUDENT") {
   id: ID!
-  semesterregistreringer(terminIn: SemesterregistreringsterminInput!): [Semesterregistrering!]! @splitQuery
-  registreringerForInputList(terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @splitQuery
-  registreringerForMixOfListAndSingleInput(terminIn: SemesterregistreringsterminInput!, terminInList: [SemesterregistreringsterminInput!]): [Semesterregistrering!]! @splitQuery
-  registreringerForInputWithOneFieldList(terminInListOneField: [SemesterregistreringsterminInputWithOneField!]): [Semesterregistrering!]! @splitQuery
-  registreringerForInputWithNestedFieldList(terminInListNestedField: [SemesterregistreringsterminNestedInput!]): [Semesterregistrering!]! @splitQuery
+  semesterregistreringer(terminIn: SemesterregistreringBetaltInstitusjon!): [Semesterregistrering!]! @splitQuery
+  registreringerForInputList(terminInList: [SemesterregistreringBetaltInstitusjon!]): [Semesterregistrering!]! @splitQuery
+  registreringerForMixOfListAndSingleInput(terminIn: SemesterregistreringBetaltInstitusjon!, terminInList: [SemesterregistreringBetaltInstitusjon!]): [Semesterregistrering!]! @splitQuery
+  registreringerForInputWithOneFieldList(terminInListOneField: [SemesterregistreringBetaltInstitusjonWithOneField!]): [Semesterregistrering!]! @splitQuery
+  registreringerForInputWithNestedFieldList(terminInListNestedField: [SemesterregistreringBetaltInstitusjonNested!]): [Semesterregistrering!]! @splitQuery
 }
 
-enum Termintype {
-  VAR @mapEnum(name : "VÅR")
-  SOM @mapEnum(name : "SOM")
-  HOST @mapEnum(name : "HØST")
+type Institusjonsnavn {
+  eng: String @column(name: "INSTITUSJONSNAVN_ENGELSK")
+  nob: String! @column(name: "INSTITUSJONSNAVN_BOKMAL")
+  nno: String @column(name: "INSTITUSJONSNAVN_NYNORSK")
+  sme: String @column(name: "INSTITUSJONSNAVN_SAMISK")
 }
