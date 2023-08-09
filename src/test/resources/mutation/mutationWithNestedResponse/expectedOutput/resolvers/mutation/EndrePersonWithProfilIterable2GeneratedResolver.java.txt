@@ -1,0 +1,77 @@
+package fake.code.example.package.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import fake.graphql.example.package.api.EndrePersonWithProfilIterable2MutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.ListedNodeResponse;
+import fake.graphql.example.package.model.PersonProfil;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import fake.code.example.package.queries.mutation.EndrePersonWithProfilIterable2DBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonWithProfilIterable2GeneratedResolver implements EndrePersonWithProfilIterable2MutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePersonWithProfilIterable2DBQueries endrePersonWithProfilIterable2DBQueries;
+
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Override
+    public CompletableFuture<ListedNodeResponse> endrePersonWithProfilIterable2(
+            List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var select = new SelectionSet(env.getSelectionSet());
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                inputRecord.setId(itInput.getId());
+                inputRecord.setFornavn(itInput.getFornavn());
+                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = endrePersonWithProfilIterable2DBQueries.endrePersonWithProfilIterable2(inputRecordList);
+        var inputRecordPersonProfiler = getListedNodeResponsePersonProfiler(inputRecordList, select);
+
+        var listedNodeResponse = new ListedNodeResponse();
+
+        var personProfilList = new ArrayList<PersonProfil>();
+        for (var itInputRecordList : inputRecordList) {
+            personProfilList.add(inputRecordPersonProfiler.get(itInputRecordList.getId()));
+        }
+        listedNodeResponse.setPersonProfiler(personProfilList);
+
+        return CompletableFuture.completedFuture(listedNodeResponse);
+    }
+
+    private Map<String, PersonProfil> getListedNodeResponsePersonProfiler(
+            List<PersonRecord> idContainer, SelectionSet select) {
+        if (!select.contains("personProfiler") || idContainer == null) {
+            return Map.of();
+        }
+
+        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("personProfiler"));
+    }
+}

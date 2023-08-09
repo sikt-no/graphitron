@@ -1,0 +1,61 @@
+package fake.code.example.package.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import fake.graphql.example.package.api.EndrePersonWithProfil2MutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.Result;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import fake.code.example.package.queries.mutation.EndrePersonWithProfil2DBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import org.jooq.DSLContext;
+
+public class EndrePersonWithProfil2GeneratedResolver implements EndrePersonWithProfil2MutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EndrePersonWithProfil2DBQueries endrePersonWithProfil2DBQueries;
+
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Override
+    public CompletableFuture<Result> endrePersonWithProfil2(EndreInput input,
+            DataFetchingEnvironment env) throws Exception {
+        var select = new SelectionSet(env.getSelectionSet());
+        var inputRecord = new PersonRecord();
+        inputRecord.attach(ctx.configuration());
+
+        if (input != null) {
+            inputRecord.setId(input.getId());
+            inputRecord.setFornavn(input.getFornavn());
+            inputRecord.setEmailadressePrivat(input.getPrivatEpost());
+            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
+        }
+
+        var rowsUpdated = endrePersonWithProfil2DBQueries.endrePersonWithProfil2(inputRecord);
+        var inputRecordPersonProfil = getResultPersonProfil(inputRecord, select);
+
+        var result = new Result();
+        result.setPersonProfil(inputRecordPersonProfil);
+
+        return CompletableFuture.completedFuture(result);
+    }
+
+    private PersonProfil getResultPersonProfil(PersonRecord idContainer, SelectionSet select) {
+        if (!select.contains("personProfil") || idContainer == null) {
+            return null;
+        }
+
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("personProfil"));
+        return nodes.values().stream().findFirst().orElse(null);
+    }
+}

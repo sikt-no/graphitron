@@ -12,6 +12,10 @@ type ListedResponse {
   results: [Result]
 }
 
+type ListedNodeResponse {
+  personProfiler: [PersonProfil] @column(name : "persProf")
+}
+
 type Result {
   id: ID!
   personProfil: PersonProfil @column(name : "persProf")
@@ -20,8 +24,10 @@ type Result {
 
 type Mutation {
   endrePersonWithProfil(input: EndreInput!): Response! @mutationType(typeName: UPDATE)
+  endrePersonWithProfil2(input: EndreInput!): Result! @mutationType(typeName: UPDATE)
   slettPersonWithProfil(input: EndreInput!): Response! @mutationType(typeName: DELETE)
   endrePersonWithProfilIterable(input: [EndreInput]!): ListedResponse! @mutationType(typeName: UPDATE)
+  endrePersonWithProfilIterable2(input: [EndreInput]!): ListedNodeResponse! @mutationType(typeName: UPDATE)
   slettPersonWithProfilIterable(input: [EndreInput]!): ListedResponse! @mutationType(typeName: DELETE)
 }
 

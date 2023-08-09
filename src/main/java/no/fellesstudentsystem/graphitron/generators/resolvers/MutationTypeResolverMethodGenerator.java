@@ -29,8 +29,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGenerator {
     private static final String
             VARIABLE_ROWS = "rowsUpdated",
-            VARIABLE_SELECT = "select",
-            VARIABLE_RECORD_LIST = "recordList";
+            VARIABLE_SELECT = "select";
 
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
@@ -138,32 +137,25 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     protected CodeBlock generateResponses(ObjectField target, ObjectField previous, int recursion) {
         recursionCheck(recursion);
 
+        if (processedSchema.implementsNode(target)) {
+            return generateResponseForNode(target);
+        }
+
         if (!fieldIsMappable(target)) {
             return CodeBlock.of("");
         }
 
-        var responseObject = processedSchema.getObject(target);
-
+        var record = findUsableRecord(target);
         var targetTypeName = target.getTypeName();
+        var responseObject = processedSchema.getObject(targetTypeName);
         var responseClassName = responseObject.getGraphClassName();
-        var responseListName = asListedName(targetTypeName);
-
-        boolean recordIterable = false;
-        String firstRecordName = null;
-        var recordInputs = context.getRecordInputs();
-        if (recordInputs.size() == 1) { // In practice this supports only one record type at once.
-            var first = recordInputs.entrySet().stream().findFirst().get();
-            firstRecordName = first.getKey();
-            recordIterable = first.getValue().isIterableWrapped();
-        }
-
         var code = CodeBlock.builder().add("\n");
-        var surroundWithFor = (target != previous || target.isIterableWrapped()) && recordIterable;
+        var surroundWithFor = (target != previous || target.isIterableWrapped()) && record.isIterableWrapped();
         if (surroundWithFor) {
-            var iterationTarget = firstRecordName != null ? firstRecordName : VARIABLE_RECORD_LIST;
+            var recordName = asListedRecordName(record.getName());
             code
                     .add(declareArrayList(targetTypeName, responseClassName))
-                    .beginControlFlow("for (var $L : $N)", asIterable(iterationTarget), iterationTarget);
+                    .beginControlFlow("for (var $L : $N)", asIterable(recordName), recordName);
         }
 
         var targetTypeNameLower = uncapitalize(targetTypeName);
@@ -176,10 +168,58 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         }
 
         if (surroundWithFor) {
-            code.add(addToList(responseListName, targetTypeNameLower)).endControlFlow();
+            code.add(addToList(asListedName(targetTypeName), targetTypeNameLower)).endControlFlow();
         }
 
         return code.build();
+    }
+
+    /**
+     * @return Code for constructing any structure of response types.
+     */
+    private CodeBlock generateResponseForNode(ObjectField target) {
+        if (!target.isIterableWrapped()) {
+            return CodeBlock.of("");
+        }
+
+        var record = findUsableRecord(target);
+        if (!record.isIterableWrapped()) {
+            return CodeBlock.of("");
+        }
+
+        var targetTypeName = target.getTypeName();
+        var getVariable = asGetMethodVariableName(asRecordName(record.getName()), target.getName());
+        var recordName = asListedRecordName(record.getName());
+        return CodeBlock
+                .builder()
+                .add("\n")
+                .add(declareArrayList(targetTypeName, processedSchema.getObject(targetTypeName).getGraphClassName()))
+                .beginControlFlow("for (var $L : $N)", asIterable(recordName), recordName)
+                .add(
+                        addToList(
+                                asListedName(targetTypeName),
+                                CodeBlock.of("$N.get($N.getId())", getVariable, asIterable(asListedRecordName(record.getName())))
+                        )
+                )
+                .endControlFlow()
+                .build();
+    }
+
+    private InputField findUsableRecord(ObjectField target) {
+        var responseObject = processedSchema.getObject(target);
+        return responseObject.hasTable()
+                ? findMatchingInputRecord(responseObject.getTable().getName())
+                : findFirstRecord();
+    }
+
+    private InputField findFirstRecord() { // In practice this supports only one record type at once.
+        return context
+                .getRecordInputs()
+                .entrySet()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
+                .getValue();
     }
 
     /**
@@ -269,20 +309,22 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     }
 
     private CodeBlock mapToNodeSetCall(ObjectField field) {
-        var fieldMapping = field.getMappingFromFieldName();
-        var sourceName = asRecordName(findMatchingInputRecord(processedSchema.getObject(field).getTable().getName()).getName());
-        var getVariable = asGetMethodVariableName(sourceName, field.getName());
+        var record = findUsableRecord(field);
+        var getVariable = asGetMethodVariableName(asRecordName(record.getName()), field.getName());
 
-        var matchingRecord = findMatchingInputRecord(processedSchema.getObject(field).getTable().getName());
-
-        var code = CodeBlock.builder();
-        if (matchingRecord.isIterableWrapped()) {
-            return code.addStatement(
-                    fieldMapping.asSetCall("$N.get($N.getId())"), getVariable, asIterable(asListedRecordName(matchingRecord.getName()))
-            ).build();
+        var setContent = CodeBlock.builder();
+        if (record.isIterableWrapped() && field.isIterableWrapped()) {
+            setContent.add("$N", asListedName(field.getTypeName()));
+        } else if (record.isIterableWrapped()) {
+            setContent.add("$N.get($N.getId())", getVariable, asIterable(asListedRecordName(record.getName())));
+        } else {
+            setContent.add("$N", getVariable);
         }
 
-        return code.addStatement(fieldMapping.asSetCall("$N"), getVariable).build();
+        return CodeBlock
+                .builder()
+                .addStatement(field.getMappingFromFieldName().asSetCall("$L"), setContent.build())
+                .build();
     }
 
     /**

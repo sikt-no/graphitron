@@ -44,6 +44,11 @@ public class FormatCodeBlocks {
     }
 
     @NotNull
+    public static CodeBlock addToList(String addTarget, CodeBlock addition) {
+        return CodeBlock.builder().addStatement("$N.add($L)", addTarget, addition).build();
+    }
+
+    @NotNull
     public static CodeBlock collectToList() {
         return COLLECT_TO_LIST;
     }
