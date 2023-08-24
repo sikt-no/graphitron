@@ -40,19 +40,11 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      */
     @NotNull
     protected CodeBlock declareRecords(List<InputField> specInputs) {
-        var code = CodeBlock.builder();
-        var recordCode = CodeBlock.builder();
-
-        var inputObjects = specInputs.stream().filter(processedSchema::isInputType).collect(Collectors.toList());
-        for (var in : inputObjects) {
-            code.add(declareRecords(in, 0));
-            recordCode.add(fillRecords(in, "", 0));
-        }
-        if (!recordCode.isEmpty()) {
-            return code.add("\n").add(recordCode.build()).build();
-        } else {
+        if (context.getRecordInputs().isEmpty()) {
             throw new UnsupportedOperationException("Must have at least one record reference when generating resolvers with queries. Mutation '" + localField.getName() + "' has no records attached.");
         }
+
+        return super.declareRecords(specInputs);
     }
 
     protected CodeBlock generateServiceCall(ObjectField target) {

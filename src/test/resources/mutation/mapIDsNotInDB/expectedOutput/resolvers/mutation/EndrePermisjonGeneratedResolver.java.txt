@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.services.TestPermisjonService;
 import fake.graphql.example.package.api.EndrePermisjonMutationResolver;
 import fake.graphql.example.package.model.EndreInput;
 import fake.graphql.example.package.model.EndreResponse;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PermisjonRecord;
 import org.jooq.DSLContext;
@@ -21,12 +22,18 @@ public class EndrePermisjonGeneratedResolver implements EndrePermisjonMutationRe
     public CompletableFuture<EndreResponse> endrePermisjon(EndreInput in,
             DataFetchingEnvironment env) throws Exception {
         var testPermisjonService = new TestPermisjonService(ctx);
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inRecord = new PermisjonRecord();
         inRecord.attach(ctx.configuration());
 
         if (in != null) {
-            inRecord.setId(in.getId());
-            inRecord.setStudentId(in.getStudentId());
+            if (flatArguments.contains("in/id")) {
+                inRecord.setId(in.getId());
+            }
+            if (flatArguments.contains("in/studentId")) {
+                inRecord.setStudentId(in.getStudentId());
+            }
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecord);
         }
 

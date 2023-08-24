@@ -11,6 +11,7 @@ import fake.graphql.example.package.model.BildeInput;
 import fake.graphql.example.package.model.Response;
 import fake.graphql.example.package.model.StudentbildeFiltype;
 import fake.code.example.package.queries.mutation.EndreStudentBildeDBQueries;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonbildeRecord;
 import org.jooq.DSLContext;
@@ -25,12 +26,18 @@ public class EndreStudentBildeGeneratedResolver implements EndreStudentBildeMuta
     @Override
     public CompletableFuture<Response> endreStudentBilde(BildeInput input,
             DataFetchingEnvironment env) throws Exception {
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecord = new PersonbildeRecord();
         inputRecord.attach(ctx.configuration());
 
         if (input != null) {
-            inputRecord.setId(input.getId());
-            inputRecord.setFilextension(input.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(input.getFiltype(), null));
+            if (flatArguments.contains("input/id")) {
+                inputRecord.setId(input.getId());
+            }
+            if (flatArguments.contains("input/filtype")) {
+                inputRecord.setFilextension(input.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(input.getFiltype(), null));
+            }
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 

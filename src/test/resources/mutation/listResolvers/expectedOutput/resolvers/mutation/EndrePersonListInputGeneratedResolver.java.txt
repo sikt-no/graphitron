@@ -11,6 +11,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import fake.graphql.example.package.api.EndrePersonListInputMutationResolver;
 import fake.graphql.example.package.model.EndreInput;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -23,6 +24,8 @@ public class EndrePersonListInputGeneratedResolver implements EndrePersonListInp
     public CompletableFuture<List<String>> endrePersonListInput(List<EndreInput> input,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecordList = new ArrayList<PersonRecord>();
 
 
@@ -31,9 +34,15 @@ public class EndrePersonListInputGeneratedResolver implements EndrePersonListInp
                 if (itInput == null) continue;
                 var inputRecord = new PersonRecord();
                 inputRecord.attach(ctx.configuration());
-                inputRecord.setId(itInput.getId());
-                inputRecord.setFornavn(itInput.getFornavn());
-                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/fornavn")) {
+                    inputRecord.setFornavn(itInput.getFornavn());
+                }
+                if (flatArguments.contains("input/privatEpost")) {
+                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                }
                 inputRecordList.add(inputRecord);
             }
         }

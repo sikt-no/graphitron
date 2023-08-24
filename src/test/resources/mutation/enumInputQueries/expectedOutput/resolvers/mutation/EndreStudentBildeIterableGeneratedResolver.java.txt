@@ -14,6 +14,7 @@ import fake.graphql.example.package.model.BildeInput;
 import fake.graphql.example.package.model.ListedResponse;
 import fake.graphql.example.package.model.StudentbildeFiltype;
 import fake.code.example.package.queries.mutation.EndreStudentBildeIterableDBQueries;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonbildeRecord;
 import org.jooq.DSLContext;
@@ -28,6 +29,8 @@ public class EndreStudentBildeIterableGeneratedResolver implements EndreStudentB
     @Override
     public CompletableFuture<ListedResponse> endreStudentBildeIterable(List<BildeInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecordList = new ArrayList<PersonbildeRecord>();
 
 
@@ -36,8 +39,12 @@ public class EndreStudentBildeIterableGeneratedResolver implements EndreStudentB
                 if (itInput == null) continue;
                 var inputRecord = new PersonbildeRecord();
                 inputRecord.attach(ctx.configuration());
-                inputRecord.setId(itInput.getId());
-                inputRecord.setFilextension(itInput.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(itInput.getFiltype(), null));
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/filtype")) {
+                    inputRecord.setFilextension(itInput.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(itInput.getFiltype(), null));
+                }
                 inputRecordList.add(inputRecord);
             }
         }

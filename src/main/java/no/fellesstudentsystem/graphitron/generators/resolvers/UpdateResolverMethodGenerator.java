@@ -40,6 +40,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             VARIABLE_GET_PARAM = "idContainer",
             VARIABLE_NODE_RESULT = "nodes",
             VARIABLE_SELECT = "select",
+            VARIABLE_FLAT_ARGS = "flatArguments",
             METHOD_SET_PK = "setPersonKeysFromPlattformIds"; // Hardcoded method name. Should be generalized as a transform on records.
 
     protected final ObjectField localField;
@@ -66,9 +67,14 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         if (context.mutationReturnsNodes()) {
             code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SET.className, PARAM_ENV);
         }
+        if (!context.getRecordInputs().isEmpty()) {
+            code
+                    .addStatement("var $L = $T.flattenArgumentKeys($N.getArguments())", VARIABLE_FLAT_ARGS, ARGUMENTS.className, PARAM_ENV)
+                    .add("\n");
+        }
+
         code
                 .add(declareRecords(specInputs))
-                .add("\n")
                 .add(generateServiceCall(target))
                 .add(generateResponsesAndGetCalls(target));
 
@@ -92,6 +98,27 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .map(dep -> (ServiceDependency) dep)
                 .forEach(dep -> code.addStatement(dep.getDeclarationCode()));
         return code.build();
+    }
+
+    /**
+     * @return List of variable names for the declared and fully set records.
+     */
+    @NotNull
+    protected CodeBlock declareRecords(List<InputField> specInputs) {
+        if (context.getRecordInputs().isEmpty()) {
+            return CodeBlock.of("");
+        }
+
+        var code = CodeBlock.builder();
+        var recordCode = CodeBlock.builder();
+
+        var inputObjects = specInputs.stream().filter(processedSchema::isInputType).collect(Collectors.toList());
+        for (var in : inputObjects) {
+            code.add(declareRecords(in, 0));
+            recordCode.add(fillRecords(in, "", in.getName(), 0));
+        }
+
+        return code.add("\n").add(recordCode.build()).add("\n").build();
     }
 
     /**
@@ -126,7 +153,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
      * @return Code for setting the record data of previously defined records.
      */
     @NotNull
-    protected CodeBlock fillRecords(InputField target, String previousName, int recursion) {
+    protected CodeBlock fillRecords(InputField target, String previousName, String path, int recursion) {
         recursionCheck(recursion);
 
         var input = processedSchema.getInputType(target);
@@ -153,11 +180,13 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         }
 
         for (var in : input.getInputs()) {
+            var nextPath = path + "/" + in.getName();
             if (processedSchema.isInputType(in)) {
                 code
                         .addStatement("var $L = $N.get$L()", in.getName(), iterableInputName, capitalize(in.getName()))
-                        .add(fillRecords(in, name, recursion + 1));
+                        .add(fillRecords(in, name, nextPath, recursion + 1));
             } else {
+                code.beginControlFlow("if ($N.contains($S))", VARIABLE_FLAT_ARGS, nextPath);
                 var getCall = CodeBlock.of("$N" + in.getMappingFromFieldName().asGetCall(), iterableInputName);
                 var setCall = in.getRecordSetCall("$L");
                 code.add("$N", recordName);
@@ -166,6 +195,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 } else {
                     code.addStatement(setCall, getCall);
                 }
+                code.endControlFlow();
             }
         }
 
@@ -383,12 +413,6 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     public boolean generatesAll() {
         return localField.isGenerated() && (localField.hasServiceReference() || localField.hasMutationType());
     }
-
-    /**
-     * @return List of variable names for the declared and fully set records.
-     */
-    @NotNull
-    abstract protected CodeBlock declareRecords(List<InputField> specInputs);
 
     abstract protected CodeBlock generateServiceCall(ObjectField target);
 

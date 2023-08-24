@@ -20,6 +20,7 @@ import fake.graphql.example.package.model.EndreResponse3;
 import fake.graphql.example.package.model.EndreResponse4;
 import fake.graphql.example.package.model.PersonProfil;
 import fake.graphql.example.package.model.Postadresse;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.PersonProfilDBQueries;
 import fake.code.example.package.queries.query.PostadresseDBQueries;
@@ -42,6 +43,8 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecord = new PersonRecord();
         inputRecord.attach(ctx.configuration());
         var endreA1Record = new PersonRecord();
@@ -54,20 +57,28 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
         var endre4RecordList = new ArrayList<PersonRecord>();
 
         if (input != null) {
-            inputRecord.setId(input.getId());
+            if (flatArguments.contains("input/id")) {
+                inputRecord.setId(input.getId());
+            }
             var endreA1 = input.getEndreA1();
             if (endreA1 != null) {
-                endreA1Record.setFornavn(endreA1.getFornavn());
+                if (flatArguments.contains("input/endreA1/fornavn")) {
+                    endreA1Record.setFornavn(endreA1.getFornavn());
+                }
                 FieldHelpers.setPersonKeysFromPlattformIds(ctx, endreA1Record);
             }
             var endreA2 = input.getEndreA2();
             if (endreA2 != null) {
-                endreA2Record.setFornavn(endreA2.getFornavn());
+                if (flatArguments.contains("input/endreA2/fornavn")) {
+                    endreA2Record.setFornavn(endreA2.getFornavn());
+                }
                 FieldHelpers.setPersonKeysFromPlattformIds(ctx, endreA2Record);
             }
             var endreB = input.getEndreB();
             if (endreB != null) {
-                endreBRecord.setFornavn(endreB.getFornavn());
+                if (flatArguments.contains("input/endreB/fornavn")) {
+                    endreBRecord.setFornavn(endreB.getFornavn());
+                }
                 var endre3 = endreB.getEndre3();
 
                 if (endre3 != null) {
@@ -75,7 +86,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
                         if (itEndre3 == null) continue;
                         var endre3Record = new PersonRecord();
                         endre3Record.attach(ctx.configuration());
-                        endre3Record.setEmailadressePrivat(itEndre3.getPrivatEpost());
+                        if (flatArguments.contains("input/endreB/endre3/privatEpost")) {
+                            endre3Record.setEmailadressePrivat(itEndre3.getPrivatEpost());
+                        }
                         var endre4 = itEndre3.getEndre4();
 
                         if (endre4 != null) {
@@ -83,7 +96,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
                                 if (itEndre4 == null) continue;
                                 var endre4Record = new PersonRecord();
                                 endre4Record.attach(ctx.configuration());
-                                endre4Record.setEtternavn(itEndre4.getEtternavn());
+                                if (flatArguments.contains("input/endreB/endre3/endre4/etternavn")) {
+                                    endre4Record.setEtternavn(itEndre4.getEtternavn());
+                                }
                                 endre4RecordList.add(endre4Record);
                             }
                         }
@@ -96,7 +111,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
             }
             var endreC1 = input.getEndreC1();
             if (endreC1 != null) {
-                inputRecord.setEtternavn(endreC1.getEtternavn());
+                if (flatArguments.contains("input/endreC1/etternavn")) {
+                    inputRecord.setEtternavn(endreC1.getEtternavn());
+                }
                 FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
             }
             var endreC2 = input.getEndreC2();

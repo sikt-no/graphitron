@@ -9,6 +9,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestPersonService;
 import fake.graphql.example.package.api.EndrePerson2ParamsMutationResolver;
 import fake.graphql.example.package.model.EndreInput;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -21,13 +22,21 @@ public class EndrePerson2ParamsGeneratedResolver implements EndrePerson2ParamsMu
     public CompletableFuture<String> endrePerson2Params(EndreInput input, String etternavn,
             DataFetchingEnvironment env) throws Exception {
         var testPersonService = new TestPersonService(ctx);
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecord = new PersonRecord();
         inputRecord.attach(ctx.configuration());
 
         if (input != null) {
-            inputRecord.setId(input.getId());
-            inputRecord.setFornavn(input.getFornavn());
-            inputRecord.setEmailadressePrivat(input.getPrivatEpost());
+            if (flatArguments.contains("input/id")) {
+                inputRecord.setId(input.getId());
+            }
+            if (flatArguments.contains("input/fornavn")) {
+                inputRecord.setFornavn(input.getFornavn());
+            }
+            if (flatArguments.contains("input/privatEpost")) {
+                inputRecord.setEmailadressePrivat(input.getPrivatEpost());
+            }
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 

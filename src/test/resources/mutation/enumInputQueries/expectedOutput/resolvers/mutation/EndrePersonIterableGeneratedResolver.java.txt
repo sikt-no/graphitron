@@ -15,6 +15,7 @@ import fake.graphql.example.package.model.ListedResponse;
 import fake.graphql.example.package.model.PersonInput;
 import fake.code.example.package.queries.mutation.EndrePersonIterableDBQueries;
 import no.fellesstudentsystem.graphitron.enums.KjonnTest;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -29,6 +30,8 @@ public class EndrePersonIterableGeneratedResolver implements EndrePersonIterable
     @Override
     public CompletableFuture<ListedResponse> endrePersonIterable(List<PersonInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecordList = new ArrayList<PersonRecord>();
 
 
@@ -37,8 +40,12 @@ public class EndrePersonIterableGeneratedResolver implements EndrePersonIterable
                 if (itInput == null) continue;
                 var inputRecord = new PersonRecord();
                 inputRecord.attach(ctx.configuration());
-                inputRecord.setId(itInput.getId());
-                inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/kjonn")) {
+                    inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                }
                 inputRecordList.add(inputRecord);
             }
         }

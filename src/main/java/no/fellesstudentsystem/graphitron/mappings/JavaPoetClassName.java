@@ -40,6 +40,7 @@ public enum JavaPoetClassName {
     RECORD2(ClassName.get(org.jooq.Record2.class)),
     FIELD_HELPERS_EXTERNAL(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "FieldHelpers")), // TODO: Need more generic and external record transform functions before this can be removed.
     FIELD_HELPERS(ClassName.get(no.fellesstudentsystem.graphql.helpers.FieldHelpers.class)),
+    ARGUMENTS(ClassName.get(no.fellesstudentsystem.graphql.helpers.arguments.Arguments.class)),
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), GeneratorConfig.CLASS_TABLES)),
     FUNCTIONS(ClassName.get(org.jooq.Functions.class)),
     KEYS(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), GeneratorConfig.CLASS_KEYS)),

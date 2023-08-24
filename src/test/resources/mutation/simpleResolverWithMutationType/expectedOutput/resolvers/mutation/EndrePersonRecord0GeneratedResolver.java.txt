@@ -10,6 +10,7 @@ import fake.graphql.example.package.api.EndrePersonRecord0MutationResolver;
 import fake.graphql.example.package.model.EndreInput;
 import fake.graphql.example.package.model.EndreResponse0;
 import fake.code.example.package.queries.mutation.EndrePersonRecord0DBQueries;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
@@ -24,11 +25,15 @@ public class EndrePersonRecord0GeneratedResolver implements EndrePersonRecord0Mu
     @Override
     public CompletableFuture<EndreResponse0> endrePersonRecord0(String id, EndreInput in,
             DataFetchingEnvironment env) throws Exception {
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inRecord = new PersonRecord();
         inRecord.attach(ctx.configuration());
 
         if (in != null) {
-            inRecord.setFornavn(in.getFornavn());
+            if (flatArguments.contains("in/fornavn")) {
+                inRecord.setFornavn(in.getFornavn());
+            }
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecord);
         }
 

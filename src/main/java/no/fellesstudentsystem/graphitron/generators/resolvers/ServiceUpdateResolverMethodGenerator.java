@@ -4,7 +4,6 @@ import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
@@ -48,25 +47,6 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     public ServiceUpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
-    }
-
-    /**
-     * @return List of variable names for the declared and fully set records.
-     */
-    @NotNull
-    protected CodeBlock declareRecords(List<InputField> specInputs) {
-        var code = CodeBlock.builder();
-        var recordCode = CodeBlock.builder();
-
-        var inputObjects = specInputs.stream().filter(processedSchema::isInputType).collect(Collectors.toList());
-        for (var in : inputObjects) {
-            code.add(declareRecords(in, 0));
-            recordCode.add(fillRecords(in, "", 0));
-        }
-        if (!recordCode.isEmpty()) {
-            code.add("\n").add(recordCode.build());
-        }
-        return code.build();
     }
 
     protected CodeBlock generateServiceCall(ObjectField target) {

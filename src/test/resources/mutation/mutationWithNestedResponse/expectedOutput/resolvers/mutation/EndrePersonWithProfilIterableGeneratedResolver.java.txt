@@ -15,6 +15,7 @@ import fake.graphql.example.package.model.EndreInput;
 import fake.graphql.example.package.model.ListedResponse;
 import fake.graphql.example.package.model.PersonProfil;
 import fake.graphql.example.package.model.Result;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.mutation.EndrePersonWithProfilIterableDBQueries;
 import fake.code.example.package.queries.query.PersonProfilDBQueries;
@@ -36,6 +37,8 @@ public class EndrePersonWithProfilIterableGeneratedResolver implements EndrePers
     public CompletableFuture<ListedResponse> endrePersonWithProfilIterable(List<EndreInput> input,
             DataFetchingEnvironment env) throws Exception {
         var select = new SelectionSet(env.getSelectionSet());
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
         var inputRecordList = new ArrayList<PersonRecord>();
 
 
@@ -44,9 +47,15 @@ public class EndrePersonWithProfilIterableGeneratedResolver implements EndrePers
                 if (itInput == null) continue;
                 var inputRecord = new PersonRecord();
                 inputRecord.attach(ctx.configuration());
-                inputRecord.setId(itInput.getId());
-                inputRecord.setFornavn(itInput.getFornavn());
-                inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/fornavn")) {
+                    inputRecord.setFornavn(itInput.getFornavn());
+                }
+                if (flatArguments.contains("input/privatEpost")) {
+                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                }
                 inputRecordList.add(inputRecord);
             }
         }
