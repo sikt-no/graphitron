@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -20,7 +19,7 @@ import java.util.Set;
 public class SchemaReader {
     // Default is 15000. With new directive on every field it goes over this limit.
     // If the error about preventing DoS attacks shows up again, increase this value here.
-    private final static int MAX_TOKENS = 60000;
+    private final static int MAX_TOKENS = 100000;
 
     public static Document readSchemas(Set<String> sources) {
         MultiSourceReader.Builder builder = MultiSourceReader.newMultiSourceReader();
