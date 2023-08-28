@@ -1,0 +1,96 @@
+package fake.code.example.package.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import fake.graphql.example.package.api.RegistrerPersonWithProfilResponseMutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.EndreResponseWithPerson;
+import fake.graphql.example.package.model.PersonProfil;
+import fake.graphql.example.package.model.Kjonn;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import fake.code.example.package.queries.mutation.RegistrerPersonWithProfilResponseDBQueries;
+import fake.code.example.package.queries.query.PersonProfilDBQueries;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
+import org.jooq.DSLContext;
+
+public class RegistrerPersonWithProfilResponseGeneratedResolver implements RegistrerPersonWithProfilResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private PersonProfilDBQueries personProfilDBQueries;
+
+    @Inject
+    private RegistrerPersonWithProfilResponseDBQueries registrerPersonWithProfilResponseDBQueries;
+
+    @Override
+    public CompletableFuture<List<EndreResponseWithPerson>> registrerPersonWithProfilResponse(
+            List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var select = new SelectionSet(env.getSelectionSet());
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/privatEpost")) {
+                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/fornavn")) {
+                    inputRecord.setFornavn(itInput.getFornavn());
+                }
+                if (flatArguments.contains("input/etternavn")) {
+                    inputRecord.setEtternavn(itInput.getEtternavn());
+                }
+                if (flatArguments.contains("input/kjonn")) {
+                    inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                }
+                if (flatArguments.contains("input/statusEksporter")) {
+                    inputRecord.setStatusEksporterFlr(itInput.getStatusEksporter());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = registrerPersonWithProfilResponseDBQueries.registrerPersonWithProfilResponse(inputRecordList);
+        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(inputRecordList, select);
+
+        var endreResponseWithPersonList = new ArrayList<EndreResponseWithPerson>();
+        for (var itInputRecordList : inputRecordList) {
+            var endreResponseWithPerson = new EndreResponseWithPerson();
+            endreResponseWithPerson.setPersonProfil(inputRecordPersonProfil.get(itInputRecordList.getId()));
+            endreResponseWithPersonList.add(endreResponseWithPerson);
+        }
+
+        return CompletableFuture.completedFuture(endreResponseWithPersonList);
+    }
+
+    private Map<String, PersonProfil> getEndreResponseWithPersonPersonProfil(
+            List<PersonRecord> idContainer, SelectionSet select) {
+        if (!select.contains("personProfil") || idContainer == null) {
+            return Map.of();
+        }
+
+        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("personProfil"));
+    }
+}

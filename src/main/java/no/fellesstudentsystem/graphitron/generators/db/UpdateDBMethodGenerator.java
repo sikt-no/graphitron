@@ -26,7 +26,9 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     private static final Map<MutationType, String> mutationConverter = Map.of(
             MutationType.UPDATE, "batchUpdate",
-            MutationType.DELETE, "batchDelete"
+            MutationType.DELETE, "batchDelete",
+            MutationType.INSERT, "batchInsert",
+            MutationType.UPSERT, "batchStore"
     );
 
     private static final String VARIABLE_RECORD_LIST = "recordList";

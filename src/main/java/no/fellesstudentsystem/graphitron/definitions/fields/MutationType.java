@@ -1,5 +1,5 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
 public enum MutationType {
-    UPDATE, DELETE
+    UPDATE, DELETE, INSERT, UPSERT
 }

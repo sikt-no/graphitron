@@ -11,9 +11,13 @@ import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordClassName;
+import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.RECORD;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.TABLE;
@@ -22,6 +26,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     private final JOOQTableMapping table;
     private final boolean hasTable;
     private final List<InputField> inputs;
+    private final Set<String> requiredInputs;
     private final TypeName recordClassName;
 
     public InputDefinition(InputObjectTypeDefinition inputType) {
@@ -42,6 +47,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         }
         this.hasTable = hasTable || hasRecord;
         recordClassName = ClassName.get(GeneratorConfig.getGeneratedJooqRecordsPackage(), asRecordClassName(new RecordMethodMapping(tableName).getName()));
+        requiredInputs = this.hasTable ? getRequiredFields(getTable().getName()) : Set.of();
     }
 
     /**
@@ -64,6 +70,26 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
      */
     public List<InputField> getInputs() {
         return inputs;
+    }
+
+    /**
+     * @return List of input fields contained within this input type, sorted by whether they are required fields.
+     */
+    public List<InputField> getInputsSortedByRequired() {
+        var splitOnIsRequired = inputs.stream().collect(Collectors.partitioningBy(this::isRequired));
+        return Stream.concat(splitOnIsRequired.get(false).stream(), splitOnIsRequired.get(true).stream()).collect(Collectors.toList());
+    }
+
+    private boolean isRequired(InputField field) {
+        if (field.getFieldType().isID() && hasTable) {
+            var hackedIDFields = getHackedIDFields(table.getName(), field.getRecordMappingName());
+            if (hackedIDFields.isPresent()) {
+                if (requiredInputs.containsAll(hackedIDFields.get())) {
+                    return true;
+                }
+            }
+        }
+        return requiredInputs.contains(field.getUpperCaseName());
     }
 
     /**

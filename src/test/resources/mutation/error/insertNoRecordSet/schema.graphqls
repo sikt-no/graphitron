@@ -1,0 +1,7 @@
+input EndreInput {
+  id: ID!
+}
+
+type Mutation {
+  registrerPersonInput(input: EndreInput!): ID! @mutationType(typeName: INSERT)
+}

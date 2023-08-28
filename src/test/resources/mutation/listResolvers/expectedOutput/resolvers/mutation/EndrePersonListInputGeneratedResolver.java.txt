@@ -34,14 +34,14 @@ public class EndrePersonListInputGeneratedResolver implements EndrePersonListInp
                 if (itInput == null) continue;
                 var inputRecord = new PersonRecord();
                 inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/privatEpost")) {
+                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                }
                 if (flatArguments.contains("input/id")) {
                     inputRecord.setId(itInput.getId());
                 }
                 if (flatArguments.contains("input/fornavn")) {
                     inputRecord.setFornavn(itInput.getFornavn());
-                }
-                if (flatArguments.contains("input/privatEpost")) {
-                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
                 }
                 inputRecordList.add(inputRecord);
             }

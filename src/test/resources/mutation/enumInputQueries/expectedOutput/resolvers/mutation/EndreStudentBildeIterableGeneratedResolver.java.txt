@@ -39,11 +39,11 @@ public class EndreStudentBildeIterableGeneratedResolver implements EndreStudentB
                 if (itInput == null) continue;
                 var inputRecord = new PersonbildeRecord();
                 inputRecord.attach(ctx.configuration());
-                if (flatArguments.contains("input/id")) {
-                    inputRecord.setId(itInput.getId());
-                }
                 if (flatArguments.contains("input/filtype")) {
                     inputRecord.setFilextension(itInput.getFiltype() == null ? null : Map.of(StudentbildeFiltype.JPG, "JPG", StudentbildeFiltype.PNG, "PNG").getOrDefault(itInput.getFiltype(), null));
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
                 }
                 inputRecordList.add(inputRecord);
             }

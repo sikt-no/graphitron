@@ -3,11 +3,13 @@ package no.fellesstudentsystem.graphitron.mappings;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
+import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -31,7 +33,7 @@ public class TableReflection {
     }
 
     private final static Set<Field> TABLE_FIELDS = Set.of(TABLES_CLASS.getFields());
-    private final static Set<String> POSSIBLE_TABLE_NAMES = TABLE_FIELDS.stream().map(Field::getName).collect(Collectors.toSet());
+    private final static Map<String, Field> POSSIBLE_TABLE_FIELDS = TABLE_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
 
     public static boolean hasSingleReference(String leftTableName, String rightTableName) {
         try {
@@ -60,19 +62,39 @@ public class TableReflection {
     }
 
     public static boolean tableExists(String tableName) {
-        return POSSIBLE_TABLE_NAMES.contains(tableName);
+        return POSSIBLE_TABLE_FIELDS.containsKey(tableName);
+    }
+
+    public static Set<String> getRequiredFields(String tableName) {
+        try {
+            var field = getField(tableName);
+            if (field.isEmpty()) {
+                return Set.of();
+            }
+            return Arrays
+                    .stream(((TableImpl<?>) field.get().get(null)).fields()) // 'Tables' contains only records.
+                    .filter(it -> !it.getDataType().nullable())
+                    .map(org.jooq.Field::getName)
+                    .collect(Collectors.toSet());
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static boolean tableHasMethod(String tableName, String methodName) {
-        return Stream.of(getField(tableName).getType().getMethods())
-                .map(Method::getName)
-                .anyMatch(m -> m.equals(methodName));
+        return getField(tableName)
+                .map(value -> Stream.of(value.getType().getMethods()).map(Method::getName).anyMatch(m -> m.equals(methodName)))
+                .orElse(false);
     }
 
     public static Optional<String> searchTableForMethodByKey(String tableName, String keyName) {
+        var field = getField(tableName);
+        if (field.isEmpty()) {
+            return Optional.empty();
+        }
         var k = keyName.replace("_", "");
         return Stream
-                .of(getField(tableName).getType().getMethods())
+                .of(field.get().getType().getMethods())
                 .map(Method::getName)
                 .filter(m -> m.replace("_", "").equalsIgnoreCase(k))
                 .findFirst();
@@ -87,16 +109,16 @@ public class TableReflection {
     }
 
     public static Set<String> getFieldNamesForTable(String tableName) {
-        return Stream.of(getField(tableName).getType().getFields())
-                .map(Field::getName)
-                .collect(Collectors.toSet());
+        return getField(tableName)
+                .map(value -> Stream.of(value.getType().getFields()).map(Field::getName).collect(Collectors.toSet()))
+                .orElse(Set.of());
     }
 
-    private static Field getField(String tableName) {
-        return TABLE_FIELDS
-                .stream()
-                .filter(f -> f.getName().equals(tableName))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("No table with the name '" + tableName + "' exists."));
+    public static Optional<Field> getField(String tableName) {
+        if (!tableExists(tableName)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(POSSIBLE_TABLE_FIELDS.get(tableName));
     }
 }

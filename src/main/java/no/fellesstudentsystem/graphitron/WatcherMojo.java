@@ -163,9 +163,10 @@ public class WatcherMojo extends GenerateMojo {
         delete(new File(GeneratorConfig.outputDirectory())); // This is done to ensure that any obsolete files get removed as well.
 
         try {
-            GraphQLGenerator.generate();
+            GraphQLGenerator.generate(); // Note that if this fails, code gets deleted anyway.
         } catch (Exception e) {
             getLog().error("Code generation has failed, an exception was thrown.", e);
+            return;
         }
         var thisThread = Thread.currentThread();
         synchronized (thisThread) {

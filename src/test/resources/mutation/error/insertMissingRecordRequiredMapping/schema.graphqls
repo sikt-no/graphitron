@@ -1,0 +1,17 @@
+input EndreInput @record(table : "PERSON") {
+  id: ID!
+  fornavn: String!
+  etternavn: String
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  kjonn: Kjonn
+  statusEksporter: Boolean @column(name : "STATUS_EKSPORTER_FLR")
+}
+
+enum Kjonn @mapEnum(name: "KJONN_TEST") {
+  MANN
+  KVINNE
+}
+
+type Mutation {
+  registrerPersonInput(input: EndreInput!): ID! @mutationType(typeName: INSERT)
+}

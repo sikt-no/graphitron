@@ -179,7 +179,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                     .add(declareRecord(name, input.getRecordClassName()));
         }
 
-        for (var in : input.getInputs()) {
+        for (var in : input.getInputsSortedByRequired()) {
             var nextPath = path + "/" + in.getName();
             if (processedSchema.isInputType(in)) {
                 code

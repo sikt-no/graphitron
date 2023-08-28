@@ -62,9 +62,16 @@ public class InputField extends AbstractField {
     }
 
     /**
-     * @return Record-side method name mappings based on the name of the field or the directive set on this input.
+     * @return Record-side set method name mapping based on the name of the field or the directive set on this input.
      */
     public String getRecordSetCall(String input) {
         return hasColumn ? recordFromColumnMapping.asSetCall(input) : recordFromSchemaNameMapping.asSetCall(input);
+    }
+
+    /**
+     * @return Record-side name mapping based on the name of the field or the directive set on this input.
+     */
+    public String getRecordMappingName() {
+        return hasColumn ? recordFromColumnMapping.getName() : recordFromSchemaNameMapping.getName();
     }
 }

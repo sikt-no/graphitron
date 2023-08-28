@@ -1,0 +1,70 @@
+package fake.code.example.package.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import fake.graphql.example.package.api.RegistrerPerson2ParamsMutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.Kjonn;
+import fake.code.example.package.queries.mutation.RegistrerPerson2ParamsDBQueries;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
+import org.jooq.DSLContext;
+
+public class RegistrerPerson2ParamsGeneratedResolver implements RegistrerPerson2ParamsMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private RegistrerPerson2ParamsDBQueries registrerPerson2ParamsDBQueries;
+
+    @Override
+    public CompletableFuture<List<String>> registrerPerson2Params(List<EndreInput> input,
+            String etternavn, DataFetchingEnvironment env) throws Exception {
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/privatEpost")) {
+                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/fornavn")) {
+                    inputRecord.setFornavn(itInput.getFornavn());
+                }
+                if (flatArguments.contains("input/etternavn")) {
+                    inputRecord.setEtternavn(itInput.getEtternavn());
+                }
+                if (flatArguments.contains("input/kjonn")) {
+                    inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                }
+                if (flatArguments.contains("input/statusEksporter")) {
+                    inputRecord.setStatusEksporterFlr(itInput.getStatusEksporter());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = registrerPerson2ParamsDBQueries.registrerPerson2Params(inputRecordList, etternavn);
+
+        return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
+    }
+}

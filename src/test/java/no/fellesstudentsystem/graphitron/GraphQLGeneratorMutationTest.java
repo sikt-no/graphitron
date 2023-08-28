@@ -102,6 +102,26 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     }
 
     @Test
+    void generate_whenHasSetInsertType_shouldGenerateInsertQueriesAndResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("insertQueries");
+    }
+
+    @Test
+    void generate_whenHasSetInsertType_shouldGenerateIterableInsertQueriesAndResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("insertIterableQueries");
+    }
+
+    @Test
+    void generate_whenHasSetUpsertType_shouldGenerateUpsertQueriesAndResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("upsertQueries");
+    }
+
+    @Test
+    void generate_whenHasSetUpsertType_shouldGenerateIterableUpsertQueriesAndResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("upsertIterableQueries");
+    }
+
+    @Test
     void generate_whenHasSetDeleteType_shouldGenerateDeleteQueriesAndResolvers() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("deleteQueries");
     }
@@ -166,5 +186,26 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         assertThatThrownBy(() -> generateFiles("error/mutationTypeWithoutRecord"))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("Must have at least one record reference when generating resolvers with queries. Mutation 'endrePerson' has no records attached.");
+    }
+
+    @Test
+    void generate_whenInsertMutationTypeHasNoRecord_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/insertNoRecordSet"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Mutation registrerPersonInput is set as an insert operation, but does not link any input to tables.");
+    }
+
+    @Test
+    void generate_whenMutationTypeHasMissingMapping_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/insertMissingRecordMapping"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Input type EndreInput referencing table PERSON does not map all fields required by the database. Missing required fields: KJONN, ETTERNAVN, STATUS_EKSPORTER_FLR");
+    }
+
+    @Test
+    void generate_whenMutationTypeHasMissingRequiredMapping_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/insertMissingRecordRequiredMapping"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Input type EndreInput referencing table PERSON does not map all fields required by the database as non-nullable. Nullable required fields: KJONN, ETTERNAVN, STATUS_EKSPORTER_FLR");
     }
 }

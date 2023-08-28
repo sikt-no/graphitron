@@ -1,0 +1,9 @@
+input EndreInput @record(table : "PERSON") {
+  id: ID!
+  fornavn: String
+  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+}
+
+type Mutation {
+  registrerPersonInput(input: EndreInput!): ID! @mutationType(typeName: INSERT)
+}

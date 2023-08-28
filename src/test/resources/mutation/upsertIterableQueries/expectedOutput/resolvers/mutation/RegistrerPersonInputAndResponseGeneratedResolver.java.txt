@@ -1,0 +1,76 @@
+package fake.code.example.package.resolvers.mutation;
+
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import javax.inject.Inject;
+import fake.graphql.example.package.api.RegistrerPersonInputAndResponseMutationResolver;
+import fake.graphql.example.package.model.EndreInput;
+import fake.graphql.example.package.model.EndreResponse;
+import fake.graphql.example.package.model.Kjonn;
+import fake.code.example.package.queries.mutation.RegistrerPersonInputAndResponseDBQueries;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.kjerneapi.FieldHelpers;
+import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
+import no.fellesstudentsystem.graphitron.enums.KjonnTest;
+import org.jooq.DSLContext;
+
+public class RegistrerPersonInputAndResponseGeneratedResolver implements RegistrerPersonInputAndResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private RegistrerPersonInputAndResponseDBQueries registrerPersonInputAndResponseDBQueries;
+
+    @Override
+    public CompletableFuture<List<EndreResponse>> registrerPersonInputAndResponse(
+            List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<PersonRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new PersonRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/privatEpost")) {
+                    inputRecord.setEmailadressePrivat(itInput.getPrivatEpost());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                if (flatArguments.contains("input/fornavn")) {
+                    inputRecord.setFornavn(itInput.getFornavn());
+                }
+                if (flatArguments.contains("input/etternavn")) {
+                    inputRecord.setEtternavn(itInput.getEtternavn());
+                }
+                if (flatArguments.contains("input/kjonn")) {
+                    inputRecord.setKjonn(itInput.getKjonn() == null ? null : Map.of(Kjonn.MANN, KjonnTest.MANN, Kjonn.KVINNE, KjonnTest.KVINNE).getOrDefault(itInput.getKjonn(), null));
+                }
+                if (flatArguments.contains("input/statusEksporter")) {
+                    inputRecord.setStatusEksporterFlr(itInput.getStatusEksporter());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = registrerPersonInputAndResponseDBQueries.registrerPersonInputAndResponse(inputRecordList);
+
+        var endreResponseList = new ArrayList<EndreResponse>();
+        for (var itInputRecordList : inputRecordList) {
+            var endreResponse = new EndreResponse();
+            endreResponse.setId(itInputRecordList.getId());
+            endreResponseList.add(endreResponse);
+        }
+
+        return CompletableFuture.completedFuture(endreResponseList);
+    }
+}

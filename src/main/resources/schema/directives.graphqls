@@ -95,4 +95,4 @@ directive @condition(
 
 directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
 
-enum MutationType { UPDATE, DELETE }
+enum MutationType { UPDATE, DELETE, INSERT, UPSERT }

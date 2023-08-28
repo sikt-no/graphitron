@@ -50,6 +50,13 @@ public class EndreErrorUnion2GeneratedResolver implements EndreErrorUnion2Mutati
         endre2Record.attach(ctx.configuration());
 
         if (input != null) {
+            var endre2 = input.getEndre2();
+            if (endre2 != null) {
+                if (flatArguments.contains("input/endre2/privatEpost")) {
+                    endre2Record.setEmailadressePrivat(endre2.getPrivatEpost());
+                }
+                FieldHelpers.setPersonKeysFromPlattformIds(ctx, endre2Record);
+            }
             if (flatArguments.contains("input/id")) {
                 inputRecord.setId(input.getId());
             }
@@ -58,13 +65,6 @@ public class EndreErrorUnion2GeneratedResolver implements EndreErrorUnion2Mutati
             }
             if (flatArguments.contains("input/etternavn")) {
                 inputRecord.setEtternavn(input.getEtternavn());
-            }
-            var endre2 = input.getEndre2();
-            if (endre2 != null) {
-                if (flatArguments.contains("input/endre2/privatEpost")) {
-                    endre2Record.setEmailadressePrivat(endre2.getPrivatEpost());
-                }
-                FieldHelpers.setPersonKeysFromPlattformIds(ctx, endre2Record);
             }
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
