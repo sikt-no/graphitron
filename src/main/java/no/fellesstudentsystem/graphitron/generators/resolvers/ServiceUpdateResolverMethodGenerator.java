@@ -7,6 +7,7 @@ import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
@@ -268,9 +269,10 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         if (responseObject.implementsInterface(NODE_TYPE.getName())) {
             return code
                     .addStatement(
-                            "var $L = $N($N, $N)",
+                            "var $L = $N($N, $N, $N)",
                             asGetMethodVariableName(previous.getTypeName(), target.getName()),
                             asGetMethodName(previous.getTypeName(), target.getName()),
+                            Dependency.CONTEXT_NAME,
                             asResultName(previous.getUnprocessedNameInput()),
                             VARIABLE_SELECT
                     )

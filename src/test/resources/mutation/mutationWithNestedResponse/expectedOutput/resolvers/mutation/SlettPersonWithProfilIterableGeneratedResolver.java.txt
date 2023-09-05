@@ -36,6 +36,7 @@ public class SlettPersonWithProfilIterableGeneratedResolver implements SlettPers
     @Override
     public CompletableFuture<ListedResponse> slettPersonWithProfilIterable(List<EndreInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -61,8 +62,8 @@ public class SlettPersonWithProfilIterableGeneratedResolver implements SlettPers
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = slettPersonWithProfilIterableDBQueries.slettPersonWithProfilIterable(inputRecordList);
-        var inputRecordPersonProfil = getResultPersonProfil(inputRecordList, select);
+        var rowsUpdated = slettPersonWithProfilIterableDBQueries.slettPersonWithProfilIterable(ctx, inputRecordList);
+        var inputRecordPersonProfil = getResultPersonProfil(ctx, inputRecordList, select);
 
         var listedResponse = new ListedResponse();
 
@@ -77,13 +78,13 @@ public class SlettPersonWithProfilIterableGeneratedResolver implements SlettPers
         return CompletableFuture.completedFuture(listedResponse);
     }
 
-    private Map<String, PersonProfil> getResultPersonProfil(List<PersonRecord> idContainer,
+    private Map<String, PersonProfil> getResultPersonProfil(DSLContext ctx, List<PersonRecord> idContainer,
             SelectionSet select) {
         if (!select.contains("results/personProfil") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("results/personProfil"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("results/personProfil"));
     }
 }

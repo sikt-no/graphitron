@@ -8,7 +8,6 @@ import static org.jooq.impl.DSL.*;
 
 import java.lang.String;
 import java.util.List;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Emne;
 import fake.graphql.example.package.model.EmneInput;
 import fake.graphql.example.package.model.Emnenavn;
@@ -16,10 +15,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<Emne> paramConditionForQuery(String eierInstitusjonsnummer, List<String> emnekoder,
+    public List<Emne> paramConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer, List<String> emnekoder,
             SelectionSet select) {
         return ctx
                 .select(
@@ -43,7 +39,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> paramConditionOverrideForQuery(String eierInstitusjonsnummer,
+    public List<Emne> paramConditionOverrideForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
@@ -66,7 +62,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> fieldConditionForQuery(String eierInstitusjonsnummer, List<String> emnekoder,
+    public List<Emne> fieldConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer, List<String> emnekoder,
             SelectionSet select) {
         return ctx
                 .select(
@@ -90,7 +86,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> fieldConditionOverrideForQuery(String eierInstitusjonsnummer,
+    public List<Emne> fieldConditionOverrideForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
@@ -112,7 +108,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> fieldAndParamConditionForQuery(String eierInstitusjonsnummer,
+    public List<Emne> fieldAndParamConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
@@ -137,7 +133,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> fieldAndParamConditionOverrideForQuery(String eierInstitusjonsnummer,
+    public List<Emne> fieldAndParamConditionOverrideForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
@@ -160,7 +156,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> fieldAndParamConditionOverrideBothForQuery(String eierInstitusjonsnummer,
+    public List<Emne> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<String> emnekoder, SelectionSet select) {
         return ctx
                 .select(
@@ -183,7 +179,7 @@ public class QueryDBQueries {
                 .fetch(0, Emne.class);
     }
 
-    public List<Emne> fieldInputConditionForQuery(String eierInstitusjonsnummer,
+    public List<Emne> fieldInputConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             EmneInput emneInput, SelectionSet select) {
         return ctx
                 .select(

@@ -30,6 +30,7 @@ public class RegistrerPersonInputGeneratedResolver implements RegistrerPersonInp
     @Override
     public CompletableFuture<List<String>> registrerPersonInput(List<EndreInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecordList = new ArrayList<PersonRecord>();
@@ -63,7 +64,7 @@ public class RegistrerPersonInputGeneratedResolver implements RegistrerPersonInp
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = registrerPersonInputDBQueries.registrerPersonInput(inputRecordList);
+        var rowsUpdated = registrerPersonInputDBQueries.registrerPersonInput(ctx, inputRecordList);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

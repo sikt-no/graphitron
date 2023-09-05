@@ -9,15 +9,11 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.Arrays;
 import java.util.List;
-import javax.inject.Inject;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
 
 public class EndrePerson1DBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public int endrePerson1(List<String> id, List<PersonRecord> inRecordList) {
+    public int endrePerson1(DSLContext ctx, List<String> id, List<PersonRecord> inRecordList) {
         return Arrays.stream(ctx.batchUpdate(inRecordList).execute()).sum();
     }
 }

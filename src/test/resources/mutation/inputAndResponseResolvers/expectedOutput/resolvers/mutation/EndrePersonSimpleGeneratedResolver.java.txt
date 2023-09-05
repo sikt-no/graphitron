@@ -17,6 +17,7 @@ public class EndrePersonSimpleGeneratedResolver implements EndrePersonSimpleMuta
     @Override
     public CompletableFuture<String> endrePersonSimple(String id, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
 
         var endrePersonSimpleResult = testPersonService.endrePersonSimple(id);

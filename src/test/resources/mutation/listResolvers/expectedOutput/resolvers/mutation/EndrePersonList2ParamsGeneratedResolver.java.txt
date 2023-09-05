@@ -23,6 +23,7 @@ public class EndrePersonList2ParamsGeneratedResolver implements EndrePersonList2
     @Override
     public CompletableFuture<List<String>> endrePersonList2Params(List<EndreInput> input,
             List<String> etternavn, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 

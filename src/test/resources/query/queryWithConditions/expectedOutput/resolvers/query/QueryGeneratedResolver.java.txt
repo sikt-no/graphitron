@@ -13,48 +13,57 @@ import fake.graphql.example.package.model.EmneInput;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.QueryDBQueries;
+import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
     public CompletableFuture<List<Emne>> paramCondition(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.paramConditionForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.paramConditionForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> paramConditionOverride(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.paramConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.paramConditionOverrideForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldCondition(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldConditionForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.fieldConditionForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldConditionOverride(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldAndParamCondition(String eierInstitusjonsnummer,
             List<String> emnekoder, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
@@ -62,8 +71,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Emne>> fieldAndParamConditionOverride(
             String eierInstitusjonsnummer, List<String> emnekoder, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
@@ -71,16 +81,18 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Emne>> fieldAndParamConditionOverrideBoth(
             String eierInstitusjonsnummer, List<String> emnekoder, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(eierInstitusjonsnummer, emnekoder, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, eierInstitusjonsnummer, emnekoder, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Emne>> fieldInputCondition(String eierInstitusjonsnummer,
             EmneInput emneInput, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldInputConditionForQuery(eierInstitusjonsnummer, emneInput, selectionSet);
+        var dbResult = queryDBQueries.fieldInputConditionForQuery(ctx, eierInstitusjonsnummer, emneInput, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

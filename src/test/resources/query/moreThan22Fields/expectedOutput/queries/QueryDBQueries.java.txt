@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Email;
 import fake.graphql.example.package.model.FolkeregistrertAdresse;
 import fake.graphql.example.package.model.Maalform;
@@ -21,10 +20,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<PersonProfil> personProfilForQuery(String eierInstitusjonsnummer,
+    public List<PersonProfil> personProfilForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, SelectionSet select) {
         return ctx
                 .select(

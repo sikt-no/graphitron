@@ -26,6 +26,7 @@ public class EndreStudentBildeGeneratedResolver implements EndreStudentBildeMuta
     @Override
     public CompletableFuture<Response> endreStudentBilde(BildeInput input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecord = new PersonbildeRecord();
@@ -41,7 +42,7 @@ public class EndreStudentBildeGeneratedResolver implements EndreStudentBildeMuta
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = endreStudentBildeDBQueries.endreStudentBilde(inputRecord);
+        var rowsUpdated = endreStudentBildeDBQueries.endreStudentBilde(ctx, inputRecord);
 
         var response = new Response();
         response.setId(inputRecord.getId());

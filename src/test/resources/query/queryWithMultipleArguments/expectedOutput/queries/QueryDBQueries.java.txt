@@ -9,16 +9,12 @@ import static org.jooq.impl.DSL.*;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<PersonProfil> personTwoArgumentsForQuery(String eierInstitusjonsnummer,
+    public List<PersonProfil> personTwoArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
@@ -38,7 +34,7 @@ public class QueryDBQueries {
                 .fetch(0, PersonProfil.class);
     }
 
-    public List<PersonProfil> personFiveArgumentsForQuery(String eierInstitusjonsnummer,
+    public List<PersonProfil> personFiveArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
@@ -63,7 +59,7 @@ public class QueryDBQueries {
     }
 
 
-    public Integer countPersonTwoArgumentsForQuery(String eierInstitusjonsnummer,
+    public Integer countPersonTwoArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer) {
         return ctx
                 .select(count().as("totalCount"))
@@ -73,7 +69,7 @@ public class QueryDBQueries {
                 .fetchOne(0, Integer.class);
     }
 
-    public Integer countPersonFiveArgumentsForQuery(String eierInstitusjonsnummer,
+    public Integer countPersonFiveArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode) {
         return ctx
                 .select(count().as("totalCount"))

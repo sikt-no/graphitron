@@ -19,12 +19,14 @@ public class EndrePersonRecord0GeneratedResolver implements EndrePersonRecord0Mu
     @Inject
     DSLContext ctx;
 
+
     @Inject
     private EndrePersonRecord0DBQueries endrePersonRecord0DBQueries;
 
     @Override
     public CompletableFuture<EndreResponse0> endrePersonRecord0(String id, EndreInput in,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inRecord = new PersonRecord();
@@ -37,7 +39,7 @@ public class EndrePersonRecord0GeneratedResolver implements EndrePersonRecord0Mu
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecord);
         }
 
-        var rowsUpdated = endrePersonRecord0DBQueries.endrePersonRecord0(id, inRecord);
+        var rowsUpdated = endrePersonRecord0DBQueries.endrePersonRecord0(ctx, id, inRecord);
 
         var endreResponse0 = new EndreResponse0();
         endreResponse0.setId0(id);

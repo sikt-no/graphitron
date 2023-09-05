@@ -32,6 +32,7 @@ public class SlettPersonWithProfilGeneratedResolver implements SlettPersonWithPr
     @Override
     public CompletableFuture<Response> slettPersonWithProfil(EndreInput input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -50,8 +51,8 @@ public class SlettPersonWithProfilGeneratedResolver implements SlettPersonWithPr
             }
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
-        var rowsUpdated = slettPersonWithProfilDBQueries.slettPersonWithProfil(inputRecord);
-        var inputRecordPersonProfil = getResultPersonProfil(inputRecord, select);
+        var rowsUpdated = slettPersonWithProfilDBQueries.slettPersonWithProfil(ctx, inputRecord);
+        var inputRecordPersonProfil = getResultPersonProfil(ctx, inputRecord, select);
 
         var response = new Response();
 
@@ -62,12 +63,12 @@ public class SlettPersonWithProfilGeneratedResolver implements SlettPersonWithPr
         return CompletableFuture.completedFuture(response);
     }
 
-    private PersonProfil getResultPersonProfil(PersonRecord idContainer, SelectionSet select) {
+    private PersonProfil getResultPersonProfil(DSLContext ctx, PersonRecord idContainer, SelectionSet select) {
         if (!select.contains("results/personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("results/personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("results/personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

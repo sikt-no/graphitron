@@ -24,6 +24,7 @@ public class SlettPersonInputAndResponseGeneratedResolver implements SlettPerson
     @Override
     public CompletableFuture<EndreResponse> slettPersonInputAndResponse(EndreInput input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecord = new PersonRecord();
@@ -42,7 +43,7 @@ public class SlettPersonInputAndResponseGeneratedResolver implements SlettPerson
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = slettPersonInputAndResponseDBQueries.slettPersonInputAndResponse(inputRecord);
+        var rowsUpdated = slettPersonInputAndResponseDBQueries.slettPersonInputAndResponse(ctx, inputRecord);
 
         var endreResponse = new EndreResponse();
         endreResponse.setId(inputRecord.getId());

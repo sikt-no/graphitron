@@ -21,6 +21,7 @@ public class EndrePerson2ParamsGeneratedResolver implements EndrePerson2ParamsMu
     @Override
     public CompletableFuture<String> endrePerson2Params(EndreInput input, String etternavn,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 

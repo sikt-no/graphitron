@@ -19,6 +19,7 @@ import static no.fellesstudentsystem.graphitron.generators.context.ClassNameForm
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.MAP;
 
 abstract public class AbstractMethodGenerator<T extends ObjectField> implements MethodGenerator<T> {
+    public static final String ENV_NAME = "env";
     protected final ObjectDefinition localObject;
     protected final ProcessedSchema processedSchema;
     protected Set<Dependency> dependencySet = new HashSet<>();

@@ -29,6 +29,7 @@ public class EndreStudentBildeIterableGeneratedResolver implements EndreStudentB
     @Override
     public CompletableFuture<ListedResponse> endreStudentBildeIterable(List<BildeInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecordList = new ArrayList<PersonbildeRecord>();
@@ -50,7 +51,7 @@ public class EndreStudentBildeIterableGeneratedResolver implements EndreStudentB
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = endreStudentBildeIterableDBQueries.endreStudentBildeIterable(inputRecordList);
+        var rowsUpdated = endreStudentBildeIterableDBQueries.endreStudentBildeIterable(ctx, inputRecordList);
 
         var listedResponse = new ListedResponse();
         listedResponse.setIder(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));

@@ -22,8 +22,12 @@ import no.fellesstudentsystem.graphql.helpers.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.Tables;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public abstract class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private KullDBQueries kullDBQueries;
 
@@ -35,24 +39,25 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
 
     @Override
     public CompletableFuture<Node> node(String id, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         String tablePartOfId = FieldHelpers.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ProgramStudierett>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         if (tablePartOfId.equals(Tables.STUDIERETTSTATUS.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Studierettstatus>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(studierettstatusDBQueries.loadStudierettstatusByIdsAsNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(studierettstatusDBQueries.loadStudierettstatusByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);
@@ -61,12 +66,13 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<Terminbasert> terminNode(String terminId, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         String tablePartOfId = FieldHelpers.getTablePartOf(terminId);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Terminbasert>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByTerminIdsAsTerminNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(kullDBQueries.loadKullByTerminIdsAsTerminNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(terminId, env);
         }
         throw new IllegalArgumentException("could not find dataloader for terminId with prefix " + tablePartOfId);

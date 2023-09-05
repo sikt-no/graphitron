@@ -24,6 +24,7 @@ public class SlettPerson2ParamsGeneratedResolver implements SlettPerson2ParamsMu
     @Override
     public CompletableFuture<String> slettPerson2Params(EndreInput input, String etternavn,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecord = new PersonRecord();
@@ -42,7 +43,7 @@ public class SlettPerson2ParamsGeneratedResolver implements SlettPerson2ParamsMu
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = slettPerson2ParamsDBQueries.slettPerson2Params(inputRecord, etternavn);
+        var rowsUpdated = slettPerson2ParamsDBQueries.slettPerson2Params(ctx, inputRecord, etternavn);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

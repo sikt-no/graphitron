@@ -9,7 +9,6 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Email;
 import fake.graphql.example.package.model.PersonProfil;
 import fake.graphql.example.package.model.Studieretning;
@@ -20,11 +19,8 @@ import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class ProgramStudierettDBQueries {
-    @Inject
-    DSLContext ctx;
-
     public Map<String, Studieretning> studieretningForProgramStudierett(
-            Set<String> programStudierettIder, SelectionSet select) {
+            DSLContext ctx, Set<String> programStudierettIder, SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getId(),
@@ -54,7 +50,7 @@ public class ProgramStudierettDBQueries {
     }
 
     public Map<String, PersonProfil> personProfilForProgramStudierett(
-            Set<String> programStudierettIder, SelectionSet select) {
+            DSLContext ctx, Set<String> programStudierettIder, SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getId(),

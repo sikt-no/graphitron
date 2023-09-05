@@ -22,18 +22,23 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
+import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
     public CompletableFuture<ExtendedConnection<PersonProfil>> person(String eierInstitusjonsnummer,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.personForQuery(eierInstitusjonsnummer, pageSize, after, selectionSet);
-        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonForQuery(eierInstitusjonsnummer) : null;
+        var dbResult = queryDBQueries.personForQuery(ctx, eierInstitusjonsnummer, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonForQuery(ctx, eierInstitusjonsnummer) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
@@ -58,8 +63,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<PersonProfil>> person2(String eierInstitusjonsnummer,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.person2ForQuery(eierInstitusjonsnummer, selectionSet);
+        var dbResult = queryDBQueries.person2ForQuery(ctx, eierInstitusjonsnummer, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

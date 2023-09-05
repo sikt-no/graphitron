@@ -9,18 +9,14 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Landtype;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class StudentVedInstitusjonDBQueries {
-    @Inject
-    DSLContext ctx;
-
     public Map<String, Landtype> institusjonslandtypeForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, SelectionSet select) {
+            DSLContext ctx, Set<String> studentVedInstitusjonIder, SelectionSet select) {
         var student_institusjonslandtype = INSTITUSJON.as("student_institusjonslandtype");
         var student_institusjonslandtype_land = student_institusjonslandtype.land().as("student_institusjonslandtype_land");
         var student_institusjonslandtype_land_landtype = student_institusjonslandtype_land.landtype().as("student_institusjonslandtype_land_landtype");

@@ -34,6 +34,7 @@ public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1Mutati
     @Override
     public CompletableFuture<EndreResponseUnion1> endreErrorUnion1(String navn,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
@@ -57,8 +58,8 @@ public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1Mutati
         var endreResponse2Result = endreErrorUnion1Result.getEndreResponse2();
         var endreResponse3Result = endreErrorUnion1Result.getEndreResponse3();
 
-        var endreResponse2PersonProfil = getEndreResponse2PersonProfil(endreResponse2Result, select);
-        var endreResponse3PersonProfil = getEndreResponse3PersonProfil(endreResponse3Result, select);
+        var endreResponse2PersonProfil = getEndreResponse2PersonProfil(ctx, endreResponse2Result, select);
+        var endreResponse3PersonProfil = getEndreResponse3PersonProfil(ctx, endreResponse3Result, select);
 
         var endreResponseUnion1 = new EndreResponseUnion1();
         endreResponseUnion1.setId(endreErrorUnion1Result.getId());
@@ -82,24 +83,24 @@ public class EndreErrorUnion1GeneratedResolver implements EndreErrorUnion1Mutati
     }
 
     private PersonProfil getEndreResponse2PersonProfil(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 idContainer,
+            DSLContext ctx, no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 idContainer,
             SelectionSet select) {
         if (!select.contains("endreResponse2/personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 
     private Map<String, PersonProfil> getEndreResponse3PersonProfil(
-            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> idContainer,
+            DSLContext ctx, List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> idContainer,
             SelectionSet select) {
         if (!select.contains("endreResponse3/personProfil") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getPers3().getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("endreResponse3/personProfil"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("endreResponse3/personProfil"));
     }
 }

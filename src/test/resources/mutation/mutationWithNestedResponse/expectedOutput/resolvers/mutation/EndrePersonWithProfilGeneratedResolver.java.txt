@@ -32,6 +32,7 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
     @Override
     public CompletableFuture<Response> endrePersonWithProfil(EndreInput input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -51,8 +52,8 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = endrePersonWithProfilDBQueries.endrePersonWithProfil(inputRecord);
-        var inputRecordPersonProfil = getResultPersonProfil(inputRecord, select);
+        var rowsUpdated = endrePersonWithProfilDBQueries.endrePersonWithProfil(ctx, inputRecord);
+        var inputRecordPersonProfil = getResultPersonProfil(ctx, inputRecord, select);
 
         var response = new Response();
 
@@ -63,12 +64,12 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
         return CompletableFuture.completedFuture(response);
     }
 
-    private PersonProfil getResultPersonProfil(PersonRecord idContainer, SelectionSet select) {
+    private PersonProfil getResultPersonProfil(DSLContext ctx, PersonRecord idContainer, SelectionSet select) {
         if (!select.contains("results/personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("results/personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("results/personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

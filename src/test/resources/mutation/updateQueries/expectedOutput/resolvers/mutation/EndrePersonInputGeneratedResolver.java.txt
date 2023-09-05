@@ -24,6 +24,7 @@ public class EndrePersonInputGeneratedResolver implements EndrePersonInputMutati
     @Override
     public CompletableFuture<String> endrePersonInput(EndreInput input, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecord = new PersonRecord();
@@ -42,7 +43,7 @@ public class EndrePersonInputGeneratedResolver implements EndrePersonInputMutati
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = endrePersonInputDBQueries.endrePersonInput(inputRecord);
+        var rowsUpdated = endrePersonInputDBQueries.endrePersonInput(ctx, inputRecord);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

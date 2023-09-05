@@ -6,6 +6,7 @@ import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -61,10 +62,11 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         return CodeBlock
                 .builder()
                 .addStatement(
-                        "var $L = $N.$L($L)",
+                        "var $L = $N.$L($N, $L)",
                         !context.hasService() ? VARIABLE_ROWS : asResultName(target.getUnprocessedNameInput()),
                         uncapitalize(objectToCall),
                         target.getName(),
+                        Dependency.CONTEXT_NAME,
                         context.getServiceInputString()
                 ) // Method name is expected to be the field's name.
                 .build();
@@ -114,9 +116,10 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         if (responseObject.implementsInterface(NODE_TYPE.getName())) {
             return code
                     .addStatement(
-                            "var $L = $N($N, $N)",
+                            "var $L = $N($N, $N, $N)",
                             asGetMethodVariableName(variableName, target.getName()),
                             asGetMethodName(previous.getTypeName(), target.getName()),
+                            Dependency.CONTEXT_NAME,
                             argumentName,
                             VARIABLE_SELECT
                     )

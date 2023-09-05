@@ -18,21 +18,26 @@ import fake.code.example.package.queries.query.VurderingsmeldingDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class VurderingsmeldingGeneratedResolver implements VurderingsmeldingResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private VurderingsmeldingDBQueries vurderingsmeldingDBQueries;
 
     @Override
     public CompletableFuture<Telefon> studentPrivatTelefon(Vurderingsmelding vurderingsmelding,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, Telefon> loader = env.getDataLoaderRegistry().computeIfAbsent("studentPrivatTelefonForVurderingsmelding", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, Telefon>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = vurderingsmeldingDBQueries.studentPrivatTelefonForVurderingsmelding(idSet, selectionSet);
+                var dbResult = vurderingsmeldingDBQueries.studentPrivatTelefonForVurderingsmelding(ctx, idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

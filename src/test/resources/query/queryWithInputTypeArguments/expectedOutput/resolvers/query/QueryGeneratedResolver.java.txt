@@ -24,8 +24,12 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
+import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private QueryDBQueries queryDBQueries;
 
@@ -33,8 +37,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<PersonProfil>> personNoPage(String eierInstitusjonsnummer,
             List<Integer> personlopenummer, PersonInput pin, DataFetchingEnvironment env) throws
             Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.personNoPageForQuery(eierInstitusjonsnummer, personlopenummer, pin, selectionSet);
+        var dbResult = queryDBQueries.personNoPageForQuery(ctx, eierInstitusjonsnummer, personlopenummer, pin, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
@@ -42,10 +47,11 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<PersonProfil>> personWithPage(
             String eierInstitusjonsnummer, List<Integer> personlopenummer, PersonInput pin,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.personWithPageForQuery(eierInstitusjonsnummer, personlopenummer, pin, pageSize, after, selectionSet);
-        var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countPersonWithPageForQuery(eierInstitusjonsnummer, personlopenummer, pin) : null;
+        var dbResult = queryDBQueries.personWithPageForQuery(ctx, eierInstitusjonsnummer, personlopenummer, pin, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonWithPageForQuery(ctx, eierInstitusjonsnummer, personlopenummer, pin) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
@@ -71,10 +77,11 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<StudentVedInstitusjon>> studenter(
             String eierInstitusjonsnummer, Integer first, String after, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.studenterForQuery(eierInstitusjonsnummer, pageSize, after, selectionSet);
-        var totalCount = selectionSet.contains("totalCount") ?  queryDBQueries.countStudenterForQuery(eierInstitusjonsnummer) : null;
+        var dbResult = queryDBQueries.studenterForQuery(ctx, eierInstitusjonsnummer, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countStudenterForQuery(ctx, eierInstitusjonsnummer) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());

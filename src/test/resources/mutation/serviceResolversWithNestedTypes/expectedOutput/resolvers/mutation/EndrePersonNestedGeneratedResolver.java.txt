@@ -32,6 +32,7 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     @Inject
     DSLContext ctx;
 
+
     @Inject
     private PersonProfilDBQueries personProfilDBQueries;
 
@@ -41,6 +42,7 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     @Override
     public CompletableFuture<EndreResponse> endrePersonNested(EndreInputLevel1 input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
@@ -125,9 +127,9 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
         var endreResponse3Result = endrePersonNestedResult.getEndreResponse3();
         var endre4Result = endreResponse3Result.stream().flatMap(it -> it.getEndre4().stream()).collect(Collectors.toList());
 
-        var endreResponse2PersonProfil = getEndreResponse2PersonProfil(endreResponse2Result, select);
-        var endreResponse3PersonProfil = getEndreResponse3PersonProfil(endreResponse3Result, select);
-        var endreResponse4Post = getEndreResponse4Post(endre4Result, select);
+        var endreResponse2PersonProfil = getEndreResponse2PersonProfil(ctx, endreResponse2Result, select);
+        var endreResponse3PersonProfil = getEndreResponse3PersonProfil(ctx, endreResponse3Result, select);
+        var endreResponse4Post = getEndreResponse4Post(ctx, endre4Result, select);
 
         var endreResponse = new EndreResponse();
         endreResponse.setId(endrePersonNestedResult.getId());
@@ -159,35 +161,35 @@ public class EndrePersonNestedGeneratedResolver implements EndrePersonNestedMuta
     }
 
     private PersonProfil getEndreResponse2PersonProfil(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 idContainer,
+            DSLContext ctx, no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse2 idContainer,
             SelectionSet select) {
         if (!select.contains("endreResponse2/personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getPersonProfil().getId()), select.withPrefix("endreResponse2/personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 
     private Map<String, PersonProfil> getEndreResponse3PersonProfil(
-            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> idContainer,
+            DSLContext ctx, List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse3> idContainer,
             SelectionSet select) {
         if (!select.contains("endreResponse3/personProfil") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getPers3().getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("endreResponse3/personProfil"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("endreResponse3/personProfil"));
     }
 
     private Map<String, Postadresse> getEndreResponse4Post(
-            List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse4> idContainer,
+            DSLContext ctx, List<no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse4> idContainer,
             SelectionSet select) {
         if (!select.contains("endreResponse3/endreResponse4/post") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getPostAdr4().getId()).collect(Collectors.toSet());
-        return postadresseDBQueries.loadPostadresseByIdsAsNode(ids, select.withPrefix("endreResponse3/endreResponse4/post"));
+        return postadresseDBQueries.loadPostadresseByIdsAsNode(ctx, ids, select.withPrefix("endreResponse3/endreResponse4/post"));
     }
 }

@@ -8,6 +8,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefin
 import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
@@ -26,8 +27,6 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Generates resolvers for queries returning an interface. E.g. the node resolver.
  */
 public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
-    private static final String ENV_NAME = "env";
-
     private final ObjectDefinition localObject;
 
     public FetchInterfaceResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -76,7 +75,8 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                             Map.entry("inputFieldNameCap", capitalize(inputFieldName)),
                             Map.entry("selectionSets", SELECTION_SET.className),
                             Map.entry("environmentUtils", ENVIRONMENT_UTILS.className),
-                            Map.entry("referenceFieldName", capitalize(target.getName()))
+                            Map.entry("referenceFieldName", capitalize(target.getName())),
+                            Map.entry("context", Dependency.CONTEXT_NAME)
                     );
                     dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
@@ -85,7 +85,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                                     "return $env:N.getDataLoaderRegistry().<$string:T, $returnType:T>computeIfAbsent(tablePartOfId, name ->$W" +
                                             "$dataloader:T.newMappedDataLoader(($batchLoader:T<$string:T, $implementationClass:T>) (keys, loaderEnvironment) ->$>$W" +
                                             "$future:T.completedFuture($queryInstanceField:N.load$implName:NBy$inputFieldNameCap:NsAs$referenceFieldName:N" +
-                                            "(keys, new $selectionSets:T($environmentUtils:T.getSelectionSetsFromEnvironment(loaderEnvironment))))))" +
+                                            "($context:N, keys, new $selectionSets:T($environmentUtils:T.getSelectionSetsFromEnvironment(loaderEnvironment))))))" +
                                             "$<$W.load($inputFieldName:N, $env:N)", map)
                             .build());
                     spec.endControlFlow();

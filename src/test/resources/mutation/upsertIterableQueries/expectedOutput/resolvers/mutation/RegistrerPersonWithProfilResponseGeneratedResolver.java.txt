@@ -37,6 +37,7 @@ public class RegistrerPersonWithProfilResponseGeneratedResolver implements Regis
     @Override
     public CompletableFuture<List<EndreResponseWithPerson>> registrerPersonWithProfilResponse(
             List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -71,8 +72,8 @@ public class RegistrerPersonWithProfilResponseGeneratedResolver implements Regis
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = registrerPersonWithProfilResponseDBQueries.registrerPersonWithProfilResponse(inputRecordList);
-        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(inputRecordList, select);
+        var rowsUpdated = registrerPersonWithProfilResponseDBQueries.registrerPersonWithProfilResponse(ctx, inputRecordList);
+        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(ctx, inputRecordList, select);
 
         var endreResponseWithPersonList = new ArrayList<EndreResponseWithPerson>();
         for (var itInputRecordList : inputRecordList) {
@@ -85,12 +86,12 @@ public class RegistrerPersonWithProfilResponseGeneratedResolver implements Regis
     }
 
     private Map<String, PersonProfil> getEndreResponseWithPersonPersonProfil(
-            List<PersonRecord> idContainer, SelectionSet select) {
+            DSLContext ctx, List<PersonRecord> idContainer, SelectionSet select) {
         if (!select.contains("personProfil") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("personProfil"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("personProfil"));
     }
 }

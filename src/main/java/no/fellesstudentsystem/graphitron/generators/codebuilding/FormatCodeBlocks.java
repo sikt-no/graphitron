@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.generators.codebuilding;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import org.jetbrains.annotations.NotNull;
 
@@ -10,7 +11,17 @@ import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.as
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 public class FormatCodeBlocks {
-    private final static CodeBlock COLLECT_TO_LIST = CodeBlock.builder().add(".collect($T.toList())", COLLECTORS.className).build();
+    private final static CodeBlock
+            COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
+            GET_CONTEXT_METHOD = CodeBlock.of("$N.getLocalContext()", AbstractMethodGenerator.ENV_NAME),
+            DECLARE_CONTEXT_VARIABLE = CodeBlock.of(
+                    "var $N = $L == null ? this.$N : ($T) $L",
+                    Dependency.CONTEXT_NAME,
+                    GET_CONTEXT_METHOD,
+                    Dependency.CONTEXT_NAME,
+                    DSL_CONTEXT.className,
+                    GET_CONTEXT_METHOD
+            );
 
     @NotNull
     public static CodeBlock declareArrayList(String variableName, TypeName typeName) {
@@ -51,6 +62,11 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock collectToList() {
         return COLLECT_TO_LIST;
+    }
+
+    @NotNull
+    public static CodeBlock declareContextVariable() {
+        return DECLARE_CONTEXT_VARIABLE;
     }
 
     @NotNull

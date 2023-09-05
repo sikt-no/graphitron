@@ -11,7 +11,6 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.In;
 import fake.graphql.example.package.model.Vurderingsresultat;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
@@ -19,11 +18,8 @@ import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class StudentVedInstitusjonDBQueries {
-    @Inject
-    DSLContext ctx;
-
     public Map<String, List<Vurderingsresultat>> vurderingForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, List<Boolean> b, SelectionSet select) {
+            DSLContext ctx, Set<String> studentVedInstitusjonIder, List<Boolean> b, SelectionSet select) {
         var student_vurdering = STUDENTVURDKOMBPROTOKOLL.as("student_vurdering");
         return ctx
                 .select(
@@ -41,7 +37,7 @@ public class StudentVedInstitusjonDBQueries {
     }
 
     public Map<String, List<Vurderingsresultat>> vurderingInputForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, In b, SelectionSet select) {
+            DSLContext ctx, Set<String> studentVedInstitusjonIder, In b, SelectionSet select) {
         var student_vurderinginput = STUDENTVURDKOMBPROTOKOLL.as("student_vurderinginput");
         return ctx
                 .select(

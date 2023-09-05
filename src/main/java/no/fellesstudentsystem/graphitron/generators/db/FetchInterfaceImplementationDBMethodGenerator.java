@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 
@@ -56,7 +57,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
 
         var code = CodeBlock.builder()
                 .add(createSelectAliases(context.getJoinList(), context.getAliasList()))
-                .add("return ctx\n")
+                .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
                 .add(".select(\n")

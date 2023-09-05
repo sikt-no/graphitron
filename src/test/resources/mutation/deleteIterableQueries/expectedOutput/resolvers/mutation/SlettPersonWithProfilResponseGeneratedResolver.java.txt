@@ -35,6 +35,7 @@ public class SlettPersonWithProfilResponseGeneratedResolver implements SlettPers
     @Override
     public CompletableFuture<List<EndreResponseWithPerson>> slettPersonWithProfilResponse(
             List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -60,8 +61,8 @@ public class SlettPersonWithProfilResponseGeneratedResolver implements SlettPers
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = slettPersonWithProfilResponseDBQueries.slettPersonWithProfilResponse(inputRecordList);
-        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(inputRecordList, select);
+        var rowsUpdated = slettPersonWithProfilResponseDBQueries.slettPersonWithProfilResponse(ctx, inputRecordList);
+        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(ctx, inputRecordList, select);
 
         var endreResponseWithPersonList = new ArrayList<EndreResponseWithPerson>();
         for (var itInputRecordList : inputRecordList) {
@@ -74,12 +75,12 @@ public class SlettPersonWithProfilResponseGeneratedResolver implements SlettPers
     }
 
     private Map<String, PersonProfil> getEndreResponseWithPersonPersonProfil(
-            List<PersonRecord> idContainer, SelectionSet select) {
+            DSLContext ctx, List<PersonRecord> idContainer, SelectionSet select) {
         if (!select.contains("personProfil") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("personProfil"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("personProfil"));
     }
 }

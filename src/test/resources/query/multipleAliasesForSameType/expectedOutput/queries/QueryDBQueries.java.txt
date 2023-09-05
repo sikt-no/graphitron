@@ -8,7 +8,6 @@ import static org.jooq.impl.DSL.*;
 
 import java.lang.String;
 import java.util.List;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Emnevalgstatus;
 import fake.graphql.example.package.model.MaksimumVektingForEmnevalgstatus;
 import fake.graphql.example.package.model.MinimumVektingForEmnevalgstatus;
@@ -17,10 +16,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<Emnevalgstatus> emnevalgstatusForQuery(String id, SelectionSet select) {
+    public List<Emnevalgstatus> emnevalgstatusForQuery(DSLContext ctx, String id, SelectionSet select) {
         var emnevalgstatus_minimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Minimum_Vektingstype_Fk().as("emnevalgstatus_minimumsvekting_vektingstype");
         var emnevalgstatus_maksimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Max_Vektingstype_Fk().as("emnevalgstatus_maksimumsvekting_vektingstype");
         return ctx

@@ -29,6 +29,7 @@ public class RegistrerPersonInputAndResponseGeneratedResolver implements Registr
     @Override
     public CompletableFuture<List<EndreResponse>> registrerPersonInputAndResponse(
             List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecordList = new ArrayList<PersonRecord>();
@@ -62,7 +63,7 @@ public class RegistrerPersonInputAndResponseGeneratedResolver implements Registr
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = registrerPersonInputAndResponseDBQueries.registrerPersonInputAndResponse(inputRecordList);
+        var rowsUpdated = registrerPersonInputAndResponseDBQueries.registrerPersonInputAndResponse(ctx, inputRecordList);
 
         var endreResponseList = new ArrayList<EndreResponse>();
         for (var itInputRecordList : inputRecordList) {

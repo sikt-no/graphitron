@@ -34,6 +34,7 @@ public class RegistrerPersonWithProfilResponseGeneratedResolver implements Regis
     @Override
     public CompletableFuture<EndreResponseWithPerson> registrerPersonWithProfilResponse(
             EndreInput input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -62,8 +63,8 @@ public class RegistrerPersonWithProfilResponseGeneratedResolver implements Regis
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = registrerPersonWithProfilResponseDBQueries.registrerPersonWithProfilResponse(inputRecord);
-        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(inputRecord, select);
+        var rowsUpdated = registrerPersonWithProfilResponseDBQueries.registrerPersonWithProfilResponse(ctx, inputRecord);
+        var inputRecordPersonProfil = getEndreResponseWithPersonPersonProfil(ctx, inputRecord, select);
 
         var endreResponseWithPerson = new EndreResponseWithPerson();
         endreResponseWithPerson.setPersonProfil(inputRecordPersonProfil);
@@ -71,13 +72,13 @@ public class RegistrerPersonWithProfilResponseGeneratedResolver implements Regis
         return CompletableFuture.completedFuture(endreResponseWithPerson);
     }
 
-    private PersonProfil getEndreResponseWithPersonPersonProfil(PersonRecord idContainer,
+    private PersonProfil getEndreResponseWithPersonPersonProfil(DSLContext ctx, PersonRecord idContainer,
             SelectionSet select) {
         if (!select.contains("personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

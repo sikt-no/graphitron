@@ -26,6 +26,7 @@ public class EndrePersonWithProfilIterable2GeneratedResolver implements EndrePer
     @Inject
     DSLContext ctx;
 
+
     @Inject
     private EndrePersonWithProfilIterable2DBQueries endrePersonWithProfilIterable2DBQueries;
 
@@ -35,6 +36,7 @@ public class EndrePersonWithProfilIterable2GeneratedResolver implements EndrePer
     @Override
     public CompletableFuture<ListedNodeResponse> endrePersonWithProfilIterable2(
             List<EndreInput> input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -60,8 +62,8 @@ public class EndrePersonWithProfilIterable2GeneratedResolver implements EndrePer
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = endrePersonWithProfilIterable2DBQueries.endrePersonWithProfilIterable2(inputRecordList);
-        var inputRecordPersonProfiler = getListedNodeResponsePersonProfiler(inputRecordList, select);
+        var rowsUpdated = endrePersonWithProfilIterable2DBQueries.endrePersonWithProfilIterable2(ctx, inputRecordList);
+        var inputRecordPersonProfiler = getListedNodeResponsePersonProfiler(ctx, inputRecordList, select);
 
         var listedNodeResponse = new ListedNodeResponse();
 
@@ -75,12 +77,12 @@ public class EndrePersonWithProfilIterable2GeneratedResolver implements EndrePer
     }
 
     private Map<String, PersonProfil> getListedNodeResponsePersonProfiler(
-            List<PersonRecord> idContainer, SelectionSet select) {
+            DSLContext ctx, List<PersonRecord> idContainer, SelectionSet select) {
         if (!select.contains("personProfiler") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("personProfiler"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("personProfiler"));
     }
 }

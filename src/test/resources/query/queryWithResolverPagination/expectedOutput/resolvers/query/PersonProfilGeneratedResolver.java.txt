@@ -27,14 +27,19 @@ import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class PersonProfilGeneratedResolver implements PersonProfilResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private PersonProfilDBQueries personProfilDBQueries;
 
     @Override
     public CompletableFuture<ExtendedConnection<Pass>> pass(PersonProfil personProfil,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         int pageSize = Optional.ofNullable(first).orElse(10);
         DataLoader<String, ExtendedConnection<Pass>> loader = env.getDataLoaderRegistry().computeIfAbsent("passForPersonProfil", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, ExtendedConnection<Pass>>) (keys, batchEnvLoader) -> {
@@ -42,8 +47,8 @@ public class PersonProfilGeneratedResolver implements PersonProfilResolver {
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = personProfilDBQueries.passForPersonProfil(idSet, pageSize, after, selectionSet);
-                var totalCount = selectionSet.contains("totalCount") ? personProfilDBQueries.countPassForPersonProfil(idSet) : null;
+                var dbResult = personProfilDBQueries.passForPersonProfil(ctx, idSet, pageSize, after, selectionSet);
+                var totalCount = selectionSet.contains("totalCount") ? personProfilDBQueries.countPassForPersonProfil(ctx, idSet) : null;
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

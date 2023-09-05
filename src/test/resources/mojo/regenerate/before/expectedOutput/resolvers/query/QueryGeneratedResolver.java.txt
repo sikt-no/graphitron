@@ -15,13 +15,18 @@ import fake.code.example.package.queries.query.QueryDBQueries;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Inject
+    DSLContext ctx;
+
+
+    @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
     public CompletableFuture<List<Termin>> termin(String eierInstitusjonsnummer,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.terminForQuery(eierInstitusjonsnummer, selectionSet);
+        var dbResult = queryDBQueries.terminForQuery(ctx, eierInstitusjonsnummer, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

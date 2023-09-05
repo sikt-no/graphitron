@@ -5,6 +5,7 @@ import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -46,7 +47,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         var code = CodeBlock
                 .builder()
-                .add("return ctx\n")
+                .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent().indent()
                 .add(".select(count().as($S))\n", TOTAL_COUNT_NAME)
                 .add(".from(")

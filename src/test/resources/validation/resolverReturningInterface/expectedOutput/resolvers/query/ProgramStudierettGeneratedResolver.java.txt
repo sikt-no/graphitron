@@ -19,8 +19,12 @@ import no.fellesstudentsystem.graphql.helpers.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.Tables;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class ProgramStudierettGeneratedResolver implements ProgramStudierettResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private KullDBQueries kullDBQueries;
 
@@ -30,18 +34,19 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
     @Override
     public CompletableFuture<Node> referertNode(ProgramStudierett programStudierett, String id,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         String tablePartOfId = FieldHelpers.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsReferertNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsReferertNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
                     DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ProgramStudierett>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);

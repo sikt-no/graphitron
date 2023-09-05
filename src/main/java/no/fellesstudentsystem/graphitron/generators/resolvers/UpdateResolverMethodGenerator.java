@@ -5,7 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
-import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
@@ -35,7 +35,6 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     private static final String
-            PARAM_ENV = "env",
             VARIABLE_ID = "ids",
             VARIABLE_GET_PARAM = "idContainer",
             VARIABLE_NODE_RESULT = "nodes",
@@ -51,7 +50,6 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             ProcessedSchema processedSchema
     ) {
         super(processedSchema.getMutationType(), processedSchema);
-        dependencySet.add(ContextDependency.getInstance());
         this.localField = localField;
     }
 
@@ -65,11 +63,11 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         context = new UpdateContext(target, processedSchema);
         var code = CodeBlock.builder();
         if (context.mutationReturnsNodes()) {
-            code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SET.className, PARAM_ENV);
+            code.addStatement("var $L = new $T($N.getSelectionSet())", VARIABLE_SELECT, SELECTION_SET.className, ENV_NAME);
         }
         if (!context.getRecordInputs().isEmpty()) {
             code
-                    .addStatement("var $L = $T.flattenArgumentKeys($N.getArguments())", VARIABLE_FLAT_ARGS, ARGUMENTS.className, PARAM_ENV)
+                    .addStatement("var $L = $T.flattenArgumentKeys($N.getArguments())", VARIABLE_FLAT_ARGS, ARGUMENTS.className, ENV_NAME)
                     .add("\n");
         }
 
@@ -79,7 +77,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .add(generateResponsesAndGetCalls(target));
 
         return spec
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, PARAM_ENV)
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
                 .addCode(declareAllServiceClasses())
                 .addCode(code.build())
                 .build();
@@ -209,7 +207,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                     "$T.$L($N, $N)",
                     FIELD_HELPERS_EXTERNAL.className,
                     METHOD_SET_PK,
-                    ContextDependency.CONTEXT_NAME,
+                    Dependency.CONTEXT_NAME,
                     isIterable ? potentialArrayListName : recordName
             );
         }
@@ -305,6 +303,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 MethodSpec
                         .methodBuilder(asGetMethodName(previous.getTypeName(), target.getName()))
                         .addModifiers(Modifier.PRIVATE)
+                        .addParameter(DSL_CONTEXT.className, Dependency.CONTEXT_NAME)
                         .addParameter(ParameterSpec.builder(methodParameter, VARIABLE_GET_PARAM).build())
                         .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
                         .returns(returnType)
@@ -381,14 +380,15 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                     idCall,
                     COLLECTORS.className
             );
-            code.addStatement("return $N.$L($N, $L)", querySourceName, queryMethod, VARIABLE_ID, selectionSetCode);
+            code.addStatement("return $N.$L($N, $N, $L)", querySourceName, queryMethod, Dependency.CONTEXT_NAME, VARIABLE_ID, selectionSetCode);
         } else {
             code
                     .addStatement(
-                            "var $L = $N.$L($T.of($N$L), $L)",
+                            "var $L = $N.$L($N, $T.of($N$L), $L)",
                             VARIABLE_NODE_RESULT,
                             querySourceName,
                             queryMethod,
+                            Dependency.CONTEXT_NAME,
                             SET.className,
                             VARIABLE_GET_PARAM,
                             idCall,

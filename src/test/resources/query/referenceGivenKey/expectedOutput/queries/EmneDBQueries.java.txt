@@ -10,17 +10,13 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Campusemne;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class EmneDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public Map<String, List<Campusemne>> campuserForEmne(Set<String> emneIder,
+    public Map<String, List<Campusemne>> campuserForEmne(DSLContext ctx, Set<String> emneIder,
             SelectionSet select) {
         var emne_campuser = CAMPUS_EMNE.as("emne_campuser");
         return ctx

@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Semesterregistrering;
 import fake.graphql.example.package.model.SemesterregistreringBetaltInstitusjon;
 import fake.graphql.example.package.model.SemesterregistreringBetaltInstitusjonNested;
@@ -21,11 +20,8 @@ import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class StudentVedInstitusjonDBQueries {
-    @Inject
-    DSLContext ctx;
-
     public Map<String, List<Semesterregistrering>> semesterregistreringerForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, SemesterregistreringBetaltInstitusjon terminIn,
+            DSLContext ctx, Set<String> studentVedInstitusjonIder, SemesterregistreringBetaltInstitusjon terminIn,
             SelectionSet select) {
         return ctx
                 .select(
@@ -43,7 +39,7 @@ public class StudentVedInstitusjonDBQueries {
     }
 
     public Map<String, List<Semesterregistrering>> registreringerForInputListForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder,
+            DSLContext ctx, Set<String> studentVedInstitusjonIder,
             List<SemesterregistreringBetaltInstitusjon> terminInList, SelectionSet select) {
         return ctx
                 .select(
@@ -68,7 +64,7 @@ public class StudentVedInstitusjonDBQueries {
     }
 
     public Map<String, List<Semesterregistrering>> registreringerForMixOfListAndSingleInputForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder, SemesterregistreringBetaltInstitusjon terminIn,
+            DSLContext ctx, Set<String> studentVedInstitusjonIder, SemesterregistreringBetaltInstitusjon terminIn,
             List<SemesterregistreringBetaltInstitusjon> terminInList, SelectionSet select) {
         return ctx
                 .select(
@@ -95,7 +91,7 @@ public class StudentVedInstitusjonDBQueries {
     }
 
     public Map<String, List<Semesterregistrering>> registreringerForInputWithOneFieldListForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder,
+            DSLContext ctx, Set<String> studentVedInstitusjonIder,
             List<SemesterregistreringBetaltInstitusjonWithOneField> terminInListOneField,
             SelectionSet select) {
         return ctx
@@ -119,7 +115,7 @@ public class StudentVedInstitusjonDBQueries {
     }
 
     public Map<String, List<Semesterregistrering>> registreringerForInputWithNestedFieldListForStudentVedInstitusjon(
-            Set<String> studentVedInstitusjonIder,
+            DSLContext ctx, Set<String> studentVedInstitusjonIder,
             List<SemesterregistreringBetaltInstitusjonNested> terminInListNestedField,
             SelectionSet select) {
         return ctx

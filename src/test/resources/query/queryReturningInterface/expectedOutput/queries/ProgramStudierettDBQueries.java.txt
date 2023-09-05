@@ -9,7 +9,6 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Kull;
 import fake.graphql.example.package.model.ProgramStudierett;
 import fake.graphql.example.package.model.Studierettperiode;
@@ -19,11 +18,8 @@ import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class ProgramStudierettDBQueries {
-    @Inject
-    DSLContext ctx;
-
     public Map<String, Studierettstatus> studierettstatusForProgramStudierett(
-            Set<String> programStudierettIder, SelectionSet select) {
+            DSLContext ctx, Set<String> programStudierettIder, SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getId(),
@@ -36,7 +32,7 @@ public class ProgramStudierettDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, ProgramStudierett> loadProgramStudierettByIdsAsNode(Set<String> ids,
+    public Map<String, ProgramStudierett> loadProgramStudierettByIdsAsNode(DSLContext ctx, Set<String> ids,
             SelectionSet select) {
         return ctx
                 .select(

@@ -12,15 +12,20 @@ import fake.graphql.example.package.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.QueryDBQueries;
+import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
     public CompletableFuture<List<StudentVedInstitusjon>> student(String id,
             DataFetchingEnvironment env) throws Exception {
-        var dbResult = queryDBQueries.studentForQuery(id, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var dbResult = queryDBQueries.studentForQuery(ctx, id, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
         return CompletableFuture.completedFuture(dbResult);
     }
 }

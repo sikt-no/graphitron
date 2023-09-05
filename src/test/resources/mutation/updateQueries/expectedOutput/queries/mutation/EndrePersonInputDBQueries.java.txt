@@ -7,15 +7,11 @@ import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
 import java.util.Arrays;
-import javax.inject.Inject;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
 
 public class EndrePersonInputDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public int endrePersonInput(PersonRecord inputRecord) {
+    public int endrePersonInput(DSLContext ctx, PersonRecord inputRecord) {
         return Arrays.stream(ctx.batchUpdate(inputRecord).execute()).sum();
     }
 }

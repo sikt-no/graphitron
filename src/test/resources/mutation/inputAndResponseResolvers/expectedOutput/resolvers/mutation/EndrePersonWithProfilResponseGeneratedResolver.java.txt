@@ -30,13 +30,14 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     @Override
     public CompletableFuture<EndreResponseWithPerson> endrePersonWithProfilResponse(String id,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
         var endrePersonWithProfilResponseResult = testPersonService.endrePersonWithProfilResponse(id);
 
-        var endreResponseWithPersonPersonProfil = getEndreResponseWithPersonPersonProfil(endrePersonWithProfilResponseResult, select);
-        var endreResponseWithPersonPost = getEndreResponseWithPersonPost(endrePersonWithProfilResponseResult, select);
+        var endreResponseWithPersonPersonProfil = getEndreResponseWithPersonPersonProfil(ctx, endrePersonWithProfilResponseResult, select);
+        var endreResponseWithPersonPost = getEndreResponseWithPersonPost(ctx, endrePersonWithProfilResponseResult, select);
 
         var endreResponseWithPerson = new EndreResponseWithPerson();
         endreResponseWithPerson.setId(endrePersonWithProfilResponseResult.getId());
@@ -47,24 +48,24 @@ public class EndrePersonWithProfilResponseGeneratedResolver implements EndrePers
     }
 
     private PersonProfil getEndreResponseWithPersonPersonProfil(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse idContainer,
+            DSLContext ctx, no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse idContainer,
             SelectionSet select) {
         if (!select.contains("personProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getPersProf().getId()), select.withPrefix("personProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getPersProf().getId()), select.withPrefix("personProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 
     private Postadresse getEndreResponseWithPersonPost(
-            no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse idContainer,
+            DSLContext ctx, no.fellesstudentsystem.graphitron.services.TestPersonService.EndrePersonResponse idContainer,
             SelectionSet select) {
         if (!select.contains("post") || idContainer == null) {
             return null;
         }
 
-        var nodes = postadresseDBQueries.loadPostadresseByIdsAsNode(Set.of(idContainer.getPost().getId()), select.withPrefix("post"));
+        var nodes = postadresseDBQueries.loadPostadresseByIdsAsNode(ctx, Set.of(idContainer.getPost().getId()), select.withPrefix("post"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

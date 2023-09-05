@@ -6,10 +6,4 @@ import static no.fellesstudentsystem.kjerneapi.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
-import javax.inject.Inject;
-import org.jooq.DSLContext;
-
-public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-}
+public class QueryDBQueries {}

@@ -27,6 +27,7 @@ public class EndrePersonWithProfilIterableGeneratedResolver implements EndrePers
     @Inject
     DSLContext ctx;
 
+
     @Inject
     private EndrePersonWithProfilIterableDBQueries endrePersonWithProfilIterableDBQueries;
 
@@ -36,6 +37,7 @@ public class EndrePersonWithProfilIterableGeneratedResolver implements EndrePers
     @Override
     public CompletableFuture<ListedResponse> endrePersonWithProfilIterable(List<EndreInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
@@ -61,8 +63,8 @@ public class EndrePersonWithProfilIterableGeneratedResolver implements EndrePers
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = endrePersonWithProfilIterableDBQueries.endrePersonWithProfilIterable(inputRecordList);
-        var inputRecordPersonProfil = getResultPersonProfil(inputRecordList, select);
+        var rowsUpdated = endrePersonWithProfilIterableDBQueries.endrePersonWithProfilIterable(ctx, inputRecordList);
+        var inputRecordPersonProfil = getResultPersonProfil(ctx, inputRecordList, select);
 
         var listedResponse = new ListedResponse();
 
@@ -77,13 +79,13 @@ public class EndrePersonWithProfilIterableGeneratedResolver implements EndrePers
         return CompletableFuture.completedFuture(listedResponse);
     }
 
-    private Map<String, PersonProfil> getResultPersonProfil(List<PersonRecord> idContainer,
+    private Map<String, PersonProfil> getResultPersonProfil(DSLContext ctx, List<PersonRecord> idContainer,
             SelectionSet select) {
         if (!select.contains("results/personProfil") || idContainer == null) {
             return Map.of();
         }
 
         var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ids, select.withPrefix("results/personProfil"));
+        return personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, ids, select.withPrefix("results/personProfil"));
     }
 }

@@ -21,6 +21,7 @@ public class EndrePermisjonGeneratedResolver implements EndrePermisjonMutationRe
     @Override
     public CompletableFuture<EndreResponse> endrePermisjon(EndreInput in,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPermisjonService = new TestPermisjonService(ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 

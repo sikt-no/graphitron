@@ -22,12 +22,14 @@ public class EndrePerson1GeneratedResolver implements EndrePerson1MutationResolv
     @Inject
     DSLContext ctx;
 
+
     @Inject
     private EndrePerson1DBQueries endrePerson1DBQueries;
 
     @Override
     public CompletableFuture<EndreResponse1> endrePerson1(List<String> id, List<EndreInput> in,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inRecordList = new ArrayList<PersonRecord>();
@@ -46,7 +48,7 @@ public class EndrePerson1GeneratedResolver implements EndrePerson1MutationResolv
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecordList);
 
-        var rowsUpdated = endrePerson1DBQueries.endrePerson1(id, inRecordList);
+        var rowsUpdated = endrePerson1DBQueries.endrePerson1(ctx, id, inRecordList);
 
         var endreResponse1 = new EndreResponse1();
         endreResponse1.setId1(id.stream().map(it -> it.getId()).collect(Collectors.toList()));

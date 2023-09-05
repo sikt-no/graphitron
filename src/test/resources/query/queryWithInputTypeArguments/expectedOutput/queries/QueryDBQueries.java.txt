@@ -9,7 +9,6 @@ import static org.jooq.impl.DSL.*;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.PersonEpost;
 import fake.graphql.example.package.model.PersonInput;
 import fake.graphql.example.package.model.PersonProfil;
@@ -18,10 +17,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<PersonProfil> personNoPageForQuery(String eierInstitusjonsnummer,
+    public List<PersonProfil> personNoPageForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, PersonInput pin, SelectionSet select) {
         return ctx
                 .select(
@@ -47,7 +43,7 @@ public class QueryDBQueries {
                 .fetch(0, PersonProfil.class);
     }
 
-    public List<PersonProfil> personWithPageForQuery(String eierInstitusjonsnummer,
+    public List<PersonProfil> personWithPageForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, PersonInput pin, Integer pageSize, String after,
             SelectionSet select) {
         return ctx
@@ -76,7 +72,7 @@ public class QueryDBQueries {
                 .fetch(0, PersonProfil.class);
     }
 
-    public List<StudentVedInstitusjon> studenterForQuery(String eierInstitusjonsnummer,
+    public List<StudentVedInstitusjon> studenterForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
@@ -92,7 +88,7 @@ public class QueryDBQueries {
                 .fetch(0, StudentVedInstitusjon.class);
     }
 
-    public Integer countPersonWithPageForQuery(String eierInstitusjonsnummer,
+    public Integer countPersonWithPageForQuery(DSLContext ctx, String eierInstitusjonsnummer,
             List<Integer> personlopenummer, PersonInput pin) {
         return ctx
                 .select(count().as("totalCount"))
@@ -106,7 +102,7 @@ public class QueryDBQueries {
                 .fetchOne(0, Integer.class);
     }
 
-    public Integer countStudenterForQuery(String eierInstitusjonsnummer) {
+    public Integer countStudenterForQuery(DSLContext ctx, String eierInstitusjonsnummer) {
         return ctx
                 .select(count().as("totalCount"))
                 .from(STUDENT)

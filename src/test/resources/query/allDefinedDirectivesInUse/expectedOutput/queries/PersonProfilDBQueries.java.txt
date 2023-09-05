@@ -10,7 +10,6 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Kull;
 import fake.graphql.example.package.model.ProgramStudierett;
 import fake.graphql.example.package.model.Telefon;
@@ -21,10 +20,7 @@ import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class PersonProfilDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public Map<String, Telefon> mobilTelefonForPersonProfil(Set<String> personProfilIder,
+    public Map<String, Telefon> mobilTelefonForPersonProfil(DSLContext ctx, Set<String> personProfilIder,
             SelectionSet select) {
         var person_mobiltelefon = PERSON_TELEFON.as("person_mobiltelefon");
         return ctx
@@ -44,7 +40,7 @@ public class PersonProfilDBQueries {
     }
 
     public Map<String, List<ProgramStudierett>> studieretterForPersonProfil(
-            Set<String> personProfilIder, SelectionSet select) {
+            DSLContext ctx, Set<String> personProfilIder, SelectionSet select) {
         return ctx
                 .select(
                         STUDIERETT.getPersonId(),

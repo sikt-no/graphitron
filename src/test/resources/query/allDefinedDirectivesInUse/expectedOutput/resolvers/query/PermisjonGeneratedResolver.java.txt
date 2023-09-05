@@ -20,21 +20,26 @@ import fake.code.example.package.queries.query.PermisjonDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class PermisjonGeneratedResolver implements PermisjonResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private PermisjonDBQueries permisjonDBQueries;
 
     @Override
     public CompletableFuture<List<ProgramStudierett>> programStudieretter(Permisjon permisjon,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<ProgramStudierett>> loader = env.getDataLoaderRegistry().computeIfAbsent("programStudieretterForPermisjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<ProgramStudierett>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = permisjonDBQueries.programStudieretterForPermisjon(idSet, selectionSet);
+                var dbResult = permisjonDBQueries.programStudieretterForPermisjon(ctx, idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

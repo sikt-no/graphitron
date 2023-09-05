@@ -12,16 +12,21 @@ import fake.graphql.example.package.model.Rom;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.QueryDBQueries;
+import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
     public CompletableFuture<List<Rom>> rom(String bygningskode, DataFetchingEnvironment env) throws
             Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.romForQuery(bygningskode, selectionSet);
+        var dbResult = queryDBQueries.romForQuery(ctx, bygningskode, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

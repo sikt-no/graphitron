@@ -7,6 +7,7 @@ import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -34,7 +35,6 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class FetchResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     private static final String
             EXECUTION_STEP_PATH_ID_DELIMITER = "||",
-            ENV_NAME = "env",
             BATCHED_ENV_NAME = "batchEnvLoader",
             PAGE_SIZE_NAME = "pageSize",
             AFTER_NAME = "after",
@@ -155,7 +155,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     }
 
     @NotNull
-    private CodeBlock queryMethodCalls(ObjectField referenceField, TypeName returnClassName, List<String> allQueryInputs) {
+    private CodeBlock queryMethodCalls(ObjectField referenceField, TypeName returnClassName, ArrayList<String> allQueryInputs) {
         var localObject = getLocalObject();
 
         var queryMethodName = asQueryMethodName(referenceField.getName(), localObject.getName());
@@ -180,18 +180,20 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         }
 
         if (!allQueryInputs.isEmpty()) {
-            dbQueryCallCodeBlock.addStatement(String.join(", ", allQueryInputs) + ")");
+            dbQueryCallCodeBlock.addStatement("$N, $L)", Dependency.CONTEXT_NAME, String.join(", ", allQueryInputs));
         }
 
         if (referenceField.hasRequiredPaginationFields()) {
-            dbQueryCallCodeBlock.addStatement("var $L = selectionSet.contains($S) ? $N.$L($N) : null",
+            dbQueryCallCodeBlock.addStatement("var $L = selectionSet.contains($S) ? $N.count$L($N, $L) : null",
                     TOTAL_COUNT_NAME,
                     TOTAL_COUNT_NAME,
                     uncapitalize(queryLocation),
-                    "count" + capitalize(queryMethodName),
+                    capitalize(queryMethodName),
+                    Dependency.CONTEXT_NAME,
                     allQueryInputs.stream()
                             .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(AFTER_NAME) && !it.equals(SELECTION_SET_NAME))
-                            .collect(Collectors.joining(", ")));
+                            .collect(Collectors.joining(", "))
+            );
         }
 
         var methodBodyBuilder = CodeBlock.builder();

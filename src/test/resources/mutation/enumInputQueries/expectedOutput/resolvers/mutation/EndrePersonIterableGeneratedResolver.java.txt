@@ -30,6 +30,7 @@ public class EndrePersonIterableGeneratedResolver implements EndrePersonIterable
     @Override
     public CompletableFuture<ListedResponse> endrePersonIterable(List<PersonInput> input,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecordList = new ArrayList<PersonRecord>();
@@ -51,7 +52,7 @@ public class EndrePersonIterableGeneratedResolver implements EndrePersonIterable
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = endrePersonIterableDBQueries.endrePersonIterable(inputRecordList);
+        var rowsUpdated = endrePersonIterableDBQueries.endrePersonIterable(ctx, inputRecordList);
 
         var listedResponse = new ListedResponse();
         listedResponse.setIder(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));

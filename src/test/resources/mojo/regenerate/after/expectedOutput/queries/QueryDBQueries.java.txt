@@ -8,15 +8,11 @@ import static org.jooq.impl.DSL.*;
 import fake.code.example.package.model.Termin;
 import java.lang.String;
 import java.util.List;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<Termin> terminForQuery(String eierInstitusjonsnummer, SelectionSet select) {
+    public List<Termin> terminForQuery(DSLContext ctx, String eierInstitusjonsnummer, SelectionSet select) {
         return ctx
                 .select(
                         row(

@@ -9,7 +9,6 @@ import static org.jooq.impl.DSL.*;
 import java.lang.Integer;
 import java.util.List;
 import java.util.Map;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Termin;
 import fake.graphql.example.package.model.TerminInput;
 import fake.graphql.example.package.model.Termintype;
@@ -17,10 +16,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public List<Termin> paramConditionForQuery(Termintype termintype, Integer arstall,
+    public List<Termin> paramConditionForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
             SelectionSet select) {
         return ctx
                 .select(
@@ -37,7 +33,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> paramConditionOverrideForQuery(Termintype termintype, Integer arstall,
+    public List<Termin> paramConditionOverrideForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
             SelectionSet select) {
         return ctx
                 .select(
@@ -53,7 +49,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> fieldConditionForQuery(Termintype termintype, Integer arstall,
+    public List<Termin> fieldConditionForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
             SelectionSet select) {
         return ctx
                 .select(
@@ -70,7 +66,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> fieldConditionOverrideForQuery(Termintype termintype, Integer arstall,
+    public List<Termin> fieldConditionOverrideForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
             SelectionSet select) {
         return ctx
                 .select(
@@ -85,7 +81,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> fieldAndParamConditionForQuery(Termintype termintype, Integer arstall,
+    public List<Termin> fieldAndParamConditionForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
             SelectionSet select) {
         return ctx
                 .select(
@@ -103,7 +99,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> fieldAndParamConditionOverrideForQuery(Termintype termintype,
+    public List<Termin> fieldAndParamConditionOverrideForQuery(DSLContext ctx, Termintype termintype,
             Integer arstall, SelectionSet select) {
         return ctx
                 .select(
@@ -119,7 +115,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> fieldAndParamConditionOverrideBothForQuery(Termintype termintype,
+    public List<Termin> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, Termintype termintype,
             Integer arstall, SelectionSet select) {
         return ctx
                 .select(
@@ -135,7 +131,7 @@ public class QueryDBQueries {
                 .fetch(0, Termin.class);
     }
 
-    public List<Termin> fieldInputConditionForQuery(TerminInput termintypeIn, Integer arstall,
+    public List<Termin> fieldInputConditionForQuery(DSLContext ctx, TerminInput termintypeIn, Integer arstall,
             SelectionSet select) {
         return ctx
                 .select(

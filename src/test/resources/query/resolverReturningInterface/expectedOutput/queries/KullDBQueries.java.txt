@@ -9,17 +9,13 @@ import static org.jooq.impl.DSL.*;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Kull;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class KullDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public Map<String, Kull> loadKullByIdsAsReferertNode(Set<String> ids, SelectionSet select) {
+    public Map<String, Kull> loadKullByIdsAsReferertNode(DSLContext ctx, Set<String> ids, SelectionSet select) {
         return ctx
                 .select(
                         KULL.getId(),

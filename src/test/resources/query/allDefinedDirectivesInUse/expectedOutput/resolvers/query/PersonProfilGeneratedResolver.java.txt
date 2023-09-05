@@ -21,21 +21,26 @@ import fake.code.example.package.queries.query.PersonProfilDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class PersonProfilGeneratedResolver implements PersonProfilResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private PersonProfilDBQueries personProfilDBQueries;
 
     @Override
     public CompletableFuture<Telefon> mobilTelefon(PersonProfil personProfil,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, Telefon> loader = env.getDataLoaderRegistry().computeIfAbsent("mobilTelefonForPersonProfil", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, Telefon>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = personProfilDBQueries.mobilTelefonForPersonProfil(idSet, selectionSet);
+                var dbResult = personProfilDBQueries.mobilTelefonForPersonProfil(ctx, idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
@@ -49,13 +54,14 @@ public class PersonProfilGeneratedResolver implements PersonProfilResolver {
     @Override
     public CompletableFuture<List<ProgramStudierett>> studieretter(PersonProfil personProfil,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<ProgramStudierett>> loader = env.getDataLoaderRegistry().computeIfAbsent("studieretterForPersonProfil", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<ProgramStudierett>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = personProfilDBQueries.studieretterForPersonProfil(idSet, selectionSet);
+                var dbResult = personProfilDBQueries.studieretterForPersonProfil(ctx, idSet, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

@@ -14,72 +14,84 @@ import fake.graphql.example.package.model.Termintype;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.QueryDBQueries;
+import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private QueryDBQueries queryDBQueries;
 
     @Override
     public CompletableFuture<List<Termin>> paramCondition(Termintype termintype, Integer arstall,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.paramConditionForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.paramConditionForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> paramConditionOverride(Termintype termintype,
             Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.paramConditionOverrideForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.paramConditionOverrideForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> fieldCondition(Termintype termintype, Integer arstall,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldConditionForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldConditionForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> fieldConditionOverride(Termintype termintype,
             Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> fieldAndParamCondition(Termintype termintype,
             Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> fieldAndParamConditionOverride(Termintype termintype,
             Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> fieldAndParamConditionOverrideBoth(Termintype termintype,
             Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, termintype, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
     public CompletableFuture<List<Termin>> fieldInputCondition(TerminInput termintypeIn,
             Integer arstall, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldInputConditionForQuery(termintypeIn, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldInputConditionForQuery(ctx, termintypeIn, arstall, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

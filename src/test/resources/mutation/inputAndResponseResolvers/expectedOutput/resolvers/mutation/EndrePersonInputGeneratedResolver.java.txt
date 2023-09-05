@@ -21,6 +21,7 @@ public class EndrePersonInputGeneratedResolver implements EndrePersonInputMutati
     @Override
     public CompletableFuture<String> endrePersonInput(EndreInput input, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 

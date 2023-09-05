@@ -24,6 +24,7 @@ public class EndrePerson2ParamsGeneratedResolver implements EndrePerson2ParamsMu
     @Override
     public CompletableFuture<String> endrePerson2Params(EndreInput input, String etternavn,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecord = new PersonRecord();
@@ -42,7 +43,7 @@ public class EndrePerson2ParamsGeneratedResolver implements EndrePerson2ParamsMu
             FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
         }
 
-        var rowsUpdated = endrePerson2ParamsDBQueries.endrePerson2Params(inputRecord, etternavn);
+        var rowsUpdated = endrePerson2ParamsDBQueries.endrePerson2Params(ctx, inputRecord, etternavn);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

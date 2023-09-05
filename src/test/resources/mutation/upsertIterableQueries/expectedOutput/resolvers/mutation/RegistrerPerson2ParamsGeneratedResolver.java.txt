@@ -30,6 +30,7 @@ public class RegistrerPerson2ParamsGeneratedResolver implements RegistrerPerson2
     @Override
     public CompletableFuture<List<String>> registrerPerson2Params(List<EndreInput> input,
             String etternavn, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecordList = new ArrayList<PersonRecord>();
@@ -63,7 +64,7 @@ public class RegistrerPerson2ParamsGeneratedResolver implements RegistrerPerson2
         }
         FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
-        var rowsUpdated = registrerPerson2ParamsDBQueries.registrerPerson2Params(inputRecordList, etternavn);
+        var rowsUpdated = registrerPerson2ParamsDBQueries.registrerPerson2Params(ctx, inputRecordList, etternavn);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

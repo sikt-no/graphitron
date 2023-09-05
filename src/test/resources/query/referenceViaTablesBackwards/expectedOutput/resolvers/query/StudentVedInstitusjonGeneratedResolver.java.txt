@@ -20,8 +20,12 @@ import fake.code.example.package.queries.query.StudentVedInstitusjonDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitusjonResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private StudentVedInstitusjonDBQueries studentVedInstitusjonDBQueries;
 
@@ -34,7 +38,7 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
-                var dbResult = studentVedInstitusjonDBQueries.eksamenstilpasningssoknaderForStudentVedInstitusjon(idSet, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
+                var dbResult = studentVedInstitusjonDBQueries.eksamenstilpasningssoknaderForStudentVedInstitusjon(ctx, idSet, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)));
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

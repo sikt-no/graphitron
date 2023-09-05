@@ -17,9 +17,11 @@ public class EndrePersonRecord1GeneratedResolver implements EndrePersonRecord1Mu
     @Inject
     DSLContext ctx;
 
+
     @Override
     public CompletableFuture<EndreResponse1> endrePersonRecord1(List<String> id,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
 
         var endrePersonRecord1Result = testPersonService.endrePersonRecord1(id);

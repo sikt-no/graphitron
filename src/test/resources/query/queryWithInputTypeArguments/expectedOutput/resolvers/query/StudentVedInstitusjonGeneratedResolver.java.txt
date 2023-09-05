@@ -23,8 +23,12 @@ import fake.code.example.package.queries.query.StudentVedInstitusjonDBQueries;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
+import org.jooq.DSLContext;
 
 public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitusjonResolver {
+    @Inject
+    DSLContext ctx;
+
     @Inject
     private StudentVedInstitusjonDBQueries studentVedInstitusjonDBQueries;
 
@@ -33,13 +37,14 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
             StudentVedInstitusjon studentVedInstitusjon,
             SemesterregistreringBetaltInstitusjon terminIn, DataFetchingEnvironment env) throws
             Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("semesterregistreringerForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = studentVedInstitusjonDBQueries.semesterregistreringerForStudentVedInstitusjon(idSet, terminIn, selectionSet);
+                var dbResult = studentVedInstitusjonDBQueries.semesterregistreringerForStudentVedInstitusjon(ctx, idSet, terminIn, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
@@ -55,13 +60,14 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
             StudentVedInstitusjon studentVedInstitusjon,
             List<SemesterregistreringBetaltInstitusjon> terminInList, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputListForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputListForStudentVedInstitusjon(idSet, terminInList, selectionSet);
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputListForStudentVedInstitusjon(ctx, idSet, terminInList, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
@@ -78,13 +84,14 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
             SemesterregistreringBetaltInstitusjon terminIn,
             List<SemesterregistreringBetaltInstitusjon> terminInList, DataFetchingEnvironment env)
             throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForMixOfListAndSingleInputForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = studentVedInstitusjonDBQueries.registreringerForMixOfListAndSingleInputForStudentVedInstitusjon(idSet, terminIn, terminInList, selectionSet);
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForMixOfListAndSingleInputForStudentVedInstitusjon(ctx, idSet, terminIn, terminInList, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
@@ -100,13 +107,14 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
             StudentVedInstitusjon studentVedInstitusjon,
             List<SemesterregistreringBetaltInstitusjonWithOneField> terminInListOneField,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputWithOneFieldListForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputWithOneFieldListForStudentVedInstitusjon(idSet, terminInListOneField, selectionSet);
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputWithOneFieldListForStudentVedInstitusjon(ctx, idSet, terminInListOneField, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
@@ -122,13 +130,14 @@ public class StudentVedInstitusjonGeneratedResolver implements StudentVedInstitu
             StudentVedInstitusjon studentVedInstitusjon,
             List<SemesterregistreringBetaltInstitusjonNested> terminInListNestedField,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         DataLoader<String, List<Semesterregistrering>> loader = env.getDataLoaderRegistry().computeIfAbsent("registreringerForInputWithNestedFieldListForStudentVedInstitusjon", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, List<Semesterregistrering>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(
                         Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
                 var idSet = new HashSet<>(keyToId.values());
                 var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputWithNestedFieldListForStudentVedInstitusjon(idSet, terminInListNestedField, selectionSet);
+                var dbResult = studentVedInstitusjonDBQueries.registreringerForInputWithNestedFieldListForStudentVedInstitusjon(ctx, idSet, terminInListNestedField, selectionSet);
                 var mapResult = keyToId.entrySet().stream()
                         .filter(it -> dbResult.get(it.getValue()) != null)
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));

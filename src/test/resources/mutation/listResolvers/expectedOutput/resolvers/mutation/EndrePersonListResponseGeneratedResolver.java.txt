@@ -20,6 +20,7 @@ public class EndrePersonListResponseGeneratedResolver implements EndrePersonList
     @Override
     public CompletableFuture<List<EndreResponse>> endrePersonListResponse(List<String> id,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
 
         var endrePersonListResponseResult = testPersonService.endrePersonListResponse(id);

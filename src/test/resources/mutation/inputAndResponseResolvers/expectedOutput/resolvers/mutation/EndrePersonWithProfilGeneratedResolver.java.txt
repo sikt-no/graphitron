@@ -24,23 +24,24 @@ public class EndrePersonWithProfilGeneratedResolver implements EndrePersonWithPr
     @Override
     public CompletableFuture<PersonProfil> endrePersonWithProfil(String id,
             DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var testPersonService = new TestPersonService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
         var terminatorResult = testPersonService.endrePersonWithProfil(id);
-        var personProfilEndrePersonWithProfil = getPersonProfilEndrePersonWithProfil(terminatorResult, select);
+        var personProfilEndrePersonWithProfil = getPersonProfilEndrePersonWithProfil(ctx, terminatorResult, select);
 
         return CompletableFuture.completedFuture(personProfilEndrePersonWithProfil);
     }
 
     private PersonProfil getPersonProfilEndrePersonWithProfil(
-            no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord idContainer,
+            DSLContext ctx, no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord idContainer,
             SelectionSet select) {
         if (!select.contains("endrePersonWithProfil") || idContainer == null) {
             return null;
         }
 
-        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(Set.of(idContainer.getId()), select.withPrefix("endrePersonWithProfil"));
+        var nodes = personProfilDBQueries.loadPersonProfilByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("endrePersonWithProfil"));
         return nodes.values().stream().findFirst().orElse(null);
     }
 }

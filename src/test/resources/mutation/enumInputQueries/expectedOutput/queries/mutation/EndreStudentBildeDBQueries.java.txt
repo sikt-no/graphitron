@@ -7,15 +7,11 @@ import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
 import java.util.Arrays;
-import javax.inject.Inject;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonbildeRecord;
 import org.jooq.DSLContext;
 
 public class EndreStudentBildeDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public int endreStudentBilde(PersonbildeRecord inputRecord) {
+    public int endreStudentBilde(DSLContext ctx, PersonbildeRecord inputRecord) {
         return Arrays.stream(ctx.batchUpdate(inputRecord).execute()).sum();
     }
 }

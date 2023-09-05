@@ -13,7 +13,7 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
-import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
@@ -37,7 +37,6 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
     public DBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
-        dependencySet.add(ContextDependency.getInstance());
     }
 
     @Override
@@ -45,7 +44,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         return MethodSpec
                 .methodBuilder(methodName)
                 .addModifiers(Modifier.PUBLIC)
-                .returns(returnType);
+                .returns(returnType)
+                .addParameter(DSL_CONTEXT.className, Dependency.CONTEXT_NAME);
     }
 
     /**

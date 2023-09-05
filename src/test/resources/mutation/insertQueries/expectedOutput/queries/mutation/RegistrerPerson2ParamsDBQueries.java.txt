@@ -8,15 +8,11 @@ import static org.jooq.impl.DSL.*;
 
 import java.lang.String;
 import java.util.Arrays;
-import javax.inject.Inject;
 import no.fellesstudentsystem.kjerneapi.tables.records.PersonRecord;
 import org.jooq.DSLContext;
 
 public class RegistrerPerson2ParamsDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public int registrerPerson2Params(PersonRecord inputRecord, String etternavn) {
+    public int registrerPerson2Params(DSLContext ctx, PersonRecord inputRecord, String etternavn) {
         return Arrays.stream(ctx.batchInsert(inputRecord).execute()).sum();
     }
 }

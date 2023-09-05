@@ -4,6 +4,7 @@ import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
@@ -69,7 +70,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock
                 .builder()
                 .add(createSelectAliases(context.getJoinList(), context.getAliasList()))
-                .add("return ctx\n")
+                .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
                 .add(".select(\n")
@@ -107,9 +108,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
             spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
         }
-        spec.addParameter(SELECTION_SET.className, SELECTION_NAME);
-
-        return spec;
+        return spec.addParameter(SELECTION_SET.className, SELECTION_NAME);
     }
 
     @NotNull

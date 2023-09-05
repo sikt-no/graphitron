@@ -10,17 +10,13 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.inject.Inject;
 import fake.graphql.example.package.model.Eierinstitusjon;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 
 public class StudentDBQueries {
-    @Inject
-    DSLContext ctx;
-
-    public Map<String, List<Eierinstitusjon>> institiusjonForStudent(Set<String> studentIder,
+    public Map<String, List<Eierinstitusjon>> institiusjonForStudent(DSLContext ctx, Set<String> studentIder,
             SelectionSet select) {
         return ctx
                 .select(

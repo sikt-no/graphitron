@@ -18,7 +18,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-
     final String idParamName = uncapitalize(getLocalObject().getName()) + "Ider";
     final boolean isRoot = getLocalObject().isRoot();
 
