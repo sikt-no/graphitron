@@ -2,7 +2,6 @@ package no.fellesstudentsystem.graphitron.generators.resolvers;
 
 import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
@@ -11,7 +10,6 @@ import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -22,9 +20,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphitron.mappings.PersonHack.asHackedIDFields;
-import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -33,11 +28,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * This class generates the resolvers for update queries with the mutationType directive set.
  */
 public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGenerator {
-    private static final String
-            VARIABLE_ROWS = "rowsUpdated",
-            VARIABLE_SELECT = "select",
-            ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
-            ERROR_MISSING_NON_NULLABLE = "Input type %s referencing table %s does not map all fields required by the database as non-nullable. Nullable required fields: %s";
+    private static final String VARIABLE_ROWS = "rowsUpdated", VARIABLE_SELECT = "select";
 
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
@@ -343,83 +334,10 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         return generateGetMethod(target, target, "", null, null, Set.of());
     }
 
-    private void validateRecordRequiredFields(ObjectField target) {
-        var mutationType = target.getMutationType();
-        if (mutationType.equals(MutationType.INSERT) || mutationType.equals(MutationType.UPSERT)) {
-            context = new UpdateContext(target, processedSchema);
-            var recordInputs = context.getRecordInputs().values();
-            if (recordInputs.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "Mutation "
-                                + target.getName()
-                                + " is set as an insert operation, but does not link any input to tables."
-                );
-            }
-
-            recordInputs.forEach(this::checkRequiredFields);
-        }
-    }
-
-    private void checkRequiredFields(InputField recordInput) {
-        var inputObject = processedSchema.getInputType(recordInput);
-        var tableName = inputObject.getTable().getName();
-
-        // WARNING: FS-SPECIFIC CODE. This must be generalized at some point.
-        var splitFieldsOnIsID = inputObject.getInputs().stream().collect(Collectors.partitioningBy(it -> it.getFieldType().isID()));
-        var containedRequiredIDFields = new HashSet<String>();
-        var containedOptionalIDFields = new HashSet<String>();
-        for (var idField : splitFieldsOnIsID.get(true)) {
-            var hackedIDFields = getHackedIDFields(tableName, idField.getRecordMappingName());
-            if (hackedIDFields.isPresent()) {
-                if (idField.getFieldType().isNullable()) {
-                    containedOptionalIDFields.addAll(hackedIDFields.get());
-                } else {
-                    containedRequiredIDFields.addAll(hackedIDFields.get());
-                }
-            }
-        }
-
-        var hackedRequiredDBFields = asHackedIDFields(getRequiredFields(tableName));
-        var recordFieldNames = Stream
-                .concat(
-                        splitFieldsOnIsID.get(false).stream().map(InputField::getUpperCaseName),
-                        Stream.concat(containedOptionalIDFields.stream(), containedRequiredIDFields.stream())
-                )
-                .collect(Collectors.toSet());
-        checkRequiredFieldsExist(recordFieldNames, hackedRequiredDBFields, recordInput, ERROR_MISSING_FIELD);
-
-        var requiredRecordFieldNames = Stream
-                .concat(
-                        containedRequiredIDFields.stream(),
-                        splitFieldsOnIsID
-                                .get(false)
-                                .stream()
-                                .filter(it -> it.getFieldType().isNonNullable())
-                                .map(InputField::getUpperCaseName)
-                )
-                .collect(Collectors.toSet());
-        checkRequiredFieldsExist(requiredRecordFieldNames, hackedRequiredDBFields, recordInput, ERROR_MISSING_NON_NULLABLE);
-    }
-
-    private void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {
-        if (!actualFields.containsAll(requiredFields)) {
-            var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
-            throw new IllegalArgumentException(
-                    String.format(
-                            message,
-                            recordInput.getTypeName(),
-                            processedSchema.getInputType(recordInput).getTable().getName(),
-                            missingFields
-                    )
-            );
-        }
-    }
-
     @Override
     public List<MethodSpec> generateAll() {
         if (localField.isGenerated()) {
             if (localField.hasMutationType()) {
-                validateRecordRequiredFields(localField);
                 return Stream.concat(Stream.of(generate(localField)), generateGetMethods(localField).stream()).collect(Collectors.toList());
             } else if (!localField.hasServiceReference()) {
                 throw new IllegalStateException("Mutation '" + localField.getName() + "' is set to generate, but has neither a service nor mutation type set.");

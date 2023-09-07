@@ -6,6 +6,7 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
+import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -15,26 +16,26 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static no.fellesstudentsystem.graphitron.mappings.PersonHack.asHackedIDFields;
+import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableFieldHasDefaultValue;
 
 public class ProcessedDefinitionsValidator {
-
-    private final Map<String, ObjectDefinition> objects;
-    private final Map<String, ConnectionObjectDefinition> connectionObjects;
-    private final Map<String, EnumDefinition> enums;
-    private final Map<String, InterfaceDefinition> interfaces;
-    private final Map<String, InputDefinition> inputs;
+    private final ProcessedSchema schema;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
+    private static final String
+            ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
+            ERROR_MISSING_NON_NULLABLE = "Input type %s referencing table %s does not map all fields required by the database as non-nullable. Nullable required fields: %s";
 
     public ProcessedDefinitionsValidator(ProcessedSchema schema) {
-        objects = schema.getObjects();
-        connectionObjects = schema.getConnectionObjects();
-        enums = schema.getEnums();
-        interfaces = schema.getInterfaces();
-        inputs = schema.getInputTypes();
+        this.schema = schema;
     }
 
     public void validateThatProcessedDefinitionsConformToDatabaseNaming() {
-        objects.values().forEach(objectDefinition -> {
+        schema.getObjects().values().forEach(objectDefinition -> {
             var fields = objectDefinition.getFields();
             if (objectDefinition.hasTable()) {
                 String tableName = objectDefinition.getTable().getName();
@@ -48,7 +49,7 @@ public class ProcessedDefinitionsValidator {
             }
             checkPaginationSpecs(fields);
         });
-        objects.values().forEach(objectDefinition -> objectDefinition
+        schema.getObjects().values().forEach(objectDefinition -> objectDefinition
                 .getFields()
                 .stream()
                 .filter(ObjectField::isGenerated)
@@ -56,7 +57,7 @@ public class ProcessedDefinitionsValidator {
         );
 
         Map<String, Set<String>> columnsByTableHavingImplicitJoin = new HashMap<>();
-        objects.values().forEach(objectDefinition -> objectDefinition
+        schema.getObjects().values().forEach(objectDefinition -> objectDefinition
                 .getFields()
                 .stream()
                 .filter(ObjectField::hasImplicitJoin)
@@ -69,29 +70,38 @@ public class ProcessedDefinitionsValidator {
         columnsByTableHavingImplicitJoin.forEach(this::validateTableExistsAndHasMethods);
 
         var enumValueSet = GeneratorConfig.getExternalEnums();
-        enums.values()
+        schema.getEnums().values()
                 .stream()
                 .filter(EnumDefinition::hasDbEnumMapping)
                 .map(EnumDefinition::getDbName)
                 .filter(e -> !enumValueSet.contains(e.toUpperCase()))
                 .forEach(e -> LOGGER.warn("No enum with name '{}' found.", e));
 
-        inputs.values()
+        schema.getInputTypes().values()
                 .stream()
                 .filter(InputDefinition::hasTable)
                 .forEach(inputDefinition -> validateTableExistsAndHasMethods(inputDefinition.getTable().getName(), Set.of()));
 
+        var mutation = schema.getMutationType();
+        if (mutation != null) {
+            mutation
+                    .getFields()
+                    .stream()
+                    .filter(ObjectField::isGenerated)
+                    .filter(ObjectField::hasMutationType)
+                    .forEach(this::validateRecordRequiredFields);
+        }
     }
 
     private void validateGeneratedField(ObjectField generatedField) {
         String typeName = generatedField.getTypeName();
-        Optional<String> nodeName = Optional.ofNullable(connectionObjects.get(typeName))
+        Optional<String> nodeName = Optional.ofNullable(schema.getConnectionObjects().get(typeName))
                 .map(ConnectionObjectDefinition::getNodeType);
 
         String name = nodeName.orElse(typeName);
 
-        var object = objects.get(name);
-        if (interfaces.containsKey(name)) {
+        var object = schema.getObjects().get(name);
+        if (schema.getInterfaces().containsKey(name)) {
             Validate.isTrue(generatedField.getInputFields().size() == 1,
                     "Only exactly one input field is currently supported for fields returning interfaces. " +
                             "'%s' has %s input fields", generatedField.getName(), generatedField.getInputFields().size());
@@ -107,6 +117,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateInputFields(List<InputField> nonReservedInputFields, JOOQTableMapping table) {
+        var inputs = schema.getInputTypes();
         nonReservedInputFields.forEach(field -> {
             FieldType fieldType = field.getFieldType();
 
@@ -160,7 +171,7 @@ public class ProcessedDefinitionsValidator {
     private Set<String> getDbNamesForFieldsThatShouldBeValidated(Collection<ObjectField> objectFields) {
         Set<String> fieldNames = new HashSet<>();
         objectFields.stream().filter(o -> !o.getFieldType().isID()).forEach(objectField ->
-                Optional.ofNullable(objects.get(objectField.getTypeName())).ifPresentOrElse(
+                Optional.ofNullable(schema.getObjects().get(objectField.getTypeName())).ifPresentOrElse(
                         objectDefinition -> {
                             if (!objectDefinition.hasTable()) {
                                 fieldNames.addAll(getDbNamesForFieldsThatShouldBeValidated(objectDefinition.getFields()));
@@ -208,5 +219,80 @@ public class ProcessedDefinitionsValidator {
                 columns -> columns.add(column),
                 () -> columnsByTable.put(table, Sets.newHashSet(column))
         );
+    }
+
+    private void validateRecordRequiredFields(ObjectField target) {
+        var mutationType = target.getMutationType();
+        if (mutationType.equals(MutationType.INSERT) || mutationType.equals(MutationType.UPSERT)) {
+            var context = new UpdateContext(target, schema);
+            var recordInputs = context.getRecordInputs().values();
+            if (recordInputs.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Mutation "
+                                + target.getName()
+                                + " is set as an insert operation, but does not link any input to tables."
+                );
+            }
+
+            recordInputs.forEach(this::checkRequiredFields);
+        }
+    }
+
+    private void checkRequiredFields(InputField recordInput) {
+        var inputObject = schema.getInputType(recordInput);
+        var tableName = inputObject.getTable().getName();
+
+        // WARNING: FS-SPECIFIC CODE. This must be generalized at some point.
+        var splitFieldsOnIsID = inputObject.getInputs().stream().collect(Collectors.partitioningBy(it -> it.getFieldType().isID()));
+        var containedRequiredIDFields = new HashSet<String>();
+        var containedOptionalIDFields = new HashSet<String>();
+        for (var idField : splitFieldsOnIsID.get(true)) {
+            var hackedIDFields = getHackedIDFields(tableName, idField.getRecordMappingName());
+            if (hackedIDFields.isPresent()) {
+                if (idField.getFieldType().isNullable()) {
+                    containedOptionalIDFields.addAll(hackedIDFields.get());
+                } else {
+                    containedRequiredIDFields.addAll(hackedIDFields.get());
+                }
+            }
+        }
+
+        var hackedRequiredDBFields = asHackedIDFields(getRequiredFields(tableName))
+                .stream()
+                .filter(it -> !tableFieldHasDefaultValue(tableName, it))
+                .collect(Collectors.toList()); // No need to complain when it has a default set. Note that this does not work for views.
+        var recordFieldNames = Stream
+                .concat(
+                        splitFieldsOnIsID.get(false).stream().map(InputField::getUpperCaseName),
+                        Stream.concat(containedOptionalIDFields.stream(), containedRequiredIDFields.stream())
+                )
+                .collect(Collectors.toSet());
+        checkRequiredFieldsExist(recordFieldNames, hackedRequiredDBFields, recordInput, ERROR_MISSING_FIELD);
+
+        var requiredRecordFieldNames = Stream
+                .concat(
+                        containedRequiredIDFields.stream(),
+                        splitFieldsOnIsID
+                                .get(false)
+                                .stream()
+                                .filter(it -> it.getFieldType().isNonNullable())
+                                .map(InputField::getUpperCaseName)
+                )
+                .collect(Collectors.toSet());
+        checkRequiredFieldsExist(requiredRecordFieldNames, hackedRequiredDBFields, recordInput, ERROR_MISSING_NON_NULLABLE);
+    }
+
+    private void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {
+        if (!actualFields.containsAll(requiredFields)) {
+            var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
+            LOGGER.warn(
+                    String.format(
+                            message,
+                            recordInput.getTypeName(),
+                            schema.getInputType(recordInput).getTable().getName(),
+                            missingFields
+                    )
+            );
+        }
     }
 }

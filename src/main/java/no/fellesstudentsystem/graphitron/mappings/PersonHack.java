@@ -36,7 +36,7 @@ public class PersonHack {
 
     public static Optional<List<String>> getIDFields(String tableName, String idName) {
         var methodName = FIELD_METHOD_PREFIX + capitalize(idName) + FIELD_METHOD_SUFFIX;
-        var field = getField(tableName);
+        var field = getTablesField(tableName);
         if (field.isPresent() && tableHasMethod(tableName, methodName)) {
             var fieldMethod = Stream
                     .of(field.get().getType().getMethods())

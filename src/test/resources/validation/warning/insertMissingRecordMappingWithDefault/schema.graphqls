@@ -1,0 +1,10 @@
+type Mutation {
+  m(i: [Input!]!): ID! @mutationType(typeName: UPSERT)
+}
+
+input Input @record(table: "SEMESTERREGISTRERING") {
+  id: ID
+  ar: Int!
+  termin: Termintype! @column(name: "TERMINKODE")
+  registrert: Boolean! @column(name: "STATUS_REG_OK")
+}

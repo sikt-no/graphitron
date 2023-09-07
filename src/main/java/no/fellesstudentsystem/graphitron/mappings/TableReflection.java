@@ -66,11 +66,12 @@ public class TableReflection {
     }
 
     public static Set<String> getRequiredFields(String tableName) {
+        var field = getTablesField(tableName);
+        if (field.isEmpty()) {
+            return Set.of();
+        }
+
         try {
-            var field = getField(tableName);
-            if (field.isEmpty()) {
-                return Set.of();
-            }
             return Arrays
                     .stream(((TableImpl<?>) field.get().get(null)).fields()) // 'Tables' contains only records.
                     .filter(it -> !it.getDataType().nullable())
@@ -81,14 +82,32 @@ public class TableReflection {
         }
     }
 
+    public static boolean tableFieldHasDefaultValue(String tableName, String fieldName) {
+        var table = getTablesField(tableName);
+        if (table.isEmpty()) {
+            return false;
+        }
+
+        try {
+            return Arrays
+                    .stream(((TableImpl<?>) table.get().get(null)).fields())
+                    .filter(it -> it.getName().equals(fieldName))
+                    .findFirst()
+                    .map(value -> value.getDataType().defaulted()) // This does not work for views.
+                    .orElse(false);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static boolean tableHasMethod(String tableName, String methodName) {
-        return getField(tableName)
+        return getTablesField(tableName)
                 .map(value -> Stream.of(value.getType().getMethods()).map(Method::getName).anyMatch(m -> m.equals(methodName)))
                 .orElse(false);
     }
 
     public static Optional<String> searchTableForMethodByKey(String tableName, String keyName) {
-        var field = getField(tableName);
+        var field = getTablesField(tableName);
         if (field.isEmpty()) {
             return Optional.empty();
         }
@@ -109,12 +128,12 @@ public class TableReflection {
     }
 
     public static Set<String> getFieldNamesForTable(String tableName) {
-        return getField(tableName)
+        return getTablesField(tableName)
                 .map(value -> Stream.of(value.getType().getFields()).map(Field::getName).collect(Collectors.toSet()))
                 .orElse(Set.of());
     }
 
-    public static Optional<Field> getField(String tableName) {
+    public static Optional<Field> getTablesField(String tableName) {
         if (!tableExists(tableName)) {
             return Optional.empty();
         }
