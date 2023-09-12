@@ -13,7 +13,7 @@ public class RecordMethodMapping {
 
     public RecordMethodMapping(String name) {
         var codeNameUpper = Stream
-                .of(name.toLowerCase().split("_"))
+                .of(name.toLowerCase().split("_(?![0-9_]+)"))
                 .map(StringUtils::capitalize)
                 .collect(Collectors.joining(""));
         this.name = codeNameUpper;
