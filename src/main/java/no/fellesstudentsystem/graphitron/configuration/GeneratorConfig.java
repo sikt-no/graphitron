@@ -1,29 +1,27 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
-import no.fellesstudentsystem.graphitron.GenerateMojo;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalConditions;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalEnums;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalExceptions;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalServices;
+import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
+import no.fellesstudentsystem.graphitron.mojo.GlobalTransform;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.*;
 
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class GeneratorConfig {
-    public static final String
+    private static final String
+            PLUGIN_OUTPUT_PATH = "graphitron",
+            PACKAGE_RECORDS = "tables.records",
             CLASS_TABLES = "Tables",
             CLASS_KEYS = "Keys",
-            PACKAGE_RECORDS = "tables.records",
-            PLUGIN_OUTPUT_PATH = "graphitron"
-    ;
-
-    private static final String
             TEMP_GRAPHQL_GENERATED_PACKAGE = "fake.graphql.example.package", // Once codegen is fully contained in this module, this will be redundant.
             DEFAULT_API_SUFFIX = ".api",
             DEFAULT_MODEL_SUFFIX = ".model";
+
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
 
     public static void setProperties(
@@ -35,7 +33,9 @@ public class GeneratorConfig {
             Map<String, Class<?>> enums,
             Map<String, Method> conditions,
             Map<String, Class<?>> services,
-            Map<String, Class<?>> exceptions
+            Map<String, Class<?>> exceptions,
+            Map<String, Method> transforms,
+            List<GlobalTransform> globalTransforms
     ) {
         systemPackage = topPackage;
         schemaFiles = files;
@@ -49,10 +49,15 @@ public class GeneratorConfig {
         generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
         generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
 
+        setJOOQClasses();
+
         externalEnums = new ExternalEnums(enums);
         externalConditions = new ExternalConditions(conditions);
         externalServices = new ExternalServices(services);
         externalExceptions = new ExternalExceptions(exceptions);
+        externalTransforms = new ExternalTransforms(transforms);
+
+        GeneratorConfig.globalTransforms = globalTransforms;
     }
 
     public static void loadProperties(GenerateMojo mojo) {
@@ -78,10 +83,28 @@ public class GeneratorConfig {
         generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
         generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
 
+        setJOOQClasses();
+
         externalEnums = new ExternalEnums(mojo.getExternalEnums());
         externalConditions = new ExternalConditions(mojo.getExternalConditions());
         externalServices = new ExternalServices(mojo.getExternalServices());
         externalExceptions = new ExternalExceptions(mojo.getExternalExceptions());
+        externalTransforms = new ExternalTransforms(mojo.getExternalTransforms());
+
+        GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
+    }
+
+    private static void setJOOQClasses() {
+        try {
+            TABLES_CLASS = Class.forName(generatedJooqTablesPackage);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Unable to find jOOQ generated tables class. ", e);
+        }
+        try {
+            KEYS_CLASS = Class.forName(generatedJooqKeysPackage);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Unable to find jOOQ generated keys class. ", e);
+        }
     }
 
     public static void clear() {
@@ -95,10 +118,14 @@ public class GeneratorConfig {
         generatedJooqTablesPackage = null;
         generatedJooqKeysPackage = null;
         generatedJooqRecordsPackage = null;
-        externalEnums = null;
-        externalConditions = null;
-        externalServices = null;
-        externalExceptions = null;
+        externalEnums = new ExternalEnums(Map.of());
+        externalConditions = new ExternalConditions(Map.of());
+        externalServices = new ExternalServices(Map.of());
+        externalExceptions = new ExternalExceptions(Map.of());
+        externalTransforms = new ExternalTransforms(Map.of());
+        globalTransforms = List.of();
+        TABLES_CLASS = null;
+        KEYS_CLASS = null;
     }
 
     private static Set<String> schemaFiles;
@@ -114,10 +141,14 @@ public class GeneratorConfig {
             generatedJooqKeysPackage,
             generatedJooqRecordsPackage;
 
+    public static Class<?> TABLES_CLASS, KEYS_CLASS;
+
     private static ExternalEnums externalEnums;
     private static ExternalConditions externalConditions;
     private static ExternalServices externalServices;
     private static ExternalExceptions externalExceptions;
+    private static ExternalTransforms externalTransforms;
+    private static List<GlobalTransform> globalTransforms;
 
     public static String getSystemPackage() {
         return systemPackage;
@@ -155,6 +186,14 @@ public class GeneratorConfig {
         return generatedJooqKeysPackage;
     }
 
+    public static Class<?> getGeneratedJooqTablesClass() {
+        return TABLES_CLASS;
+    }
+
+    public static Class<?> getGeneratedJooqKeysClass() {
+        return KEYS_CLASS;
+    }
+
     public static String getGeneratedJooqRecordsPackage() {
         return generatedJooqRecordsPackage;
     }
@@ -174,6 +213,18 @@ public class GeneratorConfig {
 
     public static ExternalExceptions getExternalExceptions() {
         return externalExceptions;
+    }
+
+    public static ExternalTransforms getExternalTransforms() {
+        return externalTransforms;
+    }
+
+    public static List<String> getGlobalTransformNames(TransformScope scope) {
+        return globalTransforms
+                .stream()
+                .filter(it -> it.getScope().equals(scope))
+                .map(GlobalTransform::getName)
+                .collect(Collectors.toList());
     }
 
     public static void setSchemaFiles(String file) {

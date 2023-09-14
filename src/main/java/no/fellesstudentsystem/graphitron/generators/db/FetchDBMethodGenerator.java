@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.collectToList;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
@@ -67,9 +68,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(checksNotEmpty ? checks + " ? " : "")
                         .add(currentJoinSequence + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
                         .add(toJOOQEnumConverter(fieldTypeName))
-                        .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name)
-                        .add(checksNotEmpty ? " : noCondition()" : "")
-                        .add(")\n");
+                        .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name);
+                if (checksNotEmpty) {
+                    codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
+                }
+                codeBlockBuilder.add(")\n");
             }
             if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
@@ -117,7 +120,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(hasWhere ? ".and(" : "")
                 .add("$N != null && $N.size() > 0 ?\n", argumentName, argumentName)
                 .indent().indent()
-                .add("row(\n")
+                .add("$T.row(\n", DSL.className)
                 .indent().indent();
 
         for (int i = 0; i < conditions.size(); i++) {
@@ -133,7 +136,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         codeBlockBuilder
                 .unindent().unindent()
                 .add("\n)")
-                .add(".in($N.stream().map(input -> row(\n", argumentName)
+                .add(".in($N.stream().map(input -> $T.row(\n", argumentName, DSL.className)
                 .indent().indent()
                 .add(conditions.stream()
                         .map(it -> "input" + it.getNameWithPath().replaceFirst(argumentName, ""))
@@ -142,7 +145,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(")\n)")
                 .add(collectToList())
                 .add(") :\n")
-                .add("noCondition()")
+                .add("$T.noCondition()", DSL.className)
                 .unindent().unindent()
                 .add(")\n");
 

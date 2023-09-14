@@ -11,7 +11,6 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -35,7 +34,6 @@ public class EditCustomer0GeneratedResolver implements EditCustomer0MutationReso
             if (flatArguments.contains("in/firstName")) {
                 inRecord.setFirstName(in.getFirstName());
             }
-            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecord);
         }
 
         var rowsUpdated = editCustomer0DBQueries.editCustomer0(ctx, id, inRecord);

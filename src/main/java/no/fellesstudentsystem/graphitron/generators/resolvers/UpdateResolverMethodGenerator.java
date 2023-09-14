@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers;
 
 import com.squareup.javapoet.*;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
@@ -12,6 +14,7 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -39,8 +42,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             VARIABLE_GET_PARAM = "idContainer",
             VARIABLE_NODE_RESULT = "nodes",
             VARIABLE_SELECT = "select",
-            VARIABLE_FLAT_ARGS = "flatArguments",
-            METHOD_SET_PK = "setPersonKeysFromPlattformIds"; // Hardcoded method name. Should be generalized as a transform on records.
+            VARIABLE_FLAT_ARGS = "flatArguments";
 
     protected final ObjectField localField;
     protected UpdateContext context;
@@ -132,10 +134,11 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             return code.build();
         }
 
+        var className = input.getRecordClassName();
         if (target.isIterableWrapped()) {
-            code.add(declareArrayList(asRecordName(target.getName()), input.getRecordClassName()));
+            code.addStatement("$T<$T> $L = new $T<$T>()", LIST.className, className, asListedRecordName(target.getName()), ARRAY_LIST.className, className);
         } else {
-            code.add(declareRecord(target.getName(), input.getRecordClassName()));
+            code.add(declareRecord(target.getName(), className));
         }
 
         input
@@ -197,19 +200,12 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             }
         }
 
-        var potentialArrayListName = asListedNameIf(recordName, isIterable);
         if (isIterable) {
-            code.add(addToList(potentialArrayListName, recordName)).endControlFlow().endControlFlow();
+            code.add(addToList(asListedName(recordName), recordName)).endControlFlow().endControlFlow();
         }
 
-        if (!code.isEmpty()) {
-            code.addStatement(
-                    "$T.$L($N, $N)",
-                    FIELD_HELPERS_EXTERNAL.className,
-                    METHOD_SET_PK,
-                    Dependency.CONTEXT_NAME,
-                    isIterable ? potentialArrayListName : recordName
-            );
+        if (!code.isEmpty()) { // Note: This is done after records are filled.
+            code.add(applyGlobalTransforms(recordName, TransformScope.ALL_MUTATIONS, isIterable));
         }
 
         return code.isEmpty() || isIterable ? code.build() : CodeBlock
@@ -218,6 +214,29 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .add(code.build())
                 .endControlFlow()
                 .build();
+    }
+
+    protected static CodeBlock applyGlobalTransforms(String recordName, TransformScope scope, boolean isIterable) {
+        var code = CodeBlock.builder();
+        GeneratorConfig
+                .getGlobalTransformNames(scope)
+                .stream()
+                .filter(it -> GeneratorConfig.getExternalTransforms().contains(it))
+                .map(it -> GeneratorConfig.getExternalTransforms().get(it))
+                .forEach(transform -> code.add(applyTransform(recordName, transform, isIterable)));
+        return code.build();
+    }
+
+    protected static CodeBlock applyTransform(String recordName, Method transform, boolean isIterable) {
+        var declaringClass = transform.getDeclaringClass();
+        return CodeBlock.builder().addStatement(
+                "$N = $T.$L($N, $L",
+                asListedNameIf(recordName, isIterable),
+                ClassName.get(declaringClass),
+                transform.getName(),
+                Dependency.CONTEXT_NAME,
+                isIterable ? CodeBlock.of("$N)", asListedName(recordName)) : CodeBlock.of("$L)$L.get()", listOf(recordName), findFirst())
+        ).build();
     }
 
     /**
@@ -361,7 +380,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .beginControlFlow("if (!$N.contains($S) || $N == null)", VARIABLE_SELECT, selectionSetPath, VARIABLE_GET_PARAM)
                 .add("return ");
         if (isIterable) {
-            code.addStatement("$T.of()", MAP.className);
+            code.addStatement(mapOf());
         } else {
             code.addStatement("null");
         }
@@ -384,17 +403,15 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         } else {
             code
                     .addStatement(
-                            "var $L = $N.$L($N, $T.of($N$L), $L)",
+                            "var $L = $N.$L($N, $L, $L)",
                             VARIABLE_NODE_RESULT,
                             querySourceName,
                             queryMethod,
                             Dependency.CONTEXT_NAME,
-                            SET.className,
-                            VARIABLE_GET_PARAM,
-                            idCall,
+                            setOf(CodeBlock.of("$N$L", VARIABLE_GET_PARAM, idCall)),
                             selectionSetCode
                     )
-                    .addStatement("return $N.values().stream().findFirst().orElse(null)", VARIABLE_NODE_RESULT);
+                    .addStatement("return $N.values()$L.orElse(null)", VARIABLE_NODE_RESULT, findFirst());
         }
         dependencySet.add(new QueryDependency(querySource, SAVE_DIRECTORY_NAME));
         return code.build();

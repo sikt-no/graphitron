@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron;
+package no.fellesstudentsystem.graphitron.mojo;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import org.apache.maven.plugin.AbstractMojo;
@@ -6,6 +6,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
+import java.util.List;
 import java.util.Set;
 
 @Mojo(name = "generate")
@@ -70,6 +71,18 @@ public class GenerateMojo extends AbstractMojo {
     @Parameter(property = "generate.externalExceptions")
     private String externalExceptions;
 
+    /**
+     * External exceptions that can be referenced in code generation.
+     */
+    @Parameter(property = "generate.externalTransforms")
+    private String externalTransforms;
+
+    /**
+     * Transforms that apply to all records, or a subset of records.
+     */
+    @Parameter(property = "generate.globalRecordTransforms")
+    private List<GlobalTransform> globalRecordTransforms;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -114,6 +127,14 @@ public class GenerateMojo extends AbstractMojo {
 
     public String getExternalExceptions() {
         return externalExceptions;
+    }
+
+    public String getExternalTransforms() {
+        return externalTransforms;
+    }
+
+    public List<GlobalTransform> getGlobalTransforms() {
+        return globalRecordTransforms;
     }
 
     public void setTopPackage(String topPackage) {

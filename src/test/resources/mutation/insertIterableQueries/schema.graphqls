@@ -22,7 +22,7 @@ type EditResponseWithCustomer {
 
 type Mutation {
   insertCustomersInput(input: [InsertInput!]): [ID!] @mutationType(typeName: INSERT)
-  insertCustomers2Params(input: [InsertInput!], lastName: String): [ID!] @mutationType(typeName: INSERT)
+  insertCustomers2Params(input: [InsertInput!], lastName: String @column(name: "LAST_NAME")): [ID!] @mutationType(typeName: INSERT)
   insertCustomersInputAndResponse(input: [InsertInput!]): [EditResponse!] @mutationType(typeName: INSERT)
   insertCustomersWithCustomerResponse(input: [InsertInput!]): [EditResponseWithCustomer!] @mutationType(typeName: INSERT)
 }

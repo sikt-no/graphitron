@@ -8,6 +8,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;

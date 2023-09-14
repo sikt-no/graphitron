@@ -1,0 +1,8 @@
+input EndreInput @record(table : "CUSTOMER") {
+  id: ID!
+  firstName: String! @column(name: "FIRST_NAME")
+}
+
+type Mutation {
+  editCustomer(in: EndreInput): ID! @mutationType(typeName: UPDATE)
+}

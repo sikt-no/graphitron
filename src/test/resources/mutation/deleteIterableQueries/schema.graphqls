@@ -17,7 +17,7 @@ type DeleteResponseWithCustomer {
 
 type Mutation {
   deleteCustomerInput(input: [DeleteInput!]): [ID!] @mutationType(typeName: DELETE)
-  deleteCustomer2Params(input: [DeleteInput!], lastName: String): [ID!] @mutationType(typeName: DELETE)
+  deleteCustomer2Params(input: [DeleteInput!], lastName: String @column(name: "LAST_NAME")): [ID!] @mutationType(typeName: DELETE)
   deleteCustomerInputAndResponse(input: [DeleteInput!]): [DeleteResponse!] @mutationType(typeName: DELETE)
   deleteCustomerWithCustomerResponse(input: [DeleteInput!]): [DeleteResponseWithCustomer!] @mutationType(typeName: DELETE)
 }

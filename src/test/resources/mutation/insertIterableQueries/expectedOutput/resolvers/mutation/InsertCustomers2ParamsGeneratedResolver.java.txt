@@ -13,7 +13,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -30,7 +29,7 @@ public class InsertCustomers2ParamsGeneratedResolver implements InsertCustomers2
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecordList = new ArrayList<CustomerRecord>();
+        List<CustomerRecord> inputRecordList = new ArrayList<CustomerRecord>();
 
 
         if (input != null) {
@@ -38,6 +37,9 @@ public class InsertCustomers2ParamsGeneratedResolver implements InsertCustomers2
                 if (itInput == null) continue;
                 var inputRecord = new CustomerRecord();
                 inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
                 if (flatArguments.contains("input/customerId")) {
                     inputRecord.setCustomerId(itInput.getCustomerId());
                 }
@@ -59,13 +61,9 @@ public class InsertCustomers2ParamsGeneratedResolver implements InsertCustomers2
                 if (flatArguments.contains("input/createdDate")) {
                     inputRecord.setCreateDate(itInput.getCreatedDate());
                 }
-                if (flatArguments.contains("input/id")) {
-                    inputRecord.setId(itInput.getId());
-                }
                 inputRecordList.add(inputRecord);
             }
         }
-        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
         var rowsUpdated = insertCustomers2ParamsDBQueries.insertCustomers2Params(ctx, inputRecordList, lastName);
 

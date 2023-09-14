@@ -1,29 +1,31 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
-import fake.code.example.package.model.Termin;
-import java.lang.String;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import fake.code.generated.model.Film;
+import fake.code.generated.model.Rating;
+import java.lang.Integer;
 import java.util.List;
+import java.util.Map;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
+
 
 public class QueryDBQueries {
-    public List<Termin> terminForQuery(DSLContext ctx, String eierInstitusjonsnummer, SelectionSet select) {
+    public List<Film> filmForQuery(DSLContext ctx, Integer releaseYear, SelectionSet select) {
         return ctx
                 .select(
-                        row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE).as("termintype"),
-                                select.optional("arstall", TERMIN.ARSTALL).as("arstall")
-                        ).mapping(nullOnAllNull(Termin::new)).as("termin")
+                        DSL.row(
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating"),
+                                select.optional("length", FILM.LENGTH).as("length")
+                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
                 )
-                .from(TERMIN)
-                .where(TERMIN.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 }

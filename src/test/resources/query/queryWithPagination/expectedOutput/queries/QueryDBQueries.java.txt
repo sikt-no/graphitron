@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.Film;
 import java.lang.Integer;
@@ -12,16 +9,18 @@ import java.lang.String;
 import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
             String after, SelectionSet select) {
         return ctx
                 .select(
-                        row(
+                        DSL.row(
                                 FILM.getId().as("id"),
                                 select.optional("title", FILM.TITLE).as("title")
-                        ).mapping(nullOnAllNull(Film::new)).as("films")
+                        ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -33,7 +32,7 @@ public class QueryDBQueries {
 
     public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
-                .select(count().as("totalCount"))
+                .select(DSL.count().as("totalCount"))
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);

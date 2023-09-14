@@ -2,8 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.mapping;
 
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.toCamelCase;
 
 /**
  * Stores operations related to rendering record method calls.
@@ -12,10 +11,7 @@ public class RecordMethodMapping {
     private final String name, codeName, set, setCallPart;
 
     public RecordMethodMapping(String name) {
-        var codeNameUpper = Stream
-                .of(name.toLowerCase().split("_(?![0-9_]+)"))
-                .map(StringUtils::capitalize)
-                .collect(Collectors.joining(""));
+        var codeNameUpper = toCamelCase(name);
         this.name = codeNameUpper;
         codeName = StringUtils.uncapitalize(codeNameUpper);
 

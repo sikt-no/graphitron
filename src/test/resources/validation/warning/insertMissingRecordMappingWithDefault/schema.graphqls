@@ -2,9 +2,17 @@ type Mutation {
   m(i: [Input!]!): ID! @mutationType(typeName: UPSERT)
 }
 
-input Input @record(table: "SEMESTERREGISTRERING") {
-  id: ID
-  ar: Int!
-  termin: Termintype! @column(name: "TERMINKODE")
-  registrert: Boolean! @column(name: "STATUS_REG_OK")
+input Input @record(table: "FILM") {
+  id: ID!
+  title: String!
+  languageId: Int! @column(name: "LANGUAGE_ID")
+  fulltext: String!
+  duration: Int @column(name: "RENTAL_DURATION")
+  rating: Rating
+}
+
+enum Rating {
+  G @mapEnum(name: "G"),
+  PG_13 @mapEnum(name: "PG-13"),
+  R @mapEnum(name: "R"),
 }

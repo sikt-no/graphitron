@@ -47,7 +47,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         }
         this.hasTable = hasTable || hasRecord;
         recordClassName = ClassName.get(GeneratorConfig.getGeneratedJooqRecordsPackage(), asRecordClassName(new RecordMethodMapping(tableName).getName()));
-        requiredInputs = this.hasTable ? getRequiredFields(getTable().getName()) : Set.of();
+        requiredInputs = this.hasTable ? getRequiredFields(getTable().getName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
     }
 
     /**

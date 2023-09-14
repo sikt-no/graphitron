@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.Description;
 import fake.graphql.example.package.model.Film;
@@ -17,6 +14,8 @@ import java.util.Set;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
     public Map<String, Store> storeForInventory(DSLContext ctx, Set<String> inventoryIder,
@@ -24,20 +23,20 @@ public class InventoryDBQueries {
         return ctx
                 .select(
                         INVENTORY.getId(),
-                        row(
+                        DSL.row(
                                 INVENTORY.store().getId().as("id"),
-                                row(
+                                DSL.row(
                                         select.optional("fields/filmId", INVENTORY.store().FILM_ID).as("filmId"),
                                         select.optional("fields/lastUpdate", INVENTORY.store().LAST_UPDATE).as("lastUpdate")
                                 ).mapping(StoreFieldsWithOptional::new).as("fields"),
-                                row(
+                                DSL.row(
                                         select.optional("navnOpt/filmId", INVENTORY.store().FILM_ID).as("filmId"),
                                         select.optional("navnOpt/lastUpdate", INVENTORY.store().LAST_UPDATE).as("lastUpdate")
-                                ).mapping(nullOnAllNull(StoreFieldsWithOptional::new)).as("navnOpt"),
-                                row(
+                                ).mapping(Functions.nullOnAllNull(StoreFieldsWithOptional::new)).as("navnOpt"),
+                                DSL.row(
                                         select.optional("navnReq/filmId", INVENTORY.store().FILM_ID).as("filmId"),
                                         select.optional("navnReq/addressId", INVENTORY.store().ADDRESS_ID).as("addressId")
-                                ).mapping(nullOnAllNull(StoreFieldsAllRequired::new)).as("navnReq")
+                                ).mapping(Functions.nullOnAllNull(StoreFieldsAllRequired::new)).as("navnReq")
                         ).mapping((a0, a1, a2, a3) -> a0 == null && (a1 == null || new StoreFieldsWithOptional().equals(a1)) && (a2 == null || new StoreFieldsWithOptional().equals(a2)) && (a3 == null || new StoreFieldsAllRequired().equals(a3)) ? null : new Store(a0, a1, a2, a3)).as("store")
                 )
                 .from(INVENTORY)
@@ -50,7 +49,7 @@ public class InventoryDBQueries {
         return ctx
                 .select(
                         INVENTORY.getId(),
-                        row(
+                        DSL.row(
                                 INVENTORY.film().getId().as("id"),
                                 select.optional("title", INVENTORY.film().TITLE).as("title"),
                                 select.optional("title2", INVENTORY.film().TITLE).as("title2"),
@@ -75,7 +74,7 @@ public class InventoryDBQueries {
                                 select.optional("title21", INVENTORY.film().TITLE).as("title21"),
                                 select.optional("title22", INVENTORY.film().TITLE).as("title22"),
                                 select.optional("title23", INVENTORY.film().TITLE).as("title23"),
-                                row(
+                                DSL.row(
                                         select.optional("description/description", INVENTORY.film().DESCRIPTION).as("description"),
                                         select.optional("description/description2", INVENTORY.film().DESCRIPTION).as("description2"),
                                         select.optional("description/description3", INVENTORY.film().DESCRIPTION).as("description3"),

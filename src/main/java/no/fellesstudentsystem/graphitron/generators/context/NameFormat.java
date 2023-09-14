@@ -1,7 +1,11 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
+
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.*;
@@ -143,5 +147,15 @@ public class NameFormat {
     @NotNull
     public static String asListedRecordNameIf(String name, boolean condition) {
         return asListedNameIf(asRecordName(name), condition);
+    }
+
+    /**
+     * Camel case conversion with special handling for numbers.
+     */
+    public static String toCamelCase(String name) {
+        return Stream
+                .of(name.toLowerCase().split("_(?![0-9_]+)"))
+                .map(StringUtils::capitalize)
+                .collect(Collectors.joining(""));
     }
 }

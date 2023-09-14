@@ -20,7 +20,7 @@ type Mutation {
   editCustomerSimple(id: ID!): ID! @service(name : "TEST_CUSTOMER")
   " Note: there are two methods with this name, but it resolves correctly based on number of arguments. Doesn't check the types though."
   editCustomerInput(input: EditInput!): ID! @service(name : "TEST_CUSTOMER")
-  editCustomer2Params(input: EditInput!, lastName: String): ID! @service(name : "TEST_CUSTOMER")
+  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @service(name : "TEST_CUSTOMER")
   editCustomerResponse(id: ID!): EditResponse! @service(name : "TEST_CUSTOMER")
   editCustomerInputAndResponse(input: EditInput!): EditResponse! @service(name : "TEST_CUSTOMER")
   " Column should not matter. It may change some internal variable names."

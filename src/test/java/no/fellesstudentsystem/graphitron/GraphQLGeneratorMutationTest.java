@@ -52,7 +52,9 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
                 enums,
                 Map.of(),
                 services,
-                exceptions
+                exceptions,
+                Map.of(),
+                List.of()
         );
     }
 

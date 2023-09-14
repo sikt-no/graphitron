@@ -13,7 +13,7 @@ type Film @table {
 
 input InputWithOptionalField {
   title: String #Optional
-  rating: Termintype #Optional
+  rating: Rating #Optional
 }
 
 enum Rating {

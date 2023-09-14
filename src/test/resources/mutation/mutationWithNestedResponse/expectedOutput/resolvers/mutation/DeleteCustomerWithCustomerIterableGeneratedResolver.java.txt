@@ -19,7 +19,6 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -40,7 +39,7 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecordList = new ArrayList<CustomerRecord>();
+        List<CustomerRecord> inputRecordList = new ArrayList<CustomerRecord>();
 
 
         if (input != null) {
@@ -48,19 +47,18 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
                 if (itInput == null) continue;
                 var inputRecord = new CustomerRecord();
                 inputRecord.attach(ctx.configuration());
-                if (flatArguments.contains("input/firstName")) {
-                    inputRecord.setFirstName(itInput.getFirstName());
-                }
                 if (flatArguments.contains("input/email")) {
                     inputRecord.setEmail(itInput.getEmail());
                 }
                 if (flatArguments.contains("input/id")) {
                     inputRecord.setId(itInput.getId());
                 }
+                if (flatArguments.contains("input/firstName")) {
+                    inputRecord.setFirstName(itInput.getFirstName());
+                }
                 inputRecordList.add(inputRecord);
             }
         }
-        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
         var rowsUpdated = deleteCustomerWithCustomerIterableDBQueries.deleteCustomerWithCustomerIterable(ctx, inputRecordList);
         var inputRecordCustomer = getResultCustomer(ctx, inputRecordList, select);

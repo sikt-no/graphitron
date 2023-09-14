@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.Language;
 import java.lang.String;
@@ -13,6 +10,8 @@ import java.util.Set;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
     public Map<String, Language> originalLanguageForPayment(DSLContext ctx, Set<String> paymentIder,
@@ -24,10 +23,10 @@ public class PaymentDBQueries {
         return ctx
                 .select(
                         PAYMENT.getId(),
-                        row(
+                        DSL.row(
                                 film_originallanguage.getId().as("id"),
                                 select.optional("name", film_originallanguage.NAME).as("name")
-                        ).mapping(nullOnAllNull(Language::new)).as("originalLanguage")
+                        ).mapping(Functions.nullOnAllNull(Language::new)).as("originalLanguage")
                 )
                 .from(PAYMENT)
                 .join(film_originallanguage)

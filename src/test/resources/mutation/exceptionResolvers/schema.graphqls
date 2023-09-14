@@ -1,7 +1,7 @@
 input EditInput @record(table : "CUSTOMER") {
   id: ID!
-  name: String @column(name: "FORNAVN")
-  lastName: String
+  name: String @column(name: "FIRST_NAME")
+  lastName: String @column(name: "LAST_NAME")
   edit2: EditInput2 @column(name : "editDouble")
 }
 

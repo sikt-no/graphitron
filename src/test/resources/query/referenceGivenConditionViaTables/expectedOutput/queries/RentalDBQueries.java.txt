@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.Actor;
 import fake.graphql.example.package.model.FilmActor;
@@ -14,6 +11,8 @@ import java.util.Set;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class RentalDBQueries {
     public Map<String, FilmActor> mainActorForRental(DSLContext ctx, Set<String> rentalIder,
@@ -24,13 +23,13 @@ public class RentalDBQueries {
         return ctx
                 .select(
                         RENTAL.getId(),
-                        row(
+                        DSL.row(
                                 film_mainactor.getId().as("id"),
-                                row(
+                                DSL.row(
                                         film_mainactor.actor().getId().as("id"),
                                         select.optional("actor/lastName", film_mainactor.actor().LAST_NAME).as("lastName")
-                                ).mapping(nullOnAllNull(Actor::new)).as("actor")
-                        ).mapping(nullOnAllNull(FilmActor::new)).as("mainActor")
+                                ).mapping(Functions.nullOnAllNull(Actor::new)).as("actor")
+                        ).mapping(Functions.nullOnAllNull(FilmActor::new)).as("mainActor")
                 )
                 .from(RENTAL)
                 .leftJoin(film_mainactor)

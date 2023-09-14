@@ -1,10 +1,7 @@
 package fake.code.example.package.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
 import static no.fellesstudentsystem.kjerneapi.Keys.*;
 import static no.fellesstudentsystem.kjerneapi.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import java.lang.String;
 import java.util.Map;
@@ -14,6 +11,8 @@ import fake.graphql.example.package.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class ProgramStudierettDBQueries {
     public Map<String, ProgramStudierett> loadProgramStudierettByIdsAsReferertNode(DSLContext ctx, Set<String> ids,
@@ -21,12 +20,12 @@ public class ProgramStudierettDBQueries {
         return ctx
                 .select(
                         STUDIERETT.getId(),
-                        row(
+                        DSL.row(
                                 STUDIERETT.getId().as("id"),
-                                row(
+                                DSL.row(
                                         STUDIERETT.kull().getId().as("id")
-                                ).mapping(nullOnAllNull(Kull::new)).as("kull")
-                        ).mapping(nullOnAllNull(ProgramStudierett::new)).as("id")
+                                ).mapping(Functions.nullOnAllNull(Kull::new)).as("kull")
+                        ).mapping(Functions.nullOnAllNull(ProgramStudierett::new)).as("id")
                 )
                 .from(STUDIERETT)
                 .where(STUDIERETT.hasIds(ids))

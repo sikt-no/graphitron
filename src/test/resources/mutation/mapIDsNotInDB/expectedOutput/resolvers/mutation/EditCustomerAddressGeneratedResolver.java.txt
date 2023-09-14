@@ -10,7 +10,6 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -35,7 +34,6 @@ public class EditCustomerAddressGeneratedResolver implements EditCustomerAddress
             if (flatArguments.contains("in/addressId")) {
                 inRecord.setAddressId(in.getAddressId());
             }
-            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecord);
         }
 
         var editCustomerAddressResult = testCustomerService.editCustomerAddress(inRecord);

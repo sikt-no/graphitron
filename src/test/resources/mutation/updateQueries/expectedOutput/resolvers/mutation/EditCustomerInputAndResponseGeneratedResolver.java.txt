@@ -10,7 +10,6 @@ import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -31,16 +30,15 @@ public class EditCustomerInputAndResponseGeneratedResolver implements EditCustom
         inputRecord.attach(ctx.configuration());
 
         if (input != null) {
-            if (flatArguments.contains("input/firstName")) {
-                inputRecord.setFirstName(input.getFirstName());
-            }
             if (flatArguments.contains("input/email")) {
                 inputRecord.setEmail(input.getEmail());
             }
             if (flatArguments.contains("input/id")) {
                 inputRecord.setId(input.getId());
             }
-            FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecord);
+            if (flatArguments.contains("input/firstName")) {
+                inputRecord.setFirstName(input.getFirstName());
+            }
         }
 
         var rowsUpdated = editCustomerInputAndResponseDBQueries.editCustomerInputAndResponse(ctx, inputRecord);

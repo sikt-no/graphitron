@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron;
+package no.fellesstudentsystem.graphitron.mojo;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
@@ -11,7 +11,6 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static no.fellesstudentsystem.graphitron.schema.SchemaReader.getTypeDefinitionRegistry;

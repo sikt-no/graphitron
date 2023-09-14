@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.validation;
 
 import graphql.com.google.common.collect.Sets;
-import no.fellesstudentsystem.graphitron.GraphQLGenerator;
+import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
@@ -188,7 +188,7 @@ public class ProcessedDefinitionsValidator {
 
     private void validateTableExistsAndHasMethods(String tableName, Set<String> expectedMethodNames) {
         if (!TableReflection.tableExists(tableName)) {
-            LOGGER.warn("No table with name '{}' found in {}", tableName, TableReflection.TABLES_CLASS.getName());
+            LOGGER.warn("No table with name '{}' found in {}", tableName, GeneratorConfig.getGeneratedJooqTablesClass().getName());
         } else {
             validateTableHasMethods(tableName, expectedMethodNames);
         }

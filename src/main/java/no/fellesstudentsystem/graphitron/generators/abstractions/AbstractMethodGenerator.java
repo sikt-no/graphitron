@@ -15,8 +15,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.mapOf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.nullIfNullElse;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.MAP;
 
 abstract public class AbstractMethodGenerator<T extends ObjectField> implements MethodGenerator<T> {
     public static final String ENV_NAME = "env";
@@ -68,13 +69,16 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         }
 
         var enumEntry = processedSchema.getEnum(enumType);
+        var tempVariableName = "s";
         return CodeBlock
                 .builder()
-                .add(".convert($T.class, s -> s == null ? null : $T.of(", enumEntry.getGraphClassName(), MAP.className)
-                .add(renderMapElements(enumEntry, true))
-                .add(").getOrDefault(s, null), s -> s == null ? null : $T.of(", MAP.className)
-                .add(renderMapElements(enumEntry, false))
-                .add(").getOrDefault(s, null))")
+                .add(".convert($T.class, $L -> $L, $L -> $L)",
+                        enumEntry.getGraphClassName(),
+                        tempVariableName,
+                        toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, true),
+                        tempVariableName,
+                        toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, false)
+                )
                 .build();
     }
 
@@ -87,12 +91,16 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         }
 
         var enumEntry = processedSchema.getEnum(enumType);
-        return CodeBlock
-                .builder()
-                .add("$L == null ? null : $T.of(", field, MAP.className)
-                .add(renderMapElements(enumEntry, false))
-                .add(").getOrDefault($L, null)", field)
-                .build();
+        return toNullSafeMapCall(field, enumEntry, false);
+    }
+
+    private CodeBlock toNullSafeMapCall(CodeBlock variable, EnumDefinition enumEntry, boolean flipDirection) {
+        return CodeBlock.of(
+                "$L$L.getOrDefault($L, null)",
+                nullIfNullElse(variable),
+                mapOf(renderMapElements(enumEntry, flipDirection)),
+                variable
+        );
     }
 
     private CodeBlock renderMapElements(EnumDefinition enumEntry, boolean flipDirection) {

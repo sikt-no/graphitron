@@ -19,7 +19,6 @@ import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassG
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -293,9 +292,9 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         if (recordIterable == field.isIterableWrapped()) {
             iterableMapCode = CodeBlock.of("$N", asListedNameIf(inputSource, field.isIterableWrapped()));
         } else if (!recordIterable && field.isIterableWrapped()) {
-            iterableMapCode = CodeBlock.of("$T.of($N)", LIST.className, uncapitalize(inputSource));
+            iterableMapCode = listOf(uncapitalize(inputSource));
         } else {
-            iterableMapCode = CodeBlock.of("$N.stream.findFirst().orElse($T.of())", asListedName(inputSource), LIST.className);
+            iterableMapCode = CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf());
         }
 
         return code.addStatement(field.getMappingFromFieldName().asSetCall("$L"), iterableMapCode).build();

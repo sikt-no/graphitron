@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.Film;
 import fake.graphql.example.package.model.Language;
@@ -12,6 +9,8 @@ import java.lang.String;
 import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Film> filmForQuery(DSLContext ctx, String id, SelectionSet select) {
@@ -19,15 +18,15 @@ public class QueryDBQueries {
         var film_originallanguage = LANGUAGE.as("film_originallanguage");
         return ctx
                 .select(
-                        row(
+                        DSL.row(
                                 FILM.getId().as("id"),
-                                row(
+                                DSL.row(
                                         film_filmlanguage.getId().as("id")
-                                ).mapping(nullOnAllNull(Language::new)).as("filmLanguage"),
-                                row(
+                                ).mapping(Functions.nullOnAllNull(Language::new)).as("filmLanguage"),
+                                DSL.row(
                                         film_originallanguage.getId().as("id")
-                                ).mapping(nullOnAllNull(Language::new)).as("originalLanguage")
-                        ).mapping(nullOnAllNull(Film::new)).as("film")
+                                ).mapping(Functions.nullOnAllNull(Language::new)).as("originalLanguage")
+                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
                 )
                 .from(FILM)
                 .leftJoin(film_filmlanguage)

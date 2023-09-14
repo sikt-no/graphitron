@@ -5,7 +5,7 @@ directive @service(name: String!) on FIELD_DEFINITION
 directive @error(name: String!) on OBJECT
 directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
 
-enum MutationType { UPDATE, DELETE }
+enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
 interface Error {
   path: [String!]!

@@ -1,9 +1,15 @@
 type Query {
-  termin(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER")): Termin
+  film(releaseYear: Int! @column(name : "RELEASE_YEAR")): Film
 }
 
-type Termin @table {
+type Film @table {
   id: ID!
-  termintype: Termintype! @column(name : "TERMINKODE")
-  arstall: Int!
+  rating: Rating!
+  length: Int
+}
+
+enum Rating {
+  G @mapEnum(name: "G"),
+  PG_13 @mapEnum(name: "PG-13"),
+  R @mapEnum(name: "R"),
 }

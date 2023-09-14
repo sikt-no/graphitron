@@ -55,7 +55,9 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
                 enums,
                 conditions,
                 Map.of(),
-                Map.of()
+                Map.of(),
+                Map.of(),
+                List.of()
         );
     }
 

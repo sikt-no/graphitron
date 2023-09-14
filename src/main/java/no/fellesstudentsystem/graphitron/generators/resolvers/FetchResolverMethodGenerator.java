@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 
 import static java.util.Map.entry;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnCompletedFuture;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
@@ -251,7 +252,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                     );
 
             if (referenceField.getFieldType().isIterableNonNullable()) {
-                closeMethodCall.addStatement(".thenApply(data -> $T.ofNullable(data).orElse($T.of()))", OPTIONAL.className, LIST.className);
+                closeMethodCall.addStatement(".thenApply(data -> $T.ofNullable(data).orElse($L))", OPTIONAL.className, listOf());
             } else {
                 closeMethodCall.add(";");
             }

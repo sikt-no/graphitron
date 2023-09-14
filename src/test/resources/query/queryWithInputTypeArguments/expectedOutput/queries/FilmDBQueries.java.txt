@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.FilmCategory;
 import fake.graphql.example.package.model.OriginalCategoryInput;
@@ -18,6 +15,8 @@ import java.util.stream.Collectors;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
     public Map<String, List<FilmCategory>> categoriesForFilm(DSLContext ctx, Set<String> filmIder,
@@ -25,10 +24,10 @@ public class FilmDBQueries {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.getId().as("id"),
                                 select.optional("name", FILM_CATEGORY.category().NAME).as("name")
-                        ).mapping(nullOnAllNull(FilmCategory::new)).as("categories")
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categories")
                 )
                 .from(FILM_CATEGORY)
                 .where(FILM_CATEGORY.hasFilmIds(filmIder))
@@ -42,22 +41,22 @@ public class FilmDBQueries {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.getId().as("id"),
                                 select.optional("name", FILM_CATEGORY.category().NAME).as("name")
-                        ).mapping(nullOnAllNull(FilmCategory::new)).as("categoriesForInputList")
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputList")
                 )
                 .from(FILM_CATEGORY)
                 .where(FILM_CATEGORY.hasFilmIds(filmIder))
                 .and(categoryInList != null && categoryInList.size() > 0 ?
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED,
                                 FILM_CATEGORY.category().NAME
-                        ).in(categoryInList.stream().map(input -> row(
+                        ).in(categoryInList.stream().map(input -> DSL.row(
                                 input.getLastUpdated(),
                                 input.getName())
                         ).collect(Collectors.toList())) :
-                        noCondition())
+                        DSL.noCondition())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -67,24 +66,24 @@ public class FilmDBQueries {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.getId().as("id"),
                                 select.optional("name", FILM_CATEGORY.category().NAME).as("name")
-                        ).mapping(nullOnAllNull(FilmCategory::new)).as("categoriesForMixOfListAndSingleInput")
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForMixOfListAndSingleInput")
                 )
                 .from(FILM_CATEGORY)
                 .where(FILM_CATEGORY.hasFilmIds(filmIder))
                 .and(FILM_CATEGORY.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
                 .and(FILM_CATEGORY.category().NAME.eq(categoryIn.getName()))
                 .and(categoryInList != null && categoryInList.size() > 0 ?
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED,
                                 FILM_CATEGORY.category().NAME
-                        ).in(categoryInList.stream().map(input -> row(
+                        ).in(categoryInList.stream().map(input -> DSL.row(
                                 input.getLastUpdated(),
                                 input.getName())
                         ).collect(Collectors.toList())) :
-                        noCondition())
+                        DSL.noCondition())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -94,20 +93,20 @@ public class FilmDBQueries {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.getId().as("id"),
                                 select.optional("name", FILM_CATEGORY.category().NAME).as("name")
-                        ).mapping(nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithOneFieldList")
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithOneFieldList")
                 )
                 .from(FILM_CATEGORY)
                 .where(FILM_CATEGORY.hasFilmIds(filmIder))
                 .and(categoryInListOneField != null && categoryInListOneField.size() > 0 ?
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED
-                        ).in(categoryInListOneField.stream().map(input -> row(
+                        ).in(categoryInListOneField.stream().map(input -> DSL.row(
                                 input.getLastUpdated())
                         ).collect(Collectors.toList())) :
-                        noCondition())
+                        DSL.noCondition())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -117,22 +116,22 @@ public class FilmDBQueries {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.getId().as("id"),
                                 select.optional("name", FILM_CATEGORY.category().NAME).as("name")
-                        ).mapping(nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithNestedFieldList")
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithNestedFieldList")
                 )
                 .from(FILM_CATEGORY)
                 .where(FILM_CATEGORY.hasFilmIds(filmIder))
                 .and(categoryInListNestedField != null && categoryInListNestedField.size() > 0 ?
-                        row(
+                        DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED,
                                 FILM_CATEGORY.category().NAME
-                        ).in(categoryInListNestedField.stream().map(input -> row(
+                        ).in(categoryInListNestedField.stream().map(input -> DSL.row(
                                 input.getOriginalCategoryField().getLastUpdated(),
                                 input.getName())
                         ).collect(Collectors.toList())) :
-                        noCondition())
+                        DSL.noCondition())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

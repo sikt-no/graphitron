@@ -21,7 +21,11 @@ public class FormatCodeBlocks {
                     Dependency.CONTEXT_NAME,
                     DSL_CONTEXT.className,
                     GET_CONTEXT_METHOD
-            );
+            ),
+            FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
+            EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
+            EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
+            EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className);
 
     @NotNull
     public static CodeBlock declareArrayList(String variableName, TypeName typeName) {
@@ -60,8 +64,63 @@ public class FormatCodeBlocks {
     }
 
     @NotNull
+    public static CodeBlock listOf() {
+        return EMPTY_LIST;
+    }
+
+    @NotNull
+    public static CodeBlock listOf(CodeBlock content) {
+        return CodeBlock.of("$T.of($L)", LIST.className, content);
+    }
+
+    @NotNull
+    public static CodeBlock listOf(String variableName) {
+        return CodeBlock.of("$T.of($N)", LIST.className, variableName);
+    }
+
+    @NotNull
+    public static CodeBlock setOf() {
+        return EMPTY_SET;
+    }
+
+    @NotNull
+    public static CodeBlock setOf(CodeBlock content) {
+        return CodeBlock.of("$T.of($L)", SET.className, content);
+    }
+
+    @NotNull
+    public static CodeBlock setOf(String variableName) {
+        return CodeBlock.of("$T.of($N)", SET.className, variableName);
+    }
+
+    @NotNull
+    public static CodeBlock mapOf() {
+        return EMPTY_MAP;
+    }
+
+    @NotNull
+    public static CodeBlock mapOf(CodeBlock content) {
+        return CodeBlock.of("$T.of($L)", MAP.className, content);
+    }
+
+    @NotNull
     public static CodeBlock collectToList() {
         return COLLECT_TO_LIST;
+    }
+
+    @NotNull
+    public static CodeBlock findFirst() {
+        return FIND_FIRST;
+    }
+
+    @NotNull
+    public static CodeBlock nullIfNullElse(String variable) {
+        return CodeBlock.of("$N == null ? null : ", variable);
+    }
+
+    @NotNull
+    public static CodeBlock nullIfNullElse(CodeBlock check) {
+        return CodeBlock.of("$L == null ? null : ", check);
     }
 
     @NotNull

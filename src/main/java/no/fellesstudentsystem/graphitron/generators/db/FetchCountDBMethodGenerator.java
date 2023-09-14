@@ -49,7 +49,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .builder()
                 .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent().indent()
-                .add(".select(count().as($S))\n", TOTAL_COUNT_NAME)
+                .add(".select($T.count().as($S))\n", DSL.className, TOTAL_COUNT_NAME)
                 .add(".from(")
                 .add(actualRefTable)
                 .add(")\n")

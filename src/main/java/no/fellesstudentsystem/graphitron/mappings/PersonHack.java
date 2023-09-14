@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.toCamelCase;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -23,7 +24,7 @@ public class PersonHack {
      * @return The same list of fieldNames, but each PERSONLOPENR is replaced by PERSONNR and FODSELSDATO.
      */
     public static List<String> asHackedIDFields(Collection<String> fieldNames) {
-        return fieldNames.stream().flatMap(PersonHack::convert).map(String::toUpperCase).collect(Collectors.toList());
+        return fieldNames.stream().map(String::toUpperCase).flatMap(PersonHack::convert).collect(Collectors.toList());
     }
 
     /**
@@ -31,7 +32,7 @@ public class PersonHack {
      * @return The fields for this ID, where PERSONLOPENR is replaced by PERSONNR and FODSELSDATO.
      */
     public static Optional<List<String>> getHackedIDFields(String tableName, String idName) {
-        return getIDFields(tableName, idName).map(names -> names.stream().flatMap(PersonHack::convert).collect(Collectors.toList()));
+        return getIDFields(tableName, toCamelCase(idName)).map(names -> names.stream().map(String::toUpperCase).flatMap(PersonHack::convert).collect(Collectors.toList()));
     }
 
     public static Optional<List<String>> getIDFields(String tableName, String idName) {

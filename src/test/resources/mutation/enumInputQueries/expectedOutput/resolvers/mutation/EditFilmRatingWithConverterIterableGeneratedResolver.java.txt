@@ -16,7 +16,6 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
@@ -33,7 +32,7 @@ public class EditFilmRatingWithConverterIterableGeneratedResolver implements Edi
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecordList = new ArrayList<FilmRecord>();
+        List<FilmRecord> inputRecordList = new ArrayList<FilmRecord>();
 
 
         if (input != null) {
@@ -50,7 +49,6 @@ public class EditFilmRatingWithConverterIterableGeneratedResolver implements Edi
                 inputRecordList.add(inputRecord);
             }
         }
-        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
 
         var rowsUpdated = editFilmRatingWithConverterIterableDBQueries.editFilmRatingWithConverterIterable(ctx, inputRecordList);
 

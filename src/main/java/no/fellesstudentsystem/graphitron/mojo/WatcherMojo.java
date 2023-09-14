@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron;
+package no.fellesstudentsystem.graphitron.mojo;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import org.apache.maven.plugin.MojoExecutionException;

@@ -106,10 +106,9 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
             var errorListName = asListedName(context.getErrorTypeDefinition(errorField.getTypeName()).getName());
             for (var exc : context.getExceptionDefinitions(errorField.getTypeName())) {
                 var exception = GeneratorConfig.getExternalExceptions().get(exc.getExceptionReference());
-                var exceptionJavaClassName = ClassName.get(exception.getPackageName(), exception.getSimpleName());
                 code
-                        .nextControlFlow("catch ($T $L)", exceptionJavaClassName, VARIABLE_EXCEPTION)
-                        .addStatement("var $N = new $T()", VARIABLE_ERROR, exc.getGraphClassName())
+                        .nextControlFlow("catch ($T $L)", ClassName.get(exception), VARIABLE_EXCEPTION)
+                        .add(declareVariable(VARIABLE_ERROR, exc.getGraphClassName()))
                         .add(preparedCode);
                 if (hasPathField) {
                     if (Stream.of(exception.getMethods()).map(Method::getName).anyMatch(it -> it.equals(METHOD_GET_CAUSE))) {
@@ -141,10 +140,9 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                 .builder()
                 .addStatement("var $L = $N.$L()", VARIABLE_CAUSE, VARIABLE_EXCEPTION, METHOD_GET_CAUSE)
                 .addStatement(
-                        "var $L = $T.of($L).getOrDefault($N != null ? $N : \"\", $S)",
+                        "var $L = $L.getOrDefault($N != null ? $N : \"\", $S)",
                         VARIABLE_CAUSE_NAME,
-                        MAP.className,
-                        context.getFieldErrorNameSets(target),
+                        mapOf(CodeBlock.of(context.getFieldErrorNameSets(target))),
                         VARIABLE_CAUSE,
                         VARIABLE_CAUSE,
                         VALUE_UNDEFINED
@@ -183,13 +181,10 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                     );
         }
 
-        if (target.isIterableWrapped()) {
-            code.addStatement("return $T.completedFuture($T.of($N))", COMPLETABLE_FUTURE.className, LIST.className, resolverResultName);
-        } else {
-            code.add(returnCompletedFuture(resolverResultName));
-        }
-
-        return code.endControlFlow().build();
+        return code
+                .add(target.isIterableWrapped() ? returnCompletedFuture(listOf(resolverResultName)) : returnCompletedFuture(resolverResultName))
+                .endControlFlow()
+                .build();
     }
 
     /**

@@ -4,10 +4,13 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.jooq.generated.testdata.enums.MpaaRating;
+import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -20,7 +23,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     private final Map<String, Class<?>> enums = Map.of("RATING", MpaaRating.class);
 
-    public GraphQLGeneratorValidationTest() throws NoSuchMethodException {
+    public GraphQLGeneratorValidationTest() {
         super(SRC_TEST_RESOURCES_PATH);
     }
 
@@ -35,7 +38,9 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
                 enums,
                 Map.of(),
                 Map.of(),
-                Map.of()
+                Map.of(),
+                Map.of(),
+                List.of()
         );
     }
 
@@ -186,14 +191,12 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenMutationTypeHasMissingMapping_shouldLogWarning() {
         getProcessedSchema("warning/insertMissingRecordMapping", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database. Missing required fields: CREATE_DATE, FIRST_NAME",
-                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: CREATE_DATE, FIRST_NAME"
+                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database. Missing required fields: FIRST_NAME",
+                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: FIRST_NAME"
         );
     }
 
     @Test
-    @Disabled
-    // If view default values are supported, enable this test.
     void generate_whenMutationTypeHasMissingMappingWithDefault_shouldNotLogWarning() {
         getProcessedSchema("warning/insertMissingRecordMappingWithDefault", false);
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();
@@ -203,7 +206,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenMutationTypeHasMissingRequiredMapping_shouldLogWarning() {
         getProcessedSchema("warning/insertMissingRecordRequiredMapping", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: CREATE_DATE, FIRST_NAME"
+                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: FIRST_NAME"
         );
     }
 

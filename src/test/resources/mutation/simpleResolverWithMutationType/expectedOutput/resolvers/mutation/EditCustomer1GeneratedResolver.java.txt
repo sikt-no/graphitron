@@ -14,7 +14,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -31,7 +30,7 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inRecordList = new ArrayList<CustomerRecord>();
+        List<CustomerRecord> inRecordList = new ArrayList<CustomerRecord>();
 
 
         if (in != null) {
@@ -45,7 +44,6 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
                 inRecordList.add(inRecord);
             }
         }
-        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inRecordList);
 
         var rowsUpdated = editCustomer1DBQueries.editCustomer1(ctx, id, inRecordList);
 

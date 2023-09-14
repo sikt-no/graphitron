@@ -15,7 +15,6 @@ import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.example.package.queries.query.KullDBQueries;
 import fake.code.example.package.queries.query.ProgramStudierettDBQueries;
-import no.fellesstudentsystem.kjerneapi.FieldHelpers;
 import no.fellesstudentsystem.kjerneapi.Tables;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;

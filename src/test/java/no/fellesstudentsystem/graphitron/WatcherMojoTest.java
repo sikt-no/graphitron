@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.mojo.WatcherMojo;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
@@ -23,7 +24,7 @@ public class WatcherMojoTest {
             SRC_TEST_RESOURCES_PATH = "mojo",
             SRC_TEST_RESOURCES = SRC_ROOT + "/" + SRC_TEST_RESOURCES_PATH + "/",
             SCHEMA_NAME = "schema.graphql",
-            TEMP_JOOQ_GENERATED_PACKAGE = "no.fellesstudentsystem.kjerneapi"; // Replace this in the future.
+            DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.jooq.generated.testdata";
 
     private final static long WAIT_DELAY_MILLIS = 50;
 
@@ -50,7 +51,7 @@ public class WatcherMojoTest {
         // Edit the graph file by removing a field.
         var newFileLines = readFileAsStrings(schemaCopyPath)
                 .stream()
-                .filter(it -> !it.strip().equals("arstall: Int!"))
+                .filter(it -> !it.strip().equals("length: Int"))
                 .collect(Collectors.toList());
         Files.write(schemaCopyPath, newFileLines);
 
@@ -83,7 +84,7 @@ public class WatcherMojoTest {
         mojo.setOutputPath(tempDir.toString());
         mojo.setOutputPackage(DEFAULT_OUTPUT_PACKAGE);
         mojo.setGeneratedSchemaCodePackage(DEFAULT_OUTPUT_PACKAGE);
-        mojo.setJooqGeneratedPackage(TEMP_JOOQ_GENERATED_PACKAGE);
+        mojo.setJooqGeneratedPackage(DEFAULT_JOOQ_PACKAGE);
         return mojo;
     }
 

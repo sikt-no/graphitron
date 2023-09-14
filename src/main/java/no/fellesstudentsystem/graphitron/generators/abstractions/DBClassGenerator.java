@@ -62,11 +62,8 @@ abstract public class DBClassGenerator<T extends GenerationTarget> implements Cl
     public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
         var file = JavaFile
                 .builder(packagePath + "." + directoryOverride, generatedClass)
-                .addStaticImport(FIELD_HELPERS_EXTERNAL.className, "*")
                 .addStaticImport(TABLES.className, "*")
                 .addStaticImport(KEYS.className, "*")
-                .addStaticImport(DSL.className, "*")
-                .addStaticImport(FUNCTIONS.className, "*")
                 .indent("    ")
                 .build();
         try {

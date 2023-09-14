@@ -8,7 +8,10 @@ import org.jooq.impl.TableImpl;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -17,28 +20,14 @@ import java.util.stream.Stream;
  * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
  */
 public class TableReflection {
-    public static final Class<?> TABLES_CLASS, KEYS_CLASS;
-
-    static {
-        try {
-            TABLES_CLASS = Class.forName(GeneratorConfig.getGeneratedJooqTablesPackage());
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException("Unable to find jOOQ generated tables class. ", e);
-        }
-        try {
-            KEYS_CLASS = Class.forName(GeneratorConfig.getGeneratedJooqKeysPackage());
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException("Unable to find jOOQ generated keys class. ", e);
-        }
-    }
-
-    private final static Set<Field> TABLE_FIELDS = Set.of(TABLES_CLASS.getFields());
+    private final static Set<Field> TABLE_FIELDS = Set.of(GeneratorConfig.getGeneratedJooqTablesClass().getFields());
     private final static Map<String, Field> POSSIBLE_TABLE_FIELDS = TABLE_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
 
     public static boolean hasSingleReference(String leftTableName, String rightTableName) {
+        var tableClass = GeneratorConfig.getGeneratedJooqTablesClass();
         try {
-            var leftTable = (Table<?>) TABLES_CLASS.getField(leftTableName).get(null);
-            var rightTable = (Table<?>) TABLES_CLASS.getField(rightTableName).get(null);
+            var leftTable = (Table<?>) tableClass.getField(leftTableName).get(null);
+            var rightTable = (Table<?>) tableClass.getField(rightTableName).get(null);
             var keys = leftTable.getReferencesTo(rightTable);
             return keys.size() == 1;
         } catch (NoSuchFieldException | IllegalAccessException e) {
@@ -47,9 +36,10 @@ public class TableReflection {
     }
 
     public static String getQualifiedId(String leftTableName, String rightTableName) {
+        var tableClass = GeneratorConfig.getGeneratedJooqTablesClass();
         try {
-            var leftTable = (Table<?>) TABLES_CLASS.getField(leftTableName).get(null);
-            var rightTable = (Table<?>) TABLES_CLASS.getField(rightTableName).get(null);
+            var leftTable = (Table<?>) tableClass.getField(leftTableName).get(null);
+            var rightTable = (Table<?>) tableClass.getField(rightTableName).get(null);
             var keys = leftTable.getReferencesTo(rightTable);
             if (keys.size() == 1) {
                 var keyName = keys.get(0).getName();
@@ -91,7 +81,7 @@ public class TableReflection {
         try {
             return Arrays
                     .stream(((TableImpl<?>) table.get().get(null)).fields())
-                    .filter(it -> it.getName().equals(fieldName))
+                    .filter(it -> it.getName().toUpperCase().equals(fieldName))
                     .findFirst()
                     .map(value -> value.getDataType().defaulted()) // This does not work for views.
                     .orElse(false);
@@ -121,7 +111,12 @@ public class TableReflection {
 
     public static Optional<String> getJoinTableByKey(String keyName) {
         try {
-            return Optional.of(((ForeignKey<?, ?>) KEYS_CLASS.getField(keyName).get(null)).getKey().getTable().getName());
+            return Optional.of(
+                    ((ForeignKey<?, ?>) GeneratorConfig.getGeneratedJooqKeysClass().getField(keyName).get(null))
+                            .getKey()
+                            .getTable()
+                            .getName()
+            );
         } catch (Exception e) {
             return Optional.empty();
         }

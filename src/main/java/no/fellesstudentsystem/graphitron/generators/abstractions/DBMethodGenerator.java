@@ -93,7 +93,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     protected CodeBlock generateSelectRow(FetchContext context) {
         var codeBlockBuilder = CodeBlock
                 .builder()
-                .add("row(\n")
+                .add("$T.row(\n", DSL.className)
                 .indent()
                 .indent();
 
@@ -151,7 +151,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         } else {
             return maxTypeSafeFieldSizeIsExeeded
                     ? CodeBlock.of("$T.stream(r).allMatch($T::isNull) ? null : $L", ARRAYS.className, OBJECTS.className, mappedObjectCodeBlock)
-                    : CodeBlock.of("nullOnAllNull($L)", mappedObjectCodeBlock);
+                    : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
         }
     }
 

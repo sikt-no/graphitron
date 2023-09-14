@@ -22,7 +22,7 @@ type UpsertResponseWithCustomer {
 
 type Mutation {
   upsertCustomerInput(input: [UpsertInput!]): [ID!] @mutationType(typeName: UPSERT)
-  upsertCustomer2Params(input: [UpsertInput!], lastName: String): [ID!] @mutationType(typeName: UPSERT)
+  upsertCustomer2Params(input: [UpsertInput!], lastName: String @column(name: "LAST_NAME")): [ID!] @mutationType(typeName: UPSERT)
   upsertCustomerInputAndResponse(input: [UpsertInput!]): [UpsertResponse!] @mutationType(typeName: UPSERT)
   upsertCustomerWithCustomerResponse(input: [UpsertInput!]): [UpsertResponseWithCustomer!] @mutationType(typeName: UPSERT)
 }

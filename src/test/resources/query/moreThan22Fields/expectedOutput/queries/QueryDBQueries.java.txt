@@ -1,10 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-import static org.jooq.Functions.*;
-import static org.jooq.impl.DSL.*;
 
 import fake.graphql.example.package.model.Duration1;
 import fake.graphql.example.package.model.Duration2;
@@ -17,12 +14,14 @@ import java.util.Map;
 import java.util.Objects;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
+import org.jooq.Functions;
+import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Film> filmsForQuery(DSLContext ctx, List<String> ids, SelectionSet select) {
         return ctx
                 .select(
-                        row(
+                        DSL.row(
                                 FILM.getId().as("id"),
                                 select.optional("title", FILM.TITLE).as("title"),
                                 select.optional("title2", FILM.TITLE).as("title2"),
@@ -46,10 +45,10 @@ public class QueryDBQueries {
                                 select.optional("title20", FILM.TITLE).as("title20"),
                                 select.optional("description", FILM.DESCRIPTION).as("description"),
                                 select.optional("length", FILM.LENGTH).as("length"),
-                                row(
+                                DSL.row(
                                         select.optional("duration1/duration", FILM.RENTAL_DURATION).as("duration")
-                                ).mapping(nullOnAllNull(Duration1::new)).as("duration1"),
-                                row(
+                                ).mapping(Functions.nullOnAllNull(Duration1::new)).as("duration1"),
+                                DSL.row(
                                         select.optional("duration2/duration", FILM.RENTAL_DURATION).as("duration"),
                                         select.optional("duration2/duration2", FILM.RENTAL_DURATION).as("duration2"),
                                         select.optional("duration2/duration3", FILM.RENTAL_DURATION).as("duration3"),
@@ -141,7 +140,7 @@ public class QueryDBQueries {
                         ).as("films")
                 )
                 .from(FILM)
-                .where(ids.size() > 0 ? FILM.FILM_ID.in(ids) : noCondition())
+                .where(ids.size() > 0 ? FILM.FILM_ID.in(ids) : DSL.noCondition())
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }
