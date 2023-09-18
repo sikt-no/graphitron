@@ -5,6 +5,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * A helper class for generated code. Helps with flattening the arguments found in a GraphQL {@link graphql.schema.DataFetchingEnvironment}
+ * for the checks used in mutation code.
+ */
 public class Arguments {
     public static Set<String> flattenArgumentKeys(Map<String, Object> arguments) {
         return flattenArgumentKeys(arguments, "");

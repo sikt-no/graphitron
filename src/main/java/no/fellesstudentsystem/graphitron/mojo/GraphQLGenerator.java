@@ -15,6 +15,10 @@ import java.util.List;
 
 import static no.fellesstudentsystem.graphitron.schema.SchemaReader.getTypeDefinitionRegistry;
 
+/**
+ * Class for executing the code generation. Defines which generators should run by default.
+ * This assumes that generator configuration is set before calling any of these methods.
+ */
 public class GraphQLGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
 
@@ -24,10 +28,16 @@ public class GraphQLGenerator {
     }
     */
 
+    /**
+     * Execute the code generation on the default set of generators and logging settings.
+     */
     public static void generate() {
         generate(true);
     }
 
+    /**
+     * Execute the code generation on the default set of generators.
+     */
     public static void generate(boolean warnDirectives) {
         var processedSchema = getProcessedSchema(warnDirectives);
         processedSchema.validate();
@@ -42,6 +52,10 @@ public class GraphQLGenerator {
         generate(generators);
     }
 
+    /**
+     * Run a list of generators.
+     * @param generators The generators that should be executed.
+     */
     public static void generate(List<ClassGenerator<? extends GenerationTarget>> generators) {
         for (var g : generators) {
             g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
@@ -49,6 +63,10 @@ public class GraphQLGenerator {
         }
     }
 
+    /**
+     * @param warnDirectives Should the processing step warn of directive issues?
+     * @return A Graphitron-interpreted version of the schema files set in {@link GeneratorConfig}.
+     */
     public static ProcessedSchema getProcessedSchema(boolean warnDirectives) {
         // GeneratorConfig.loadProperties();
         var schemaLocations = GeneratorConfig.schemaFiles();

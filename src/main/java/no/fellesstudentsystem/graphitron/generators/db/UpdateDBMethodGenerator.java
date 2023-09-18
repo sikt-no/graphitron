@@ -57,7 +57,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
         var spec = getDefaultSpecBuilder(target.getName(), TypeName.INT);
 
-        var inputs = context.getServiceInputs();
+        var inputs = context.getMutationInputs();
         inputs.forEach((inputName, inputType) -> spec.addParameter(getParamTypeName(inputType), inputName));
 
         var recordInputs = inputs

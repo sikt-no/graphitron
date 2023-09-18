@@ -50,7 +50,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         super(localField, processedSchema);
     }
 
-    protected CodeBlock generateServiceCall(ObjectField target) {
+    protected CodeBlock generateUpdateMethodCall(ObjectField target) {
         var service = context.getService();
         var objectToCall = service.getServiceName();
         dependencySet.add(new ServiceDependency(service));

@@ -45,7 +45,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         return super.declareRecords(specInputs);
     }
 
-    protected CodeBlock generateServiceCall(ObjectField target) {
+    protected CodeBlock generateUpdateMethodCall(ObjectField target) {
         var objectToCall = target.getName() + FILE_NAME_SUFFIX;
         dependencySet.add(new QueryDependency(capitalize(objectToCall), UpdateDBClassGenerator.SAVE_DIRECTORY_NAME));
 

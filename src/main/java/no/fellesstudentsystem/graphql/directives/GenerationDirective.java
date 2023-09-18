@@ -3,11 +3,11 @@ package no.fellesstudentsystem.graphql.directives;
 import java.util.EnumSet;
 
 /**
- * Contains all the currently used generator directives and their available parameters.
- * It is expected that this enum matches what is found in the schema.
+ * Contains all the available generator directives and their parameters.
+ * This must match what is defined in the Graphitron directive schema.
  */
 public enum GenerationDirective {
-    RESOLVER("splitQuery"),
+    SPLIT_QUERY("splitQuery"),
     NOT_GENERATED("notGenerated"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
     COLUMN("column", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY)),

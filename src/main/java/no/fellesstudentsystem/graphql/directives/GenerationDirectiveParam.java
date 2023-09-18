@@ -1,8 +1,8 @@
 package no.fellesstudentsystem.graphql.directives;
 
 /**
- * Contains all the currently used directive parameters.
- * It is expected that this enum matches what is found in the schema.
+ * Contains all the available directive parameters.
+ * This must match what is defined in the Graphitron directive schema.
  */
 public enum GenerationDirectiveParam {
     KEY("key"),

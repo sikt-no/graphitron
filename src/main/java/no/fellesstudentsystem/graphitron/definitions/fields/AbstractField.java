@@ -71,6 +71,9 @@ public abstract class AbstractField {
         mappingFromColumn = new MethodMapping(unprocessedNameInput);
     }
 
+    /**
+     * Construct references from the {@link no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam#VIA via} parameter.
+     */
     private void addViaFieldReferences(Value viaValue) {
         var values = viaValue instanceof ArrayValue ? ((ArrayValue) viaValue).getValues() : List.of(((ObjectValue) viaValue));
 
@@ -173,8 +176,11 @@ public abstract class AbstractField {
         return hasCondition() && condition.isOverride();
     }
 
+    /**
+     * Create a join that is limited to a single field.
+     */
     @Nullable
-    protected <T extends NamedNode<T> & DirectivesContainer<T>> SQLImplicitFKJoin getSqlRoleJoin(T field) {
+    protected static <T extends NamedNode<T> & DirectivesContainer<T>> SQLImplicitFKJoin getSqlColumnJoin(T field) {
         return getOptionalDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(TABLE))
                 .map(table -> new SQLImplicitFKJoin(
                         table,

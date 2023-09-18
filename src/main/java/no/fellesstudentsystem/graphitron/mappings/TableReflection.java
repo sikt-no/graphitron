@@ -23,6 +23,9 @@ public class TableReflection {
     private final static Set<Field> TABLE_FIELDS = Set.of(GeneratorConfig.getGeneratedJooqTablesClass().getFields());
     private final static Map<String, Field> POSSIBLE_TABLE_FIELDS = TABLE_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
 
+    /**
+     * @return Does the left table have exactly one reference to the right table?
+     */
     public static boolean hasSingleReference(String leftTableName, String rightTableName) {
         var tableClass = GeneratorConfig.getGeneratedJooqTablesClass();
         try {
@@ -35,6 +38,9 @@ public class TableReflection {
         }
     }
 
+    /**
+     * @return The ID name of a foreign key reference from the left table to the right table, if one exists.
+     */
     public static String getQualifiedId(String leftTableName, String rightTableName) {
         var tableClass = GeneratorConfig.getGeneratedJooqTablesClass();
         try {
@@ -51,10 +57,16 @@ public class TableReflection {
         }
     }
 
+    /**
+     * @return Does this table exist in the generated jOOQ code?
+     */
     public static boolean tableExists(String tableName) {
         return POSSIBLE_TABLE_FIELDS.containsKey(tableName);
     }
 
+    /**
+     * @return Set of the names for all the fields that are set as required in the jOOQ table.
+     */
     public static Set<String> getRequiredFields(String tableName) {
         var field = getTablesField(tableName);
         if (field.isEmpty()) {
@@ -72,6 +84,9 @@ public class TableReflection {
         }
     }
 
+    /**
+     * @return Does this field have a default value in this jOOQ table? Does not work for views.
+     */
     public static boolean tableFieldHasDefaultValue(String tableName, String fieldName) {
         var table = getTablesField(tableName);
         if (table.isEmpty()) {
@@ -90,12 +105,21 @@ public class TableReflection {
         }
     }
 
+    /**
+     * @return Does this jOOQ table contain this method name?
+     */
     public static boolean tableHasMethod(String tableName, String methodName) {
         return getTablesField(tableName)
                 .map(value -> Stream.of(value.getType().getMethods()).map(Method::getName).anyMatch(m -> m.equals(methodName)))
                 .orElse(false);
     }
 
+    /**
+     * Search this jOOQ table for a method that represents this foreign key reference.
+     * @param tableName Name of the jOOQ table.
+     * @param keyName Name of the key that might have a method associated with it.
+     * @return The name of a method that represents this foreign key reference if it exists.
+     */
     public static Optional<String> searchTableForMethodByKey(String tableName, String keyName) {
         var field = getTablesField(tableName);
         if (field.isEmpty()) {
@@ -109,6 +133,11 @@ public class TableReflection {
                 .findFirst();
     }
 
+    /**
+     * Find the table this foreign key points to.
+     * @param keyName The name of the key to check.
+     * @return The table this key points to if it exists.
+     */
     public static Optional<String> getJoinTableByKey(String keyName) {
         try {
             return Optional.of(
@@ -122,12 +151,18 @@ public class TableReflection {
         }
     }
 
+    /**
+     * @return Set of field names for this table.
+     */
     public static Set<String> getFieldNamesForTable(String tableName) {
         return getTablesField(tableName)
                 .map(value -> Stream.of(value.getType().getFields()).map(Field::getName).collect(Collectors.toSet()))
                 .orElse(Set.of());
     }
 
+    /**
+     * @return Find this table as a field in jOOQs Tables class through reflection.
+     */
     public static Optional<Field> getTablesField(String tableName) {
         if (!tableExists(tableName)) {
             return Optional.empty();

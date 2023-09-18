@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * Represents a GraphQL interface.
+ */
 public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeDefinition> {
     private final Map<String, ObjectField> objectFields;
 
@@ -21,10 +24,16 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
                 .collect(Collectors.toMap(AbstractField::getName, Function.identity()));
     }
 
+    /**
+     * @return The fields that this interface requires any type that implements it to contain.
+     */
     public List<ObjectField> getInterfaceFields() {
         return new ArrayList<>(objectFields.values());
     }
 
+    /**
+     * @return Does this interface contain this field?
+     */
     public boolean hasField(String name) {
         return objectFields.containsKey(name);
     }

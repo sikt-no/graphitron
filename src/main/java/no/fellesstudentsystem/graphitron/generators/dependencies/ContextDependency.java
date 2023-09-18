@@ -8,13 +8,19 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INJECT;
 
+/**
+ * A dependency on DSLContext.
+ */
 public class ContextDependency implements Dependency, Comparable<Dependency> {
     private static final ContextDependency instance = new ContextDependency();
     private final static CodeBlock declaration = declareVariable(CONTEXT_NAME, DSL_CONTEXT.className);
 
     private ContextDependency() {}
 
-    public static ContextDependency getInstance(){
+    /**
+     * @return Get the singleton DSLContext dependency.
+     */
+    public static ContextDependency getInstance() {
         return instance;
     }
 

@@ -5,6 +5,7 @@ import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
 import graphql.relay.DefaultPageInfo;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
@@ -39,7 +40,7 @@ public enum JavaPoetClassName {
     INJECT(ClassName.get(javax.inject.Inject.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
     FIELD_HELPERS_EXTERNAL(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "FieldHelpers")), // TODO: Need more generic and external record transform functions before this can be removed.
-    FIELD_HELPERS(ClassName.get(no.fellesstudentsystem.graphql.helpers.FieldHelpers.class)),
+    FIELD_HELPERS(ClassName.get(FieldHelperHack.class)),
     ARGUMENTS(ClassName.get(no.fellesstudentsystem.graphql.helpers.arguments.Arguments.class)),
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqTablesClass())),
     FUNCTIONS(ClassName.get(org.jooq.Functions.class)),

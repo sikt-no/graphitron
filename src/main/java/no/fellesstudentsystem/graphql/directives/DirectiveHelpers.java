@@ -21,16 +21,34 @@ public class DirectiveHelpers {
         return argument != null ? argument.getValue() : null;
     }
 
+    /**
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return The String value of the directive argument, if it exists.
+     */
     public static Optional<String> getOptionalDirectiveArgumentString(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return Optional.ofNullable((StringValue) getArgument(container, directive, arg))
                 .map(StringValue::getValue);
     }
 
+    /**
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return The name of the enum value for this argument, if it exists.
+     */
     public static Optional<String> getOptionalDirectiveArgumentEnum(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return Optional.ofNullable((EnumValue) getArgument(container, directive, arg))
                 .map(EnumValue::getName);
     }
 
+    /**
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return List of String values of the directive argument, if it exists.
+     */
     public static List<String> getOptionalDirectiveArgumentStringList(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return getOptionalDirectiveArgumentStringList(container, directive.getName(), arg);
     }
@@ -57,21 +75,47 @@ public class DirectiveHelpers {
 
     }
 
+    /**
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return The Boolean value of the directive argument, if it exists.
+     */
     public static Optional<Boolean> getOptionalDirectiveArgumentBoolean(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return Optional.ofNullable((BooleanValue) getArgument(container, directive, arg))
                 .map(BooleanValue::isValue);
     }
 
+    /**
+     * Get a directive argument value. This assumes that the argument is required and will exist.
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return The String value of the directive argument. An exception is thrown if this does not exist.
+     */
     public static String getDirectiveArgumentString(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return getOptionalDirectiveArgumentString(container, directive, arg)
                 .orElseThrow(getIllegalArgumentExceptionSupplier(arg, directive.getName()));
     }
 
+    /**
+     * Get a directive argument value. This assumes that the argument is required and will exist.
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return The name of the enum value for this argument. An exception is thrown if this does not exist.
+     */
     public static String getDirectiveArgumentEnum(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return getOptionalDirectiveArgumentEnum(container, directive, arg)
                 .orElseThrow(getIllegalArgumentExceptionSupplier(arg, directive.getName()));
     }
-
+    /**
+     * Get a directive argument value. This assumes that the argument is required and will exist.
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param arg Name of the argument.
+     * @return The Boolean value of the directive argument. An exception is thrown if this does not exist.
+     */
     public static Boolean getDirectiveArgumentBoolean(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         return getOptionalDirectiveArgumentBoolean(container, directive, arg)
                 .orElseThrow(getIllegalArgumentExceptionSupplier(arg, directive.getName()));

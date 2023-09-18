@@ -10,6 +10,9 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.*;
 
+/**
+ * Helper methods for formatting names.
+ */
 public class NameFormat {
     public static final String
             VARIABLE_COUNT_PREFIX = "count",
@@ -27,11 +30,17 @@ public class NameFormat {
         return uncapitalize(source) + capitalize(fieldName);
     }
 
+    /**
+     * @return This field and containing type formatted as a counting query method name.
+     */
     @NotNull
     public static String asCountMethodName(String field, String container) {
         return VARIABLE_COUNT_PREFIX + capitalize(asQueryMethodName(field, container));
     }
 
+    /**
+     * @return This field and containing type formatted as a fetch query method name.
+     */
     @NotNull
     public static String asQueryMethodName(String field, String container) {
         return uncapitalize(field) + "For" + capitalize(container);

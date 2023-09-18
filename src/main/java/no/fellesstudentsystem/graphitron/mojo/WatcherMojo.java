@@ -16,6 +16,9 @@ import java.util.stream.Stream;
 
 import static java.nio.file.StandardWatchEventKinds.*;
 
+/**
+ * Mojo for watching the schema files for changes, and regenerating upon updates.
+ */
 @Mojo(name = "watch")
 public class WatcherMojo extends GenerateMojo {
     /**
@@ -84,7 +87,7 @@ public class WatcherMojo extends GenerateMojo {
     }
 
     /**
-     * Collect a sequence of keys.
+     * Wait for and collect a sequence of keys.
      */
     @NotNull
     private Optional<ArrayList<WatchKey>> waitForWatchKeys(WatchService watchService, long delay) {
@@ -175,6 +178,10 @@ public class WatcherMojo extends GenerateMojo {
         getLog().info("Code has been generated successfully.");
     }
 
+    /**
+     * Recursive method for deleting directories.
+     */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     private void delete(File file) {
         var files = file.listFiles();
         if (files != null) {

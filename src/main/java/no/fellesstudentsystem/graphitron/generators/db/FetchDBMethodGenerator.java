@@ -18,6 +18,9 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
+/**
+ * Abstract generator for various database fetching methods.
+ */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     final String idParamName = uncapitalize(getLocalObject().getName()) + "Ider";
     final boolean isRoot = getLocalObject().isRoot();
@@ -26,7 +29,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         super(localObject, processedSchema);
     }
 
-    CodeBlock formatWhereContents(ObjectField referenceField, String currentJoinSequence, boolean hasKeyReference, String actualRefTable) {
+    /**
+     * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
+     */
+    protected CodeBlock formatWhereContents(ObjectField referenceField, String currentJoinSequence, boolean hasKeyReference, String actualRefTable) {
         var code = CodeBlock.builder().add(".where(");
 
         if (!isRoot) {

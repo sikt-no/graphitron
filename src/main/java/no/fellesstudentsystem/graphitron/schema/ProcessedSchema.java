@@ -21,7 +21,7 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
 
 /**
- * This class represents a fully processed GraphQL schema.
+ * This class represents a fully processed GraphQL schema. This is Graphitron's pre-processing of the schema.
  */
 public class ProcessedSchema {
     private final Map<String, EnumDefinition> enums;
@@ -100,8 +100,11 @@ public class ProcessedSchema {
                 .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
     }
 
+    /**
+     * Ensure that the definitions created in this class match database names where applicable.
+     */
     public void validate() {
-        new ProcessedDefinitionsValidator(this).validateThatProcessedDefinitionsConformToDatabaseNaming();
+        new ProcessedDefinitionsValidator(this).validateThatProcessedDefinitionsConformToJOOQNaming();
     }
 
     /**

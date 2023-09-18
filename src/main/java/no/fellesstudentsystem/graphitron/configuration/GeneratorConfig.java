@@ -12,6 +12,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Static generator configuration. Mostly dependent on the settings set through the POM XML.
+ */
 public class GeneratorConfig {
     private static final String
             PLUGIN_OUTPUT_PATH = "graphitron",
@@ -24,6 +27,9 @@ public class GeneratorConfig {
 
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
 
+    /**
+     * Set the generator properties from code. Intended for tests.
+     */
     public static void setProperties(
             String topPackage,
             Set<String> files,
@@ -60,6 +66,9 @@ public class GeneratorConfig {
         GeneratorConfig.globalTransforms = globalTransforms;
     }
 
+    /**
+     * Read all the configurations set in the XML from the provided MOJO.
+     */
     public static void loadProperties(GenerateMojo mojo) {
         var files = mojo.getSchemaFiles();
         Set<String> inputFiles = Set.of();
@@ -94,6 +103,9 @@ public class GeneratorConfig {
         GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
     }
 
+    /**
+     * Use reflection to find the tables and keys classes in jOOQ.
+     */
     private static void setJOOQClasses() {
         try {
             TABLES_CLASS = Class.forName(generatedJooqTablesPackage);
@@ -107,6 +119,9 @@ public class GeneratorConfig {
         }
     }
 
+    /**
+     * Clear all configurations. Intended for tests.
+     */
     public static void clear() {
         systemPackage = null;
         schemaFiles = null;

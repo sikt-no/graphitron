@@ -19,6 +19,9 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.nullIfNullElse;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 
+/**
+ * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.
+ */
 abstract public class AbstractMethodGenerator<T extends ObjectField> implements MethodGenerator<T> {
     public static final String ENV_NAME = "env";
     protected final ObjectDefinition localObject;
@@ -37,11 +40,17 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return localObject;
     }
 
+    /**
+     * @return Set of dependencies found during generation up to this point.
+     */
     @Override
     public Set<Dependency> getDependencySet() {
         return dependencySet;
     }
 
+    /**
+     * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
+     */
     protected TypeName inputIterableWrap(InputField field) {
         var typeName = field.getTypeName();
         var typeClass = processedSchema.isInputType(typeName) ? processedSchema.getInputType(typeName).getGraphClassName() : field.getFieldType().getTypeClass();
@@ -51,6 +60,9 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return wrapListIf(typeClass, field.isIterableWrapped());
     }
 
+    /**
+     * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
+     */
     protected TypeName objectIterableWrap(ObjectField field) {
         var typeName = field.getTypeName();
         var typeClass = processedSchema.isObject(typeName) ? processedSchema.getObject(typeName).getGraphClassName() : field.getFieldType().getTypeClass();

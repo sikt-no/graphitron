@@ -5,6 +5,9 @@ import graphql.relay.PageInfo;
 
 import java.util.List;
 
+/**
+ * Helper class for handling connection types as defined in the <a href="https://relay.dev/graphql/connections.htm">cursor connection specification</a>.
+ */
 public class ConnectionImpl<T> implements ExtendedConnection<T> {
     private final List<Edge<T>> edges;
     private final List<T> nodes;

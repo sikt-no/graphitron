@@ -56,6 +56,10 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> impleme
         return spec;
     }
 
+    /**
+     * Add all the dependency fields for this class.
+     * @param generators Generators to extract dependencies from.
+     */
     protected void setDependencies(List<MethodGenerator<? extends AbstractField>> generators, TypeSpec.Builder spec) {
         generators
                 .stream()
@@ -83,6 +87,9 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> impleme
         }
     }
 
+    /**
+     * @return The suffix that is appended to the name of type resolvers by graphql-codegen.
+     */
     public String getExpectedInterfaceSuffix() {
         return INTERFACE_FILE_NAME_SUFFIX;
     }

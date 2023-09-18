@@ -1,361 +1,508 @@
-# Graphitron - GraphQL resolver implementation generator 
-Kodegeneratoren benytter seg av annoterte GraphQL-skjema for å ferdigstille/generere resolverimplementasjoner som blir
-brukt til å besvare forespørsler fra klienter.
+# Graphitron
+## A GraphQL resolver implementation generator
+Graphitron creates complete or partial resolver implementations from GraphQL-schemas using Java and jOOQ.
+This is done with the provided set of directives for making the necessary connections between types and
+fields in the schema and their equivalents in the DB.
 
-## Skjema
-Annoteringen skjer via direktiver direkte i GraphQL-skjemaet. Direktivene må legges inn i skjemaet som Graphitron kjøres
-mot, per default er dette i _schema_ i modulen _fs-graphql-spec_ under _resources/schema_. I schema er direktivene og deres
-parametre beskrevet med kommentarer. Ytterligere forklaring med enkelte eksempler finnes nedenfor i denne readme-fila.
+## Special prerequisites
+Graphitron builds on other software for querying databases and doing the basic conversion of schema types to Java types.
+* jOOQ - Graphitron does not generate pure Java/SQL, and instead creates jOOQ implementations.
+* GraphQL-codegen - Graphitron assumes this plugin has been run on the schema beforehand.
 
-De viktigste direktivene er _splitQuery_, _notGenerated_ og _table_. 
+## Maven Settings
+### Goals
+The _generate_ Maven goal allows Graphitron to be called as part of the build pipeline. It generates all the classes
+that are set to generate in the schema. Additionally, the _watch_ goal can be used locally to watch GraphQL files
+for changes, and regenerate code without having to re-run generation manually each time. This feature is still experimental.
 
-**SplitQuery**-direktivet forteller maven-pluginen (io.github.kobylynskyi) at den skal lage et interface for en
-resolver-metode på feltet der direktivet er plassert. 
+### Configuration
+In order to find the schema files and any custom methods, Graphitron also provides some configuration options.
+The options are the same for both goals.
 
-**NotGenerated** settes på et felt for å instruere generatoren om å IKKE generere noen metode for dette feltet.
-Å sette _splitQuery_ i kombinasjon med _notGenerated_ gir oppførsel slik den hadde vært uten Graphitron,
-altså at det blir generert et interface som må implementeres.
+#### General settings
+* _topPackage_ - The top level package for the project for which code should be generated. Will be removed in the future.
+* _outputPath_ - The location where the code will be generated.
+* _outputPackage_ - The package path of the generated code.
+* _schemaFiles_ - Set of schema files which should be used for the generation process.
+* _generatedSchemaCodePackage_ - The location of the graphql-codegen generated classes.
+* _jooqGeneratedPackage_ - The location of the jOOQ generated code.
 
-**Table** knytter et GraphQL-objekt til en tabell i KjerneAPI. Dersom objektet har et annet navn enn tabellen i KjerneAPI,
-brukes _name_-parameteret for å angi navnet på tabellen det skal knyttes mot.
-Objekt som i tillegg implementerer node-interfacet får også en implementasjon for dette. Alle slike noder kan hentes ut basert på ID i API-et, ved
-hjelp av node-resolveren. Dette er i tråd med GraphQLs mønster for [Global Object Identification](https://graphql.org/learn/global-object-identification/).
+#### Special code references (to be removed)
+* _externalEnums_ - Path to the enum which lists the available enums to use in the schema.
+* _externalConditions_ - Path to the enum which lists the available conditions to use in the schema.
+* _externalServices_ - Path to the enum which lists the available mutation services to use in the schema.
+* _externalExceptions_ - Path to the enum which lists the available mutation exceptions to use in the schema.
+* _externalTransforms_ - Path to the enum which lists the available record transforms to use in the schema.
+* _globalRecordTransforms_ - List of transforms that should be applied to all records. The transform _name_ value must
+be present in _externalTransforms_. The _scope_ value specifies which mutations should be affected, but currently only
+_ALL_MUTATIONS_ is available.
 
-## Bygg
-Generatoren er satt opp for å bygges via vanlig maven pipeline, og kan også kjøres via main-metoden i
-[GraphQLGenerator](src/main/java/no/fellesstudentsystem/graphitron/GraphQLGenerator.java).
-For å bygge via maven er det bare å kjøre `mvn clean install` i enten rotmappen til prosjektet eller generatorens rotmappe.
-Merk at hvis det skal kjøres fra generatorens rotmappe, må man forsikre seg om at både **KjerneAPI**-tabellene og **GraphQL**-objektene er bygget først.
+Example of applying a global transform in the POM:
+```xml
+<globalRecordTransforms>
+    <aCustomerTransform>
+        <name>CUSTOMER_TRANSFORM</name> <!-- The name in the externalTransforms enum. -->
+        <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
+    </aCustomerTransform>
+</globalRecordTransforms>
+```
 
-## Arv og manuell resolverimplementasjon
-De genererte klassene blir abstrakte dersom en eller flere metoder ikke er implementert (_notGenerated_ er i bruk),
-klassene må da utvides med manuelle implementasjoner. Det er dermed også mulig å overskrive genererte metoder om det 
-skulle være ønskelig, for eksempel i forbindelse med testing. Merk at man ikke kan overskrive en klasse der alt er 
-generert siden den ikke er abstrakt. GraphQL vil da klage på at det finnes to resolvere for samme forbindelse.
+## Directives
+### Common directives
+#### splitQuery directive
+Applying this to a type reference denotes a split in the generated query/resolver.
+In other words, this will require the specification of a resolver for the annotated field.
+Should match the splitting directive used by the graphql-codegen-plugin(TODO: link readme) so that the generated
+interfaces match the classes produced by Graphitron. Fields in the Query and Mutation types do not require this directive, as
+they are always considered start points for resolvers.
 
-## Funksjonalitet og direktiver for Queries
-### Tables & Joins
-#### Automatic reference detection
-Generatoren klarer å utlede mange av databaseforbindelsene via typene i skjemaet som er annotert med _table_-direktivet.
-Ved bruk av reflection på koden generert av jOOQ i KjerneAPI, sjekkes det både for implisitte joins og eventuelle `get(Tabellnavn)Id`-metoder
-som peker til måltabellen.
+In this example, the code generation would create the classes _ATypeDBQueries_ and _ATypeGeneratedResolver_, containing
+the resolver code required to fetch _OtherType_ given _AType_. _ATypeGeneratedResolver_ will be an implementation of
+_ATypeResolver_(created by graphql-codegen). Note that this example would not result in working code as we have not
+specified any tables to map to yet.
+```graphql
+type AType {
+  otherType: OtherType @splitQuery # Build new resolver/query for this field.
+}
 
-#### Manually defined references
-Det er likevel tilfeller i resolverkoden der det ikke er så enkelt å dedusere hvordan koblingen skal være.
-For slike tilfeller har vi direktivet **reference**. Det tar inn følgende parametere:
+type OtherType {
+  name: String
+}
+```
 
-* _table_ - Overskriver tabellen i det som refereres til. Lite brukt akkurat nå.
-* _key_ - Hvis tabellen har mer enn en FK til det som refereres til, må den oppgis her. Da blir denne nøkkelen brukt for å lage koblingen.
-* _condition_ - Hvis man ønsker å begrense resultatet videre kan man oppgi en condition her. Det må være et innslag i enumen
-[GeneratorCondition](../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/conditions/GeneratorCondition.java).
-Hvis det ikke går å utlede en kobling, og _key_ ikke er oppgitt, blir dette tolket som en condition for bruk i en join-operasjon 
-for å få til koblingen. Det blir til en left join hvis feltet ikke er påkrevd.
+#### notGenerated directive
+Set this on any query or mutation type reference that should result in a new resolver in order to
+cancel generation of it. (TODO: Make config for all vs none to be generated.)
+Since graphql-codegen still creates interfaces for these, they will have to be implemented manually.
+If a class generated by Graphitron has missing implementations, an abstract class will be generated instead which can be
+further extended with the missing methods.
 
-Merk at ett join-steg kun gjelder for feltet det er satt på.
-En type kan ha flere joins definert på samme tabell for forskjellige felt, ettersom joins alltid blir gjort via alias i den genererte koden.
-Hvis et felt peker til en annen type, vil alle felt i det refererte typen bli omfattet av join-operasjonen.
+```graphql
+type Query {
+  aQuery: AType @notGenerated # Do not generate this query automatically.
+}
 
-### Field Mapping
-For alle felter som ikke er markert med _notGenerated_ forsøker generatoren å linke spesifikasjonen til korrekt SQL mot KjerneAPI.
-Selve databasefeltene blir antatt å hete det samme som typene i skjemaet, med unntak av når de blir overskrevet av **column**-direktivet.
-_Column_-direktivet har også et par ekstra parametere for spesialtilfeller:
+type AType {
+  otherType: OtherType @splitQuery @notGenerated # Require new resolver for this field, but do not generate it automatically.
+}
 
-* _table_ - Overskriver hvilken tabell dette feltet hentes fra.
-Kan være enklere å oppgi en en referanse hvis bare det ene feltet skal hentes derfra.
-* _key_ - Hvis _table_ er oppgitt brukes denne nøkkelen til å finne koblingen mellom de to tabellene.
+type OtherType {
+  name: String
+}
+```
 
-Felt som har _splitQuery_-direktivet blir ikke tatt med, siden det genereres egne resolvere for disse.
+### Tables, joins and records
+#### table directive
+The **table** directive links the object type or input type to a table in the database. This targets jOOQ generated classes, so
+the _name_ parameter must match the table name in jOOQ if it differs from the database. The _name_ parameter is optional,
+and does not need to be specified if the type name already equals the table name.
 
-### Conditions
-Direktivet **condition** muliggjør mer avanserte begrensninger for spørringen.
-Det kan settes på input-parametere eller for hele feltet som har input parametere.
-Følgende parametere er tilgjengelige:
+In the example below the generator would apply a jOOQ implicit join between the two tables when building the query.
+Note that this can only work if there is only one foreign key between the tables. For example, given tables from the
+schema example below, the result will be `TABLE_A.table_b()`. If more than one key exists, a more complex configuration
+is required.
 
-* _name_ - Navnet på en condition definert i KjerneAPI. Det må være et innslag i enumen
-  [GeneratorCondition](../kjerneapi/src/main/java/no/fellesstudentsystem/kjerneapi/conditions/GeneratorCondition.java).
-* _override_ - Skal det forhindres at sjekkene som blir lagt til automatisk tas med?
-Hvis ja, blir kun den oppgitte condition med, ellers legges conditionen på som et tillegg til de øvrige sjekkene. Se eksemplene nedenfor.
+```graphql
+type TABLE_A @table { # Table name matches the type name, name is unnecessary.
+  someOtherType: OtherType
+}
 
-#### Case: No _override_ on input parameter
-Legg til denne conditionen i tillegg til de sjekkene som vanligvis legges på.
-Til metoden sendes den aktuelle tabellen samt denne parameteren.
-  
-Eksempel:
+type OtherType @table(name: "TABLE_B") {
+  name: String
+}
+```
+
+#### reference directive
+There are, of course, many cases where the connection between two tables is more complex.
+In such cases, Graphitron requires some extra parameters to make the right connections.
+This is done through the **reference** directive, which contains the following parameters:
+
+* _table_ - This defaults to the table of the type that is referenced by the field the directive is set on.
+Setting this overrides whatever table may be set there. This must match a table name from jOOQs _Table_ class.
+* _key_ - If there are multiple foreign keys from one type to another, then this parameter is required for defining which
+key that should be used. This must match a key name from jOOQs _Keys_ class.
+* _condition_ - This parameter is used to place an additional constraint on the two tables, by referring to the correct [enum](#special-code-references-to-be-removed)
+in the POM XML. In the cases where there is no way to deduce the key between the tables and the _key_ parameter is not set,
+this condition will be assumed to be an _on_ condition to be used in a join operation between the tables.
+The result will be a left join if the field is optional, otherwise a standard join.
+* _via_ - Invokes extra steps of the logic that all the previous parameters already use,
+allowing the usage of joins through tables which are not types in the schema.
+This parameter only specifies the extra steps to be taken in addition to the usual functionality og the previous parameters.
+TODO: Examples
+
+Note that joins only apply to the field they are set on. Graphitron either sets separate aliases or uses implicit joins to
+manage several simultaneous joins from one table to another. If a field points to a type, all fields within this referred
+type will have access to the join operation.
+
+### Query field mapping
+By default, Graphitron assumes each field not annotated with the _notGenerated_ or _splitQuery_ directives to have a name
+equal to the column it corresponds to in the jOOQ table. The **column**-directive overrides this behaviour. Specifying
+the _name_-parameter allows for using fields names that are not connected to the names of jOOQ fields.
+
+### Query conditions
+To either apply additional conditions or override some of the conditions added by default, use the **condition** directive.
+It can be applied to both input parameters and resolver fields, and the scope of the condition will match the element it is put on.
+It provides the following parameter options:
+
+* _name_ - Name of a condition defined in the [enum](#special-code-references-to-be-removed) in the POM XML.
+* _override_ - If true, disables the default checks that are added to all arguments, otherwise add the new condition in
+addition to the default ones.
+
+#### Example: No _override_ on input parameter
+Add this condition in addition to the ones automatically applied for this parameter.
+The method must have the table and the input parameter type as parameters.
+
+_Schema_:
 ```graphql
 cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
 ```
+
+_Enum entry_:
 ```java
 TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class)
 ```
-Resultat:
+
+_Resulting code_:
 ```java
 .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
 .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
 ```
-#### Case: No _override_ on field with input parameters
-Legg til denne conditionen i tillegg til de sjekkene som vanligvis legges på.
-Til metoden sendes den aktuelle tabellen og alle parametere til dette feltet.
 
-Eksempel:
+#### Example: No _override_ on field with input parameters
+Add this condition in addition to the ones automatically applied for the parameters.
+The method must have the table and all input parameter types for this field as parameters.
+
+_Schema_:
 ```graphql
-fieldCondition(
+cities(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY")
 ): [City] @condition(name: "TEST_CITY_ALL")
 ```
+
+_Enum entry_:
 ```java
 TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
 ```
-Resultat:
+
+_Resulting code_:
 ```java
 .where(CITY.COUNTRY_ID.eq(countryId))
 .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
 .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
 ```
-#### Case: Both field and parameters
-Summen av punktene over. Resultatet blir at begge conditionene tas med.
-#### Case: With _override_ on input parameter
-Bytt ut de sjekkene som vanligvis hadde blitt satt for denne parameteren med denne conditionen.
-Til metoden sendes den aktuelle tabellen samt denne parameteren.
 
-Eksempel:
+#### Example: Both field and parameters
+Remove none of the automatically generated checks, but add both conditions as shown in the two previous examples.
+In other words the two cases do not interfere with each other.
+
+#### Example: With _override_ on input parameter
+Replace the automatically generated checks for this parameter with this condition.
+The method must have the table and the input parameter type as parameters.
+
+_Schema_:
 ```graphql
 cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
 ```
+
+_Enum entry_:
 ```java
 TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class)
 ```
-Resultat:
+
+_Resulting code_:
 ```java
 .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
 ```
-#### Case: With _override_ on field with input parameters
-Bytt ut de sjekkene som vanligvis hadde blitt satt for alle parameterne til feltet med denne conditionen.
-Til metoden sendes den aktuelle tabellen og alle parametere til dette feltet.
 
-Eksempel:
+#### Example: With _override_ on field with input parameters
+Replace all the automatically generated checks for this field with this condition.
+The method must have the table and all input parameter types for this field as parameters.
+
+_Schema_: 
 ```graphql
 cities(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY")
 ): [City] @condition(name: "TEST_CITY_ALL", override: true)
 ```
+
+_Enum entry_:
 ```java
 TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
 ```
-Resultat:
+
+_Resulting code_:
 ```java
 .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
 ```
-#### Case: With _override_ on both field and parameters
-Både conditions satt på feltet og på parametere blir med, men ingenting annet. 
-Merk at hvis _override_ er satt på en condition på feltet, har ikke verdien av _override_ på parameterene noen effekt.
 
-Eksempel:
+#### Example: With _override_ on both field and parameters
+Both manually defined conditions are included, but nothing else. Note that if override is set on the field condition
+the _override_ value on the parameter becomes irrelevant, since the one on the field already removes all
+the default checks.
+
+_Schema_:
 ```graphql
 cities(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
 ): [City] @condition(name: "TEST_CITY_ALL", override: true)
 ```
+
+_Enum entry_:
 ```java
 TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class),
 TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
 ```
-Resultat:
+
+_Resulting code_:
 ```java
 .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
  and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
 ```
 
-## Functionality & Directives for Mutations
-### Services
-Mutasjoner må knyttes til java-metoder via service-klassene definert i
-[GeneratorService](../kjerneapi-service/src/main/java/no/fellesstudentsystem/codegenenums/GeneratorService.java).
-Dette gjøres ved hjelp av **service**-direktivet. Metoden må ha samme navn og samme antall parametre som mutasjonsfeltet.
-Det er nødvendig å sette på _notGenerated_ hvis _service_ ikke er satt.
+### Mutation generation
+While fetching data can cover many cases, mutations have more limitations when generated through Graphitron,
+as mutations can take many inputs which should be saved to multiple tables. Automatic generation of the entire resolver
+is currently only viable for simple cases where one input type representing one type of jOOQ record is handled, and
+optionally returned when the operation is complete. In addition, Graphitron unfortunately currently operates on
+assumptions related to ID-fields. The response types are thus limited to returning IDs and Node-types for the time being.
 
-Siden service peker på klassen, finnes rett metode via reflection. Det betyr i praksis at i den oppgitte servicen,
-må det finnes en metode med samme navn som mutation-feltet, og som tar likt antall parametere. Gitt at man ikke kan ha
-to felt med samme navn i en type, leter generatoren bare etter navn og rett antall parametere, og sjekker ikke typene til parameterene.
-I tillegg finnes det flere varianter av hva man kan returnere. Generatoren sammenligner typen som metoden returnerer og
-schema for å finne en vei til det ønskede resultatet.
-
-* Hvis mutation returnerer en type som implementerer node, og selve metoden returnerer en record, bruker den _ID_ fra record
-for å slå opp og returnere typen via node-interfacet.
-* Hvis mutation returnerer en skalar, antas det at metoden også returnerer en skalar og denne returneres.
-Det kan typisk være ID, men andre typer kan også gå. Merk at dette er ikke testet for andre typer enn _String_ og _ID_.
-* Hvis mutation returnerer en type som ikke implementerer node, må servicen returnere en instans av en klasse som gir ut feltene i typen.
-Merk at klassen antas å være en statisk klasse inni selve service klassen, og generatoren kan ikke finne den hvis den plasseres et annet sted akkurat nå.
-Videre antas det at det finnes get-metoder for hvert felt.
-Navngivingen antas å være lik mellom objektet og GraphQL-typen hvis ikke _column_ benyttes, se neste delkapittel.
-
-Noen ekstra ting å merke seg:
-
-* Union typer støttes ikke på returtype. Dette kommer snart.
-* Alle typene nevnt i punktene over kan pakkes inn i listevarianter.
-* Selection sets blir benyttet som vanlig ved henting via node-interfacet.
-* Hvis feltet i returtypen returnerer node, blir bare ID brukt for oppslag i node-interface for det objektet.
-
-#### Nested Structures
-Ved nøstede strukturer, altså typer i typer, støttes på input og output til en viss grad, men har en praktisk begrensing.
-Alle record-objektene som skal til service blir til ett flatt sett med parametere. Strukturene kan være pakket inn i lister avhengig av hva
-som er definert i skjemaet. Denne begrensningen kan gjøre det vanskeligere å vite hvilke data fra ett lag som hører til
-hvilke i et annet. Derfor er ikke dyp nøsting av input anbefalt for bruk med generatoren akkurat nå. Dette kan endre seg når/hvis
-vi finner et bedre design for dette. Begrensningen for input er illustrert under.
+Use the **mutationType** directive and the accompanying _typeName_ parameter to denote a mutation that should be fully
+generated. To specify which table should be affected, the **table** directive is used just like for the usual types used
+for queries. As usual, **column** may also be applied to adjust the mapping of individual fields.
 
 ```graphql
-edit(input: InputA!): ID! @service(name: "SERVICE")
+type Mutation {
+  editCustomerInputAndResponse(input: EditInput!): EditResponse! @mutationType(typeName: UPDATE)
+  editCustomerWithCustomerResponse(input: EditInput!): EditResponseWithCustomer! @mutationType(typeName: UPDATE)
+}
+
+input EditInput @table(name: "CUSTOMER") { # Use @table to specify which jOOQ record/table this corresponds to.
+    id: ID!
+    firstName: String @column(name : "FIRST_NAME") # Use @column to adjust the mapping to jOOQ fields.
+    email: String
+}
+
+type EditResponse {
+    id: ID! # Note, mutations need to work with types that have 'id' fields.
+}
+
+type EditResponseWithCustomer {
+    id: ID!
+    customer: Customer # This points to a Node type, so that it can be resolved using an ID.
+}
+
+type Customer implements Node @table { # Implements Node, is a Node type.
+    id: ID!
+    firstName: String! @column(name: "FIRST_NAME")
+}
+```
+
+If all required fields for an insert or upsert operation are not set in the input type, a warning will be generated.
+In the future this may change to an exception instead, as an incomplete set of required fields will result in a resolver
+that compiles, but will always fail when executed.
+
+Note that mutations need either the **mutationType** or the **service** directive set, but not both, in order to be generated.
+Mutations that should not be generated should have the **notGenerated** directive set.
+
+### Mutation services
+More complex cases are supported through the **service** directive. It points to a class in the [enum](#special-code-references-to-be-removed)
+in the POM XML, which should contain a method with the same name as the mutation field name (to be changed soon). The right method is
+found through reflection by comparing the names and the number of parameters the method has.
+The directive invokes the creation of code that calls the specified class, rather than generating a query automatically.
+This allows the use of multiple record types at once, more complex return types and a certain level of exception handling.
+
+#### Nested input structures
+Multiple layers of input types are also supported, but comes with its own limitations.
+Most notably, all records are sent to the service as a flat list of unorganised parameters,
+meaning that all the hierarchy information is lost when reading them in the service.
+It is therefore recommended to avoid using this feature. The following example will illustrate this limitation.
+
+_Schema_:
+```graphql
+edit(someInput: InputA!): ID! @service(name: "SERVICE")
 
 input InputA @table {
   b: InputB
 }
 
-input InputB @table { }
+input InputB @table { ... }
 ```
+
+_Generated code_:
 ```java
-var endreNoeResult = service.edit(inputARecord, inputBRecord); // Sekvensielt uavhengig av struktur.
+var editResult = service.edit(inputARecord, inputBRecord); // Sequential, independent of the input structure.
 ```
 
-Dette blir fort litt mindre oversiktelig hvis disse inputene blir pakket inn i lister, fordi da sendes det også inn helt likt som vist over.
-Sammenhengene mellom lagene i skjemaet vil bli vanskeligere å finne fram igjen i servicen.
+#### Response mapping
+Graphitron inspects the return type of the service method to decide how it should be mapped to the schema response type.
 
-Returtypen støtter derimot nøsting på en litt mer ryddig måte, der returobjektet må ha tilsvarende klassestruktur som skjemaet.
-Regelen her er at for hver type som brukes i returtypen i skjemaet, må det finnes en klasse i servicen.
-Hvis en type har en annen type inni seg, må klassen også levere ut en et objekt via en get-metode som tilsvarer den indre typen.
-Se eksemplet under på hvordan det ser ut i praksis.
+* If the mutation returns a node type and the method returns a jOOQ record, the ID assumed to be in the record is used
+to look up the type through the same query that is usually used by calls to the node interface.
+* Should the mutation return a scalar value, the method's return value is also treated like a scalar.
+This has only been tested for strings and IDs, but may also work for other types.
+* A special case is invoked when the mutation does not return a node type or scalar, where a special data class will be required
+for the return type. The service method must return a static class (contained within the service class, the generator can currently
+only find it there) that can provide all the data needed for the desired mapping through get-methods.
+The get methods must follow the pattern `get[FieldName]`.
+  * Note that this field name can be overridden by the **column** directive as well.
 
+Wrapping any of the response types in lists should also be unproblematic. The following example demonstrates the general
+use of custom service return classes.
+
+_Schema:_
 ```graphql
-edit(id: ID!): ReturnA! @service(name: "SERVICE")
+type Mutation {
+  editCustomer(
+    # someValue: String # It is also allowed to put an extra input here when using services.
+    editInput: EditCustomerInput!
+  ): Customer! @service(name: "SERVICE_CUSTOMER") # Returning just an ID is allowed as well.
+
+  editCustomerWithResponse(
+    editInput: EditCustomerInput!
+  ): EditCustomerResponse! @service(name: "SERVICE_CUSTOMER")
+}
+
+input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ table/record to use.
+  id: ID!
+  firstName: String @column(name : "FIRST_NAME") # @table specifies the expected name, either in the jOOQ table or in the custom return class.
+}
+
+type EditCustomerResponse {
+  customer: Customer # Some node type.
+}
+```
+
+_Required service code_:
+```java
+public class CustomerService {
+    // The only field that is required (except whatever the database requires) is the ID.
+    public CustomerRecord editCustomer(CustomerRecord person) { … }
+
+    // EditCustomerResponse is an instance of a static class within the service.
+    public EditCustomerResponse editCustomerWithResponse(CustomerRecord person) { … }
+
+    public static class EditCustomerResponse {
+        public CustomerRecord getCustomer() { … }
+    }
+}
+```
+
+Nesting of return types is also allowed, and functions in a more orderly fashion than nesting of input types.
+This example shows the more complex case, where a nested custom return class is used.
+
+_Schema_:
+```graphql
+edit(id: ID!): ReturnA! @service(name: "EDIT_SERVICE")
 
 type ReturnA {
   returnB: ReturnB
 }
 
-type ReturnB { }
+type ReturnB {
+  someData: String @column(name: "INTERESTING_DATA")
+}
 ```
+
+_Required service code_:
 ```java
-public class TestCustomerService {
-
-  public ReturnA edit(String id) { }
-
-  public static class ReturnA {
-    public ReturnB getReturnB() { } // Må ha en metode som gir ut noe som kan mappes til den indre typen ReturnB.
-  }
-
-  public static class ReturnB { }
+public class EditSomethingService {
+    public ReturnA edit(String id) { … } // The service method that should be called. Note that the 'id' here corresponds to the 'id' in the schema.
+    
+    public static class ReturnA {
+        public ReturnB getReturnB() { … } // Must have a method that returns something that can be mapped to 'ReturnB' in the schema.
+    }
+    
+    public static class ReturnB {
+        public String getInterestingData() { … } // Must have a method that returns something that can be mapped to 'someData' in the schema.
+    }
 }
 ```
 
-### Field Mapping
-På grunn av at node interfacet krever at typer tar med ID-felt, introduseres det et nytt direktiv for å mappe input-typer
-opp mot jOOQ records. Direktivet **record** anvendes helt likt som _table_, men kan bare settes på input-typer.
-Hvis input-typen blir brukt i en _Query_-spørring, vil ikke direktivet ha noen effekt. Direktivet _column_
-(skal endre navn senere) gjenbrukes her for å koble enkeltfelt opp til jOOQ-navn, slik at records kan konstrueres.
-For returtyper som ikke implementerer node, brukes også _column_ for å mappe navnene på feltene i returtypen mot
-navnene i returobjektet i servicen.
-Hvis navnet i skjema er likt som navnet i jOOQ, trenger man som tidligere ikke oppgi direktivet.
-Dette gjelder både _table_- og _column_-direktivene.
+#### Error handling (subject to change)
+Graphitron allows for simple error handling when using services. In the schema a type is an error type if it implements
+the _Error_ interface and has the error **directive** set. Unions of such types are also considered error types.
+The error reference must be in the response type to be automatically mapped, and it must refer to the [enum](#special-code-references-to-be-removed)
+in the POM XML. Only the first error to be thrown will be returned, as this uses a try-catch to map which error should be returned.
 
-### Example
-Hvis vi har dette skjemaet:
-
-```graphql
-editCustomerAdresse(
-  id: ID!
-  input: EditAdresseInput!
-): EditPersonAdresseRespons! @service(name: "SERVICE_PERSONPROFIL") # Kunne vært PersonProfil eller ID også.
-
-input EditPersonProfilFolkeregistrertAdresseInput @table(name: "PERSON") { # Angir hvilken record som skal mappes til.
-  co: String! @column(name: "ADRLIN1_HJEMSTED") # Angir hvilket felt i record som skal mappes til.
-  gate: String! @column(name: "ADRLIN2_HJEMSTED")
-  postnummerOgSted: String! @column(name: "ADRLIN3_HJEMSTED")
-  land: String! @column(name: "ADRESSELAND_HJEMSTED")
-}
-
-type EditPersonAdresseRespons {
-  personProfil: PersonProfil # legg på @column(name: "person") hvis dette skal mappes "person" i returklassen. Da må metoden hete "getPerson" i stedet.
-}
-```
-
-Trenger vi et service som har en av følgende signaturer:
-
-```java
-// Hvor EditPersonAdresseRespons er en instans av en statisk klasse inni servicen som inneholder en PersonRecord, og som har en metode som heter "getPersonProfil".
-public EditPersonAdresseRespons editCustomerAdresse(String id, PersonRecord person)
-
-// Den returnerte recorden her trenger bare ID satt, siden det er bare den som blir brukt når objektet hentes i resolveren.
-public PersonRecord editCustomerAdresse(String id, PersonRecord person)
-```
-
-Resolveren hadde blitt tilpasset automatisk om mutation returnerte en _PersonProfil_ i stedet for en _EditPersonAdresseRespons_.
-Dette er uavhengig av hvordan selve service-metoden er satt opp.
-I dette tilfellet er det anbefalt å heller inkludere ID inni input-typen, ellers er den ikke satt på recorden når den kommer inn i servicen.
-Det vil virke uansett, men hvis det er satt opp slik som dette vil sannsynligvis det første som skjer inni servicen være å sette ID-en på record-en.
-Det er også uheldig å ha ID-en slik fordi det er ikke like klart hvilket KjerneAPI-view ID-en hører til.
-Dette er likevel tillatt for å ikke å kreve endring på eksisterende skjema for at det skal virke.
-
-### Error Handling
-En feiltype er definert ved at den implementerer _Error_-interfacet og oppgir _error_-direktivet. Unioner av slike er også tilatte.
-Feil til direktivet oppgis på samme måte som til conditions og enums, bare fra enumen
-[GeneratorException](../kjerneapi-service/src/main/java/no/fellesstudentsystem/codegenenums/GeneratorException.java).
-Når en respons spesifiserer en type som innheholder felt som er av en _Error_-type, vil Graphitron automatisk fange opp dette.
-Akkurat nå brukes try-catch for å fange opp feil, som betyr at vi får bare ut maks en feilmelding per servicekall. Dette kan endre seg i framtiden.
-Feil mappes til rett GraphQL-type og plasseres i responsen slik som man skulle forvente.
-
-En spørring med feil kan se slik ut:
-
+_Schema_:
 ```graphql
 type Mutation {
-  editCustomer(id: ID!): EditPersonPayload! @service(name: "SERVICE_PERSON")
+  editCustomer(id: ID!): EditCustomerPayload! @service(name: "SERVICE_CUSTOMER")
 }
 
-type EditPersonPayload {
+type EditCustomerPayload {
   id: ID!
   errors: [SomeError!]!
 }
 
-type SomeError implements Error @error(name: "EXCEPTION_ULOVLIG") {
+type SomeError implements Error @error(name: "EXCEPTION_ILLEGAL") {
   path: [String!]!
   message: String!
 }
 ```
 
-Vi forventer da at noe som dette finnes i _GeneratorException_ enumen:
-
+_Enum entry_:
 ```java
-EXCEPTION_ULOVLIG(UlovligException.class)
+EXCEPTION_ILLEGAL(SomethingIllegalException.class) // Exception that could be thrown in the service.
 ```
 
-Her er `UlovligException.class` en exception-klasse som vi forventer at kan kastes fra det som _SERVICE_PERSON_ peker til.
-Deretter burde vi se at Graphitron produserer noe som dette:
+There will be generated one catch block per error that can be returned. In this case we have only one.
 
+_Generated code_:
 ```java
 try {
-    editCustomerResult = personService.editCustomer(id);
-} catch (UlovligException e) {
+    editCustomerResult = customerService.editCustomer(id);
+} catch (SomethingIllegalException e) {
     var error = new SomeError();
     error.setMessage(e.getMessage());
-    var cause = e.getCauseField();
+    var cause = e.getCauseField(); // Required method.
+
+    // This map is constructed automatically if there are fields that can be the cause.
     var causeName = Map.of().getOrDefault(cause != null ? cause : "", "undefined");
     error.setPath(List.of(("Mutation.editCustomer." + causeName).split("\\.")));
-    editCustomerErrorsList.add(error);
+    editCustomerErrorsList.add(error); // Update error list that is automatically defined somewhere above.
 }
 ```
 
-Informasjonen om "cause", altså feltet som forårsakert feilen, brukes bare hvis feilen har den hardkodede metoden som heter _getCauseField_.
-Dette kan endre seg til å bli mer intuitivt i fremtiden. Når det finnes et felt som har skyld i feilen, vil map-en i eksemplet over
-inneholde alle felt som ble funnet i responsen, slik at de kan mappes ut fra databasefelt til felt i skjemaet.
+The `getCauseField` method is  currently hardcoded and required for this setup to work. Hopefully we can get a better
+and more intuitive solution in place. If the method is missing, no cause will be added.
 
-Hvis der er flere mulige feil ved at det er flere feil-felt eller det oppgis unioner av feiltyper, vil det bli flere _catch_-blokker, en per feiltype.
+## Special interfaces
+Currently, Graphitron reserves two interface names for special purposes, _Node_ and _Error_.
 
-## Testing
-Testene for modulen sjekker det genererte resultatet opp mot predefinerte filer.
-Derfor må man også ofte tilpasse testene når man gjør endringer i generatoren som påvirker den genererte koden.
+### Node
+The _Node_ interface should contain a mandatory ID field. Any type that implements this interface will have a
+_Node_ resolver generated, and can be used as return types in mutations.
+This is designed to be compatible with [Global Object Identification](https://graphql.org/learn/global-object-identification/).
 
-Testene kjøres mot genererte JOOQ-klasser basert på [Sakila test-databasen](https://www.jooq.org/sakila).
-JOOQ-klassene blir generert i mapppen `src/test/java` ved kjøring via mvn. Denne mappen er ignorert i _.gitignore_ og filene
-genereres kun dersom de ikke eksisterer eller dersom man trenger å få dem regenerert.
-Regenerering tvinges fram ved å endre skjemaversjon via propertien `testdata.schema.version` i _pom.xml_.
+```graphql
+interface Node {
+  id: ID!
+}
+```
 
-Testene har separate GraphQL-skjema for å være uavhengige av endringer i prosjektets skjema, og ved endringer i direktivene må disse også oppdateres.
+### Error
+An interface used to enforce certain fields for mutations that use the **service**-directive.
+
+```graphql
+interface Error {
+  path: [String!]!
+  message: String!
+}
+```
+
+This may be removed/changed in the near future as it may not be flexible enough.
+
+## Graphitron integration tests
+For internal testing purposes Graphitron uses predefined input schemas combined with expected file results.
+When altering the generator, these files likely have to be adjusted as well. These test schemas can also be read as
+further examples on how to use the various directives.
+
+Graphitron uses the [Sakila test database](https://www.jooq.org/sakila) to generate the jOOQ types needed for tests.
+These are generated to `src/test/java` when running maven. These files are ignored by Git, and they are only generated
+when they do not exist already or the property `testdata.schema.version` in _pom.xml_ is updated. In other words,
+updating the property will refresh the jOOQ types.
+This is typically only done when altering the database to add new tables or keys.

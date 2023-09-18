@@ -17,11 +17,13 @@ import java.util.Set;
  * Class for reading schema files from disk.
  */
 public class SchemaReader {
-    // Default is 15000. With new directive on every field it goes over this limit.
-    // If the error about preventing DoS attacks shows up again, increase this value here.
+    /**
+     * Default is 15000 for the GraphQL parser. With a new directive on every field it goes over this limit.
+     * If the error about preventing DoS attacks shows up again, increase this value here.
+     */
     private final static int MAX_TOKENS = 100000;
 
-    public static Document readSchemas(Set<String> sources) {
+    private static Document readSchemas(Set<String> sources) {
         MultiSourceReader.Builder builder = MultiSourceReader.newMultiSourceReader();
         for (String path : sources) {
             String content;
@@ -37,8 +39,12 @@ public class SchemaReader {
         return new Parser().parseDocument(builder.trackData(true).build(), parseOptions);
     }
 
+    /**
+     * Read the set of schema paths and combine them to a GraphQL {@link TypeDefinitionRegistry}.
+     * @param schemas The schema paths to be used.
+     * @return A {@link TypeDefinitionRegistry} from the found schema files.
+     */
     public static TypeDefinitionRegistry getTypeDefinitionRegistry(Set<String> schemas) {
-        // https://github.com/kobylynskyi/graphql-java-codegen/blob/master/src/main/java/com/kobylynskyi/graphql/codegen/parser/GraphQLDocumentParser.java
         return new SchemaParser().buildRegistry(readSchemas(schemas));
     }
 }

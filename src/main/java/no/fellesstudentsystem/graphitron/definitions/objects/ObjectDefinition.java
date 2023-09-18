@@ -27,7 +27,6 @@ public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinit
     private final List<ObjectField> objectFields;
     private final Set<String> implementsInterfaces;
 
-
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
         hasTable = objectDefinition.hasDirective(GenerationDirective.TABLE.getName());

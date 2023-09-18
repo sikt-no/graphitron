@@ -7,6 +7,9 @@ import javax.lang.model.element.Modifier;
 
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
+/**
+ * A dependency on a manually defined service class. Intended for mutation resolvers.
+ */
 public class ServiceDependency extends NamedDependency {
 
     public ServiceDependency(String name, String path) {

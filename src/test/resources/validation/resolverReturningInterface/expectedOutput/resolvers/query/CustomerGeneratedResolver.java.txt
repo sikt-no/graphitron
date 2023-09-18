@@ -14,7 +14,7 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.FieldHelpers;
+import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.Tables;
 import org.dataloader.DataLoaderFactory;
@@ -35,7 +35,7 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     public CompletableFuture<Node> nodeRef(Customer customer, String id,
             DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        String tablePartOfId = FieldHelpers.getTablePartOf(id);
+        String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.ADDRESS.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->

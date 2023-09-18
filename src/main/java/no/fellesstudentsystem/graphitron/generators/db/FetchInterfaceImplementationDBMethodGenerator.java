@@ -26,7 +26,6 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
  */
 public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-
     private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
 
     public FetchInterfaceImplementationDBMethodGenerator(

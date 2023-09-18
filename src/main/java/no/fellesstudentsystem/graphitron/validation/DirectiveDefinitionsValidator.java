@@ -9,6 +9,11 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * A validation class that checks whether any directives are missing in the schema. This check will become obsolete once
+ * Graphitron exports its own schema definition for directives.
+ */
+@Deprecated(forRemoval = true)
 public class DirectiveDefinitionsValidator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
 
@@ -18,6 +23,7 @@ public class DirectiveDefinitionsValidator {
         this.directiveDefinitions = directiveDefinitions;
     }
 
+    @Deprecated(forRemoval = true)
     public void warnMismatchedDirectives() {
         var expectedDirectives = Arrays.stream(GenerationDirective.values()).map(GenerationDirective::getName).collect(Collectors.toSet());
 

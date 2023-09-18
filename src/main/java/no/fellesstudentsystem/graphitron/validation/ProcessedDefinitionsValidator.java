@@ -23,6 +23,11 @@ import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDF
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableFieldHasDefaultValue;
 
+/**
+ * Class for producing warnings related to potential issues in the defined schema.
+ * This is only used before running generation, but generally does not prohibit further execution.
+ * The intention is that the warnings should provide information on potential issues should an issue occur later.
+ */
 public class ProcessedDefinitionsValidator {
     private final ProcessedSchema schema;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
@@ -34,7 +39,10 @@ public class ProcessedDefinitionsValidator {
         this.schema = schema;
     }
 
-    public void validateThatProcessedDefinitionsConformToDatabaseNaming() {
+    /**
+     * Validate the various mappings set in the schema towards jOOQ tables and keys.
+     */
+    public void validateThatProcessedDefinitionsConformToJOOQNaming() {
         schema.getObjects().values().forEach(objectDefinition -> {
             var fields = objectDefinition.getFields();
             if (objectDefinition.hasTable()) {

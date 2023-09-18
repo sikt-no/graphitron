@@ -20,6 +20,9 @@ import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDF
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 
+/**
+ * Represents a default GraphQL input type.
+ */
 public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDefinition> {
     private final JOOQTableMapping table;
     private final boolean hasTable;
@@ -73,6 +76,9 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         return Stream.concat(splitOnIsRequired.get(false).stream(), splitOnIsRequired.get(true).stream()).collect(Collectors.toList());
     }
 
+    /**
+     * @return Is this field non-nullable in the database?
+     */
     private boolean isRequired(InputField field) {
         if (field.getFieldType().isID() && hasTable) {
             var hackedIDFields = getHackedIDFields(table.getName(), field.getRecordMappingName());

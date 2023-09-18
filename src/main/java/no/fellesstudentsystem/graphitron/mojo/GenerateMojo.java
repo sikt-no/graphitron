@@ -11,8 +11,12 @@ import org.apache.maven.project.MavenProject;
 import java.util.List;
 import java.util.Set;
 
-@Mojo(name = "generate",
-      defaultPhase = GENERATE_SOURCES
+/**
+ * Mojo for a single run of the code generation.
+ */
+@Mojo(
+        name = "generate",
+        defaultPhase = GENERATE_SOURCES
 )
 public class GenerateMojo extends AbstractMojo {
     /**
@@ -61,36 +65,42 @@ public class GenerateMojo extends AbstractMojo {
      * External enums that can be referenced in code generation.
      */
     @Parameter(property = "generate.externalEnums")
+    @SuppressWarnings("unused")
     private String externalEnums;
 
     /**
      * External conditions that can be referenced in code generation.
      */
     @Parameter(property = "generate.externalConditions")
+    @SuppressWarnings("unused")
     private String externalConditions;
 
     /**
      * External services that can be referenced in code generation.
      */
     @Parameter(property = "generate.externalServices")
+    @SuppressWarnings("unused")
     private String externalServices;
 
     /**
      * External exceptions that can be referenced in code generation.
      */
     @Parameter(property = "generate.externalExceptions")
+    @SuppressWarnings("unused")
     private String externalExceptions;
 
     /**
      * External exceptions that can be referenced in code generation.
      */
     @Parameter(property = "generate.externalTransforms")
+    @SuppressWarnings("unused")
     private String externalTransforms;
 
     /**
      * Transforms that apply to all records, or a subset of records.
      */
     @Parameter(property = "generate.globalRecordTransforms")
+    @SuppressWarnings("unused")
     private List<GlobalTransform> globalRecordTransforms;
 
     @Override

@@ -19,10 +19,9 @@ import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.as
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
- * Generator that creates count methods.
+ * Generator that creates methods for counting all available elements for a type.
  */
 public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
-
     public static String TOTAL_COUNT_NAME = "totalCount";
 
     public FetchCountDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {

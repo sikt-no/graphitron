@@ -17,7 +17,7 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.FieldHelpers;
+import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.Tables;
 import org.dataloader.DataLoaderFactory;
@@ -40,7 +40,7 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<Node> node(String id, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        String tablePartOfId = FieldHelpers.getTablePartOf(id);
+        String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
@@ -67,7 +67,7 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<Titled> titled(String title, DataFetchingEnvironment env) throws
             Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        String tablePartOfId = FieldHelpers.getTablePartOf(title);
+        String tablePartOfId = FieldHelperHack.getTablePartOf(title);
 
         if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Titled>computeIfAbsent(tablePartOfId, name ->

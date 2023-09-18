@@ -7,6 +7,9 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
+/**
+ * Class containing some helpers to sort out which direction references go and such.
+ */
 public class ReferenceHelpers {
     /**
      * This method attempts to deduce whether there exists a connection between the two objects in the database,

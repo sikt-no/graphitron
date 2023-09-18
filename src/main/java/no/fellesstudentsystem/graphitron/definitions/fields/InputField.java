@@ -23,7 +23,7 @@ public class InputField extends AbstractField {
 
         hasColumn = field.hasDirective(COLUMN.getName());
         if (hasColumn) {
-            join = getSqlRoleJoin(field);
+            join = getSqlColumnJoin(field);
             recordFromColumnMapping = new RecordMethodMapping(getUpperCaseName());
             recordFromSchemaNameMapping = null;
         } else {

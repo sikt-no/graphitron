@@ -75,7 +75,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
 
         code
                 .add(declareRecords(specInputs))
-                .add(generateServiceCall(target))
+                .add(generateUpdateMethodCall(target))
                 .add(generateResponsesAndGetCalls(target));
 
         return spec
@@ -216,6 +216,12 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .build();
     }
 
+    /**
+     * @param recordName Name of the record to transform.
+     * @param scope The scope of transforms that should be applied. Currently only {@link TransformScope#ALL_MUTATIONS} is supported.
+     * @param isIterable Is this record iterable?
+     * @return CodeBlock where all defined global transforms are applied to the record.
+     */
     protected static CodeBlock applyGlobalTransforms(String recordName, TransformScope scope, boolean isIterable) {
         var code = CodeBlock.builder();
         GeneratorConfig
@@ -227,6 +233,12 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         return code.build();
     }
 
+    /**
+     * @param recordName Name of the record to transform.
+     * @param transform The method that should transform the record.
+     * @param isIterable Is this record iterable?
+     * @return CodeBlock where the transform is applied to the record.
+     */
     protected static CodeBlock applyTransform(String recordName, Method transform, boolean isIterable) {
         var declaringClass = transform.getDeclaringClass();
         return CodeBlock.builder().addStatement(
@@ -251,6 +263,9 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .build();
     }
 
+    /**
+     * @return This field's name formatted as a method call result.
+     */
     @NotNull
     protected String getResolverResultName(ObjectField target) {
         if (!processedSchema.isObject(target)) {
@@ -264,12 +279,20 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         return asListedNameIf(nodeResultName, target.isIterableWrapped());
     }
 
+    /**
+     * @return Can this field's content be iterated through and mapped by usual means?
+     * True if it points to an object and if it does not point to an exception type or node type.
+     */
     protected boolean fieldIsMappable(ObjectField target) {
         return processedSchema.isObject(target)
                 && !processedSchema.isExceptionOrExceptionUnion(target.getTypeName())
                 && !processedSchema.implementsNode(target);
     }
 
+    /**
+     * Attempt to find a suitable input record for this response field. This is not a direct mapping, but rather an inference that may be inaccurate.
+     * @return The best input record match for this response field.
+     */
     protected InputField findMatchingInputRecord(String responseFieldTableName) {
         return context
                 .getRecordInputs()
@@ -431,7 +454,10 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         return localField.isGenerated() && (localField.hasServiceReference() || localField.hasMutationType());
     }
 
-    abstract protected CodeBlock generateServiceCall(ObjectField target);
+    /**
+     * @return CodeBlock that either calls a service or a generated mutation query.
+     */
+    abstract protected CodeBlock generateUpdateMethodCall(ObjectField target);
 
     /**
      * @return Code that calls and stores the result of any helper methods that should be called.

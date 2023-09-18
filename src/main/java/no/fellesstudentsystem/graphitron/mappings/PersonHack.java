@@ -11,6 +11,9 @@ import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.to
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
+/**
+ * FS-specific hack class for Person. In any open source distributions this should be abstracted or removed entirely.
+ */
 public class PersonHack {
     private final static String
             FIELD_METHOD_PREFIX = "get",
@@ -35,7 +38,7 @@ public class PersonHack {
         return getIDFields(tableName, toCamelCase(idName)).map(names -> names.stream().map(String::toUpperCase).flatMap(PersonHack::convert).collect(Collectors.toList()));
     }
 
-    public static Optional<List<String>> getIDFields(String tableName, String idName) {
+    private static Optional<List<String>> getIDFields(String tableName, String idName) {
         var methodName = FIELD_METHOD_PREFIX + capitalize(idName) + FIELD_METHOD_SUFFIX;
         var field = getTablesField(tableName);
         if (field.isPresent() && tableHasMethod(tableName, methodName)) {

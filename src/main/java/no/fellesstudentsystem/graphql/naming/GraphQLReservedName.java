@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphql.naming;
 
 /**
  * Enum of various names or substrings that have special meanings in the schema.
+ * These should always be used rather than specifying them as Strings in various places throughout the code.
  */
 public enum GraphQLReservedName {
     PAGINATION_FIRST("first"),

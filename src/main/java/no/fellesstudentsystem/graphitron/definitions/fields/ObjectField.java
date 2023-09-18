@@ -38,14 +38,14 @@ public class ObjectField extends AbstractField implements GenerationTarget {
 
     public ObjectField(FieldDefinition field) {
         super(field);
-        isResolver = field.hasDirective(RESOLVER.getName());
+        isResolver = field.hasDirective(SPLIT_QUERY.getName());
         inputFields = setInputAndPagination(field, false);
         nonReservedFields = inputFields.stream().filter(inputField ->
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName()))
         ).collect(Collectors.toList());
         isGenerated = isResolver && !field.hasDirective(NOT_GENERATED.getName());
 
-        join = field.hasDirective(COLUMN.getName()) ? getSqlRoleJoin(field) : null;
+        join = field.hasDirective(COLUMN.getName()) ? getSqlColumnJoin(field) : null;
         serviceReference = field.hasDirective(SERVICE.getName()) ? getDirectiveArgumentString(field, SERVICE, SERVICE.getParamName(NAME)) : "";
         mutationType = field.hasDirective(MUTATION_TYPE.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION_TYPE, MUTATION_TYPE.getParamName(TYPE)))

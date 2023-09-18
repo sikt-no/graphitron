@@ -9,6 +9,9 @@ import java.util.Objects;
 
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
+/**
+ * An abstract dependency on a class somewhere in the codebase.
+ */
 abstract public class NamedDependency implements Dependency, Comparable<Dependency> {
     private final String name, path;
     private final ClassName className;
@@ -19,14 +22,23 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
         className = ClassName.get(path, name);
     }
 
+    /**
+     * @return The name of this dependency.
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * @return The location of this dependency.
+     */
     public String getPath() {
         return path;
     }
 
+    /**
+     * @return The javapoet ClassName for this dependency.
+     */
     public ClassName getClassName() {
         return className;
     }

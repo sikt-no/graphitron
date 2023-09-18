@@ -28,6 +28,9 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Abstractions for functionality that is used across multiple test classes.
+ */
 public abstract class TestCommon {
     public static final String
             DIRECTIVES_NAME = "default.graphqls",

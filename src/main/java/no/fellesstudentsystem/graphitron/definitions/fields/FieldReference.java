@@ -20,7 +20,6 @@ public class FieldReference {
     private final String tableKey;
     private final SQLCondition tableCondition;
 
-
     public <T extends NamedNode<T> & DirectivesContainer<T>> FieldReference(T field) {
         var relatedTable = "";
         var relatedTableKey = "";
@@ -68,6 +67,14 @@ public class FieldReference {
         return tableCondition != null;
     }
 
+    /**
+     * Create an alias for this reference.
+     * @param referenceName The name of the join end point. Used for making the alias unique.
+     * @param previousJoinTable Previously encountered table.
+     * @param pastJoinSequence The entire sequence of implicit joins up to this point.
+     * @param tableCodeNameBackup Backup for the table name should it be undefined.
+     * @return new SQLAlias from the parameters.
+     */
     @Nullable
     public SQLAlias createAliasFor(String referenceName, String previousJoinTable, String pastJoinSequence, String tableCodeNameBackup) {
         var relationTableSource = !table.getCodeName().isEmpty() ? table.getCodeName() : tableCodeNameBackup;
@@ -78,12 +85,11 @@ public class FieldReference {
             return new SQLAlias(
                     (joinSourceTable + "_" + referenceName).toLowerCase(),
                     joinSourceTable,
-                    joinReference.orElse(relationTableSource));
+                    joinReference.orElse(relationTableSource)
+            );
         }
         return null;
     }
-
-
 
     private SQLJoinStatement createJoinFor(
             AbstractField reference,
@@ -102,10 +108,16 @@ public class FieldReference {
         );
     }
 
+    /**
+     * @return A join statement based on a condition.
+     */
     public SQLJoinStatement createConditionJoinFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup) {
         return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnCondition(tableCondition));
     }
 
+    /**
+     * @return A join statement based on a key reference.
+     */
     public SQLJoinStatement createJoinOnKeyFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup) {
         return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnKey(tableKey));
     }

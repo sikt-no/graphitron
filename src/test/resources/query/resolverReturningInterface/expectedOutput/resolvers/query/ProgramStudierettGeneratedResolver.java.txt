@@ -34,7 +34,7 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
     public CompletableFuture<Node> referertNode(ProgramStudierett programStudierett, String id,
             DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        String tablePartOfId = FieldHelpers.getTablePartOf(id);
+        String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->

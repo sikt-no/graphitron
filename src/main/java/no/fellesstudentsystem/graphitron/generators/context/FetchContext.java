@@ -16,6 +16,10 @@ import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.findRe
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesIDReference;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
 
+/**
+ * A helper class to handle traversal of nested types in queries. Since such queries will require nested layers of rows,
+ * this class can generate the next "iteration" of itself for handling deeper layers.
+ */
 public class FetchContext {
     private final FetchContext previousContext;
     private final AbstractField referenceObjectField;
@@ -130,28 +134,47 @@ public class FetchContext {
         );
     }
 
+    /**
+     * @return The table used as the target table in the previous context.
+     */
     public ObjectDefinition getPreviousTableObject() {
         return previousTableObject;
     }
 
+    /**
+     * @return List of joins created by this and any other context created from this one.
+     */
     public List<SQLJoinStatement> getJoinList() {
         return joinList;
     }
 
+    /**
+     * @return The path to this context in the schema itself. Used to correctly check selection sets.
+     */
     public String getGraphPath() {
         return graphPath;
     }
 
+    /**
+     * @return The path to this context in the schema itself with slashes replaced by underscores.
+     */
     public String getSnakeCasedGraphPath() {
         return getGraphPath()
                 .replaceAll("/\\z", "") //remove slash at end of string
                 .replaceAll("/", "_");
     }
 
+    /**
+     * Note: This method may be outdated.
+     * @return Whether this context has any joins up to this point, or will have one here.
+     */
     public boolean hasJoinedAlreadyOrWillJoin() {
         return hasJoinedAlready || referenceObjectField.hasFieldReferences();
     }
 
+    /**
+     * @return The referred object being processed in the current context.
+     */
     public ObjectDefinition getReferenceObject() {
         return referenceObject;
     }
@@ -163,34 +186,58 @@ public class FetchContext {
         return currentJoinSequence;
     }
 
+    /**
+     * @return List of all aliases created up to this point by this context or any contexts created from it.
+     */
     public List<SQLAlias> getAliasList() {
         return aliasList;
     }
 
+    /**
+     * @return List of all conditions created up to this point by this context or any contexts created from it.
+     */
     public List<String> getConditionList() {
         return conditionList;
     }
 
+    /**
+     * @return Does this context use a reverse ID join to construct this layer.
+     */
     public boolean hasKeyReference() {
         return hasKeyReference;
     }
 
+    /**
+     * @return The reference table which fields on this layer are taken from.
+     */
     public JOOQTableMapping getReferenceTable() {
         return referenceObject.hasTable() ? referenceObject.getTable() : previousTableObject.getTable();
     }
 
+    /**
+     * @return The reference field which points to the reference object for this layer.
+     */
     public AbstractField getReferenceObjectField() {
         return referenceObjectField;
     }
 
+    /**
+     * @return Should this layer apply an expanded null check?
+     */
     public boolean shouldUseEnhancedNullOnAllNullCheck() {
         return shouldUseEnhancedNullOnAllNullCheck;
     }
 
+    /**
+     * Override the previous layer's use of an expanded null check.
+     */
     public void setParentContextShouldUseEnhancedNullOnAllNullCheck() {
         previousContext.shouldUseEnhancedNullOnAllNullCheck = true;
     }
 
+    /**
+     * @return The next iteration of this context based on the provided reference field.
+     */
     public FetchContext nextContext(AbstractField referenceObjectField) {
         return new FetchContext(
                 processedSchema,
@@ -206,6 +253,12 @@ public class FetchContext {
                 this
         );
     }
+
+    /**
+     * Iterate the table sequence as if several context layers were traversed.
+     * @return The new join sequence, with the provided join sequence extended by all references in this layer's reference field,
+     * or other appropriate start points for a sequence.
+     */
     public String iterateSourceMultipleSequences(String pastJoinSequence) {
         if (hasJoinedAlready || !referenceObject.hasTable()) {
             return pastJoinSequence;
@@ -236,6 +289,10 @@ public class FetchContext {
         return pastJoinSequence;
     }
 
+    /**
+     * Iterate through this layer's reference field's references and create a new join sequence.
+     * @return The new join sequence, with the provided join sequence extended by all references in this layer's reference field.
+     */
     private String processFieldReferences(String previousJoinSequence) {
         String currentJoinSequence = getCurrentJoinSequence();
         var referenceTable = referenceObject.getTable();
@@ -266,6 +323,10 @@ public class FetchContext {
         return currentJoinSequence;
     }
 
+    /**
+     * Process a single field reference.
+     * @return A join sequence created by applying this reference to the previous sequence.
+     */
     private String processReference(FieldReference fRef, JOOQTableMapping table, String previousJoinSequence, String previousTableName) {
         String currentJoinSequence;
         String snakeCasedGraphPath = getSnakeCasedGraphPath();
@@ -291,6 +352,10 @@ public class FetchContext {
         return currentJoinSequence;
     }
 
+    /**
+     * Process this field reference as a join.
+     * @return An alias for this join.
+     */
     private String processConditionJoinReference(FieldReference fRef, String currentJoinSequence, JOOQTableMapping table, String refTableCode, String previousJoinSequence, String previousTableName) {
         var join = fRef.createConditionJoinFor(
                 referenceObjectField,
@@ -302,6 +367,9 @@ public class FetchContext {
         return join.getJoinAlias();
     }
 
+    /**
+     * @return Can these tables be joined with an implicit join?
+     */
     private static boolean hasDirectJoin(JOOQTableMapping referenceTable, String previousTableName) {
         var refTableName = referenceTable.getName();
         var refTableCode = referenceTable.getCodeName();

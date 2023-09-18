@@ -6,6 +6,9 @@ import graphql.language.UnionTypeDefinition;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Represents a GraphQL union type.
+ */
 public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinition> {
     private final List<String> fieldTypeNames;
 
@@ -18,6 +21,9 @@ public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinitio
                 .collect(Collectors.toList());
     }
 
+    /**
+     * @return List of type names this union consists of.
+     */
     public List<String> getFieldTypeNames() {
         return fieldTypeNames;
     }

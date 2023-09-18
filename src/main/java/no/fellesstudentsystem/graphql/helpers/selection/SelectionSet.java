@@ -11,6 +11,10 @@ import java.util.stream.Collectors;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noField;
 
+/**
+ * A helper class for generated code. Helps with checking the selection set from the {@link graphql.schema.DataFetchingEnvironment}
+ * for fields used in queries and mutations.
+ */
 public class SelectionSet {
     protected final Set<String> selectionSet;
     private final String prefix;
