@@ -1,13 +1,9 @@
 directive @deprecated on OBJECT #directive not recognized by generator. It's meant for other purposes
 
 type Query {
-  rom(bygningskode: String!): Rom
+  customer(id: ID!): Customer
 }
 
-type Rom @table @deprecated {
+type Customer @table @deprecated {
   id: ID!
-  romkode: ID!
-  romnavn: String!
-  bygningskode: String!
-  url: String!
 }

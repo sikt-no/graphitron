@@ -1,9 +1,11 @@
-input EndreInput @record(table : "PERSON") {
-  id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+input InsertCustomerInput @record(table : "CUSTOMER") {
+  customerID: String! @column(name : "CUSTOMER_ID")
+  active: Boolean! @column(name: "ACTIVEBOOL")
+  lastName: String! @column(name : "LAST_NAME")
+  storeID: String! @column(name : "STORE_ID")
+  addressID: String! @column(name : "ADDRESS_ID")
 }
 
 type Mutation {
-  registrerPersonInput(input: EndreInput!): ID! @mutationType(typeName: INSERT)
+  registerCustomerInput(input: InsertCustomerInput!): ID! @mutationType(typeName: INSERT)
 }

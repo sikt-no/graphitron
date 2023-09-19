@@ -1,0 +1,35 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import fake.graphql.example.package.model.Film;
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class PaymentDBQueries {
+    public Map<String, Film> filmForPayment(DSLContext ctx, Set<String> paymentIder,
+            SelectionSet select) {
+        var payment_rental = PAYMENT.rental().as("payment_rental");
+        var payment_rental_inventory = payment_rental.inventory().as("payment_rental_inventory");
+        var payment_rental_inventory_film = payment_rental_inventory.film().as("payment_rental_inventory_film");
+        return ctx
+                .select(
+                        PAYMENT.getId(),
+                        row(
+                                payment_rental_inventory_film.getId().as("id"),
+                                select.optional("title", payment_rental_inventory_film.TITLE).as("title")
+                        ).mapping(nullOnAllNull(Film::new)).as("film")
+                )
+                .from(PAYMENT)
+                .where(PAYMENT.hasIds(paymentIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

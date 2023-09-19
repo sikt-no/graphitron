@@ -1,57 +1,57 @@
 type Query {
   paramCondition(
-    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN"),
-    arstall: Int!
-  ): [Termin]
+    rating: Rating!  @condition(name: "TEST_FILM_RATING"),
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film]
 
   paramConditionOverride(
-    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN", override: true),
-    arstall: Int!
-  ): [Termin]
+    rating: Rating! @condition(name: "TEST_FILM_RATING", override: true),
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film]
 
   fieldCondition(
-    termintype: Termintype! @column(name: "TERMINKODE"),
-    arstall: Int!
-  ): [Termin] @condition(name: "TEST_TERMIN_ALL")
+    rating: Rating!,
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film] @condition(name: "TEST_FILM_RATING_ALL")
 
   fieldConditionOverride(
-    termintype: Termintype! @column(name: "TERMINKODE"),
-    arstall: Int!
-  ): [Termin] @condition(name: "TEST_TERMIN_ALL", override: true)
+    rating: Rating!,
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film] @condition(name: "TEST_FILM_RATING_ALL", override: true)
 
   fieldAndParamCondition(
-    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN"),
-    arstall: Int!
-  ): [Termin] @condition(name: "TEST_TERMIN_ALL")
+    rating: Rating! @condition(name: "TEST_FILM_RATING"),
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film] @condition(name: "TEST_FILM_RATING_ALL")
 
   fieldAndParamConditionOverride(
-    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN"),
-    arstall: Int!
-  ): [Termin] @condition(name: "TEST_TERMIN_ALL", override: true)
+    rating: Rating! @condition(name: "TEST_FILM_RATING"),
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film] @condition(name: "TEST_FILM_RATING_ALL", override: true)
 
   fieldAndParamConditionOverrideBoth(
-    termintype: Termintype! @column(name: "TERMINKODE") @condition(name: "TEST_TERMIN", override: true),
-    arstall: Int!
-  ): [Termin] @condition(name: "TEST_TERMIN_ALL", override: true)
+    rating: Rating! @condition(name: "TEST_FILM_RATING", override: true),
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film] @condition(name: "TEST_FILM_RATING_ALL", override: true)
 
   fieldInputCondition(
-    termintypeIn: TerminInput, # Potentially support: @condition(name: "TEST_TERMIN_INPUT")
-    arstall: Int!
-  ): [Termin] @condition(name: "TEST_TERMIN_INPUT_ALL")
+    ratingIn: FilmInput, # Potentially support: @condition(name: "TEST_FILM_RATING_INPUT")
+    releaseYear: String! @column(name: "RELEASE_YEAR")
+  ): [Film] @condition(name: "TEST_FILM_RATING_INPUT_ALL")
 }
 
-input TerminInput {
-  arstall: Int!
-  termintype: Termintype! @column(name: "TERMINKODE")
+input FilmInput {
+  releaseYear: String! @column(name: "RELEASE_YEAR")
+  rating: Rating!
 }
 
-type Termin @node @table {
+type Film @table {
   id: ID!
-  termintype: Termintype! @column(name: "TERMINKODE")
+  rating: Rating! 
 }
 
-enum Termintype {
-  VAR @mapEnum(name: "VÅR")
-  SOM @mapEnum(name: "SOM")
-  HOST @mapEnum(name: "HØST")
+enum Rating {
+  G @mapEnum(name: "G"),
+  PG_13 @mapEnum(name: "PG-13"),
+  R @mapEnum(name: "R"),
 }

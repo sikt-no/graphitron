@@ -1,73 +1,71 @@
-input EndreInputLevel1 @record(table : "PERSON") {
+input EditInputLevel1 @record(table : "CUSTOMER") {
   id: ID!
-  endreA1: EndreInputLevel2A!
-  endreA2: EndreInputLevel2A @column(name : "endreDobbel")
-  endreB: EndreInputLevel2B
-  endreC1: EndreInputLevel2C!
-  endreC2: [EndreInputLevel2C!]!
+  editA1: EditInputLevel2A!
+  editA2: EditInputLevel2A @column(name : "editDouble")
+  editB: EditInputLevel2B
+  editC1: EditInputLevel2C!
+  editC2: [EditInputLevel2C!]!
 }
 
-input EndreInputLevel2A @record(table : "PERSON") {
-  fornavn: String
+input EditInputLevel2A @record(table : "CUSTOMER") {
+  firstName: String @column(name : "FIRST_NAME")
 }
 
-input EndreInputLevel2B @record(table : "PERSON") {
-  fornavn: String
-  endre3: [EndreInputLevel3!]
+input EditInputLevel2B @record(table : "CUSTOMER") {
+  firstName: String @column(name : "FIRST_NAME")
+  edit3: [EditInputLevel3!]
 }
 
-input EndreInputLevel2C {
-  etternavn: String!
+input EditInputLevel2C {
+  lastName: String! @column(name: "LAST_NAME")
 }
 
-input EndreInputLevel3 @record(table : "PERSON") {
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  endre4: [EndreInputLevel4!]
+input EditInputLevel3 @record(table : "CUSTOMER") {
+  email: String
+  edit4: [EditInputLevel4!]
 }
 
-input EndreInputLevel4 @record(table : "PERSON") {
-  etternavn: String!
+input EditInputLevel4 @record(table : "CUSTOMER") {
+  lastName: String! @column(name: "LAST_NAME")
 }
 
-type EndreResponse {
+type EditCustomerResponse {
   id: ID!
-  endreResponse2: EndreResponse2
-  endreResponse3: [EndreResponse3!]
+  EditCustomerResponse2: EditCustomerResponse2
+  EditCustomerResponse3: [EditCustomerResponse3!]
 }
 
-type EndreResponse2 {
+type EditCustomerResponse2 {
   id: ID! @column(name : "id2")
-  personProfil: PersonProfil
+  customer: Customer
 }
 
-type EndreResponse3 {
+type EditCustomerResponse3 {
   id: ID! @column(name : "id3")
-  personProfil: PersonProfil @column(name : "pers3")
-  endreResponse4: [EndreResponse4!] @column(name : "endre4")
+  customer: Customer @column(name : "customer3")
+  EditCustomerResponse4: [EditCustomerResponse4!] @column(name : "edit4")
 }
 
-type EndreResponse4 {
+type EditCustomerResponse4 {
   id: ID! @column(name : "id4")
-  post: Postadresse @column(name : "postAdr4")
+  payment: Payment @column(name : "payment4")
 }
 
 type Mutation {
-  endrePersonNested(input: EndreInputLevel1!): EndreResponse! @service(name : "TEST_PERSON")
+  editCustomerNested(input: EditInputLevel1!): EditCustomerResponse! @service(name : "TEST_CUSTOMER")
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  postadresse: Postadresse @splitQuery @notGenerated
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: String
+  payment: Payment @splitQuery @notGenerated
 }
 
-type Postadresse implements Node @table(name : "STUDENT") {
+type Payment implements Node @table {
   id: ID!
-  co: String @column(name : "ADRLIN1_SEMADR")
-  gate: String @column(name : "ADRLIN2_SEMADR")
-  postnummerOgSted: String @column(name : "ADRLIN3_SEMADR")
-  land: String @column(name : "ADRESSELAND_SEMADR")
+  amount: Int
+  date: DateTime @column(name : "PAYMENT_DATE")
+  lastUpdate: DateTime @column(name : "LAST_UPDATE")
 }

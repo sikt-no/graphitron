@@ -1,26 +1,26 @@
-type EndreResponse0 {
+type EditResponse0 {
   id0: ID! @column(name: "ID")
 }
 
-type EndreResponse1 {
+type EditResponse1 {
   id1: [ID!]! @column(name: "ID")
 }
 
-type EndreResponse2 {
+type EditResponse2 {
   id2: [ID!]! @column(name: "ID")
-  personProfiler: [PersonProfil!]!
+  customers: [Customer!]!
 }
 
 type Mutation {
-  endrePerson0(id: ID!): EndreResponse0! @service(name : "TEST_PERSON")
-  endrePerson1(id: [ID!]!): EndreResponse1! @service(name : "TEST_PERSON")
-  endrePersonRecord0(id: ID!): EndreResponse0! @service(name : "TEST_PERSON")
-  endrePersonRecord1(id: [ID!]!): EndreResponse1! @service(name : "TEST_PERSON")
-  endrePersonRecord2(id: [ID!]!): EndreResponse2! @service(name : "TEST_PERSON") # Also map one node type.
+  editCustomer0(id: ID!): EditResponse0! @service(name : "TEST_CUSTOMER")
+  editCustomer1(id: [ID!]!): EditResponse1! @service(name : "TEST_CUSTOMER")
+  editCustomerRecord0(id: ID!): EditResponse0! @service(name : "TEST_CUSTOMER")
+  editCustomerRecord1(id: [ID!]!): EditResponse1! @service(name : "TEST_CUSTOMER")
+  editCustomerRecord2(id: [ID!]!): EditResponse2! @service(name : "TEST_CUSTOMER") # Also map one node type.
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
 }

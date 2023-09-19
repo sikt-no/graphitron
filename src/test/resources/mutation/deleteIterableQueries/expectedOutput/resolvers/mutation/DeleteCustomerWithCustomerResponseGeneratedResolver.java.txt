@@ -1,0 +1,86 @@
+package fake.code.generated.resolvers.mutation;
+
+import fake.code.generated.queries.mutation.DeleteCustomerWithCustomerResponseDBQueries;
+import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.graphql.example.package.api.DeleteCustomerWithCustomerResponseMutationResolver;
+import fake.graphql.example.package.model.Customer;
+import fake.graphql.example.package.model.DeleteInput;
+import fake.graphql.example.package.model.DeleteResponseWithCustomer;
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import org.jooq.DSLContext;
+
+public class DeleteCustomerWithCustomerResponseGeneratedResolver implements DeleteCustomerWithCustomerResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private CustomerDBQueries customerDBQueries;
+
+    @Inject
+    private DeleteCustomerWithCustomerResponseDBQueries deleteCustomerWithCustomerResponseDBQueries;
+
+    @Override
+    public CompletableFuture<List<DeleteResponseWithCustomer>> deleteCustomerWithCustomerResponse(
+            List<DeleteInput> input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var select = new SelectionSet(env.getSelectionSet());
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<CustomerRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new CustomerRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/firstName")) {
+                    inputRecord.setFirstName(itInput.getFirstName());
+                }
+                if (flatArguments.contains("input/email")) {
+                    inputRecord.setEmail(itInput.getEmail());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = deleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(ctx, inputRecordList);
+        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(ctx, inputRecordList, select);
+
+        var deleteResponseWithCustomerList = new ArrayList<DeleteResponseWithCustomer>();
+        for (var itInputRecordList : inputRecordList) {
+            var deleteResponseWithCustomer = new DeleteResponseWithCustomer();
+            deleteResponseWithCustomer.setCustomer(inputRecordCustomer.get(itInputRecordList.getId()));
+            deleteResponseWithCustomerList.add(deleteResponseWithCustomer);
+        }
+
+        return CompletableFuture.completedFuture(deleteResponseWithCustomerList);
+    }
+
+    private Map<String, Customer> getDeleteResponseWithCustomerCustomer(DSLContext ctx,
+            List<CustomerRecord> idContainer, SelectionSet select) {
+        if (!select.contains("customer") || idContainer == null) {
+            return Map.of();
+        }
+
+        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("customer"));
+    }
+}

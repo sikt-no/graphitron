@@ -1,46 +1,45 @@
-input EndreInput @record(table : "PERSON") {
+input EditInput @record(table : "CUSTOMER") {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  firstName: String @column(name : "FIRST_NAME")
+  postalCode: String @column(name : "POSTAL_CODE")
 }
 
-type EndreResponse {
+type EditResponse {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "epostField")
+  firstName: String @column(name : "FIRST_NAME")
+  postalCode: String @column(name : "POSTAL_CODE")
 }
 
-type EndreResponseWithPerson {
+type EditResponseWithCustomer {
   id: ID!
-  personProfil: PersonProfil @column(name : "persProf")
-  post: Postadresse
+  customer: Customer @column(name : "c")
+  payment: Payment
 }
 
 type Mutation {
-  endrePersonSimple(id: ID!): ID! @service(name : "TEST_PERSON")
-  endrePersonInput(input: EndreInput!): ID! @service(name : "TEST_PERSON")
-  " Note: method has the same name, but it resolves correctly based on number of arguments. Doesn't check the types though."
-  endrePerson2Params(input: EndreInput!, etternavn: String): ID! @service(name : "TEST_PERSON")
-  endrePersonResponse(id: ID!): EndreResponse! @service(name : "TEST_PERSON")
-  endrePersonInputAndResponse(input: EndreInput!): EndreResponse! @service(name : "TEST_PERSON")
-  endrePersonWithProfil(id: ID!): PersonProfil! @column(name : "Terminator") @service(name : "TEST_PERSON")
+  editCustomerSimple(id: ID!): ID! @service(name : "TEST_CUSTOMER")
+  " Note: there are two methods with this name, but it resolves correctly based on number of arguments. Doesn't check the types though."
+  editCustomerInput(input: EditInput!): ID! @service(name : "TEST_CUSTOMER")
+  editCustomer2Params(input: EditInput!, lastName: String): ID! @service(name : "TEST_CUSTOMER")
+  editCustomerResponse(id: ID!): EditResponse! @service(name : "TEST_CUSTOMER")
+  editCustomerInputAndResponse(input: EditInput!): EditResponse! @service(name : "TEST_CUSTOMER")
   " Column should not matter. It may change some internal variable names."
-  endrePersonWithProfilResponse(id: ID!): EndreResponseWithPerson! @service(name : "TEST_PERSON")
+  editCustomerWithCustomer(id: ID!): Customer! @column(name : "Terminator") @service(name : "TEST_CUSTOMER")
+  editCustomerWithCustomerResponse(id: ID!): EditResponseWithCustomer! @service(name : "TEST_CUSTOMER")
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  postadresse: Postadresse @splitQuery @notGenerated
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  postalCode: String @column(name : "POSTAL_CODE")
+  payment: [Payment!]! @splitQuery @notGenerated
+  lastUpdate: DateTime @column(name : "LAST_UPDATE")
 }
 
-type Postadresse implements Node @table(name : "STUDENT") {
+type Payment implements Node @table {
   id: ID!
-  co: String @column(name : "ADRLIN1_SEMADR")
-  gate: String @column(name : "ADRLIN2_SEMADR")
-  postnummerOgSted: String @column(name : "ADRLIN3_SEMADR")
-  land: String @column(name : "ADRESSELAND_SEMADR")
+  amount: Int
+  date: DateTime @column(name : "PAYMENT_DATE")
+  lastUpdate: DateTime @column(name : "LAST_UPDATE")
 }

@@ -1,150 +1,148 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
-import java.lang.Integer;
+import fake.graphql.example.package.model.Duration1;
+import fake.graphql.example.package.model.Duration2;
+import fake.graphql.example.package.model.Film;
+import fake.graphql.example.package.model.Rating;
 import java.lang.String;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import fake.graphql.example.package.model.Email;
-import fake.graphql.example.package.model.FolkeregistrertAdresse;
-import fake.graphql.example.package.model.Maalform;
-import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<PersonProfil> personProfilForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, SelectionSet select) {
+    public List<Film> filmsForQuery(DSLContext ctx, List<String> ids, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
-                                select.optional("fornavn2", PERSON.FORNAVN).as("fornavn2"),
-                                select.optional("fornavn3", PERSON.FORNAVN).as("fornavn3"),
-                                select.optional("fornavn4", PERSON.FORNAVN).as("fornavn4"),
-                                select.optional("fornavn5", PERSON.FORNAVN).as("fornavn5"),
-                                select.optional("fornavn6", PERSON.FORNAVN).as("fornavn6"),
-                                select.optional("fornavn7", PERSON.FORNAVN).as("fornavn7"),
-                                select.optional("fornavn8", PERSON.FORNAVN).as("fornavn8"),
-                                select.optional("fornavn9", PERSON.FORNAVN).as("fornavn9"),
-                                select.optional("fornavn10", PERSON.FORNAVN).as("fornavn10"),
-                                select.optional("fornavn11", PERSON.FORNAVN).as("fornavn11"),
-                                select.optional("fornavn12", PERSON.FORNAVN).as("fornavn12"),
-                                select.optional("fornavn13", PERSON.FORNAVN).as("fornavn13"),
-                                select.optional("fornavn14", PERSON.FORNAVN).as("fornavn14"),
-                                select.optional("fornavn15", PERSON.FORNAVN).as("fornavn15"),
-                                select.optional("fornavn16", PERSON.FORNAVN).as("fornavn16"),
-                                select.optional("fornavn17", PERSON.FORNAVN).as("fornavn17"),
-                                select.optional("fornavn18", PERSON.FORNAVN).as("fornavn18"),
-                                select.optional("fornavn19", PERSON.FORNAVN).as("fornavn19"),
-                                select.optional("fornavn20", PERSON.FORNAVN).as("fornavn20"),
-                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
-                                select.optional("institusjonsEpost", PERSON.EMAILADRESSE).as("institusjonsEpost"),
+                                FILM.getId().as("id"),
+                                select.optional("title", FILM.TITLE).as("title"),
+                                select.optional("title2", FILM.TITLE).as("title2"),
+                                select.optional("title3", FILM.TITLE).as("title3"),
+                                select.optional("title4", FILM.TITLE).as("title4"),
+                                select.optional("title5", FILM.TITLE).as("title5"),
+                                select.optional("title6", FILM.TITLE).as("title6"),
+                                select.optional("title7", FILM.TITLE).as("title7"),
+                                select.optional("title8", FILM.TITLE).as("title8"),
+                                select.optional("title9", FILM.TITLE).as("title9"),
+                                select.optional("title10", FILM.TITLE).as("title10"),
+                                select.optional("title11", FILM.TITLE).as("title11"),
+                                select.optional("title12", FILM.TITLE).as("title12"),
+                                select.optional("title13", FILM.TITLE).as("title13"),
+                                select.optional("title14", FILM.TITLE).as("title14"),
+                                select.optional("title15", FILM.TITLE).as("title15"),
+                                select.optional("title16", FILM.TITLE).as("title16"),
+                                select.optional("title17", FILM.TITLE).as("title17"),
+                                select.optional("title18", FILM.TITLE).as("title18"),
+                                select.optional("title19", FILM.TITLE).as("title19"),
+                                select.optional("title20", FILM.TITLE).as("title20"),
+                                select.optional("description", FILM.DESCRIPTION).as("description"),
+                                select.optional("length", FILM.LENGTH).as("length"),
                                 row(
-                                        select.optional("folkeregistrertAdresse/co", PERSON.ADRLIN1_HJEMSTED).as("co"),
-                                        select.optional("folkeregistrertAdresse/gate", PERSON.ADRLIN2_HJEMSTED).as("gate")
-                                ).mapping(nullOnAllNull(FolkeregistrertAdresse::new)).as("folkeregistrertAdresse"),
-                                select.optional("fodselsdato", PERSON.DATO_FODT).as("fodselsdato"),
-                                select.optional("fodselsnummer", PERSON.FODSELSNR).as("fodselsnummer"),
+                                        select.optional("duration1/duration", FILM.RENTAL_DURATION).as("duration")
+                                ).mapping(nullOnAllNull(Duration1::new)).as("duration1"),
                                 row(
-                                        select.optional("email/privatEpost", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost"),
-                                        select.optional("email/privatEpost2", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost2"),
-                                        select.optional("email/privatEpost3", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost3"),
-                                        select.optional("email/privatEpost4", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost4"),
-                                        select.optional("email/privatEpost5", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost5"),
-                                        select.optional("email/privatEpost6", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost6"),
-                                        select.optional("email/privatEpost7", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost7"),
-                                        select.optional("email/privatEpost8", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost8"),
-                                        select.optional("email/privatEpost9", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost9"),
-                                        select.optional("email/privatEpost10", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost10"),
-                                        select.optional("email/privatEpost11", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost11"),
-                                        select.optional("email/privatEpost12", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost12"),
-                                        select.optional("email/privatEpost13", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost13"),
-                                        select.optional("email/privatEpost14", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost14"),
-                                        select.optional("email/privatEpost15", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost15"),
-                                        select.optional("email/privatEpost16", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost16"),
-                                        select.optional("email/privatEpost17", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost17"),
-                                        select.optional("email/privatEpost18", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost18"),
-                                        select.optional("email/privatEpost19", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost19"),
-                                        select.optional("email/privatEpost20", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost20"),
-                                        select.optional("email/privatEpost21", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost21"),
-                                        select.optional("email/privatEpost22", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost22"),
-                                        select.optional("email/privatEpost23", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost23")
-                                ).mapping(Email.class, r ->
-                                        Arrays.stream(r).allMatch(Objects::isNull) ? null : new Email(
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[0]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[1]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[2]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[3]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[4]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[5]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[6]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[7]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[8]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[9]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[10]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[11]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[12]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[13]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[14]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[15]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[16]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[17]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[18]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[19]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[20]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[21]),
-                                                PERSON.EMAILADRESSE_PRIVAT.getDataType().convert(r[22])
+                                        select.optional("duration2/duration", FILM.RENTAL_DURATION).as("duration"),
+                                        select.optional("duration2/duration2", FILM.RENTAL_DURATION).as("duration2"),
+                                        select.optional("duration2/duration3", FILM.RENTAL_DURATION).as("duration3"),
+                                        select.optional("duration2/duration4", FILM.RENTAL_DURATION).as("duration4"),
+                                        select.optional("duration2/duration5", FILM.RENTAL_DURATION).as("duration5"),
+                                        select.optional("duration2/duration6", FILM.RENTAL_DURATION).as("duration6"),
+                                        select.optional("duration2/duration7", FILM.RENTAL_DURATION).as("duration7"),
+                                        select.optional("duration2/duration8", FILM.RENTAL_DURATION).as("duration8"),
+                                        select.optional("duration2/duration9", FILM.RENTAL_DURATION).as("duration9"),
+                                        select.optional("duration2/duration10", FILM.RENTAL_DURATION).as("duration10"),
+                                        select.optional("duration2/duration11", FILM.RENTAL_DURATION).as("duration11"),
+                                        select.optional("duration2/duration12", FILM.RENTAL_DURATION).as("duration12"),
+                                        select.optional("duration2/duration13", FILM.RENTAL_DURATION).as("duration13"),
+                                        select.optional("duration2/duration14", FILM.RENTAL_DURATION).as("duration14"),
+                                        select.optional("duration2/duration15", FILM.RENTAL_DURATION).as("duration15"),
+                                        select.optional("duration2/duration16", FILM.RENTAL_DURATION).as("duration16"),
+                                        select.optional("duration2/duration17", FILM.RENTAL_DURATION).as("duration17"),
+                                        select.optional("duration2/duration18", FILM.RENTAL_DURATION).as("duration18"),
+                                        select.optional("duration2/duration19", FILM.RENTAL_DURATION).as("duration19"),
+                                        select.optional("duration2/duration20", FILM.RENTAL_DURATION).as("duration20"),
+                                        select.optional("duration2/duration21", FILM.RENTAL_DURATION).as("duration21"),
+                                        select.optional("duration2/duration22", FILM.RENTAL_DURATION).as("duration22"),
+                                        select.optional("duration2/duration23", FILM.RENTAL_DURATION).as("duration23"),
+                                        select.optional("duration2/duration24", FILM.RENTAL_DURATION).as("duration24"),
+                                        select.optional("duration2/duration25", FILM.RENTAL_DURATION).as("duration25")
+                                ).mapping(Duration2.class, r ->
+                                        Arrays.stream(r).allMatch(Objects::isNull) ? null : new Duration2(
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[0]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[1]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[2]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[3]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[4]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[5]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[6]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[7]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[8]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[9]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[10]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[11]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[12]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[13]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[14]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[15]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[16]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[17]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[18]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[19]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[20]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[21]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[22]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[23]),
+                                                FILM.RENTAL_DURATION.getDataType().convert(r[24])
                                         )
-                                ).as("email"),
-                                select.optional("morsmaal", PERSON.person_Morsmal_Sprak_Fk().SPRAKKODE_639_2).as("morsmaal"),
-                                select.optional("maalform", PERSON.person_Malform_Sprak_Fk().SPRAKKODE_639_2.convert(Maalform.class, s -> s == null ? null : Map.of("NOB", Maalform.NOB, "NNO", Maalform.NNO, "ENG", Maalform.ENG).getOrDefault(s, null), s -> s == null ? null : Map.of(Maalform.NOB, "NOB", Maalform.NNO, "NNO", Maalform.ENG, "ENG").getOrDefault(s, null))).as("maalform")
-                        ).mapping(PersonProfil.class, r ->
-                                Arrays.stream(r).allMatch(Objects::isNull) ? null : new PersonProfil(
+                                ).as("duration2"),
+                                select.optional("rate", FILM.RENTAL_RATE).as("rate"),
+                                select.optional("languageName", FILM.filmLanguageIdFkey().NAME).as("languageName"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "G", Rating.G, "PG", Rating.PG).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.G, "G", Rating.PG, "PG").getOrDefault(s, null))).as("rating")
+                        ).mapping(Film.class, r ->
+                                Arrays.stream(r).allMatch(Objects::isNull) ? null : new Film(
                                         (String) r[0],
-                                        PERSON.FORNAVN.getDataType().convert(r[1]),
-                                        PERSON.FORNAVN.getDataType().convert(r[2]),
-                                        PERSON.FORNAVN.getDataType().convert(r[3]),
-                                        PERSON.FORNAVN.getDataType().convert(r[4]),
-                                        PERSON.FORNAVN.getDataType().convert(r[5]),
-                                        PERSON.FORNAVN.getDataType().convert(r[6]),
-                                        PERSON.FORNAVN.getDataType().convert(r[7]),
-                                        PERSON.FORNAVN.getDataType().convert(r[8]),
-                                        PERSON.FORNAVN.getDataType().convert(r[9]),
-                                        PERSON.FORNAVN.getDataType().convert(r[10]),
-                                        PERSON.FORNAVN.getDataType().convert(r[11]),
-                                        PERSON.FORNAVN.getDataType().convert(r[12]),
-                                        PERSON.FORNAVN.getDataType().convert(r[13]),
-                                        PERSON.FORNAVN.getDataType().convert(r[14]),
-                                        PERSON.FORNAVN.getDataType().convert(r[15]),
-                                        PERSON.FORNAVN.getDataType().convert(r[16]),
-                                        PERSON.FORNAVN.getDataType().convert(r[17]),
-                                        PERSON.FORNAVN.getDataType().convert(r[18]),
-                                        PERSON.FORNAVN.getDataType().convert(r[19]),
-                                        PERSON.FORNAVN.getDataType().convert(r[20]),
-                                        PERSON.ETTERNAVN.getDataType().convert(r[21]),
-                                        PERSON.EMAILADRESSE.getDataType().convert(r[22]),
-                                        (FolkeregistrertAdresse) r[23],
-                                        PERSON.DATO_FODT.getDataType().convert(r[24]),
-                                        PERSON.FODSELSNR.getDataType().convert(r[25]),
-                                        (Email) r[26],
-                                        PERSON.person_Morsmal_Sprak_Fk().SPRAKKODE_639_2.getDataType().convert(r[27]),
-                                        (Maalform) r[28]
+                                        FILM.TITLE.getDataType().convert(r[1]),
+                                        FILM.TITLE.getDataType().convert(r[2]),
+                                        FILM.TITLE.getDataType().convert(r[3]),
+                                        FILM.TITLE.getDataType().convert(r[4]),
+                                        FILM.TITLE.getDataType().convert(r[5]),
+                                        FILM.TITLE.getDataType().convert(r[6]),
+                                        FILM.TITLE.getDataType().convert(r[7]),
+                                        FILM.TITLE.getDataType().convert(r[8]),
+                                        FILM.TITLE.getDataType().convert(r[9]),
+                                        FILM.TITLE.getDataType().convert(r[10]),
+                                        FILM.TITLE.getDataType().convert(r[11]),
+                                        FILM.TITLE.getDataType().convert(r[12]),
+                                        FILM.TITLE.getDataType().convert(r[13]),
+                                        FILM.TITLE.getDataType().convert(r[14]),
+                                        FILM.TITLE.getDataType().convert(r[15]),
+                                        FILM.TITLE.getDataType().convert(r[16]),
+                                        FILM.TITLE.getDataType().convert(r[17]),
+                                        FILM.TITLE.getDataType().convert(r[18]),
+                                        FILM.TITLE.getDataType().convert(r[19]),
+                                        FILM.TITLE.getDataType().convert(r[20]),
+                                        FILM.DESCRIPTION.getDataType().convert(r[21]),
+                                        FILM.LENGTH.getDataType().convert(r[22]),
+                                        (Duration1) r[23],
+                                        (Duration2) r[24],
+                                        FILM.RENTAL_RATE.getDataType().convert(r[25]),
+                                        FILM.filmLanguageIdFkey().NAME.getDataType().convert(r[26]),
+                                        (Rating) r[27]
                                 )
-                        ).as("personProfil")
+                        ).as("films")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .orderBy(PERSON.getIdFields())
-                .fetch(0, PersonProfil.class);
+                .from(FILM)
+                .where(ids.size() > 0 ? FILM.FILM_ID.in(ids) : noCondition())
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 }

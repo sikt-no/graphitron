@@ -4,8 +4,9 @@ directive @table(name: String) on OBJECT
 directive @column(name: String!) on FIELD_DEFINITION | ENUM_VALUE | ARGUMENT_DEFINITION
 
 type Query {
-  personProfil(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
-  ): PersonProfil @generated
+  customer(id: ID!): Customer
+}
+
+type Customer @table {
+  id: ID!
 }

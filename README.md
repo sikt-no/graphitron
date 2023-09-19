@@ -82,15 +82,15 @@ Til metoden sendes den aktuelle tabellen samt denne parameteren.
   
 Eksempel:
 ```graphql
-emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
+cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
 ```
 ```java
-TEST_EMNE_KODER(EmneTestConditions.class, "emneKoder", Emne.class, List.class)
+TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class)
 ```
 Resultat:
 ```java
-.and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+.and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
+.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
 ```
 #### Case: No _override_ on field with input parameters
 Legg til denne conditionen i tillegg til de sjekkene som vanligvis legges på.
@@ -98,19 +98,19 @@ Til metoden sendes den aktuelle tabellen og alle parametere til dette feltet.
 
 Eksempel:
 ```graphql
-emne(
-  eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-  emnekoder: [String!] @column(name: "EMNEKODE")
-): [Emne] @condition(name: "TEST_EMNE_ALL")
+fieldCondition(
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY")
+): [City] @condition(name: "TEST_CITY_ALL")
 ```
 ```java
-TEST_EMNE_ALL(EmneTestConditions.class, "emneAll", Emne.class, String.class, List.class)
+TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
 ```
 Resultat:
 ```java
-.where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-.and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+.where(CITY.COUNTRY_ID.eq(countryId))
+.and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
+.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
 ```
 #### Case: Both field and parameters
 Summen av punktene over. Resultatet blir at begge conditionene tas med.
@@ -120,14 +120,14 @@ Til metoden sendes den aktuelle tabellen samt denne parameteren.
 
 Eksempel:
 ```graphql
-emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER", override: true)
+cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
 ```
 ```java
-TEST_EMNE_KODER(EmneTestConditions.class, "emneKoder", Emne.class, List.class)
+TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class)
 ```
 Resultat:
 ```java
-.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
+.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
 ```
 #### Case: With _override_ on field with input parameters
 Bytt ut de sjekkene som vanligvis hadde blitt satt for alle parameterne til feltet med denne conditionen.
@@ -135,17 +135,17 @@ Til metoden sendes den aktuelle tabellen og alle parametere til dette feltet.
 
 Eksempel:
 ```graphql
-emne(
-  eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-  emnekoder: [String!] @column(name: "EMNEKODE")
-): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+cities(
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY")
+): [City] @condition(name: "TEST_CITY_ALL", override: true)
 ```
 ```java
-TEST_EMNE_ALL(EmneTestConditions.class, "emneAll", Emne.class, String.class, List.class)
+TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
 ```
 Resultat:
 ```java
-.where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+.where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
 ```
 #### Case: With _override_ on both field and parameters
 Både conditions satt på feltet og på parametere blir med, men ingenting annet. 
@@ -153,19 +153,19 @@ Merk at hvis _override_ er satt på en condition på feltet, har ikke verdien av
 
 Eksempel:
 ```graphql
-emne(
-  eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-  emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
-): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+cities(
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
+): [City] @condition(name: "TEST_CITY_ALL", override: true)
 ```
 ```java
-TEST_EMNE_KODER(EmneTestConditions.class, "emneKoder", Emne.class, List.class),
-TEST_EMNE_ALL(EmneTestConditions.class, "emneAll", Emne.class, String.class, List.class)
+TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class),
+TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
 ```
 Resultat:
 ```java
-.where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-.and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
+.where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+ and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
 ```
 
 ## Functionality & Directives for Mutations
@@ -235,7 +235,7 @@ type ReturnA {
 type ReturnB { }
 ```
 ```java
-public class TestPersonService {
+public class TestCustomerService {
 
   public ReturnA edit(String id) { }
 
@@ -261,19 +261,19 @@ Dette gjelder både _record_- og _column_-direktivene.
 Hvis vi har dette skjemaet:
 
 ```graphql
-endrePersonAdresse(
+editCustomerAdresse(
   id: ID!
-  input: EndreAdresseInput!
-): EndrePersonAdresseRespons! @service(name: "SERVICE_PERSONPROFIL") # Kunne vært PersonProfil eller ID også.
+  input: EditAdresseInput!
+): EditPersonAdresseRespons! @service(name: "SERVICE_PERSONPROFIL") # Kunne vært PersonProfil eller ID også.
 
-input EndrePersonProfilFolkeregistrertAdresseInput @record(table: "PERSON") { # Angir hvilken record som skal mappes til.
+input EditPersonProfilFolkeregistrertAdresseInput @record(table: "PERSON") { # Angir hvilken record som skal mappes til.
   co: String! @column(name: "ADRLIN1_HJEMSTED") # Angir hvilket felt i record som skal mappes til.
   gate: String! @column(name: "ADRLIN2_HJEMSTED")
   postnummerOgSted: String! @column(name: "ADRLIN3_HJEMSTED")
   land: String! @column(name: "ADRESSELAND_HJEMSTED")
 }
 
-type EndrePersonAdresseRespons {
+type EditPersonAdresseRespons {
   personProfil: PersonProfil # legg på @column(name: "person") hvis dette skal mappes "person" i returklassen. Da må metoden hete "getPerson" i stedet.
 }
 ```
@@ -281,14 +281,14 @@ type EndrePersonAdresseRespons {
 Trenger vi et service som har en av følgende signaturer:
 
 ```java
-// Hvor EndrePersonAdresseRespons er en instans av en statisk klasse inni servicen som inneholder en PersonRecord, og som har en metode som heter "getPersonProfil".
-public EndrePersonAdresseRespons endrePersonAdresse(String id, PersonRecord person)
+// Hvor EditPersonAdresseRespons er en instans av en statisk klasse inni servicen som inneholder en PersonRecord, og som har en metode som heter "getPersonProfil".
+public EditPersonAdresseRespons editCustomerAdresse(String id, PersonRecord person)
 
 // Den returnerte recorden her trenger bare ID satt, siden det er bare den som blir brukt når objektet hentes i resolveren.
-public PersonRecord endrePersonAdresse(String id, PersonRecord person)
+public PersonRecord editCustomerAdresse(String id, PersonRecord person)
 ```
 
-Resolveren hadde blitt tilpasset automatisk om mutation returnerte en _PersonProfil_ i stedet for en _EndrePersonAdresseRespons_.
+Resolveren hadde blitt tilpasset automatisk om mutation returnerte en _PersonProfil_ i stedet for en _EditPersonAdresseRespons_.
 Dette er uavhengig av hvordan selve service-metoden er satt opp.
 I dette tilfellet er det anbefalt å heller inkludere ID inni input-typen, ellers er den ikke satt på recorden når den kommer inn i servicen.
 Det vil virke uansett, men hvis det er satt opp slik som dette vil sannsynligvis det første som skjer inni servicen være å sette ID-en på record-en.
@@ -307,10 +307,10 @@ En spørring med feil kan se slik ut:
 
 ```graphql
 type Mutation {
-  endrePerson(id: ID!): EndrePersonPayload! @service(name: "SERVICE_PERSON")
+  editCustomer(id: ID!): EditPersonPayload! @service(name: "SERVICE_PERSON")
 }
 
-type EndrePersonPayload {
+type EditPersonPayload {
   id: ID!
   errors: [SomeError!]!
 }
@@ -332,14 +332,14 @@ Deretter burde vi se at Graphitron produserer noe som dette:
 
 ```java
 try {
-    endrePersonResult = personService.endrePerson(id);
+    editCustomerResult = personService.editCustomer(id);
 } catch (UlovligException e) {
     var error = new SomeError();
     error.setMessage(e.getMessage());
     var cause = e.getCauseField();
     var causeName = Map.of().getOrDefault(cause != null ? cause : "", "undefined");
-    error.setPath(List.of(("Mutation.endrePerson." + causeName).split("\\.")));
-    endrePersonErrorsList.add(error);
+    error.setPath(List.of(("Mutation.editCustomer." + causeName).split("\\.")));
+    editCustomerErrorsList.add(error);
 }
 ```
 
@@ -352,4 +352,10 @@ Hvis der er flere mulige feil ved at det er flere feil-felt eller det oppgis uni
 ## Testing
 Testene for modulen sjekker det genererte resultatet opp mot predefinerte filer.
 Derfor må man også ofte tilpasse testene når man gjør endringer i generatoren som påvirker den genererte koden.
-Testene har separate GraphQL-skjema for å være uavhengige av endringer i prosjektets skjema, og ved endringer i direktivene må disse også oppdatere.
+
+Testene kjøres mot genererte JOOQ-klasser basert på [Sakila test-databasen](https://www.jooq.org/sakila).
+JOOQ-klassene blir generert i mapppen `src/test/java` ved kjøring via mvn. Denne mappen er ignorert i _.gitignore_ og filene
+genereres kun dersom de ikke eksisterer eller dersom man trenger å få dem regenerert.
+Regenerering tvinges fram ved å endre skjemaversjon via propertien `testdata.schema.version` i _pom.xml_.
+
+Testene har separate GraphQL-skjema for å være uavhengige av endringer i prosjektets skjema, og ved endringer i direktivene må disse også oppdateres.

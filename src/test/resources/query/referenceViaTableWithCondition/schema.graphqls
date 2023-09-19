@@ -1,15 +1,14 @@
 type Query {
-  student(id: ID!): StudentVedInstitusjon
+  inventory(id: ID!): Inventory
 }
 
-type StudentVedInstitusjon @table(name: "STUDENT") {
+type Inventory @table {
   id: ID!
-  studentnummer: String! @column(name: "STUDENTNR_TILDELT")
-  # join path: STUDENT -> PERSON -> PERSON_TELEFON(via condition) -> LAND
-  privatTelefonLand: Land @splitQuery @reference(via: [{table: "PERSON"}, {table: "PERSON_TELEFON", condition: "TEST_PERSON_TELEFON_PRIVAT"}])
+  # join path: INVENTORY -> FILM -> FILM_ACTOR (via condition) -> ACTOR
+  mainActors: [Actor!]! @splitQuery @reference(via: [{table: "FILM"}, {table: "FILM_ACTOR", condition: "TEST_FILM_MAIN_ACTOR"}])
 }
 
-type Land @table {
+type Actor @table {
   id: ID!
-  landnr: String!
+  lastName: String! @column(name: "LAST_NAME")
 }

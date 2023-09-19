@@ -1,45 +1,41 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Film;
+import fake.graphql.example.package.model.Language;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.Emnevalgstatus;
-import fake.graphql.example.package.model.MaksimumVektingForEmnevalgstatus;
-import fake.graphql.example.package.model.MinimumVektingForEmnevalgstatus;
-import fake.graphql.example.package.model.Vektingstype;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<Emnevalgstatus> emnevalgstatusForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var emnevalgstatus_minimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Minimum_Vektingstype_Fk().as("emnevalgstatus_minimumsvekting_vektingstype");
-        var emnevalgstatus_maksimumsvekting_vektingstype = EMNEVALGSTATUS.emnevalgstatus_Max_Vektingstype_Fk().as("emnevalgstatus_maksimumsvekting_vektingstype");
+    public List<Film> filmForQuery(DSLContext ctx, String id, SelectionSet select) {
+        var film_filmlanguage = LANGUAGE.as("film_filmlanguage");
+        var film_originallanguage = LANGUAGE.as("film_originallanguage");
         return ctx
                 .select(
                         row(
-                                EMNEVALGSTATUS.getId().as("id"),
+                                FILM.getId().as("id"),
                                 row(
-                                        select.optional("minimumsvekting/verdi", EMNEVALGSTATUS.VEKTINGSTALL_MINIMUM).as("verdi"),
-                                        row(
-                                                emnevalgstatus_minimumsvekting_vektingstype.getId().as("id")
-                                        ).mapping(nullOnAllNull(Vektingstype::new)).as("vektingstype")
-                                ).mapping(nullOnAllNull(MinimumVektingForEmnevalgstatus::new)).as("minimumsvekting"),
+                                        film_filmlanguage.getId().as("id")
+                                ).mapping(nullOnAllNull(Language::new)).as("filmLanguage"),
                                 row(
-                                        select.optional("maksimumsvekting/verdi", EMNEVALGSTATUS.VEKTINGSTALL_MAX).as("verdi"),
-                                        row(
-                                                emnevalgstatus_maksimumsvekting_vektingstype.getId().as("id")
-                                        ).mapping(nullOnAllNull(Vektingstype::new)).as("vektingstype")
-                                ).mapping(nullOnAllNull(MaksimumVektingForEmnevalgstatus::new)).as("maksimumsvekting")
-                        ).mapping(nullOnAllNull(Emnevalgstatus::new)).as("emnevalgstatus")
+                                        film_originallanguage.getId().as("id")
+                                ).mapping(nullOnAllNull(Language::new)).as("originalLanguage")
+                        ).mapping(nullOnAllNull(Film::new)).as("film")
                 )
-                .from(EMNEVALGSTATUS)
-                .where(EMNEVALGSTATUS.ID.eq(id))
-                .orderBy(EMNEVALGSTATUS.getIdFields())
-                .fetch(0, Emnevalgstatus.class);
+                .from(FILM)
+                .leftJoin(film_filmlanguage)
+                .onKey(FILM__FILM_LANGUAGE_ID_FKEY)
+                .leftJoin(film_originallanguage)
+                .onKey(FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY)
+                .where(FILM.ID.eq(id))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 }

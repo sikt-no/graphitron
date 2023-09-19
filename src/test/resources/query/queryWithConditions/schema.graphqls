@@ -1,60 +1,52 @@
 type Query {
   paramCondition(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
-  ): [Emne]
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
+  ): [City]
 
   paramConditionOverride(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER", override: true)
-  ): [Emne]
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
+  ): [City]
 
   fieldCondition(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE")
-  ): [Emne] @condition(name: "TEST_EMNE_ALL")
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY")
+  ): [City] @condition(name: "TEST_CITY_ALL")
 
   fieldConditionOverride(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE")
-  ): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY")
+  ): [City] @condition(name: "TEST_CITY_ALL", override: true)
 
   fieldAndParamCondition(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
-  ): [Emne] @condition(name: "TEST_EMNE_ALL")
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
+  ): [City] @condition(name: "TEST_CITY_ALL")
 
   fieldAndParamConditionOverride(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER")
-  ): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
+  ): [City] @condition(name: "TEST_CITY_ALL", override: true)
 
   fieldAndParamConditionOverrideBoth(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emnekoder: [String!] @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODER", override: true)
-  ): [Emne] @condition(name: "TEST_EMNE_ALL", override: true)
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
+  ): [City] @condition(name: "TEST_CITY_ALL", override: true)
 
   fieldInputCondition(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    emneInput: EmneInput # Potentially support: @condition(name: "TEST_EMNE_INPUT")
-  ): [Emne] @condition(name: "TEST_EMNE_INPUT_ALL")
+    countryId: String! @column(name: "COUNTRY_ID"),
+    cityInput: CityInput # Potentially support: @condition(name: "TEST_CITY_INPUT")
+  ): [City] @condition(name: "TEST_CITY_INPUT_ALL")
 }
 
-type Emne @table {
-  id: ID!
-  kode: String! @column(name: "EMNEKODE")
-  navn: Emnenavn!
-  versjonskode: String! @column(name: "VERSJONSKODE")
+type City @table {
+  id: ID! 
+  name: String! @column(name: "CITY")
+  lastUpdate: DateTime! @column(name: "LAST_UPDATE")
 }
 
-input EmneInput {
-  kode: String! @column(name: "EMNEKODE") @condition(name: "TEST_EMNE_KODE")
-  versjonskode: String! @column(name: "VERSJONSKODE")
-}
-
-type Emnenavn {
-  eng: String @column(name: "EMNENAVN_ENGELSK")
-  nob: String! @column(name: "EMNENAVN_BOKMAL")
-  nno: String @column(name: "EMNENAVN_NYNORSK")
-  sme: String @column(name: "EMNENAVN_SAMISK")
+input CityInput {
+  name: String! @column(name: "CITY") @condition(name: "TEST_CITY_NAME")
+  cityId: String! @column(name: "CITY_ID")
 }

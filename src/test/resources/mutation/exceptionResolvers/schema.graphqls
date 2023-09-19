@@ -1,12 +1,12 @@
-input EndreInput @record(table : "PERSON") {
+input EditInput @record(table : "CUSTOMER") {
   id: ID!
-  navn: String @column(name: "FORNAVN")
-  etternavn: String
-  endre2: EndreInput2 @column(name : "endreDouble")
+  name: String @column(name: "FORNAVN")
+  lastName: String
+  edit2: EditInput2 @column(name : "editDouble")
 }
 
-input EndreInput2 @record(table : "PERSON") {
-  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+input EditInput2 @record(table : "CUSTOMER") {
+  email: String
 }
 
 type SomeErrorA implements Error @error(name: "EXCEPTION_TEST") {
@@ -19,51 +19,49 @@ type SomeErrorB implements Error @error(name: "EXCEPTION_TEST_CAUSE") {
   message: String!
 }
 
-union EndreErrorsUnion1 = SomeErrorA
-union EndreErrorsUnion2 = SomeErrorA | SomeErrorB
+union EditErrorsUnion1 = SomeErrorA
+union EditErrorsUnion2 = SomeErrorA | SomeErrorB
 
-type EndreResponse {
+type EditCustomerResponse {
   id: ID!
-  endreResponse2: EndreResponse2
-  endreResponse3: [EndreResponse3!]
+  editCustomerResponse2: EditCustomerResponse2
+  editCustomerResponse3: [EditCustomerResponse3!]
   errors: [SomeErrorB!]!
 }
 
-type EndreResponseUnion1 {
+type EditCustomerResponseUnion1 {
   id: ID!
-  endreResponse2: EndreResponse2
-  endreResponse3: [EndreResponse3!]
-  errors: [EndreErrorsUnion1!]!
+  editCustomerResponse2: EditCustomerResponse2
+  editCustomerResponse3: [EditCustomerResponse3!]
+  errors: [EditErrorsUnion1!]!
 }
 
-type EndreResponseUnion2 {
+type EditCustomerResponseUnion2 {
   id: ID!
-  endreResponse2: EndreResponse2
-  endreResponse3: [EndreResponse3!]
-  errors: [EndreErrorsUnion2!]!
+  editCustomerResponse2: EditCustomerResponse2
+  editCustomerResponse3: [EditCustomerResponse3!]
+  errors: [EditErrorsUnion2!]!
 }
 
-type EndreResponse2 {
+type EditCustomerResponse2 {
   id: ID! @column(name : "id2")
-  personProfil: PersonProfil
+  customer: Customer
 }
 
-type EndreResponse3 {
+type EditCustomerResponse3 {
   id: ID! @column(name : "id3")
-  personProfil: PersonProfil @column(name : "pers3")
+  customer: Customer @column(name : "customer3")
 }
 
 type Mutation {
-  endreError(input: EndreInput!): EndreResponse! @service(name : "TEST_PERSON")
-  endreErrorUnion1(navn: String! @column(name: "FORNAVN")): EndreResponseUnion1! @service(name : "TEST_PERSON")
-  endreErrorUnion2(input: EndreInput!): EndreResponseUnion2! @service(name : "TEST_PERSON")
+  editError(input: EditInput!): EditCustomerResponse! @service(name : "TEST_CUSTOMER")
+  editErrorUnion1(name: String! @column(name: "FIRST_NAME")): EditCustomerResponseUnion1! @service(name : "TEST_CUSTOMER")
+  editErrorUnion2(input: EditInput!): EditCustomerResponseUnion2! @service(name : "TEST_CUSTOMER")
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  postadresse: Postadresse @splitQuery @notGenerated
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: String
 }

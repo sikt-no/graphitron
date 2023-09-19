@@ -1,84 +1,81 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Film;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<PersonProfil> personTwoArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, Integer pageSize, String after, SelectionSet select) {
+    public List<Film> filmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
+            List<Integer> languageID, Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
-                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
-                                select.optional("personkode", PERSON.PERSONKODE).as("personkode")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personTwoArguments")
+                                FILM.getId().as("id"),
+                                select.optional("title", FILM.TITLE).as("title"),
+                                select.optional("description", FILM.DESCRIPTION).as("description")
+                        ).mapping(nullOnAllNull(Film::new)).as("filmTwoArguments")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .orderBy(PERSON.getIdFields())
-                .seek(PERSON.getIdValues(after))
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : noCondition())
+                .orderBy(FILM.getIdFields())
+                .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, PersonProfil.class);
+                .fetch(0, Film.class);
     }
 
-    public List<PersonProfil> personFiveArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode,
+    public List<Film> filmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
+            List<Integer> languageID, String description, String title, Integer length,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
-                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
-                                select.optional("personkode", PERSON.PERSONKODE).as("personkode")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personFiveArguments")
+                                FILM.getId().as("id"),
+                                select.optional("title", FILM.TITLE).as("title"),
+                                select.optional("description", FILM.DESCRIPTION).as("description")
+                        ).mapping(nullOnAllNull(Film::new)).as("filmFiveArguments")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .and(fornavn != null ? PERSON.FORNAVN.eq(fornavn) : noCondition())
-                .and(PERSON.ETTERNAVN.eq(etternavn))
-                .and(personkode != null ? PERSON.PERSONKODE.eq(personkode) : noCondition())
-                .orderBy(PERSON.getIdFields())
-                .seek(PERSON.getIdValues(after))
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : noCondition())
+                .and(description != null ? FILM.DESCRIPTION.eq(description) : noCondition())
+                .and(FILM.TITLE.eq(title))
+                .and(length != null ? FILM.LENGTH.eq(length) : noCondition())
+                .orderBy(FILM.getIdFields())
+                .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, PersonProfil.class);
+                .fetch(0, Film.class);
     }
 
-
-    public Integer countPersonTwoArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer) {
+    public Integer countFilmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
+            List<Integer> languageID) {
         return ctx
                 .select(count().as("totalCount"))
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : noCondition())
                 .fetchOne(0, Integer.class);
     }
 
-    public Integer countPersonFiveArgumentsForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, String fornavn, String etternavn, Integer personkode) {
+    public Integer countFilmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
+            List<Integer> languageID, String description, String title, Integer length) {
         return ctx
                 .select(count().as("totalCount"))
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .and(fornavn != null ? PERSON.FORNAVN.eq(fornavn) : noCondition())
-                .and(PERSON.ETTERNAVN.eq(etternavn))
-                .and(personkode != null ? PERSON.PERSONKODE.eq(personkode) : noCondition())
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : noCondition())
+                .and(description != null ? FILM.DESCRIPTION.eq(description) : noCondition())
+                .and(FILM.TITLE.eq(title))
+                .and(length != null ? FILM.LENGTH.eq(length) : noCondition())
                 .fetchOne(0, Integer.class);
     }
 }

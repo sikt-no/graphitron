@@ -1,14 +1,12 @@
 type Query {
-  student(id: ID!): Student
+  customer(id: ID!): Customer
 }
 
-type Student @table {
+type Customer @table {
   id: ID!
-  # Dette vil ikke gi kjørbar kode da den faktiske conditionen angår INSTITUSJON og ikke EIERINSTIUSJON,
-  # men det tester kodegrenen som sørger for å håndtere tilsvarende tilfeller.
-  institiusjon: [Eierinstitusjon!]! @splitQuery @reference(condition : "TEST_STUDENT_INSTITUSJON_EQUALS")
+  historicalAddresses: [Address!]! @splitQuery @reference(condition : "TEST_CUSTOMER_ADDRESS")
 }
 
-type Eierinstitusjon @table(name : "EIERINSTITUSJON") {
+type Address @table {
   id: ID!
 }

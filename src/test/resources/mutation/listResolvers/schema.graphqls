@@ -1,19 +1,19 @@
 type Mutation {
-  endrePersonListSimple(id: [ID!]!): [ID!]! @service(name: "TEST_PERSON")
-  endrePersonListInput(input: [EndreInput!]): [ID!]! @service(name: "TEST_PERSON") # Note: Two methods have the same name, but it resolves correctly based on number of arguments. Doesn't check the types though.
-  endrePersonList2Params(input: [EndreInput!]!, etternavn: [String]): [ID!]! @service(name: "TEST_PERSON")
-  endrePersonListResponse(id: [ID!]!): [EndreResponse!]! @service(name: "TEST_PERSON")
-  endrePersonListInputAndResponse(input: [EndreInput!]!): [EndreResponse!]! @service(name: "TEST_PERSON")
+  editCustomerListSimple(ids: [ID!]!): [ID!]! @service(name: "TEST_CUSTOMER")
+  editCustomerListInput(input: [EditInput!]): [ID!]! @service(name: "TEST_CUSTOMER") # Note: Two methods have the same name, but it resolves correctly based on number of arguments. Doesn't check the types though.
+  editCustomerList2Params(input: [EditInput!]!, lastNames: [String]): [ID!]! @service(name: "TEST_CUSTOMER")
+  editCustomerListResponse(ids: [ID!]!): [EditResponse!]! @service(name: "TEST_CUSTOMER")
+  editCustomerListInputAndResponse(input: [EditInput!]!): [EditResponse!]! @service(name: "TEST_CUSTOMER")
 }
 
-input EndreInput @record(table: "PERSON") {
+input EditInput @record(table: "CUSTOMER") {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
+  firstName: String! @column(name: "FIRST_NAME")
+  email: String
 }
 
-type EndreResponse {
+type EditResponse {
   id: ID!
-  fornavn: [String!]
-  privatEpost: String @column(name: "epostField")
+  firstName: [String!]
+  email: String @column(name: "secretEmail")
 }

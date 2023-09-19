@@ -1,78 +1,75 @@
 type Query {
-  personProfil(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
-  ): [PersonProfil]
+  films(ids: [ID!]! @column(name: "FILM_ID")): [Film]
 }
 
 """Type med flere enn 22 felter"""
-type PersonProfil @table(name: "PERSON") {
+type Film implements Node @table {
   id: ID!
-  fornavn: String!
-  fornavn2: String! @column(name: "FORNAVN")
-  fornavn3: String! @column(name: "FORNAVN")
-  fornavn4: String! @column(name: "FORNAVN")
-  fornavn5: String! @column(name: "FORNAVN")
-  fornavn6: String! @column(name: "FORNAVN")
-  fornavn7: String! @column(name: "FORNAVN")
-  fornavn8: String! @column(name: "FORNAVN")
-  fornavn9: String! @column(name: "FORNAVN")
-  fornavn10: String! @column(name: "FORNAVN")
-  fornavn11: String! @column(name: "FORNAVN")
-  fornavn12: String! @column(name: "FORNAVN")
-  fornavn13: String! @column(name: "FORNAVN")
-  fornavn14: String! @column(name: "FORNAVN")
-  fornavn15: String! @column(name: "FORNAVN")
-  fornavn16: String! @column(name: "FORNAVN")
-  fornavn17: String! @column(name: "FORNAVN")
-  fornavn18: String! @column(name: "FORNAVN")
-  fornavn19: String! @column(name: "FORNAVN")
-  fornavn20: String! @column(name: "FORNAVN")
-  etternavn: String!
-  institusjonsEpost: String @column(name: "EMAILADRESSE")
-  folkeregistrertAdresse: FolkeregistrertAdresse
-  fodselsdato: Date! @column(name: "DATO_FODT")
-  fodselsnummer: String! @column(name: "FODSELSNR")
-  email: Email
-  morsmaal: String @column(name: "SPRAKKODE_639_2", table: "SPRAK", key: "PERSON__MORSMAL__SPRAK__FK")
-  maalform: Maalform @column(name: "SPRAKKODE_639_2", table: "SPRAK", key: "PERSON__MALFORM__SPRAK__FK")
+  title: String!
+  title2: String! @column(name: "TITLE")
+  title3: String! @column(name: "TITLE")
+  title4: String! @column(name: "TITLE")
+  title5: String! @column(name: "TITLE")
+  title6: String! @column(name: "TITLE")
+  title7: String! @column(name: "TITLE")
+  title8: String! @column(name: "TITLE")
+  title9: String! @column(name: "TITLE")
+  title10: String! @column(name: "TITLE")
+  title11: String! @column(name: "TITLE")
+  title12: String! @column(name: "TITLE")
+  title13: String! @column(name: "TITLE")
+  title14: String! @column(name: "TITLE")
+  title15: String! @column(name: "TITLE")
+  title16: String! @column(name: "TITLE")
+  title17: String! @column(name: "TITLE")
+  title18: String! @column(name: "TITLE")
+  title19: String! @column(name: "TITLE")
+  title20: String! @column(name: "TITLE")
+  description: String!
+  length: Int!
+  duration1: Duration1
+  duration2: Duration2
+  rate: Int @column(name: "RENTAL_RATE")
+  languageName: String @column(name: "name", table: "LANGUAGE", key: "_filmLanguageIdFkey")
+  rating: Rating
 }
 
 """Referert type med færre enn 22 felter"""
-type FolkeregistrertAdresse {
-  co: String @column(name: "ADRLIN1_HJEMSTED")
-  gate: String @column(name: "ADRLIN2_HJEMSTED")
+type Duration1 {
+  duration: Int @column(name: "RENTAL_DURATION")
 }
 
 """Referert type med flere enn 22 felter"""
-type Email {
-  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost2: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost3: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost4: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost5: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost6: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost7: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost8: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost9: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost10: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost11: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost12: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost13: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost14: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost15: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost16: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost17: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost18: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost19: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost20: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost21: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost22: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost23: String @column(name: "EMAILADRESSE_PRIVAT")
+type Duration2 {
+  duration: Int @column(name: "RENTAL_DURATION")
+  duration2: Int @column(name: "RENTAL_DURATION")
+  duration3: Int @column(name: "RENTAL_DURATION")
+  duration4: Int @column(name: "RENTAL_DURATION")
+  duration5: Int @column(name: "RENTAL_DURATION")
+  duration6: Int @column(name: "RENTAL_DURATION")
+  duration7: Int @column(name: "RENTAL_DURATION")
+  duration8: Int @column(name: "RENTAL_DURATION")
+  duration9: Int @column(name: "RENTAL_DURATION")
+  duration10: Int @column(name: "RENTAL_DURATION")
+  duration11: Int @column(name: "RENTAL_DURATION")
+  duration12: Int @column(name: "RENTAL_DURATION")
+  duration13: Int @column(name: "RENTAL_DURATION")
+  duration14: Int @column(name: "RENTAL_DURATION")
+  duration15: Int @column(name: "RENTAL_DURATION")
+  duration16: Int @column(name: "RENTAL_DURATION")
+  duration17: Int @column(name: "RENTAL_DURATION")
+  duration18: Int @column(name: "RENTAL_DURATION")
+  duration19: Int @column(name: "RENTAL_DURATION")
+  duration20: Int @column(name: "RENTAL_DURATION")
+  duration21: Int @column(name: "RENTAL_DURATION")
+  duration22: Int @column(name: "RENTAL_DURATION")
+  duration23: Int @column(name: "RENTAL_DURATION")
+  duration24: Int @column(name: "RENTAL_DURATION")
+  duration25: Int @column(name: "RENTAL_DURATION")
 }
 
-enum Maalform {
-  NOB,
-  NNO,
-  ENG
+enum Rating {
+  G,
+  PG,
+  R,
 }

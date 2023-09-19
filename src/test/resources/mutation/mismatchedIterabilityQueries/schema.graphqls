@@ -1,7 +1,7 @@
-input EndreInput @record(table : "PERSON") {
+input EditInput @record(table : "CUSTOMER") {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  firstName: String @column(name : "FIRST_NAME")
+  email: String
 }
 
 type Response {
@@ -14,21 +14,20 @@ type ListedResponse {
 
 type Result {
   id: ID!
-  personProfil: PersonProfil @column(name : "persProf")
+  customer: Customer @column(name : "customField")
   post: Postadresse
 }
 
 type Mutation {
-  endrePersonWithProfil(input: EndreInput!): ListedResponse! @mutationType(typeName: UPDATE)
-  slettPersonWithProfil(input: EndreInput!): ListedResponse! @mutationType(typeName: DELETE)
-  endrePersonWithProfilIterable(input: [EndreInput]!): Response! @mutationType(typeName: UPDATE)
-  slettPersonWithProfilIterable(input: [EndreInput]!): Response! @mutationType(typeName: DELETE)
+  editCustomerWithCustomer(input: EditInput!): ListedResponse! @mutationType(typeName: UPDATE)
+  deleteCustomerWithCustomer(input: EditInput!): ListedResponse! @mutationType(typeName: DELETE)
+  editCustomerWithCustomerIterable(input: [EditInput]!): Response! @mutationType(typeName: UPDATE)
+  deleteCustomerWithCustomerIterable(input: [EditInput]!): Response! @mutationType(typeName: DELETE)
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: String
 }

@@ -1,13 +1,13 @@
-type Campusemne @table(name : "CAMPUS_EMNE") {
+type Customer @table {
   id: ID!
 }
 
-type Emne @table {
+type Address @table {
   id: ID!
-  campuser: [Campusemne!]! @splitQuery @reference(key : "CAMPUS_EMNE__HAR__EMNE__FK")
+  customers: [Customer!]! @splitQuery @reference(key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")
 }
 
 type Query {
-  emner(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER")): [Emne!]!
+  address(cityID: String! @column(name : "CITY_ID")): [Address!]!
 }
 

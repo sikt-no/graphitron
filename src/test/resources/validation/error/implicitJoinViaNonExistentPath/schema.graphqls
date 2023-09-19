@@ -1,18 +1,15 @@
 type Query {
-  student(id: ID!): StudentVedInstitusjon
+  customer(id: ID!): Customer
 }
 
-type StudentVedInstitusjon @table(name: "STUDENT") {
+type Customer @table {
   id: ID!
-  #there is no path from STUDENT to EMNE, via EKSAMENSTILPASNING
-  emner: [Emne!]! @splitQuery @reference(via: [ReferenceElement {table: "EKSAMENSTILPASNING"}])
+  #there is no path from CUSTOMER to FILM, via ADDRESS
+  films: [Film!]! @splitQuery @reference(via: [{table: "ADDRESS"}])
 }
 
-type Eksamenstilpasningssoknad @table(name: "EKSAMENSTILPASNING") {
-  id: ID!
-}
 
-type Emne @table {
+type Film @table {
   id: ID!
 }
 

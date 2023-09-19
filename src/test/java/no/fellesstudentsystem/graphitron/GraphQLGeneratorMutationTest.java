@@ -2,19 +2,19 @@ package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
-import no.fellesstudentsystem.graphitron.enums.FileTest;
-import no.fellesstudentsystem.graphitron.enums.KjonnTest;
+import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphitron.exceptions.TestException;
 import no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.services.TestPermisjonService;
-import no.fellesstudentsystem.graphitron.services.TestPersonService;
+import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -23,16 +23,16 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
 
     private final Map<String, Class<?>>
             exceptions = Map.of("EXCEPTION_TEST", TestException.class, "EXCEPTION_TEST_CAUSE", TestExceptionCause.class),
-            services = Map.of("TEST_PERSON", TestPersonService.class, "TEST_PERMISJON", TestPermisjonService.class),
-            enums = Map.of("FILE_TEST", FileTest.class, "KJONN_TEST", KjonnTest.class);
+            services = Map.of("TEST_CUSTOMER", TestCustomerService.class),
+            enums = Map.of("RATING_TEST", RatingTest.class);
 
     public GraphQLGeneratorMutationTest() {
         super(SRC_TEST_RESOURCES_PATH);
     }
 
     @Override
-    protected Map<String, List<String>> generateFiles(String schemaParentFolder, boolean warnDirectives) throws IOException {
-        var processedSchema = getProcessedSchema(schemaParentFolder, warnDirectives);
+    protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
+        var processedSchema = getProcessedSchema(schemaParentFolder, false);
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema)
@@ -77,11 +77,11 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     }
 
     @Test
-    void generate_mutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
+    void   generate_mutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedTypes");
     }
 
-    @Test
+    @Test //TODO fjerne denne? Det er vel analogt case med det som blir generert til EditCustomerInputAndResponseGeneratedResolver. Mulig dette caset ga mer mening mot kjerneAPI
     void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mapIDsNotInDB");
     }
@@ -151,7 +151,7 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         assertThatThrownBy(() -> generateFiles("error/serviceNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
-                        "Requested to generate a method for 'endrePersonSimple' that calls service 'SERVICE_NOT_FOUND', " +
+                        "Requested to generate a method for 'editCustomerSimple' that calls service 'SERVICE_NOT_FOUND', " +
                                 "but no such service was found."
                 );
     }
@@ -161,8 +161,8 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
-                        "Service 'no.fellesstudentsystem.graphitron.services.TestPersonService'" +
-                                " contains no method with the name 'endrePersonSimple'" +
+                        "Service 'no.fellesstudentsystem.graphitron.services.TestCustomerService'" +
+                                " contains no method with the name 'editCustomerSimple'" +
                                 " and 2 parameter(s), which is required to generate the resolver."
                 );
     }
@@ -171,20 +171,20 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     void generate_whenServiceAndMutationTypeNotSet_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceAndMutationTypeNotSet"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Mutation 'endrePerson' is set to generate, but has neither a service nor mutation type set.");
+                .hasMessage("Mutation 'editCustomer' is set to generate, but has neither a service nor mutation type set.");
     }
 
     @Test
     void generate_whenMutationTypeHasNoID_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/mutationTypeWithoutID"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Could not find a suitable ID to return for 'endrePersonWithoutID'.");
+                .hasMessage("Could not find a suitable ID to return for 'editCustomerWithoutID'.");
     }
 
     @Test
     void generate_whenMutationTypeHasNoRecord_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/mutationTypeWithoutRecord"))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("Must have at least one record reference when generating resolvers with queries. Mutation 'endrePerson' has no records attached.");
+                .hasMessage("Must have at least one record reference when generating resolvers with queries. Mutation 'editCustomer' has no records attached.");
     }
 }

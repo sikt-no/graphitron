@@ -5,46 +5,50 @@ type PageInfo {
   endCursor: String
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Film implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  personkode: Int
+  title: String!
+  description: String
 }
 
 type Query {
-  personTwoArguments(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), personlopenummer: [Int!] @column(name : "PERSONLOPENR"), first: Int = 100, after: String): QueryPerson2Connection
-  personFiveArguments(
-    eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"),
-    personlopenummer: [Int!] @column(name : "PERSONLOPENR"),
-    fornavn: String,
-    "Optional"
-    etternavn: String!,
-    "Mandatory"
-    personkode: Int,
+  filmTwoArguments(
+    releaseYear: String! @column(name : "RELEASE_YEAR"),
+    languageID: [Int!] @column(name : "LANGUAGE_ID"),
     first: Int = 100,
     after: String
-  ): QueryPerson5Connection!
+  ): QueryFilm2Connection
+  filmFiveArguments(
+    releaseYear: String! @column(name : "RELEASE_YEAR"),
+    languageID: [Int!] @column(name : "LANGUAGE_ID"),
+    "Optional"
+    description: String,
+    "Mandatory"
+    title: String!,
+    length: Int,
+    first: Int = 100,
+    after: String
+  ): QueryFilm5Connection!
 }
 
-type QueryPerson2Connection {
-  edges: [QueryPerson2ConnectionEdge]
+type QueryFilm2Connection {
+  edges: [QueryFilm2ConnectionEdge]
   pageInfo: PageInfo
-  nodes: [PersonProfil!]!
+  nodes: [Film!]!
 }
 
-type QueryPerson2ConnectionEdge {
+type QueryFilm2ConnectionEdge {
   cursor: String
-  node: PersonProfil
+  node: Film
 }
 
-type QueryPerson5Connection {
-  edges: [QueryPerson5ConnectionEdge]
+type QueryFilm5Connection {
+  edges: [QueryFilm5ConnectionEdge]
   pageInfo: PageInfo
-  nodes: [PersonProfil!]!
+  nodes: [Film!]!
 }
 
-type QueryPerson5ConnectionEdge {
+type QueryFilm5ConnectionEdge {
   cursor: String
-  node: PersonProfil
+  node: Film
 }

@@ -1,13 +1,13 @@
 type Mutation {
-  endrePermisjon(in: EndreInput!): EndreResponse! @service(name: "TEST_PERMISJON")
+  editCustomerAddress(in: EditAddressInput!): EditAddressResponse! @service(name: "TEST_CUSTOMER")
 }
 
-input EndreInput @record(table: "PERMISJON") {
+input EditAddressInput @record(table: "CUSTOMER") {
   id: ID!
-  studentId: ID!
+  addressId: ID! @column(name: "ADDRESS_ID")
 }
 
-type EndreResponse {
+type EditAddressResponse {
   id: ID!
-  studentId: ID!
+  addressId: ID!
 }

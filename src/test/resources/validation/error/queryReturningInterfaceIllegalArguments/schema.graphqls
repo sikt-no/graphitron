@@ -1,8 +1,8 @@
-type Kull implements Node @table {
+type Film implements Node @table {
   id: ID!
-  navn: String! @column(name : "STUDIEKULLNAVN")
+  title: String!
 }
 
 type Query {
-  nodes(id: ID!, navn: String): Node
+  nodes(id: ID!, title: String): Node
 }

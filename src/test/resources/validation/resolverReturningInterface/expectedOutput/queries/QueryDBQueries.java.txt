@@ -1,32 +1,32 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Address;
+import fake.graphql.example.package.model.Customer;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.Kull;
-import fake.graphql.example.package.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<ProgramStudierett> programStudierettForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public List<Customer> customerForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                STUDIERETT.getId().as("id"),
+                                CUSTOMER.getId().as("id"),
                                 row(
-                                        STUDIERETT.kull().getId().as("id")
-                                ).mapping(nullOnAllNull(Kull::new)).as("kull")
-                        ).mapping(nullOnAllNull(ProgramStudierett::new)).as("programStudierett")
+                                        CUSTOMER.address().getId().as("id")
+                                ).mapping(nullOnAllNull(Address::new)).as("address")
+                        ).mapping(nullOnAllNull(Customer::new)).as("customer")
                 )
-                .from(STUDIERETT)
-                .where(STUDIERETT.ID.eq(id))
-                .orderBy(STUDIERETT.getIdFields())
-                .fetch(0, ProgramStudierett.class);
+                .from(CUSTOMER)
+                .where(CUSTOMER.ID.eq(id))
+                .orderBy(CUSTOMER.getIdFields())
+                .fetch(0, Customer.class);
     }
 }

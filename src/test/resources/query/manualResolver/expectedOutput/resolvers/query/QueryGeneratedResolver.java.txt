@@ -1,18 +1,17 @@
-package fake.code.example.package.resolvers.query;
+package fake.code.generated.resolvers.query;
 
+import fake.code.generated.queries.query.QueryDBQueries;
+import fake.graphql.example.package.api.QueryResolver;
+import fake.graphql.example.package.model.Customer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
-import java.lang.Integer;
 import java.lang.Override;
 import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import fake.code.example.package.queries.query.QueryDBQueries;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -23,11 +22,11 @@ public class QueryGeneratedResolver implements QueryResolver {
     private QueryDBQueries queryDBQueries;
 
     @Override
-    public CompletableFuture<List<PersonProfil>> personProfil(String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<List<Customer>> customers(List<String> storeIds,
+            DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.personProfilForQuery(ctx, eierInstitusjonsnummer, personlopenummer, selectionSet);
+        var dbResult = queryDBQueries.customersForQuery(ctx, storeIds, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

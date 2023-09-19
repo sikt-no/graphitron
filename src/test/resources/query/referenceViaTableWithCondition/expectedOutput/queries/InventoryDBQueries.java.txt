@@ -1,0 +1,38 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import fake.graphql.example.package.model.Actor;
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class InventoryDBQueries {
+    public Map<String, List<Actor>> mainActorsForInventory(DSLContext ctx,
+            Set<String> inventoryIder, SelectionSet select) {
+        var film_mainactors = FILM_ACTOR.as("film_mainactors");
+        var inventory_film = INVENTORY.film().as("inventory_film");
+        var film_mainactors_actor = film_mainactors.actor().as("film_mainactors_actor");
+        return ctx
+                .select(
+                        INVENTORY.getId(),
+                        row(
+                                film_mainactors_actor.getId().as("id"),
+                                select.optional("lastName", film_mainactors_actor.LAST_NAME).as("lastName")
+                        ).mapping(nullOnAllNull(Actor::new)).as("mainActors")
+                )
+                .from(INVENTORY)
+                .join(film_mainactors)
+                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.mainActor(inventory_film, film_mainactors))
+                .where(INVENTORY.hasIds(inventoryIder))
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

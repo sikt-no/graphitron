@@ -1,0 +1,33 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import fake.graphql.example.package.model.Address;
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class CustomerDBQueries {
+    public Map<String, List<Address>> historicalAddressesForCustomer(DSLContext ctx,
+            Set<String> customerIder, SelectionSet select) {
+        return ctx
+                .select(
+                        CUSTOMER.getId(),
+                        row(
+                                CUSTOMER.address().getId().as("id")
+                        ).mapping(nullOnAllNull(Address::new)).as("historicalAddresses")
+                )
+                .from(CUSTOMER)
+                .where(CUSTOMER.hasIds(customerIder))
+                .and(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddressJoin(CUSTOMER, ADDRESS))
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

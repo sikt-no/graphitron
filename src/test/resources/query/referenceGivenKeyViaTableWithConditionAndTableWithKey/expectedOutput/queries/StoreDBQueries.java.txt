@@ -1,0 +1,39 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import fake.graphql.example.package.model.City;
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class StoreDBQueries {
+    public Map<String, City> cityOfMostValuableCustomerForStore(DSLContext ctx,
+            Set<String> storeIder, SelectionSet select) {
+        var store_cityofmostvaluablecustomer = CUSTOMER.as("store_cityofmostvaluablecustomer");
+        var address_cityofmostvaluablecustomer = ADDRESS__ADDRESS_CITY_ID_FKEY.as("address_cityofmostvaluablecustomer");
+        var store_cityofmostvaluablecustomer_address = store_cityofmostvaluablecustomer.address().as("store_cityofmostvaluablecustomer_address");
+        return ctx
+                .select(
+                        STORE.getId(),
+                        row(
+                                address_cityofmostvaluablecustomer.getId().as("id"),
+                                select.optional("name", address_cityofmostvaluablecustomer.CITY).as("name")
+                        ).mapping(nullOnAllNull(City::new)).as("cityOfMostValuableCustomer")
+                )
+                .from(STORE)
+                .join(store_cityofmostvaluablecustomer)
+                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.mostValuableCustomer(STORE, store_cityofmostvaluablecustomer))
+                .join(address_cityofmostvaluablecustomer)
+                .onKey()
+                .where(STORE.hasIds(storeIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

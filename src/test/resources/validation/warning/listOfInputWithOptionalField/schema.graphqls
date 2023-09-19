@@ -1,28 +1,25 @@
 type Query {
-  studenter(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    first: Int = 100,
-    after: String
-  ): QueryStudentVedInstitusjonConnection @connection(for: "StudentVedInstitusjon")
+  inventory(id: ID!): Inventory
 }
 
-type StudentVedInstitusjon @table(name: "STUDENT") {
+type Inventory @table {
   id: ID!
-  registreringerForInputWithListField(inputWithOptionalField: [InputWithOptionalField!]): [Semesterregistrering!]! @splitQuery
+  filmsForInputWithListField(inputWithOptionalField: [InputWithOptionalField!]): [Film!]! @splitQuery
+}
+
+type Film @table {
+  id: ID!
 }
 
 input InputWithOptionalField {
-  maned: Int @column(name: "MANEDNR_START", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK") #Optional
-  termintype: Termintype @column(name: "TERMINKODE", table: "TERMIN", key: "SEMESTERREGISTRERING__HAR__TERMIN__FK") #Optional
+  title: String #Optional
+  rating: Termintype #Optional
 }
 
-type Semesterregistrering @table {
-  id: ID!
-  registrert: Boolean! @column(name: "STATUS_REG_OK")
-}
-
-enum Termintype {
-  VAR @mapEnum(name: "VÅR"),
-  SOM @mapEnum(name: "SOM"),
-  HOST @mapEnum(name: "HØST")
+enum Rating {
+  G @mapEnum(name: "G"),
+  PG @mapEnum(name: "PG"),
+  PG_13 @mapEnum(name: "PG-13"),
+  R @mapEnum(name: "R"),
+  NC_17 @mapEnum(name: "NC-17")
 }

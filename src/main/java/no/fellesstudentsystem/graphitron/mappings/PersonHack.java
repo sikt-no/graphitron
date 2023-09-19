@@ -23,7 +23,7 @@ public class PersonHack {
      * @return The same list of fieldNames, but each PERSONLOPENR is replaced by PERSONNR and FODSELSDATO.
      */
     public static List<String> asHackedIDFields(Collection<String> fieldNames) {
-        return fieldNames.stream().flatMap(PersonHack::convert).collect(Collectors.toList());
+        return fieldNames.stream().flatMap(PersonHack::convert).map(String::toUpperCase).collect(Collectors.toList());
     }
 
     /**

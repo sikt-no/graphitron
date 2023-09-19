@@ -1,19 +1,19 @@
-package fake.code.example.package.resolvers.query;
+package fake.code.generated.resolvers.query;
 
+import fake.code.generated.queries.query.QueryDBQueries;
+import fake.graphql.example.package.api.QueryResolver;
+import fake.graphql.example.package.model.Film;
+import fake.graphql.example.package.model.FilmInput;
+import fake.graphql.example.package.model.Rating;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
-import java.lang.Integer;
 import java.lang.Override;
+import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.Termin;
-import fake.graphql.example.package.model.TerminInput;
-import fake.graphql.example.package.model.Termintype;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import fake.code.example.package.queries.query.QueryDBQueries;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -24,74 +24,74 @@ public class QueryGeneratedResolver implements QueryResolver {
     private QueryDBQueries queryDBQueries;
 
     @Override
-    public CompletableFuture<List<Termin>> paramCondition(Termintype termintype, Integer arstall,
+    public CompletableFuture<List<Film>> paramCondition(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.paramConditionForQuery(ctx, termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.paramConditionForQuery(ctx, rating, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<List<Termin>> paramConditionOverride(Termintype termintype,
-            Integer arstall, DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.paramConditionOverrideForQuery(ctx, termintype, arstall, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
-    }
-
-    @Override
-    public CompletableFuture<List<Termin>> fieldCondition(Termintype termintype, Integer arstall,
+    public CompletableFuture<List<Film>> paramConditionOverride(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldConditionForQuery(ctx, termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.paramConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<List<Termin>> fieldConditionOverride(Termintype termintype,
-            Integer arstall, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<List<Film>> fieldCondition(Rating rating, String releaseYear,
+            DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(ctx, termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldConditionForQuery(ctx, rating, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<List<Termin>> fieldAndParamCondition(Termintype termintype,
-            Integer arstall, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<List<Film>> fieldConditionOverride(Rating rating, String releaseYear,
+            DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(ctx, termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<List<Termin>> fieldAndParamConditionOverride(Termintype termintype,
-            Integer arstall, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<List<Film>> fieldAndParamCondition(Rating rating, String releaseYear,
+            DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(ctx, rating, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<List<Termin>> fieldAndParamConditionOverrideBoth(Termintype termintype,
-            Integer arstall, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<List<Film>> fieldAndParamConditionOverride(Rating rating,
+            String releaseYear, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, termintype, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<List<Termin>> fieldInputCondition(TerminInput termintypeIn,
-            Integer arstall, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<List<Film>> fieldAndParamConditionOverrideBoth(Rating rating,
+            String releaseYear, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.fieldInputConditionForQuery(ctx, termintypeIn, arstall, selectionSet);
+        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, rating, releaseYear, selectionSet);
+        return CompletableFuture.completedFuture(dbResult);
+    }
+
+    @Override
+    public CompletableFuture<List<Film>> fieldInputCondition(FilmInput ratingIn, String releaseYear,
+            DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = queryDBQueries.fieldInputConditionForQuery(ctx, ratingIn, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 }

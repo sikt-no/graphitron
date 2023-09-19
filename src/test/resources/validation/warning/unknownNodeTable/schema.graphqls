@@ -1,10 +1,7 @@
 type Query {
-    rom(bygningskode: String!): Rom
+    actor(id: ID!): Actor
 }
 
-type Rom @table(name: "ROMSKIP") {
+type Actor @table(name: "TRACTOR") {
     id: ID!
-    kode: ID!
-    navn: String!
-    bygningskode: String!
 }

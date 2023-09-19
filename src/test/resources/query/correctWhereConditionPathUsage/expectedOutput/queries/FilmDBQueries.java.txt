@@ -1,0 +1,55 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import fake.graphql.example.package.model.In;
+import fake.graphql.example.package.model.Language;
+import java.lang.String;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class FilmDBQueries {
+    public Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIder,
+            List<String> s, SelectionSet select) {
+        var film_languages = LANGUAGE.as("film_languages");
+        return ctx
+                .select(
+                        FILM.getId(),
+                        row(
+                                film_languages.getId().as("id")
+                        ).mapping(nullOnAllNull(Language::new)).as("languages")
+                )
+                .from(FILM)
+                .join(film_languages)
+                .onKey(FILM__FILM_LANGUAGE_ID_FKEY,)
+                .where(FILM.hasIds(filmIder))
+                .and(s != null && s.size() > 0 ? film_languages.NAME.in(s) : noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIder,
+            In s, SelectionSet select) {
+        var film_languagesinput = LANGUAGE.as("film_languagesinput");
+        return ctx
+                .select(
+                        FILM.getId(),
+                        row(
+                                film_languagesinput.getId().as("id")
+                        ).mapping(nullOnAllNull(Language::new)).as("languagesInput")
+                )
+                .from(FILM)
+                .join(film_languagesinput)
+                .onKey(FILM__FILM_LANGUAGE_ID_FKEY,)
+                .where(FILM.hasIds(filmIder))
+                .and(s != null && s.getName() != null && s.getName().size() > 0 ? film_languagesinput.NAME.in(s.getName()) : noCondition())
+                .fetchGroups(Record2::value1, Record2::value2);
+    }
+}

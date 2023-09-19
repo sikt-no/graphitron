@@ -1,88 +1,89 @@
+
+# Skjema for å teste at påkrevde felter IKKE kan bli null. "nullOnAllNull" legges ikke på i mapping av
+# påkrevde typer som inneholder ikke-påkrevde felter. I mappingen på nivået utenfor, legges det på en forsterket
+# nullOnAllNull-mapping som i tillegg til null også behandler "tomme objekter" som null.
+
 type Query {
-  programStudierett(
-    id: String!
-  ): ProgramStudierett
+  inventory(
+    id: String! @column(name: "INVENTORY_ID")
+  ): Inventory
 }
 
-type ProgramStudierett @table(name: "STUDIERETT") {
+type Inventory @table {
   id: ID!
-  studieretning: Studieretning @splitQuery
-  personProfil: PersonProfil @splitQuery
+  store: Store @splitQuery
+  film: Film @splitQuery
 }
 
-type Studieretning @table {
+type Store @table {
   id: ID!
-  navn: StudieretningnavnWithOptional!   #required, with optional "sub fields"
-  navnOpt: StudieretningnavnWithOptional #optional, with optional "sub fields"
-  navnReq: StudieretningnavnAllRequired! #required, with all "sub fields required"
+  fields: StoreFieldsWithOptional!   #required, with optional "sub fields"
+  navnOpt: StoreFieldsWithOptional #optional, with optional "sub fields"
+  navnReq: StoreFieldsAllRequired! #required, with all "sub fields required"
 }
 
-type StudieretningnavnWithOptional {
-  eng: String @column(name: "STUDIERETNINGNAVN_ENGELSK")
-  nob: String! @column(name: "STUDIERETNINGNAVN_BOKMAL")
-  nno: String @column(name: "STUDIERETNINGNAVN_NYNORSK")
-  nob2: String! @column(name: "STUDIERETNINGNAVN_BOKMAL")
+type StoreFieldsWithOptional {
+  filmId: Int! @column(name: "FILM_ID")
+  lastUpdate: DateTime @column(name: "LAST_UPDATE")
 }
 
-type StudieretningnavnAllRequired {
-  nob: String! @column(name: "STUDIERETNINGNAVN_BOKMAL")
-  nob2: String! @column(name: "STUDIERETNINGNAVN_BOKMAL")
+type StoreFieldsAllRequired {
+  filmId: Int! @column(name: "FILM_ID")
+  addressId: Int! @column(name: "ADDRESS_ID")
 }
-
-#### case for more than 22 fields:
 
 """Type med flere enn 22 felter"""
-type PersonProfil @table(name: "PERSON") {
+type Film @table {
   id: ID!
-  fornavn: String!
-  fornavn2: String! @column(name: "FORNAVN")
-  fornavn3: String! @column(name: "FORNAVN")
-  fornavn4: String! @column(name: "FORNAVN")
-  fornavn5: String! @column(name: "FORNAVN")
-  fornavn6: String! @column(name: "FORNAVN")
-  fornavn7: String! @column(name: "FORNAVN")
-  fornavn8: String! @column(name: "FORNAVN")
-  fornavn9: String! @column(name: "FORNAVN")
-  fornavn10: String! @column(name: "FORNAVN")
-  fornavn11: String! @column(name: "FORNAVN")
-  fornavn12: String! @column(name: "FORNAVN")
-  fornavn13: String! @column(name: "FORNAVN")
-  fornavn14: String! @column(name: "FORNAVN")
-  fornavn15: String! @column(name: "FORNAVN")
-  fornavn16: String! @column(name: "FORNAVN")
-  fornavn17: String! @column(name: "FORNAVN")
-  fornavn18: String! @column(name: "FORNAVN")
-  fornavn19: String! @column(name: "FORNAVN")
-  fornavn20: String! @column(name: "FORNAVN")
-  fornavn21: String! @column(name: "FORNAVN")
-  fornavn22: String! @column(name: "FORNAVN")
-  fornavn23: String! @column(name: "FORNAVN")
-  email: Email!  #required, with optional "sub fields"
+  title: String!
+  title2: String! @column(name: "TITLE")
+  title3: String! @column(name: "TITLE")
+  title4: String! @column(name: "TITLE")
+  title5: String! @column(name: "TITLE")
+  title6: String! @column(name: "TITLE")
+  title7: String! @column(name: "TITLE")
+  title8: String! @column(name: "TITLE")
+  title9: String! @column(name: "TITLE")
+  title10: String! @column(name: "TITLE")
+  title11: String! @column(name: "TITLE")
+  title12: String! @column(name: "TITLE")
+  title13: String! @column(name: "TITLE")
+  title14: String! @column(name: "TITLE")
+  title15: String! @column(name: "TITLE")
+  title16: String! @column(name: "TITLE")
+  title17: String! @column(name: "TITLE")
+  title18: String! @column(name: "TITLE")
+  title19: String! @column(name: "TITLE")
+  title20: String! @column(name: "TITLE")
+  title21: String! @column(name: "TITLE")
+  title22: String! @column(name: "TITLE")
+  title23: String! @column(name: "TITLE")
+  description: Description! #required, with optional "sub fields"
 }
 
 """Referert, påkrevd type med flere enn 22 felter"""
-type Email {
-  privatEpost: String! @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost2: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost3: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost4: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost5: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost6: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost7: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost8: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost9: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost10: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost11: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost12: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost13: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost14: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost15: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost16: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost17: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost18: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost19: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost20: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost21: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost22: String @column(name: "EMAILADRESSE_PRIVAT")
-  privatEpost23: String @column(name: "EMAILADRESSE_PRIVAT")
+type Description {
+  description: String!
+  description2: String @column(name: "DESCRIPTION")
+  description3: String @column(name: "DESCRIPTION")
+  description4: String @column(name: "DESCRIPTION")
+  description5: String @column(name: "DESCRIPTION")
+  description6: String @column(name: "DESCRIPTION")
+  description7: String @column(name: "DESCRIPTION")
+  description8: String @column(name: "DESCRIPTION")
+  description9: String @column(name: "DESCRIPTION")
+  description10: String @column(name: "DESCRIPTION")
+  description11: String @column(name: "DESCRIPTION")
+  description12: String @column(name: "DESCRIPTION")
+  description13: String @column(name: "DESCRIPTION")
+  description14: String @column(name: "DESCRIPTION")
+  description15: String @column(name: "DESCRIPTION")
+  description16: String @column(name: "DESCRIPTION")
+  description17: String @column(name: "DESCRIPTION")
+  description18: String @column(name: "DESCRIPTION")
+  description19: String @column(name: "DESCRIPTION")
+  description20: String @column(name: "DESCRIPTION")
+  description21: String @column(name: "DESCRIPTION")
+  description22: String @column(name: "DESCRIPTION")
+  description23: String @column(name: "DESCRIPTION")
 }

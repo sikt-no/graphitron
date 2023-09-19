@@ -1,11 +1,11 @@
-input BildeInput @record(table: "PERSONBILDE") {
+input FilmInput1 @record(table: "FILM") {
   id: ID!
-  filtype: StudentbildeFiltype! @column(name: "FILEXTENSION")
+  rating: RatingNoConverter!
 }
 
-input PersonInput @record(table: "PERSON") {
+input FilmInput2 @record(table: "FILM") {
   id: ID!
-  kjonn: Kjonn!
+  rating: Rating!
 }
 
 type Response {
@@ -13,16 +13,16 @@ type Response {
 }
 
 type ListedResponse {
-  ider: [ID!]!
+  ids: [ID!]!
 }
 
 type Mutation {
-  endreStudentBilde(input: BildeInput!): Response! @mutationType(typeName: UPDATE)
-  endreStudentBildeIterable(input: [BildeInput!]!): ListedResponse! @mutationType(typeName: UPDATE)
-  endrePerson(input: PersonInput!): Response! @mutationType(typeName: UPDATE)
-  endrePersonIterable(input: [PersonInput!]!): ListedResponse! @mutationType(typeName: UPDATE)
+  editFilmRatingNoConverter(input: FilmInput1!): Response! @mutationType(typeName: UPDATE)
+  editFilmRatingNoConverterIterable(input: [FilmInput1!]!): ListedResponse! @mutationType(typeName: UPDATE)
+  editFilmRatingWithConverter(input: FilmInput2!): Response! @mutationType(typeName: UPDATE)
+  editFilmRatingWithConverterIterable(input: [FilmInput2!]!): ListedResponse! @mutationType(typeName: UPDATE)
 }
 
-enum StudentbildeFiltype { JPG, PNG } # No jOOQ converter.
+enum RatingNoConverter { G, PG, R, } # No jOOQ converter.
 
-enum Kjonn @mapEnum(name: "KJONN_TEST") { MANN, KVINNE } # With jOOQ converter.
+enum Rating @mapEnum(name: "RATING_TEST") { G, PG, R, } # With jOOQ converter.

@@ -6,6 +6,11 @@
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
+        <db.url>jdbc:tc:postgresql:13:///sakila?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${basedir}/src/test/resources/database/postgres-sakila-schema.sql</db.url>
+        <db.username>postgres</db.username>
+        <db.password>postgres</db.password>
+        <!-- Change this version number if the generated jooq classes needs to be regenerated -->
+        <testdata.schema.version>1.01</testdata.schema.version>
     </properties>
     <artifactId>graphitron-maven-plugin</artifactId>
     <packaging>maven-plugin</packaging>
@@ -19,12 +24,6 @@
     </parent>
 
     <dependencies>
-        <dependency> <!--Can only be removed after a complete DB separation.-->
-            <groupId>no.fellesstudentsystem</groupId>
-            <artifactId>kjerneapi</artifactId>
-            <version>${revision}${changelist}</version>
-        </dependency>
-
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
@@ -49,9 +48,14 @@
             <groupId>com.squareup</groupId>
             <artifactId>javapoet</artifactId>
         </dependency>
+
         <dependency>
             <groupId>org.jooq.pro-java-11</groupId>
             <artifactId>jooq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jooq.pro-java-11</groupId>
+            <artifactId>jooq-codegen</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jetbrains</groupId>
@@ -75,6 +79,19 @@
         <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>1.19.0</version>
+            <!-- denne transitive dependencyen drar inn en eldre versjon av hamcrest som potensielt gir trøbbel for testene i fsapi-rest -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.hamcrest</groupId>
+                    <artifactId>hamcrest-core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -110,6 +127,46 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.jooq.pro-java-11</groupId>
+                <artifactId>jooq-codegen-maven</artifactId>
+                <executions>
+                    <execution>
+                        <id>jooq-test-code-generator</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+
+                        <configuration>
+                            <jdbc>
+                                <driver>org.testcontainers.jdbc.ContainerDatabaseDriver</driver>
+                                <url>${db.url}</url>
+                                <user>${db.username}</user>
+                                <password>${db.password}</password>
+                            </jdbc>
+                            <generator>
+                                <name>no.sikt.graphitron.jooq.IdBasedGenerator</name>
+                                <database>
+                                    <inputSchema>public</inputSchema>
+                                    <schemaVersionProvider>${testdata.schema.version}</schemaVersionProvider>
+                                </database>
+                                <target>
+                                    <packageName>no.sikt.graphitron.jooq.generated.testdata</packageName>
+                                    <directory>src/test/java</directory>
+                                </target>
+                            </generator>
+                        </configuration>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.postgresql</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>42.6.0</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
         </plugins>
 
         <resources>
@@ -118,5 +175,4 @@
             </resource>
         </resources>
     </build>
-
 </project>

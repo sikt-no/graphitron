@@ -5,40 +5,40 @@ type PageInfo {
   endCursor: String
 }
 
-type Pass implements Node @table(name : "PASS") {
+type Inventory implements Node @table {
   id: ID!
-  passnummer: String! @column(name : "NUMMER")
+  storeId: String! @column(name : "STORE_ID")
 }
 
-type PassConnection {
-  edges: [PassConnectionEdge]
+type InventoryConnection {
+  edges: [InventoryConnectionEdge]
   pageInfo: PageInfo
-  nodes: [Pass!]!
+  nodes: [Inventory!]!
 }
 
-type PassConnectionEdge {
+type InventoryConnectionEdge {
   cursor: String
-  node: Pass
+  node: Inventory
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Film implements Node @table {
   id: ID!
-  pass(first: Int = 10, after: String): PassConnection @splitQuery
-  fornavn: String!
+  inventory(first: Int = 10, after: String): InventoryConnection @splitQuery #pagination on resolver
+  title: String!
 }
 
-type PersonProfilConnection {
-  edges: [PersonProfilConnectionEdge]
+type FilmConnection {
+  edges: [FilmConnectionEdge]
   pageInfo: PageInfo
-  nodes: [PersonProfil!]!
+  nodes: [Film!]!
 }
 
-type PersonProfilConnectionEdge {
+type FilmConnectionEdge {
   cursor: String
-  node: PersonProfil
+  node: Film
 }
 
 type Query {
-  person(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): PersonProfilConnection
-  person2(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER")): [PersonProfil]
+  film(releaseYear: String! @column(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
+  film2(releaseYear: String! @column(name : "RELEASE_YEAR")): [Film]
 }

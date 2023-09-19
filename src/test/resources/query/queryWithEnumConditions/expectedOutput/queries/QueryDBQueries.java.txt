@@ -1,151 +1,151 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
-import java.lang.Integer;
+import fake.graphql.example.package.model.Film;
+import fake.graphql.example.package.model.FilmInput;
+import fake.graphql.example.package.model.Rating;
+import java.lang.String;
 import java.util.List;
 import java.util.Map;
-import fake.graphql.example.package.model.Termin;
-import fake.graphql.example.package.model.TerminInput;
-import fake.graphql.example.package.model.Termintype;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<Termin> paramConditionForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
+    public List<Film> paramConditionForQuery(DSLContext ctx, Rating rating, String releaseYear,
             SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("paramCondition")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("paramCondition")
                 )
-                .from(TERMIN)
-                .where(TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintype))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
-                .and(TERMIN.ARSTALL.eq(arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(rating))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .and(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public List<Termin> paramConditionOverrideForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
+    public List<Film> paramConditionOverrideForQuery(DSLContext ctx, Rating rating,
+            String releaseYear, SelectionSet select) {
+        return ctx
+                .select(
+                        row(
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("paramConditionOverride")
+                )
+                .from(FILM)
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .and(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
+    }
+
+    public List<Film> fieldConditionForQuery(DSLContext ctx, Rating rating, String releaseYear,
             SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("paramConditionOverride")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("fieldCondition")
                 )
-                .from(TERMIN)
-                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
-                .and(TERMIN.ARSTALL.eq(arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(rating))
+                .and(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public List<Termin> fieldConditionForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
-            SelectionSet select) {
+    public List<Film> fieldConditionOverrideForQuery(DSLContext ctx, Rating rating,
+            String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("fieldCondition")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("fieldConditionOverride")
                 )
-                .from(TERMIN)
-                .where(TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintype))
-                .and(TERMIN.ARSTALL.eq(arstall))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public List<Termin> fieldConditionOverrideForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
-            SelectionSet select) {
+    public List<Film> fieldAndParamConditionForQuery(DSLContext ctx, Rating rating,
+            String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("fieldConditionOverride")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("fieldAndParamCondition")
                 )
-                .from(TERMIN)
-                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(rating))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .and(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public List<Termin> fieldAndParamConditionForQuery(DSLContext ctx, Termintype termintype, Integer arstall,
-            SelectionSet select) {
+    public List<Film> fieldAndParamConditionOverrideForQuery(DSLContext ctx, Rating rating,
+            String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("fieldAndParamCondition")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("fieldAndParamConditionOverride")
                 )
-                .from(TERMIN)
-                .where(TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintype))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
-                .and(TERMIN.ARSTALL.eq(arstall))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public List<Termin> fieldAndParamConditionOverrideForQuery(DSLContext ctx, Termintype termintype,
-            Integer arstall, SelectionSet select) {
+    public List<Film> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, Rating rating,
+            String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("fieldAndParamConditionOverride")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("fieldAndParamConditionOverrideBoth")
                 )
-                .from(TERMIN)
-                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public List<Termin> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, Termintype termintype,
-            Integer arstall, SelectionSet select) {
+    public List<Film> fieldInputConditionForQuery(DSLContext ctx, FilmInput ratingIn,
+            String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("fieldAndParamConditionOverrideBoth")
+                                FILM.getId().as("id"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                        ).mapping(nullOnAllNull(Film::new)).as("fieldInputCondition")
                 )
-                .from(TERMIN)
-                .where(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminer(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null)))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminAll(TERMIN, termintype == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintype, null), arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
-    }
-
-    public List<Termin> fieldInputConditionForQuery(DSLContext ctx, TerminInput termintypeIn, Integer arstall,
-            SelectionSet select) {
-        return ctx
-                .select(
-                        row(
-                                TERMIN.getId().as("id"),
-                                select.optional("termintype", TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null))).as("termintype")
-                        ).mapping(nullOnAllNull(Termin::new)).as("fieldInputCondition")
-                )
-                .from(TERMIN)
-                .where(termintypeIn != null ? TERMIN.ARSTALL.eq(termintypeIn.getArstall()) : noCondition())
-                .and(termintypeIn != null ? TERMIN.TERMINKODE.convert(Termintype.class, s -> s == null ? null : Map.of("SOM", Termintype.SOM, "VÅR", Termintype.VAR, "HØST", Termintype.HOST).getOrDefault(s, null), s -> s == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(s, null)).eq(termintypeIn.getTermintype()) : noCondition())
-                .and(TERMIN.ARSTALL.eq(arstall))
-                .and(no.fellesstudentsystem.graphitron.conditions.TerminTestConditions.terminInputAll(TERMIN, termintypeIn != null ? termintypeIn.getArstall() : null, termintypeIn != null ? termintypeIn.getTermintype() == null ? null : Map.of(Termintype.SOM, "SOM", Termintype.VAR, "VÅR", Termintype.HOST, "HØST").getOrDefault(termintypeIn.getTermintype(), null) : null, arstall))
-                .orderBy(TERMIN.getIdFields())
-                .fetch(0, Termin.class);
+                .from(FILM)
+                .where(ratingIn != null ? FILM.RELEASE_YEAR.eq(ratingIn.getReleaseYear()) : noCondition())
+                .and(ratingIn != null ? FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(ratingIn.getRating()) : noCondition())
+                .and(FILM.RELEASE_YEAR.eq(releaseYear))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingInputAll(FILM, ratingIn != null ? ratingIn.getReleaseYear() : null, ratingIn != null ? ratingIn.getRating() == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(ratingIn.getRating(), null) : null, releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 }

@@ -1,32 +1,30 @@
-input EndreInput @record(table : "PERSON") {
+input DeleteInput @record(table : "CUSTOMER") {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  firstName: String @column(name : "FIRST_NAME")
+  email: String
 }
 
-type EndreResponse {
+type DeleteResponse {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "epostField")
+  firstName: String @column(name : "FIRST_NAME")
+  email: String @column(name : "emailField")
 }
 
-type EndreResponseWithPerson {
+type DeleteResponseWithCustomer {
   id: ID!
-  personProfil: PersonProfil @column(name : "persProf")
-  post: Postadresse
+  customer: Customer @column(name : "customField")
 }
 
 type Mutation {
-  slettPersonInput(input: [EndreInput!]): [ID!] @mutationType(typeName: DELETE)
-  slettPerson2Params(input: [EndreInput!], etternavn: String): [ID!] @mutationType(typeName: DELETE)
-  slettPersonInputAndResponse(input: [EndreInput!]): [EndreResponse!] @mutationType(typeName: DELETE)
-  slettPersonWithProfilResponse(input: [EndreInput!]): [EndreResponseWithPerson!] @mutationType(typeName: DELETE)
+  deleteCustomerInput(input: [DeleteInput!]): [ID!] @mutationType(typeName: DELETE)
+  deleteCustomer2Params(input: [DeleteInput!], lastName: String): [ID!] @mutationType(typeName: DELETE)
+  deleteCustomerInputAndResponse(input: [DeleteInput!]): [DeleteResponse!] @mutationType(typeName: DELETE)
+  deleteCustomerWithCustomerResponse(input: [DeleteInput!]): [DeleteResponseWithCustomer!] @mutationType(typeName: DELETE)
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: String
 }

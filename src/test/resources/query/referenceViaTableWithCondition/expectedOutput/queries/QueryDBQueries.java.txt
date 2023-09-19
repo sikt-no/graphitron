@@ -1,29 +1,28 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Inventory;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<StudentVedInstitusjon> studentForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public List<Inventory> inventoryForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                STUDENT.getId().as("id"),
-                                select.optional("studentnummer", STUDENT.STUDENTNR_TILDELT).as("studentnummer")
-                        ).mapping(nullOnAllNull(StudentVedInstitusjon::new)).as("student")
+                                INVENTORY.getId().as("id")
+                        ).mapping(nullOnAllNull(Inventory::new)).as("inventory")
                 )
-                .from(STUDENT)
-                .where(STUDENT.ID.eq(id))
-                .orderBy(STUDENT.getIdFields())
-                .fetch(0, StudentVedInstitusjon.class);
+                .from(INVENTORY)
+                .where(INVENTORY.ID.eq(id))
+                .orderBy(INVENTORY.getIdFields())
+                .fetch(0, Inventory.class);
     }
 }

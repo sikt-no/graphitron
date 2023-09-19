@@ -1,18 +1,19 @@
 type Query {
-    rom(bygningskode: String!): Rom
+    customer(id: ID!): Film
 }
 
-type Rom @table(name: "ROM") {
+type Film @table {
     id: ID!
-    romId: ID!
+ }
+
+enum Rating @mapEnum(name: "RATING") {
+    G,
+    PG,
+    R,
 }
 
-enum Kjonn @mapEnum(name: "KJONN_TEST") { #should NOT trigger warning
-    MANN,
-    KVINNE
-}
-
-enum Kjonn2 @mapEnum(name: "KJONN_TEST2") { #should trigger warning
-    MANN,
-    KVINNE
+enum Rating2 @mapEnum(name: "UNKOWN_ENUM") {
+    G,
+    PG,
+    R,
 }

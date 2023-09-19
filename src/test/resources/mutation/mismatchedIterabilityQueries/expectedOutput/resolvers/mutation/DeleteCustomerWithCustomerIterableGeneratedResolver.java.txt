@@ -1,0 +1,90 @@
+package fake.code.generated.resolvers.mutation;
+
+import fake.code.generated.queries.mutation.DeleteCustomerWithCustomerIterableDBQueries;
+import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.graphql.example.package.api.DeleteCustomerWithCustomerIterableMutationResolver;
+import fake.graphql.example.package.model.Customer;
+import fake.graphql.example.package.model.EditInput;
+import fake.graphql.example.package.model.Response;
+import fake.graphql.example.package.model.Result;
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import org.jooq.DSLContext;
+
+public class DeleteCustomerWithCustomerIterableGeneratedResolver implements DeleteCustomerWithCustomerIterableMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private CustomerDBQueries customerDBQueries;
+
+    @Inject
+    private DeleteCustomerWithCustomerIterableDBQueries deleteCustomerWithCustomerIterableDBQueries;
+
+    @Override
+    public CompletableFuture<Response> deleteCustomerWithCustomerIterable(List<EditInput> input,
+            DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var select = new SelectionSet(env.getSelectionSet());
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<CustomerRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new CustomerRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/firstName")) {
+                    inputRecord.setFirstName(itInput.getFirstName());
+                }
+                if (flatArguments.contains("input/email")) {
+                    inputRecord.setEmail(itInput.getEmail());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = deleteCustomerWithCustomerIterableDBQueries.deleteCustomerWithCustomerIterable(ctx, inputRecordList);
+        var inputRecordCustomer = getResultCustomer(ctx, inputRecordList, select);
+
+        var response = new Response();
+
+        var resultList = new ArrayList<Result>();
+        for (var itInputRecordList : inputRecordList) {
+            var result = new Result();
+            result.setCustomer(inputRecordCustomer.get(itInputRecordList.getId()));
+            resultList.add(result);
+        }
+        response.setResult(resultList.stream.findFirst().orElse(List.of()));
+
+        return CompletableFuture.completedFuture(response);
+    }
+
+    private Map<String, Customer> getResultCustomer(DSLContext ctx,
+            List<CustomerRecord> idContainer, SelectionSet select) {
+        if (!select.contains("result/customer") || idContainer == null) {
+            return Map.of();
+        }
+
+        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("result/customer"));
+    }
+}

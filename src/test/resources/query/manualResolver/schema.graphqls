@@ -1,25 +1,13 @@
 type Query {
-  personProfil(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    personlopenummer: [Int!] @column(name: "PERSONLOPENR"),
-  ): PersonProfil
+  customers(storeIds: [ID!]! @column(name: "STORE_ID")): [Customer]
 }
 
-type PersonProfil @table(name: "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  kontaktinformasjon: Personkontaktinformasjon @splitQuery @notGenerated
+  address: Address! @splitQuery @notGenerated
 }
 
-type Personkontaktinformasjon @table(name: "PERSON") {
+type Address implements Node @table {
   id: ID!
-  privatEpost: String @column(name: "EMAILADRESSE_PRIVAT")
-}
-
-type Mutation {
-  endreNavn(input: EndreInput!): ID! @service(name: "SERVICE_PERSONPROFIL") @notGenerated
-}
-
-input EndreInput @record(table: "PERSON") {
-  id: ID!
+  postalCode: String!
 }

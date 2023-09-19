@@ -1,55 +1,55 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Film;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<PersonProfil> personForQuery(DSLContext ctx, String eierInstitusjonsnummer, Integer pageSize,
+    public List<Film> filmForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
             String after, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("person")
+                                FILM.getId().as("id"),
+                                select.optional("title", FILM.TITLE).as("title")
+                        ).mapping(nullOnAllNull(Film::new)).as("film")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .orderBy(PERSON.getIdFields())
-                .seek(PERSON.getIdValues(after))
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, PersonProfil.class);
+                .fetch(0, Film.class);
     }
 
-    public List<PersonProfil> person2ForQuery(DSLContext ctx, String eierInstitusjonsnummer, SelectionSet select) {
+    public List<Film> film2ForQuery(DSLContext ctx, String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("person2")
+                                FILM.getId().as("id"),
+                                select.optional("title", FILM.TITLE).as("title")
+                        ).mapping(nullOnAllNull(Film::new)).as("film2")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .orderBy(PERSON.getIdFields())
-                .fetch(0, PersonProfil.class);
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 
-    public Integer countPersonForQuery(DSLContext ctx, String eierInstitusjonsnummer) {
+    public Integer countFilmForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(count().as("totalCount"))
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);
     }
 }

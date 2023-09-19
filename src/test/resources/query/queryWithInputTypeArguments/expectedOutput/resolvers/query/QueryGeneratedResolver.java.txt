@@ -1,5 +1,10 @@
-package fake.code.example.package.resolvers.query;
+package fake.code.generated.resolvers.query;
 
+import fake.code.generated.queries.query.QueryDBQueries;
+import fake.graphql.example.package.api.QueryResolver;
+import fake.graphql.example.package.model.Customer;
+import fake.graphql.example.package.model.CustomerInput;
+import fake.graphql.example.package.model.Film;
 import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
 import graphql.relay.DefaultPageInfo;
@@ -14,14 +19,9 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.PersonInput;
-import fake.graphql.example.package.model.PersonProfil;
-import fake.graphql.example.package.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import fake.code.example.package.queries.query.QueryDBQueries;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.jooq.DSLContext;
@@ -34,30 +34,29 @@ public class QueryGeneratedResolver implements QueryResolver {
     private QueryDBQueries queryDBQueries;
 
     @Override
-    public CompletableFuture<List<PersonProfil>> personNoPage(String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, PersonInput pin, DataFetchingEnvironment env) throws
-            Exception {
+    public CompletableFuture<List<Customer>> customersNoPage(String active, List<String> storeIds,
+            CustomerInput pin, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.personNoPageForQuery(ctx, eierInstitusjonsnummer, personlopenummer, pin, selectionSet);
+        var dbResult = queryDBQueries.customersNoPageForQuery(ctx, active, storeIds, pin, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }
 
     @Override
-    public CompletableFuture<ExtendedConnection<PersonProfil>> personWithPage(
-            String eierInstitusjonsnummer, List<Integer> personlopenummer, PersonInput pin,
-            Integer first, String after, DataFetchingEnvironment env) throws Exception {
+    public CompletableFuture<ExtendedConnection<Customer>> customersWithPage(String active,
+            List<Integer> storeIds, CustomerInput pin, Integer first, String after,
+            DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.personWithPageForQuery(ctx, eierInstitusjonsnummer, personlopenummer, pin, pageSize, after, selectionSet);
-        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countPersonWithPageForQuery(ctx, eierInstitusjonsnummer, personlopenummer, pin) : null;
+        var dbResult = queryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
         var lastItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(items.size() - 1).getId());
         var pagedResult = ConnectionImpl
-                .<PersonProfil>builder()
+                .<Customer>builder()
                 .setPageInfo(
                         new DefaultPageInfo(firstItem, lastItem, false, dbResult.size() > pageSize)
                 )
@@ -65,7 +64,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                 .setEdges(
                         items
                                 .stream()
-                                .map(item -> new DefaultEdge<PersonProfil>(item, new DefaultConnectionCursor(item.getId())))
+                                .map(item -> new DefaultEdge<Customer>(item, new DefaultConnectionCursor(item.getId())))
                                 .collect(Collectors.toList())
                 )
                 .setTotalCount(totalCount != null ? Math.min(1000, totalCount) : null)
@@ -74,20 +73,19 @@ public class QueryGeneratedResolver implements QueryResolver {
     }
 
     @Override
-    public CompletableFuture<ExtendedConnection<StudentVedInstitusjon>> studenter(
-            String eierInstitusjonsnummer, Integer first, String after, DataFetchingEnvironment env)
-            throws Exception {
+    public CompletableFuture<ExtendedConnection<Film>> films(String releaseYear, Integer first,
+            String after, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         int pageSize = Optional.ofNullable(first).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        var dbResult = queryDBQueries.studenterForQuery(ctx, eierInstitusjonsnummer, pageSize, after, selectionSet);
-        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countStudenterForQuery(ctx, eierInstitusjonsnummer) : null;
+        var dbResult = queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet);
+        var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null;
         var size = Math.min(dbResult.size(), pageSize);
         var items = dbResult.subList(0, size);
         var firstItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(0).getId());
         var lastItem = items.size() == 0 ? null : new DefaultConnectionCursor(items.get(items.size() - 1).getId());
         var pagedResult = ConnectionImpl
-                .<StudentVedInstitusjon>builder()
+                .<Film>builder()
                 .setPageInfo(
                         new DefaultPageInfo(firstItem, lastItem, false, dbResult.size() > pageSize)
                 )
@@ -95,7 +93,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                 .setEdges(
                         items
                                 .stream()
-                                .map(item -> new DefaultEdge<StudentVedInstitusjon>(item, new DefaultConnectionCursor(item.getId())))
+                                .map(item -> new DefaultEdge<Film>(item, new DefaultConnectionCursor(item.getId())))
                                 .collect(Collectors.toList())
                 )
                 .setTotalCount(totalCount != null ? Math.min(1000, totalCount) : null)

@@ -1,17 +1,17 @@
 input In {
-  bool: [Boolean] @column(name: "STATUS_GYLDIG")
+  name: [String]
 }
 
-type StudentVedInstitusjon implements Node @table(name: "STUDENT") {
+type Film implements Node @table {
   id: ID!
-  vurdering(b: [Boolean] @column(name: "STATUS_GYLDIG")): [Vurderingsresultat!]! @splitQuery @reference(key: "STUDENTVURDKOMBPROTOKOLL__HAR__STUDENT__FK")
-  vurderingInput(b: In): [Vurderingsresultat!]! @splitQuery @reference(key: "STUDENTVURDKOMBPROTOKOLL__HAR__STUDENT__FK")
+  languages(s: [String] @column(name: "NAME")): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY,")
+  languagesInput(s: In): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY,")
 }
 
-type Vurderingsresultat @node @table(name: "STUDENTVURDKOMBPROTOKOLL") {
+type Language @node @table {
   id: ID!
 }
 
 type Query {
-  student: StudentVedInstitusjon
+  film: Film
 }

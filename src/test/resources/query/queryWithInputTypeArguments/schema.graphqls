@@ -5,91 +5,87 @@ type PageInfo {
   endCursor: String
 }
 
-type PersonEpost {
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  arbeidsEpost: String! @column(name : "EMAILADRESSE_ARBEID")
-  institusjonsEpost: String @column(name : "EMAILADRESSE")
+type CustomerEmail {
+  privateEmail: String @column(name : "EMAIL")
+  workEmail: String! @column(name : "EMAIL")
 }
 
-input PersonInput {
-  fornavn: String
+input CustomerInput {
   "Optional"
-  etternavn: String!
+  firstName: String @column(name: "FIRST_NAME")
   "Mandatory"
-  epost: PersonInputEpost
+  lastName: String! @column(name: "LAST_NAME")
+  email: CustomerInputEmail
 }
 
-input PersonInputEpost {
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  arbeidsEpost: String! @column(name : "EMAILADRESSE_ARBEID")
+input CustomerInputEmail {
+  privateEmail: String @column(name : "EMAIL")
+  workEmail: String! @column(name : "EMAIL")
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  epost: PersonEpost
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: CustomerEmail
 }
 
-type PersonProfilConnection {
-  edges: [PersonProfilConnectionEdge]
+type CustomerConnection {
+  edges: [CustomerConnectionEdge]
   pageInfo: PageInfo
-  nodes: [PersonProfil!]!
+  nodes: [Customer!]!
 }
 
-type PersonProfilConnectionEdge {
+type CustomerConnectionEdge {
   cursor: String
-  node: PersonProfil
+  node: Customer
 }
 
 type Query {
-  personNoPage(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), personlopenummer: [Int!] @column(name : "PERSONLOPENR"), pin: PersonInput): PersonProfil
-  personWithPage(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), personlopenummer: [Int!] @column(name : "PERSONLOPENR"), pin: PersonInput, first: Int = 100, after: String): PersonProfilConnection!
-  studenter(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): QueryStudentVedInstitusjonConnection
+  customersNoPage(active: String!, storeIds: [ID!] @column(name : "STORE_ID"), pin: CustomerInput): Customer
+  customersWithPage(active: String!, storeIds: [Int!] @column(name : "STORE_ID"), pin: CustomerInput, first: Int = 100, after: String): CustomerConnection!
+  films(releaseYear: String! @column(name : "RELEASE_YEAR"), first: Int = 100, after: String): QueryFilmConnection
 }
 
-type QueryStudentVedInstitusjonConnection {
-  edges: [QueryStudentVedInstitusjonConnectionEdge]
+type QueryFilmConnection {
+  edges: [QueryFilmConnectionEdge]
   pageInfo: PageInfo
-  nodes: [StudentVedInstitusjon!]!
+  nodes: [Film!]!
 }
 
-type QueryStudentVedInstitusjonConnectionEdge {
+type QueryFilmConnectionEdge {
   cursor: String
-  node: StudentVedInstitusjon
+  node: Film
 }
 
-type Semesterregistrering implements Node @table {
+type FilmCategory implements Node @table(name: "FILM_CATEGORY") {
   id: ID!
-  registrert: Boolean! @column(name : "STATUS_REG_OK")
+  name: String! @column(name: "NAME", table: "CATEGORY")
 }
 
-input SemesterregistreringBetaltInstitusjon {
-  institusjonsnummer: Int! @column(name : "INSTITUSJONSNR", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
-  navn: Institusjonsnavn! @column(name : "NAVN", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK") # Note: was testing an enum before. This is now lost.
+input OriginalCategoryInput {
+  lastUpdated: DateTime! @column(name : "LAST_UPDATED")
+  name: Name! @column(name : "NAME", table : "CATEGORY")
 }
 
-input SemesterregistreringBetaltInstitusjonWithOneField {
-  institusjonsnummer: Int! @column(name : "INSTITUSJONSNR", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
+input OriginalCategoryInputWithOneField {
+  lastUpdated: DateTime! @column(name : "LAST_UPDATED")
 }
 
-input SemesterregistreringBetaltInstitusjonNested {
-  institusjonsnummerField: SemesterregistreringBetaltInstitusjonWithOneField!
-  navn: Institusjonsnavn! @column(name : "NAVN", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
+input OriginalCategoryInputNested {
+  originalCategoryField: OriginalCategoryInputWithOneField!
+  name: Name! @column(name : "NAME", table : "CATEGORY")
 }
 
-type StudentVedInstitusjon implements Node @table(name : "STUDENT") {
+type Film implements Node @table {
   id: ID!
-  semesterregistreringer(terminIn: SemesterregistreringBetaltInstitusjon!): [Semesterregistrering!]! @splitQuery
-  registreringerForInputList(terminInList: [SemesterregistreringBetaltInstitusjon!]): [Semesterregistrering!]! @splitQuery
-  registreringerForMixOfListAndSingleInput(terminIn: SemesterregistreringBetaltInstitusjon!, terminInList: [SemesterregistreringBetaltInstitusjon!]): [Semesterregistrering!]! @splitQuery
-  registreringerForInputWithOneFieldList(terminInListOneField: [SemesterregistreringBetaltInstitusjonWithOneField!]): [Semesterregistrering!]! @splitQuery
-  registreringerForInputWithNestedFieldList(terminInListNestedField: [SemesterregistreringBetaltInstitusjonNested!]): [Semesterregistrering!]! @splitQuery
+  categories(categoryIn: OriginalCategoryInput!): [FilmCategory!]! @splitQuery
+  categoriesForInputList(categoryInList: [OriginalCategoryInput!]): [FilmCategory!]! @splitQuery
+  categoriesForMixOfListAndSingleInput(categoryIn: OriginalCategoryInput!, categoryInList: [OriginalCategoryInput!]): [FilmCategory!]! @splitQuery
+  categoriesForInputWithOneFieldList(categoryInListOneField: [OriginalCategoryInputWithOneField!]): [FilmCategory!]! @splitQuery
+  categoriesForInputWithNestedFieldList(categoryInListNestedField: [OriginalCategoryInputNested!]): [FilmCategory!]! @splitQuery
 }
 
-type Institusjonsnavn {
-  eng: String @column(name: "INSTITUSJONSNAVN_ENGELSK")
-  nob: String! @column(name: "INSTITUSJONSNAVN_BOKMAL")
-  nno: String @column(name: "INSTITUSJONSNAVN_NYNORSK")
-  sme: String @column(name: "INSTITUSJONSNAVN_SAMISK")
+type Name {
+  name: String!
 }

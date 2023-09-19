@@ -1,12 +1,10 @@
 type Query {
-  person(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
+  actor(
     first: Int = 100,
     #after: String, #missing after
-  ): QueryPersonConnection @connection(for: "PersonProfil")
+  ): ActorConnection @connection(for: "Actor")
 }
 
-type PersonProfil @table(name: "PERSON") {
+type Actor @table {
   id: ID!
-  fornavn: String!
 }

@@ -1,24 +1,17 @@
 type Query {
-  studenter(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    first: Int = 100,
-    after: String
-  ): StudentVedInstitusjon
+  address(id: ID!): Address
 }
 
-type StudentVedInstitusjon @table(name: "STUDENT") {
+type Address @table {
   id: ID!
-  studentVedInstitusjonId: ID!
-  studentkort: [Studentkort!] @splitQuery # Should be ok, exists key join between STUDENT and STUDENTKORT.
-  studentkort2: [Studentkort2!] @splitQuery # Should fail, no join can be deduced between STUDENT and KULL.
+  customers: [Customer!] @splitQuery # Should be ok, exists key join between CUSTOMER and ADDRESS.
+  films: [Film!] @splitQuery # Should fail, no join can be deduced between FILM and ADDRESS.
 }
 
-type Studentkort @table(name: "STUDENTKORT") {
+type Customer @table {
   id: ID!
-  studentkortnummer: String! @column(name: "STUDENTKORTNR")
 }
 
-type Studentkort2 @table(name: "KULL") {
+type Film @table {
   id: ID!
-  studentkortnummer: String! @column(name: "STUDENTKORTNR")
 }

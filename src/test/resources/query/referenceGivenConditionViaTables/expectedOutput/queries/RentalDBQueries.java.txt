@@ -1,0 +1,41 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static org.jooq.Functions.*;
+import static org.jooq.impl.DSL.*;
+
+import fake.graphql.example.package.model.Actor;
+import fake.graphql.example.package.model.FilmActor;
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Record2;
+
+public class RentalDBQueries {
+    public Map<String, FilmActor> mainActorForRental(DSLContext ctx, Set<String> rentalIder,
+            SelectionSet select) {
+        var film_mainactor = FILM_ACTOR.as("film_mainactor");
+        var rental_inventory = RENTAL.inventory().as("rental_inventory");
+        var rental_inventory_film = rental_inventory.film().as("rental_inventory_film");
+        return ctx
+                .select(
+                        RENTAL.getId(),
+                        row(
+                                film_mainactor.getId().as("id"),
+                                row(
+                                        film_mainactor.actor().getId().as("id"),
+                                        select.optional("actor/lastName", film_mainactor.actor().LAST_NAME).as("lastName")
+                                ).mapping(nullOnAllNull(Actor::new)).as("actor")
+                        ).mapping(nullOnAllNull(FilmActor::new)).as("mainActor")
+                )
+                .from(RENTAL)
+                .leftJoin(film_mainactor)
+                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.mainActor(rental_inventory_film, film_mainactor))
+                .where(RENTAL.hasIds(rentalIder))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

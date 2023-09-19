@@ -1,28 +1,28 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Address;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.Emne;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<Emne> emnerForQuery(DSLContext ctx, String eierInstitusjonsnummer, SelectionSet select) {
+    public List<Address> addressForQuery(DSLContext ctx, String cityID, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id")
-                        ).mapping(nullOnAllNull(Emne::new)).as("emner")
+                                ADDRESS.getId().as("id")
+                        ).mapping(nullOnAllNull(Address::new)).as("address")
                 )
-                .from(EMNE)
-                .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(ADDRESS)
+                .where(ADDRESS.CITY_ID.eq(cityID))
+                .orderBy(ADDRESS.getIdFields())
+                .fetch(0, Address.class);
     }
 }

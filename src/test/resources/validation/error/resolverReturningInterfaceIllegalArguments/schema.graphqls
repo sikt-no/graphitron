@@ -1,14 +1,10 @@
-type Kull implements Node @table {
+type Film implements Node @table {
   id: ID!
-  navn: String! @column(name : "STUDIEKULLNAVN")
-  referertNode: Node @splitQuery
+  title: String!
+  nodeRef: Node @splitQuery
 }
 
-type ProgramStudierett implements Node @table(name : "STUDIERETT") {
-  id: ID!
-  navn: String!
-}
 
 type Query {
-  kull(navn: String!): Kull
+  film(title: String!): Kull
 }

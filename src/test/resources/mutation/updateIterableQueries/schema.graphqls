@@ -1,32 +1,31 @@
-input EndreInput @record(table : "PERSON") {
+input EditInput @record(table : "CUSTOMER") {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+  firstName: String @column(name : "FIRST_NAME")
+  email: String
 }
 
-type EndreResponse {
+type EditResponse {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "epostField")
+  firstName: String @column(name : "FIRST_NAME")
+  email: String @column(name : "emailField")
+
 }
 
-type EndreResponseWithPerson {
+type EditResponseWithCustomer {
   id: ID!
-  personProfil: PersonProfil @column(name : "persProf")
-  post: Postadresse
+  customer: Customer @column(name : "customField")
 }
 
 type Mutation {
-  endrePersonInput(input: [EndreInput!]): [ID!] @mutationType(typeName: UPDATE)
-  endrePerson2Params(input: [EndreInput!], etternavn: String): [ID!] @mutationType(typeName: UPDATE)
-  endrePersonInputAndResponse(input: [EndreInput!]): [EndreResponse!] @mutationType(typeName: UPDATE)
-  endrePersonWithProfilResponse(input: [EndreInput!]): [EndreResponseWithPerson!] @mutationType(typeName: UPDATE)
+  editCustomerInput(input: [EditInput!]): [ID!] @mutationType(typeName: UPDATE)
+  editCustomer2Params(input: [EditInput!], lastName: String): [ID!] @mutationType(typeName: UPDATE)
+  editCustomerInputAndResponse(input: [EditInput!]): [EditResponse!] @mutationType(typeName: UPDATE)
+  editCustomerWithCustomerResponse(input: [EditInput!]): [EditResponseWithCustomer!] @mutationType(typeName: UPDATE)
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: String
 }

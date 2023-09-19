@@ -1,31 +1,24 @@
-type Kull implements Terminbasert & Node @table {
+type Film implements Titled & Node @table {
   id: ID!
-  terminId: String! @column(name : "TERMINKODE")
-  navn: String! @column(name : "STUDIEKULLNAVN")
+  title: String!
 }
 
-type ProgramStudierett implements Node @table(name : "STUDIERETT") {
+type Inventory implements Node @table {
   id: ID!
-  kull: Kull!
-  studierettperiode: Studierettperiode!
-  studierettstatus: Studierettstatus! @splitQuery
+  film: Film!
+  rentals: [Rental!]! @splitQuery
 }
 
 type Query {
   node(id: ID!): Node
-  terminNode(terminId: String!): Terminbasert
+  titled(title: String!): Titled #A bit weird example, since multiple things/films can have the same title
   nodes(ids: [ID!]): [Node] @notGenerated
 }
 
-type Studierettperiode {
-  fraDato: Date! @column(name : "DATO_STUDIERETT_TILDELT")
-  tilDato: Date @column(name : "DATO_STUDIERETT_GYLDIG_TIL")
-}
-
-type Studierettstatus implements Node @table {
+type Rental implements Node @table {
   id: ID!
 }
 
-interface Terminbasert {
-  terminId: String!
+interface Titled {
+  title: String!
 }

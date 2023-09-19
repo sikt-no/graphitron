@@ -1,32 +1,29 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
-import java.lang.Integer;
+import fake.graphql.example.package.model.Customer;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.PersonProfil;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<PersonProfil> personProfilForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, SelectionSet select) {
+    public List<Customer> customersForQuery(DSLContext ctx, List<String> storeIds,
+            SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personProfil")
+                                CUSTOMER.getId().as("id")
+                        ).mapping(nullOnAllNull(Customer::new)).as("customers")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .orderBy(PERSON.getIdFields())
-                .fetch(0, PersonProfil.class);
+                .from(CUSTOMER)
+                .where(storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : noCondition())
+                .orderBy(CUSTOMER.getIdFields())
+                .fetch(0, Customer.class);
     }
 }

@@ -1,7 +1,7 @@
-input EndreInput {
+input InsertInput {
   id: ID!
 }
 
 type Mutation {
-  registrerPersonInput(input: EndreInput!): ID! @mutationType(typeName: INSERT)
+  registerCustomerInput(input: InsertInput!): ID! @mutationType(typeName: INSERT)
 }

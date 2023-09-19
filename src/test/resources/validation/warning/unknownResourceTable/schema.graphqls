@@ -4,10 +4,10 @@ type Query {
 }
 
 type Mutation {
-    endrePersonInput(input: EndreInput!): ID! @service(name: "TEST_PERSON")
+    editCustomerInput(input: EditInput!): ID! @service(name: "TEST_CUSTOMER")
 }
 
-input EndreInput @record(table: "UNKNOWN_TABLE") {
+input EditInput @record(table: "UNKNOWN_TABLE") {
     id: ID!
-    fornavn: String
+    name: String
 }

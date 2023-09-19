@@ -1,5 +1,7 @@
-type PersonProfil @table(name: "PERSON")  {
+extend type Query {
+  film(id: ID!): Film
+}
+
+type Film @table {
   id: ID!
-  fornavn: String!
-  kontaktinformasjon: Personkontaktinformasjon @splitQuery
 }

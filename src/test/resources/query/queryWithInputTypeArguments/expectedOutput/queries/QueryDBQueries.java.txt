@@ -1,112 +1,110 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Customer;
+import fake.graphql.example.package.model.CustomerEmail;
+import fake.graphql.example.package.model.CustomerInput;
+import fake.graphql.example.package.model.Film;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.PersonEpost;
-import fake.graphql.example.package.model.PersonInput;
-import fake.graphql.example.package.model.PersonProfil;
-import fake.graphql.example.package.model.StudentVedInstitusjon;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<PersonProfil> personNoPageForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, PersonInput pin, SelectionSet select) {
+    public List<Customer> customersNoPageForQuery(DSLContext ctx, String active,
+            List<String> storeIds, CustomerInput pin, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
-                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                CUSTOMER.getId().as("id"),
+                                select.optional("firstName", CUSTOMER.FIRST_NAME).as("firstName"),
+                                select.optional("lastName", CUSTOMER.LAST_NAME).as("lastName"),
                                 row(
-                                        select.optional("epost/privatEpost", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost"),
-                                        select.optional("epost/arbeidsEpost", PERSON.EMAILADRESSE_ARBEID).as("arbeidsEpost"),
-                                        select.optional("epost/institusjonsEpost", PERSON.EMAILADRESSE).as("institusjonsEpost")
-                                ).mapping(nullOnAllNull(PersonEpost::new)).as("epost")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personNoPage")
+                                        select.optional("email/privateEmail", CUSTOMER.EMAIL).as("privateEmail"),
+                                        select.optional("email/workEmail", CUSTOMER.EMAIL).as("workEmail")
+                                ).mapping(nullOnAllNull(CustomerEmail::new)).as("email")
+                        ).mapping(nullOnAllNull(Customer::new)).as("customersNoPage")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
-                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
-                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
-                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
-                .orderBy(PERSON.getIdFields())
-                .fetch(0, PersonProfil.class);
+                .from(CUSTOMER)
+                .where(CUSTOMER.ACTIVE.eq(active))
+                .and(storeIds != null && storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : noCondition())
+                .and(pin != null && pin.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(pin.getFirstName()) : noCondition())
+                .and(pin != null ? CUSTOMER.LAST_NAME.eq(pin.getLastName()) : noCondition())
+                .and(pin != null && pin.getEmail() != null && pin.getEmail().getPrivateEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getPrivateEmail()) : noCondition())
+                .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : noCondition())
+                .orderBy(CUSTOMER.getIdFields())
+                .fetch(0, Customer.class);
     }
 
-    public List<PersonProfil> personWithPageForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, PersonInput pin, Integer pageSize, String after,
+    public List<Customer> customersWithPageForQuery(DSLContext ctx, String active,
+            List<Integer> storeIds, CustomerInput pin, Integer pageSize, String after,
             SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                PERSON.getId().as("id"),
-                                select.optional("fornavn", PERSON.FORNAVN).as("fornavn"),
-                                select.optional("etternavn", PERSON.ETTERNAVN).as("etternavn"),
+                                CUSTOMER.getId().as("id"),
+                                select.optional("firstName", CUSTOMER.FIRST_NAME).as("firstName"),
+                                select.optional("lastName", CUSTOMER.LAST_NAME).as("lastName"),
                                 row(
-                                        select.optional("epost/privatEpost", PERSON.EMAILADRESSE_PRIVAT).as("privatEpost"),
-                                        select.optional("epost/arbeidsEpost", PERSON.EMAILADRESSE_ARBEID).as("arbeidsEpost"),
-                                        select.optional("epost/institusjonsEpost", PERSON.EMAILADRESSE).as("institusjonsEpost")
-                                ).mapping(nullOnAllNull(PersonEpost::new)).as("epost")
-                        ).mapping(nullOnAllNull(PersonProfil::new)).as("personWithPage")
+                                        select.optional("email/privateEmail", CUSTOMER.EMAIL).as("privateEmail"),
+                                        select.optional("email/workEmail", CUSTOMER.EMAIL).as("workEmail")
+                                ).mapping(nullOnAllNull(CustomerEmail::new)).as("email")
+                        ).mapping(nullOnAllNull(Customer::new)).as("customersWithPage")
                 )
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
-                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
-                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
-                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
-                .orderBy(PERSON.getIdFields())
-                .seek(PERSON.getIdValues(after))
+                .from(CUSTOMER)
+                .where(CUSTOMER.ACTIVE.eq(active))
+                .and(storeIds != null && storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : noCondition())
+                .and(pin != null && pin.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(pin.getFirstName()) : noCondition())
+                .and(pin != null ? CUSTOMER.LAST_NAME.eq(pin.getLastName()) : noCondition())
+                .and(pin != null && pin.getEmail() != null && pin.getEmail().getPrivateEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getPrivateEmail()) : noCondition())
+                .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : noCondition())
+                .orderBy(CUSTOMER.getIdFields())
+                .seek(CUSTOMER.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, PersonProfil.class);
+                .fetch(0, Customer.class);
     }
 
-    public List<StudentVedInstitusjon> studenterForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            Integer pageSize, String after, SelectionSet select) {
+    public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
+            String after, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                STUDENT.getId().as("id")
-                        ).mapping(nullOnAllNull(StudentVedInstitusjon::new)).as("studenter")
+                                FILM.getId().as("id")
+                        ).mapping(nullOnAllNull(Film::new)).as("films")
                 )
-                .from(STUDENT)
-                .where(STUDENT.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .orderBy(STUDENT.getIdFields())
-                .seek(STUDENT.getIdValues(after))
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, StudentVedInstitusjon.class);
+                .fetch(0, Film.class);
     }
 
-    public Integer countPersonWithPageForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<Integer> personlopenummer, PersonInput pin) {
+    public Integer countCustomersWithPageForQuery(DSLContext ctx, String active,
+            List<Integer> storeIds, CustomerInput pin) {
         return ctx
                 .select(count().as("totalCount"))
-                .from(PERSON)
-                .where(PERSON.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(personlopenummer != null && personlopenummer.size() > 0 ? PERSON.PERSONLOPENR.in(personlopenummer) : noCondition())
-                .and(pin != null && pin.getFornavn() != null ? PERSON.FORNAVN.eq(pin.getFornavn()) : noCondition())
-                .and(pin != null ? PERSON.ETTERNAVN.eq(pin.getEtternavn()) : noCondition())
-                .and(pin != null && pin.getEpost() != null && pin.getEpost().getPrivatEpost() != null ? PERSON.EMAILADRESSE_PRIVAT.eq(pin.getEpost().getPrivatEpost()) : noCondition())
-                .and(pin != null && pin.getEpost() != null ? PERSON.EMAILADRESSE_ARBEID.eq(pin.getEpost().getArbeidsEpost()) : noCondition())
+                .from(CUSTOMER)
+                .where(CUSTOMER.ACTIVE.eq(active))
+                .and(storeIds != null && storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : noCondition())
+                .and(pin != null && pin.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(pin.getFirstName()) : noCondition())
+                .and(pin != null ? CUSTOMER.LAST_NAME.eq(pin.getLastName()) : noCondition())
+                .and(pin != null && pin.getEmail() != null && pin.getEmail().getPrivateEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getPrivateEmail()) : noCondition())
+                .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : noCondition())
                 .fetchOne(0, Integer.class);
     }
 
-    public Integer countStudenterForQuery(DSLContext ctx, String eierInstitusjonsnummer) {
+    public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(count().as("totalCount"))
-                .from(STUDENT)
-                .where(STUDENT.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);
     }
 }

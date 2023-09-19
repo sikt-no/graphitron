@@ -1,30 +1,29 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.Film;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.Rom;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<Rom> romForQuery(DSLContext ctx, String bygningskode, SelectionSet select) {
+    public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                ROM.getId().as("id"),
-                                select.optional("romnavn", ROM.ROMNAVN).as("romnavn"),
-                                select.optional("bygningskode", ROM.BYGNINGSKODE).as("bygningskode")
-                        ).mapping(nullOnAllNull(Rom::new)).as("rom")
+                                FILM.getId().as("id"),
+                                select.optional("title", FILM.TITLE).as("title")
+                        ).mapping(nullOnAllNull(Film::new)).as("films")
                 )
-                .from(ROM)
-                .where(ROM.BYGNINGSKODE.eq(bygningskode))
-                .orderBy(ROM.getIdFields())
-                .fetch(0, Rom.class);
+                .from(FILM)
+                .where(FILM.RELEASE_YEAR.eq(releaseYear))
+                .orderBy(FILM.getIdFields())
+                .fetch(0, Film.class);
     }
 }

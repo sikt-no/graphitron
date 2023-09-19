@@ -1,30 +1,16 @@
 type Query {
-  studenter(
-    eierInstitusjonsnummer: String! @column(name: "INSTITUSJONSNR_EIER"),
-    first: Int = 100,
-    after: String
-  ): QueryStudentVedInstitusjonConnection @connection(for: "StudentVedInstitusjon")
+  customer(id: ID!): Customer
 }
 
-type StudentVedInstitusjon @table(name: "STUDENT") {
+type Customer @table {
   id: ID!
-  registreringerForInputWithListField(inputWithListField: [InputWithListField!]): [Semesterregistrering!]! @splitQuery
+  rentalsForInputWithListField(inputWithListField: [InputWithListField!]): [Rental!]! @splitQuery
+}
+
+type Rental @table {
+  id: ID!
 }
 
 input InputWithListField {
-  institusjonsnummer: [Int!]! @column(name: "INSTITUSJONSNR", table: "INSTITUSJON", key: "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
-  betaltSemesteravgift: Boolean! @column(name: "STATUS_BET_OK", table: "INSTITUSJON", key: "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK")
-  navn: Institusjonsnavn! @column(name : "NAVN", table : "INSTITUSJON", key : "SEMESTERREGISTRERING__BETAL_STED__INSTITUSJON__FK") # Note: was testing an enum before. This is now lost.
-}
-
-type Semesterregistrering @table {
-  id: ID!
-  registrert: Boolean! @column(name: "STATUS_REG_OK")
-}
-
-type Institusjonsnavn {
-  eng: String @column(name: "INSTITUSJONSNAVN_ENGELSK")
-  nob: String! @column(name: "INSTITUSJONSNAVN_BOKMAL")
-  nno: String @column(name: "INSTITUSJONSNAVN_NYNORSK")
-  sme: String @column(name: "INSTITUSJONSNAVN_SAMISK")
+  ids: [ID!]!
 }

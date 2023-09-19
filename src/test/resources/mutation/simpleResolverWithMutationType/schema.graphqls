@@ -1,18 +1,16 @@
-input EndreInput @record(table : "PERSON") {
-  fornavn: String!
+input EditInput @record(table : "CUSTOMER") {
+  firstName: String! @column(name: "FIRST_NAME")
 }
 
-type EndreResponse0 {
+type EditResponse0 {
   id0: ID! @column(name: "ID")
 }
 
-type EndreResponse1 {
+type EditResponse1 {
   id1: [ID!]! @column(name: "ID")
 }
 
 type Mutation {
-  endrePerson0(id: ID!, in: EndreInput): EndreResponse0! @mutationType(typeName: UPDATE)
-  endrePerson1(id: [ID!]!, in: [EndreInput!]!): EndreResponse1! @mutationType(typeName: UPDATE)
-  endrePersonRecord0(id: ID!, in: EndreInput): EndreResponse0! @mutationType(typeName: UPDATE)
-  endrePersonRecord1(id: [ID!]!, in: [EndreInput!]!): EndreResponse1! @mutationType(typeName: UPDATE)
+  editCustomer0(id: ID!, in: EditInput): EditResponse0! @mutationType(typeName: UPDATE)
+  editCustomer1(id: [ID!]!, in: [EditInput!]!): EditResponse1! @mutationType(typeName: UPDATE)
 }

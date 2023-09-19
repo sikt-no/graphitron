@@ -1,14 +1,14 @@
 type Query {
-  vurderingsmelding(id: ID!): Vurderingsmelding
+  payment(id: ID!): Payment
 }
 
-type Vurderingsmelding @table {
+type Payment @table {
   id: ID!
-  #via tables starting from the referring type (VURDERINGSMELDING): VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE
-  emne: Emne! @splitQuery @reference(via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}])
+  #via tables starting from the referring type (PAYMENT): PAYMENT -> RENTAL -> INVENTORY -> FILM
+  film: Film! @splitQuery @reference(via: [{table: "RENTAL"}, {table: "INVENTORY"}])
 }
 
-type Emne @table {
+type Film @table {
   id: ID!
-  kode: String! @column(name: "EMNEKODE")
+  title: String!
 }

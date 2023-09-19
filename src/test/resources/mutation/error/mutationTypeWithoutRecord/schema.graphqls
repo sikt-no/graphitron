@@ -1,7 +1,7 @@
-type EndreResponse {
+type EditResponse {
   id: ID!
 }
 
 type Mutation {
-  endrePerson(id: ID!): EndreResponse! @mutationType(typeName: UPDATE)
+  editCustomer(id: ID!): EditResponse! @mutationType(typeName: UPDATE)
 }

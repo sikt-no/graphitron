@@ -1,13 +1,13 @@
 type Query {
-  student(id: ID!): Student
+  customer(id: ID!): Customer
 }
 
-type Student @table {
+type Customer @table {
   id: ID!
-  fornavn: Fornavn!
+  address: CustomerAddress!
 }
 
-type Fornavn  {
-  navn1: String @column(name: "Fornavn", table: "Person")
-  navn2: String @column(name: "Baknavn", table: "Person")
+type CustomerAddress  {
+  district: String @column(name: "district", table: "ADDRESS") #should NOT trigger warning
+  destruct: String @column(name: "destruct", table: "ADDRESS") #non-existent column, should trigger warning
 }

@@ -1,5 +1,14 @@
-package fake.code.example.package.resolvers.query;
+package fake.code.generated.resolvers.query;
 
+import fake.code.generated.queries.query.FilmDBQueries;
+import fake.code.generated.queries.query.InventoryDBQueries;
+import fake.code.generated.queries.query.RentalDBQueries;
+import fake.graphql.example.package.api.QueryResolver;
+import fake.graphql.example.package.model.Film;
+import fake.graphql.example.package.model.Inventory;
+import fake.graphql.example.package.model.Node;
+import fake.graphql.example.package.model.Rental;
+import fake.graphql.example.package.model.Titled;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.IllegalArgumentException;
@@ -7,19 +16,10 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.Kull;
-import fake.graphql.example.package.model.Node;
-import fake.graphql.example.package.model.ProgramStudierett;
-import fake.graphql.example.package.model.Studierettstatus;
-import fake.graphql.example.package.model.Terminbasert;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import fake.code.example.package.queries.query.KullDBQueries;
-import fake.code.example.package.queries.query.ProgramStudierettDBQueries;
-import fake.code.example.package.queries.query.StudierettstatusDBQueries;
 import no.fellesstudentsystem.graphql.helpers.FieldHelpers;
-import no.fellesstudentsystem.kjerneapi.Tables;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.jooq.generated.testdata.Tables;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
@@ -29,52 +29,52 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     DSLContext ctx;
 
     @Inject
-    private KullDBQueries kullDBQueries;
+    private FilmDBQueries filmDBQueries;
 
     @Inject
-    private ProgramStudierettDBQueries programStudierettDBQueries;
+    private InventoryDBQueries inventoryDBQueries;
 
     @Inject
-    private StudierettstatusDBQueries studierettstatusDBQueries;
+    private RentalDBQueries rentalDBQueries;
 
     @Override
     public CompletableFuture<Node> node(String id, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
         String tablePartOfId = FieldHelpers.getTablePartOf(id);
 
-        if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
+        if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Film>) (keys, loaderEnvironment) ->
+                        CompletableFuture.completedFuture(filmDBQueries.loadFilmByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
-        if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
+        if (tablePartOfId.equals(Tables.INVENTORY.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ProgramStudierett>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Inventory>) (keys, loaderEnvironment) ->
+                        CompletableFuture.completedFuture(inventoryDBQueries.loadInventoryByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
-        if (tablePartOfId.equals(Tables.STUDIERETTSTATUS.getViewId().toString())) {
+        if (tablePartOfId.equals(Tables.RENTAL.getViewId().toString())) {
             return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Studierettstatus>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(studierettstatusDBQueries.loadStudierettstatusByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Rental>) (keys, loaderEnvironment) ->
+                        CompletableFuture.completedFuture(rentalDBQueries.loadRentalByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
                     .load(id, env);
         }
         throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);
     }
 
     @Override
-    public CompletableFuture<Terminbasert> terminNode(String terminId, DataFetchingEnvironment env)
-            throws Exception {
+    public CompletableFuture<Titled> titled(String title, DataFetchingEnvironment env) throws
+            Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        String tablePartOfId = FieldHelpers.getTablePartOf(terminId);
+        String tablePartOfId = FieldHelpers.getTablePartOf(title);
 
-        if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Terminbasert>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByTerminIdsAsTerminNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(terminId, env);
+        if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
+            return env.getDataLoaderRegistry().<String, Titled>computeIfAbsent(tablePartOfId, name ->
+                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Film>) (keys, loaderEnvironment) ->
+                        CompletableFuture.completedFuture(filmDBQueries.loadFilmByTitlesAsTitled(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
+                    .load(title, env);
         }
-        throw new IllegalArgumentException("could not find dataloader for terminId with prefix " + tablePartOfId);
+        throw new IllegalArgumentException("could not find dataloader for title with prefix " + tablePartOfId);
     }
 }

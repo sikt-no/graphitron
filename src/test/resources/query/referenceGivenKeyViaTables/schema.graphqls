@@ -1,16 +1,16 @@
 type Query {
-  vurderingsmelding(id: ID!): Vurderingsmelding
+  payment(id: ID!): Payment
 }
 
-type Vurderingsmelding @table {
+type Payment @table {
   id: ID!
-  #join path: VURDERINGSMELDING -> VURDERINGSENHET -> VURDERINGSKOMBINASJON -> EMNE -> TERMIN(via key)
-  forsteTerminForVurdering: Termin! @splitQuery @reference(
-    via: [{table: "VURDERINGSENHET"}, {table: "VURDERINGSKOMBINASJON"}, {table: "EMNE"}],
-    key: "EMNE__EKS_FORSTE__TERMIN__FK")
+  #join path: PAYMENT -> RENTAL -> INVENTORY -> FILM -> LANGUAGE(via key)
+  originalLanguage: Language! @splitQuery @reference(
+    via: [{table: "RENTAL"}, {table: "INVENTORY"}, {table: "FILM"}],
+    key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY")
 }
 
-type Termin @table {
+type Language @table {
   id: ID!
-  arstall: Int!
+  name: String!
 }

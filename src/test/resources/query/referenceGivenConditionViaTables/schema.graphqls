@@ -1,16 +1,21 @@
 type Query {
-  vurderingsmelding(id: ID!): Vurderingsmelding
+  rental(id: ID!): Rental
 }
 
-type Vurderingsmelding @table {
+type Rental @table {
   id: ID!
-  # join path: VURDERINGSMELDING -> STUDENT -> PERSON -> PERSON_TELEFON(via condition)
-  studentPrivatTelefon: Telefon @splitQuery @reference(
-    via: [{table: "STUDENT"}, {table: "PERSON"}],
-    condition: "TEST_PERSON_TELEFON_PRIVAT")
+  # join path: RENTAL -> INVENTORY -> FILM -> FILM_ACTOR(via condition)
+  mainActor: FilmActor @splitQuery @reference(
+    via: [{table: "INVENTORY"}, {table: "FILM"}],
+    condition: "TEST_FILM_MAIN_ACTOR")
 }
 
-type Telefon implements Node @table(name : "PERSON_TELEFON") {
+type FilmActor @table(name : "FILM_ACTOR") {
   id: ID!
-  nummer: String! @column(name : "TELEFONNR")
+  actor: Actor!
+}
+
+type Actor @table {
+  id: ID!
+  lastName: String! @column(name: "LAST_NAME")
 }

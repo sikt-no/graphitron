@@ -1,8 +1,8 @@
-input EndreInput @record(table : "PERSON") {
-  fornavn: String
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
+input EditInput @record(table : "CUSTOMER") {
+  firstName: String @column(name : "FIRST_NAME")
+  email: String
 }
 
 type Mutation {
-  endrePersonWithoutID(input: EndreInput!): ID! @mutationType(typeName: UPDATE)
+  editCustomerWithoutID(input: EditInput!): ID! @mutationType(typeName: UPDATE)
 }

@@ -1,207 +1,158 @@
-package fake.code.example.package.queries.query;
+package fake.code.generated.queries.query;
 
-import static no.fellesstudentsystem.kjerneapi.FieldHelpers.*;
-import static no.fellesstudentsystem.kjerneapi.Keys.*;
-import static no.fellesstudentsystem.kjerneapi.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.FieldHelpers.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import static org.jooq.Functions.*;
 import static org.jooq.impl.DSL.*;
 
+import fake.graphql.example.package.model.City;
+import fake.graphql.example.package.model.CityInput;
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.Emne;
-import fake.graphql.example.package.model.EmneInput;
-import fake.graphql.example.package.model.Emnenavn;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 
 public class QueryDBQueries {
-    public List<Emne> paramConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer, List<String> emnekoder,
-            SelectionSet select) {
+    public List<City> paramConditionForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("paramCondition")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("paramCondition")
                 )
-                .from(EMNE)
-                .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(CITY.COUNTRY_ID.eq(countryId))
+                .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> paramConditionOverrideForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSet select) {
+    public List<City> paramConditionOverrideForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("paramConditionOverride")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("paramConditionOverride")
                 )
-                .from(EMNE)
-                .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(CITY.COUNTRY_ID.eq(countryId))
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> fieldConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer, List<String> emnekoder,
-            SelectionSet select) {
+    public List<City> fieldConditionForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldCondition")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("fieldCondition")
                 )
-                .from(EMNE)
-                .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(CITY.COUNTRY_ID.eq(countryId))
+                .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> fieldConditionOverrideForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSet select) {
+    public List<City> fieldConditionOverrideForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldConditionOverride")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("fieldConditionOverride")
                 )
-                .from(EMNE)
-                .where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> fieldAndParamConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSet select) {
+    public List<City> fieldAndParamConditionForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldAndParamCondition")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("fieldAndParamCondition")
                 )
-                .from(EMNE)
-                .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(emnekoder != null && emnekoder.size() > 0 ? EMNE.EMNEKODE.in(emnekoder) : noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(CITY.COUNTRY_ID.eq(countryId))
+                .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> fieldAndParamConditionOverrideForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSet select) {
+    public List<City> fieldAndParamConditionOverrideForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldAndParamConditionOverride")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("fieldAndParamConditionOverride")
                 )
-                .from(EMNE)
-                .where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            List<String> emnekoder, SelectionSet select) {
+    public List<City> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, String countryId,
+            List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldAndParamConditionOverrideBoth")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("fieldAndParamConditionOverrideBoth")
                 )
-                .from(EMNE)
-                .where(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKoder(EMNE, emnekoder))
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneAll(EMNE, eierInstitusjonsnummer, emnekoder))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 
-    public List<Emne> fieldInputConditionForQuery(DSLContext ctx, String eierInstitusjonsnummer,
-            EmneInput emneInput, SelectionSet select) {
+    public List<City> fieldInputConditionForQuery(DSLContext ctx, String countryId,
+            CityInput cityInput, SelectionSet select) {
         return ctx
                 .select(
                         row(
-                                EMNE.getId().as("id"),
-                                select.optional("kode", EMNE.EMNEKODE).as("kode"),
-                                row(
-                                        select.optional("navn/eng", EMNE.EMNENAVN_ENGELSK).as("eng"),
-                                        select.optional("navn/nob", EMNE.EMNENAVN_BOKMAL).as("nob"),
-                                        select.optional("navn/nno", EMNE.EMNENAVN_NYNORSK).as("nno"),
-                                        select.optional("navn/sme", EMNE.EMNENAVN_SAMISK).as("sme")
-                                ).mapping(Emnenavn::new).as("navn"),
-                                select.optional("versjonskode", EMNE.VERSJONSKODE).as("versjonskode")
-                        ).mapping((a0, a1, a2, a3) -> a0 == null && a1 == null && (a2 == null || new Emnenavn().equals(a2)) && a3 == null ? null : new Emne(a0, a1, a2, a3)).as("fieldInputCondition")
+                                CITY.getId().as("id"),
+                                select.optional("name", CITY.CITY).as("name"),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
+                        ).mapping(nullOnAllNull(City::new)).as("fieldInputCondition")
                 )
-                .from(EMNE)
-                .where(EMNE.INSTITUSJONSNR_EIER.eq(eierInstitusjonsnummer))
-                .and(emneInput != null ? EMNE.EMNEKODE.eq(emneInput.getKode()) : noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneKode(EMNE, emneInput != null ? emneInput.getKode() : null))
-                .and(emneInput != null ? EMNE.VERSJONSKODE.eq(emneInput.getVersjonskode()) : noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.EmneTestConditions.emneInputAll(EMNE, eierInstitusjonsnummer, emneInput != null ? emneInput.getKode() : null, emneInput != null ? emneInput.getVersjonskode() : null))
-                .orderBy(EMNE.getIdFields())
-                .fetch(0, Emne.class);
+                .from(CITY)
+                .where(CITY.COUNTRY_ID.eq(countryId))
+                .and(cityInput != null ? CITY.CITY.eq(cityInput.getName()) : noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityName(CITY, cityInput != null ? cityInput.getName() : null))
+                .and(cityInput != null ? CITY.CITY_ID.eq(cityInput.getCityId()) : noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityInputAll(CITY, countryId, cityInput != null ? cityInput.getName() : null, cityInput != null ? cityInput.getCityId() : null))
+                .orderBy(CITY.getIdFields())
+                .fetch(0, City.class);
     }
 }

@@ -1,40 +1,35 @@
-input EndreInput @record(table : "PERSON") {
+input UpsertInput @record(table : "CUSTOMER") {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  kjonn: Kjonn!
-  statusEksporter: Boolean! @column(name : "STATUS_EKSPORTER_FLR")
+  customerId: String! @column(name: "CUSTOMER_ID")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  storeId: String! @column(name: "STORE_ID")
+  addressId: String! @column(name: "ADDRESS_ID")
+  active: Boolean! @column(name: "ACTIVEBOOL")
+  createdDate: Date! @column(name: "CREATE_DATE")
 }
 
-enum Kjonn @mapEnum(name: "KJONN_TEST") {
-  MANN
-  KVINNE
+type UpsertResponse {
+  id: ID!
+  firstName: String @column(name : "FIRST_NAME")
+  email: String @column(name : "emailField")
 }
 
-type EndreResponse {
+type UpsertResponseWithCustomer {
   id: ID!
-  fornavn: String
-  privatEpost: String @column(name : "epostField")
-}
-
-type EndreResponseWithPerson {
-  id: ID!
-  personProfil: PersonProfil @column(name : "persProf")
-  post: Postadresse
+  customer: Customer @column(name : "customField")
 }
 
 type Mutation {
-  registrerPersonInput(input: EndreInput!): ID! @mutationType(typeName: UPSERT)
-  registrerPerson2Params(input: EndreInput!, etternavn: String): ID! @mutationType(typeName: UPSERT)
-  registrerPersonInputAndResponse(input: EndreInput!): EndreResponse! @mutationType(typeName: UPSERT)
-  registrerPersonWithProfilResponse(input: EndreInput!): EndreResponseWithPerson! @mutationType(typeName: UPSERT)
+  upsertCustomerInput(input: UpsertInput!): ID! @mutationType(typeName: UPSERT)
+  upsertCustomer2Params(input: UpsertInput!, lastName: String): ID! @mutationType(typeName: UPSERT)
+  upsertCustomerInputAndResponse(input: UpsertInput!): UpsertResponse! @mutationType(typeName: UPSERT)
+  upsertCustomerWithCustomerResponse(input: UpsertInput!): UpsertResponseWithCustomer! @mutationType(typeName: UPSERT)
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Customer implements Node @table {
   id: ID!
-  fornavn: String!
-  etternavn: String!
-  privatEpost: String @column(name : "EMAILADRESSE_PRIVAT")
-  dod: Boolean @column(name : "STATUS_DOD")
+  firstName: String! @column(name: "FIRST_NAME")
+  lastName: String! @column(name: "LAST_NAME")
+  email: String
 }

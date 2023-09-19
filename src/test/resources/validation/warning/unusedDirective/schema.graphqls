@@ -3,12 +3,9 @@ directive @splitQuery on FIELD_DEFINITION
 directive @notGenerated on FIELD_DEFINITION
 
 type Query {
-  rom(bygningskode: String!): Rom @notGenerated
+  customer(id: ID!): Customer
 }
 
-type Rom @table {
+type Customer @table {
   id: ID!
-  romkode: ID!
-  romnavn: String!
-  bygningskode: String!
 }

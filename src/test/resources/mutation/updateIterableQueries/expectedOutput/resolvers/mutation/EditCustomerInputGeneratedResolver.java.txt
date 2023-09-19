@@ -1,0 +1,59 @@
+package fake.code.generated.resolvers.mutation;
+
+import fake.code.generated.queries.mutation.EditCustomerInputDBQueries;
+import fake.graphql.example.package.api.EditCustomerInputMutationResolver;
+import fake.graphql.example.package.model.EditInput;
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import org.jooq.DSLContext;
+
+public class EditCustomerInputGeneratedResolver implements EditCustomerInputMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private EditCustomerInputDBQueries editCustomerInputDBQueries;
+
+    @Override
+    public CompletableFuture<List<String>> editCustomerInput(List<EditInput> input,
+            DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<CustomerRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new CustomerRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/firstName")) {
+                    inputRecord.setFirstName(itInput.getFirstName());
+                }
+                if (flatArguments.contains("input/email")) {
+                    inputRecord.setEmail(itInput.getEmail());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = editCustomerInputDBQueries.editCustomerInput(ctx, inputRecordList);
+
+        return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
+    }
+}

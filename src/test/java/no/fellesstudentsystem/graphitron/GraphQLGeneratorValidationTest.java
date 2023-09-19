@@ -2,16 +2,12 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import no.fellesstudentsystem.graphitron.conditions.PermisjonTestConditions;
-import no.fellesstudentsystem.graphitron.conditions.PersonTelefonTestConditions;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.enums.KjonnTest;
-import no.fellesstudentsystem.kjerneapi.tables.*;
+import no.sikt.graphitron.jooq.generated.testdata.enums.MpaaRating;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -22,11 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class GraphQLGeneratorValidationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "validation";
 
-    private final Map<String, Class<?>> enums = Map.of("KJONN_TEST", KjonnTest.class);
-    private final Map<String, Method> conditions = Map.of(
-            "TEST_PERMISJON_STUDIERETT", PermisjonTestConditions.class.getMethod("permisjonStudierettJoin", Permisjon.class, Studierett.class),
-            "TEST_PERSON_TELEFON_MOBIL", PersonTelefonTestConditions.class.getMethod("personTelefonMobil", Person.class, PersonTelefon.class)
-    );
+    private final Map<String, Class<?>> enums = Map.of("RATING", MpaaRating.class);
 
     public GraphQLGeneratorValidationTest() throws NoSuchMethodException {
         super(SRC_TEST_RESOURCES_PATH);
@@ -41,7 +33,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
                 enums,
-                conditions,
+                Map.of(),
                 Map.of(),
                 Map.of()
         );
@@ -51,7 +43,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_nonRootObjectThatReturnsInterface_shouldCreateResolverAndLogWarning() {
         getProcessedSchema("resolverReturningInterface", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No column(s) with name(s) 'REFERERTNODE' found in table 'STUDIERETT'",
+                "No column(s) with name(s) 'NODEREF' found in table 'CUSTOMER'",
                 "interface (Node) returned in non root object. This is not fully supported. Use with care");
     }
 
@@ -66,7 +58,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_resolverThatReturnsInterfaceWhenIllegalArguments_shouldThrowException() {
         assertThatThrownBy(() -> getProcessedSchema("error/resolverReturningInterfaceIllegalArguments", false))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Only exactly one input field is currently supported for fields returning interfaces. 'referertNode' has 0 input fields");
+                .hasMessage("Only exactly one input field is currently supported for fields returning interfaces. 'nodeRef' has 0 input fields");
     }
 
     @Test
@@ -80,21 +72,21 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenIncorrectImplicitJoin_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implicitJoinFailure"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Can not automatically infer join of 'STUDENT' and 'KULL'.");
+                .hasMessage("Can not automatically infer join of 'ADDRESS' and 'FILM'.");
     }
 
     @Test
     void generate_whenImplicitJoinViaNonExistentPath_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implicitJoinViaNonExistentPath"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Can not automatically infer join of 'EKSAMENSTILPASNING' and 'EMNE'.");
+                .hasMessage("Can not automatically infer join of 'ADDRESS' and 'FILM'.");
     }
 
     @Test
     void generate_whenimplicitJoinViaExistentThenNonExistentPath_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implicitJoinViaExistentThenNonExistentPath"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Can not automatically infer join of 'LAND' and 'EKSAMENSTILPASNING'.");
+                .hasMessage("Can not automatically infer join of 'COUNTRY' and 'FILM'.");
     }
 
     @Test
@@ -122,14 +114,14 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenArgumentHasListOfInputsWithListField_shouldThrowException() {
         assertThatThrownBy(() -> getProcessedSchema("error/listOfInputWithNestedList", false))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'institusjonsnummer' are not supported on such types (used for generating condition tuples)");
+                .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'ids' are not supported on such types (used for generating condition tuples)");
     }
 
     @Test
     void generate_whenArgumentHasListOfInputsWithOptionalField_shouldLogWarning() {
         getProcessedSchema("warning/listOfInputWithOptionalField", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "Argument 'inputWithOptionalField' is of collection of InputFields ('InputWithOptionalField') type. Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: 'maned', 'termintype'"
+                "Argument 'inputWithOptionalField' is of collection of InputFields ('InputWithOptionalField') type. Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: 'title', 'rating'"
         );
     }
 
@@ -137,7 +129,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownNodeTable_shouldLogWarning() {
         getProcessedSchema("warning/unknownNodeTable", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table with name 'ROMSKIP' found in no.fellesstudentsystem.kjerneapi.Tables"
+                "No table with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata.Tables"
         );
     }
 
@@ -145,7 +137,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownResourceTable_shouldLogWarning() {
         getProcessedSchema("warning/unknownResourceTable", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table with name 'UNKNOWN_TABLE' found in no.fellesstudentsystem.kjerneapi.Tables"
+                "No table with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata.Tables"
         );
     }
 
@@ -153,10 +145,8 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownColumn_shouldLogWarning() {
         getProcessedSchema("warning/unknownColumn", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No column(s) with name(s) 'GENERELL, KVERKNADTEKST_NYNORSK, ROMKAMERAT, ROMVESEN' found in table 'ROM'",
-                "No column(s) with name(s) 'UNDERVISNINGSKAPASITET' found in table 'ROM'",
-                "No column(s) with name(s) 'FODSELSNR2, KJONN2' found in table 'PERSON'",
-                "No column(s) with name(s) 'MENNESKENR' found in table 'PERSON'"
+                "No column(s) with name(s) 'NONEXISTENTDURATION, NONEXISTENTRATE, RATING2, TITLE2' found in table 'FILM'",
+                "No column(s) with name(s) 'NON_EXISTENT_ID' found in table 'FILM'"
         );
     }
 
@@ -164,7 +154,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownColumnForImplicitJoin_shouldLogWarning() {
         getProcessedSchema("warning/unknownColumnForImplicitJoin", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No column(s) with name(s) 'BAKNAVN' found in table 'PERSON'"
+                "No column(s) with name(s) 'DESTRUCT' found in table 'ADDRESS'"
         );
     }
 
@@ -172,7 +162,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownEnum_shouldLogWarning() {
         getProcessedSchema("warning/unknownEnum", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No enum with name 'KJONN_TEST2' found."
+                "No enum with name 'UNKOWN_ENUM' found."
         );
     }
 
@@ -180,7 +170,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenIncorrectPaginationSpec_shouldLogWarning() {
         getProcessedSchema("error/queryIncorrectPagination", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "Type QueryPersonConnection ending with the reserved suffix 'Connection' must have either " +
+                "Type ActorConnection ending with the reserved suffix 'Connection' must have either " +
                         "forward(first and after fields) or backwards(last and before fields) pagination, yet " +
                         "neither was found. No pagination was generated for this type."
         );
@@ -193,17 +183,11 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     }
 
     @Test
-    void generate_whenExhaustiveTestSchema_shouldNotLogWarning() {
-        getProcessedSchema("missingDirective", true);
-        assertThat(getLogMessagesWithLevelWarn()).isEmpty();
-    }
-
-    @Test
     void generate_whenMutationTypeHasMissingMapping_shouldLogWarning() {
         getProcessedSchema("warning/insertMissingRecordMapping", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "Input type EndreInput referencing table PERSON does not map all fields required by the database. Missing required fields: KJONN, ETTERNAVN, STATUS_EKSPORTER_FLR",
-                "Input type EndreInput referencing table PERSON does not map all fields required by the database as non-nullable. Nullable required fields: KJONN, ETTERNAVN, STATUS_EKSPORTER_FLR, FORNAVN"
+                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database. Missing required fields: CREATE_DATE, FIRST_NAME",
+                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: CREATE_DATE, FIRST_NAME"
         );
     }
 
@@ -219,7 +203,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenMutationTypeHasMissingRequiredMapping_shouldLogWarning() {
         getProcessedSchema("warning/insertMissingRecordRequiredMapping", false);
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "Input type EndreInput referencing table PERSON does not map all fields required by the database as non-nullable. Nullable required fields: KJONN, ETTERNAVN, STATUS_EKSPORTER_FLR"
+                "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: CREATE_DATE, FIRST_NAME"
         );
     }
 
@@ -227,7 +211,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenInsertMutationTypeHasNoRecord_shouldThrowException() {
         assertThatThrownBy(() -> getProcessedSchema("error/insertNoRecordSet", false))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Mutation registrerPersonInput is set as an insert operation, but does not link any input to tables.");
+                .hasMessage("Mutation registerCustomerInput is set as an insert operation, but does not link any input to tables.");
     }
 
     private Set<String> getLogMessagesWithLevelWarn() {

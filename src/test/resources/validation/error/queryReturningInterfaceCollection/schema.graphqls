@@ -1,4 +1,4 @@
-type ProgramStudierett implements Node @table(name : "STUDIERETT") {
+type Film implements Node @table {
   id: ID!
 }
 

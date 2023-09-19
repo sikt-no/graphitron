@@ -5,22 +5,22 @@ type PageInfo {
   endCursor: String
 }
 
-type PersonProfil implements Node @table(name : "PERSON") {
+type Film implements Node @table {
   id: ID!
-  fornavn: String!
+  title: String!
 }
 
-type PersonProfilConnection {
-  edges: [PersonProfilConnectionEdge]
+type FilmConnection {
+  edges: [FilmConnectionEdge]
   pageInfo: PageInfo
-  nodes: [PersonProfil!]!
+  nodes: [Film!]!
 }
 
-type PersonProfilConnectionEdge {
+type FilmConnectionEdge {
   cursor: String
-  node: PersonProfil
+  node: Film
 }
 
 type Query {
-  personer(eierInstitusjonsnummer: String! @column(name : "INSTITUSJONSNR_EIER"), first: Int = 100, after: String): PersonProfilConnection
+  films(releaseYear: String! @column(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
 }

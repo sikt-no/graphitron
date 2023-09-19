@@ -1,0 +1,86 @@
+package fake.code.generated.resolvers.mutation;
+
+import fake.code.generated.queries.mutation.EditCustomerWithCustomerResponseDBQueries;
+import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.graphql.example.package.api.EditCustomerWithCustomerResponseMutationResolver;
+import fake.graphql.example.package.model.Customer;
+import fake.graphql.example.package.model.EditInput;
+import fake.graphql.example.package.model.EditResponseWithCustomer;
+import graphql.schema.DataFetchingEnvironment;
+import java.lang.Exception;
+import java.lang.Override;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.jooq.generated.testdata.FieldHelpers;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import org.jooq.DSLContext;
+
+public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCustomerWithCustomerResponseMutationResolver {
+    @Inject
+    DSLContext ctx;
+
+    @Inject
+    private CustomerDBQueries customerDBQueries;
+
+    @Inject
+    private EditCustomerWithCustomerResponseDBQueries editCustomerWithCustomerResponseDBQueries;
+
+    @Override
+    public CompletableFuture<List<EditResponseWithCustomer>> editCustomerWithCustomerResponse(
+            List<EditInput> input, DataFetchingEnvironment env) throws Exception {
+        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var select = new SelectionSet(env.getSelectionSet());
+        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
+
+        var inputRecordList = new ArrayList<CustomerRecord>();
+
+
+        if (input != null) {
+            for (var itInput : input) {
+                if (itInput == null) continue;
+                var inputRecord = new CustomerRecord();
+                inputRecord.attach(ctx.configuration());
+                if (flatArguments.contains("input/firstName")) {
+                    inputRecord.setFirstName(itInput.getFirstName());
+                }
+                if (flatArguments.contains("input/email")) {
+                    inputRecord.setEmail(itInput.getEmail());
+                }
+                if (flatArguments.contains("input/id")) {
+                    inputRecord.setId(itInput.getId());
+                }
+                inputRecordList.add(inputRecord);
+            }
+        }
+        FieldHelpers.setPersonKeysFromPlattformIds(ctx, inputRecordList);
+
+        var rowsUpdated = editCustomerWithCustomerResponseDBQueries.editCustomerWithCustomerResponse(ctx, inputRecordList);
+        var inputRecordCustomer = getEditResponseWithCustomerCustomer(ctx, inputRecordList, select);
+
+        var editResponseWithCustomerList = new ArrayList<EditResponseWithCustomer>();
+        for (var itInputRecordList : inputRecordList) {
+            var editResponseWithCustomer = new EditResponseWithCustomer();
+            editResponseWithCustomer.setCustomer(inputRecordCustomer.get(itInputRecordList.getId()));
+            editResponseWithCustomerList.add(editResponseWithCustomer);
+        }
+
+        return CompletableFuture.completedFuture(editResponseWithCustomerList);
+    }
+
+    private Map<String, Customer> getEditResponseWithCustomerCustomer(DSLContext ctx,
+            List<CustomerRecord> idContainer, SelectionSet select) {
+        if (!select.contains("customer") || idContainer == null) {
+            return Map.of();
+        }
+
+        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("customer"));
+    }
+}
