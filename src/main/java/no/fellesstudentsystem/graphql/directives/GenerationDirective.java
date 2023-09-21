@@ -10,7 +10,6 @@ public enum GenerationDirective {
     RESOLVER("splitQuery"),
     NOT_GENERATED("notGenerated"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
-    RECORD("record", EnumSet.of(GenerationDirectiveParam.TABLE)),
     COLUMN("column", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.NAME)),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.NAME)),

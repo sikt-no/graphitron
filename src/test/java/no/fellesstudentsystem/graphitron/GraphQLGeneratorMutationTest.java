@@ -187,6 +187,6 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     void generate_whenMutationTypeHasNoRecord_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/mutationTypeWithoutRecord"))
                 .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("Must have at least one record reference when generating resolvers with queries. Mutation 'editCustomer' has no records attached.");
+                .hasMessage("Must have at least one table reference when generating resolvers with queries. Mutation 'editCustomer' has no tables attached.");
     }
 }

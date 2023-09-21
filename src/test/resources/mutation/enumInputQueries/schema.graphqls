@@ -1,9 +1,9 @@
-input FilmInput1 @record(table: "FILM") {
+input FilmInput1 @table(name: "FILM") {
   id: ID!
   rating: RatingNoConverter!
 }
 
-input FilmInput2 @record(table: "FILM") {
+input FilmInput2 @table(name: "FILM") {
   id: ID!
   rating: Rating!
 }

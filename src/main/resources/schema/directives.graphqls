@@ -10,18 +10,12 @@ Objektet blir gjort til en implementasjon av Node-interfacet som må ha et påkr
 directive @node on OBJECT
 
 """
-Knytter objektet til en tabell i KjerneAPI. Dette gjør objektet til en Node i grafen.
+Knytter en objekt- eller inputobjekt-type til en tabell i KjerneAPI.
 """
 directive @table(
   """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
   name: String
-) on OBJECT
-
-"""Knytter en input-type til en tabell. Har bare effekt på input-typer brukt i mutasjoner."""
-directive @record(
-  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
-  table: String
-) on INPUT_OBJECT
+) on OBJECT | INPUT_OBJECT
 
 """Knytter feltet (eller argumentet) til en kolonne i KjerneAPI."""
 directive @column(

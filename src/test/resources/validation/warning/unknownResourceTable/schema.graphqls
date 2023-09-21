@@ -7,7 +7,7 @@ type Mutation {
     editCustomerInput(input: EditInput!): ID! @service(name: "TEST_CUSTOMER")
 }
 
-input EditInput @record(table: "UNKNOWN_TABLE") {
+input EditInput @table(name: "UNKNOWN_TABLE") {
     id: ID!
     name: String
 }

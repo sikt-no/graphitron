@@ -1,11 +1,11 @@
-input EditInput @record(table : "CUSTOMER") {
+input EditInput @table(name : "CUSTOMER") {
   id: ID!
   name: String @column(name: "FIRST_NAME")
   lastName: String @column(name: "LAST_NAME")
   edit2: EditInput2 @column(name : "editDouble")
 }
 
-input EditInput2 @record(table : "CUSTOMER") {
+input EditInput2 @table(name : "CUSTOMER") {
   email: String
 }
 

@@ -2,7 +2,7 @@ type Mutation {
   editCustomerAddress(in: EditAddressInput!): EditAddressResponse! @service(name: "TEST_CUSTOMER")
 }
 
-input EditAddressInput @record(table: "CUSTOMER") {
+input EditAddressInput @table(name: "CUSTOMER") {
   id: ID!
   addressId: ID! @column(name: "ADDRESS_ID")
 }

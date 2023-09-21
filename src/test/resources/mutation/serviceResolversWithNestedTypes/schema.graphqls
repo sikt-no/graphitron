@@ -1,4 +1,4 @@
-input EditInputLevel1 @record(table : "CUSTOMER") {
+input EditInputLevel1 @table(name : "CUSTOMER") {
   id: ID!
   editA1: EditInputLevel2A!
   editA2: EditInputLevel2A @column(name : "editDouble")
@@ -7,11 +7,11 @@ input EditInputLevel1 @record(table : "CUSTOMER") {
   editC2: [EditInputLevel2C!]!
 }
 
-input EditInputLevel2A @record(table : "CUSTOMER") {
+input EditInputLevel2A @table(name : "CUSTOMER") {
   firstName: String @column(name : "FIRST_NAME")
 }
 
-input EditInputLevel2B @record(table : "CUSTOMER") {
+input EditInputLevel2B @table(name : "CUSTOMER") {
   firstName: String @column(name : "FIRST_NAME")
   edit3: [EditInputLevel3!]
 }
@@ -20,12 +20,12 @@ input EditInputLevel2C {
   lastName: String! @column(name: "LAST_NAME")
 }
 
-input EditInputLevel3 @record(table : "CUSTOMER") {
+input EditInputLevel3 @table(name : "CUSTOMER") {
   email: String
   edit4: [EditInputLevel4!]
 }
 
-input EditInputLevel4 @record(table : "CUSTOMER") {
+input EditInputLevel4 @table(name : "CUSTOMER") {
   lastName: String! @column(name: "LAST_NAME")
 }
 

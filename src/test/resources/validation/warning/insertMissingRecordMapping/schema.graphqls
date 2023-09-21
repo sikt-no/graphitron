@@ -1,4 +1,4 @@
-input InsertCustomerInput @record(table : "CUSTOMER") {
+input InsertCustomerInput @table(name : "CUSTOMER") {
   customerID: String! @column(name : "CUSTOMER_ID")
   active: Boolean! @column(name: "ACTIVEBOOL")
   lastName: String! @column(name : "LAST_NAME")

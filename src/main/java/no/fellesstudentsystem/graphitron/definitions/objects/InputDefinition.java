@@ -18,9 +18,7 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordClassName;
 import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.RECORD;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.TABLE;
 
 public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDefinition> {
     private final JOOQTableMapping table;
@@ -33,21 +31,16 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         super(inputType);
         inputs = inputType.getInputValueDefinitions().stream().map(InputField::new).collect(Collectors.toList());
 
-        var hasTable = inputType.hasDirective(GenerationDirective.TABLE.getName());
-        var hasRecord = inputType.hasDirective(RECORD.getName());
+        this.hasTable = inputType.hasDirective(GenerationDirective.TABLE.getName());
         String tableName = getName().toUpperCase();
         if (hasTable) {
             tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME)).orElse(tableName);
             table = new JOOQTableMapping(tableName);
-        } else if (hasRecord) {
-            tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, RECORD, RECORD.getParamName(TABLE)).orElse(tableName);
-            table = new JOOQTableMapping(tableName);
         } else {
             table = null;
         }
-        this.hasTable = hasTable || hasRecord;
         recordClassName = ClassName.get(GeneratorConfig.getGeneratedJooqRecordsPackage(), asRecordClassName(new RecordMethodMapping(tableName).getName()));
-        requiredInputs = this.hasTable ? getRequiredFields(getTable().getName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
+        requiredInputs = hasTable ? getRequiredFields(getTable().getName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
     }
 
     /**
@@ -58,7 +51,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     }
 
     /**
-     * @return Does this object have the "{@link GenerationDirective#TABLE node}" or "{@link GenerationDirective#RECORD record}" directive
+     * @return Does this object have the "{@link GenerationDirective#TABLE node}" directive
      * which implies a connection to a database table?
      */
     public boolean hasTable() {

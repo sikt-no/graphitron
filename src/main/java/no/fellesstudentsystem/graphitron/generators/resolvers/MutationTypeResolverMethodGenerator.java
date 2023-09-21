@@ -39,7 +39,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     @NotNull
     protected CodeBlock declareRecords(List<InputField> specInputs) {
         if (context.getRecordInputs().isEmpty()) {
-            throw new UnsupportedOperationException("Must have at least one record reference when generating resolvers with queries. Mutation '" + localField.getName() + "' has no records attached.");
+            throw new UnsupportedOperationException("Must have at least one table reference when generating resolvers with queries. Mutation '" + localField.getName() + "' has no tables attached.");
         }
 
         return super.declareRecords(specInputs);

@@ -6,7 +6,7 @@ type Mutation {
   editCustomerListInputAndResponse(input: [EditInput!]!): [EditResponse!]! @service(name: "TEST_CUSTOMER")
 }
 
-input EditInput @record(table: "CUSTOMER") {
+input EditInput @table(name: "CUSTOMER") {
   id: ID!
   firstName: String! @column(name: "FIRST_NAME")
   email: String

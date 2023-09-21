@@ -1,4 +1,4 @@
-input UpsertInput @record(table : "CUSTOMER") {
+input UpsertInput @table(name : "CUSTOMER") {
   id: ID!
   customerId: String! @column(name: "CUSTOMER_ID")
   firstName: String! @column(name: "FIRST_NAME")

@@ -207,11 +207,11 @@ vi finner et bedre design for dette. Begrensningen for input er illustrert under
 ```graphql
 edit(input: InputA!): ID! @service(name: "SERVICE")
 
-input InputA @record {
+input InputA @table {
   b: InputB
 }
 
-input InputB @record { }
+input InputB @table { }
 ```
 ```java
 var endreNoeResult = service.edit(inputARecord, inputBRecord); // Sekvensielt uavhengig av struktur.
@@ -255,7 +255,7 @@ Hvis input-typen blir brukt i en _Query_-spørring, vil ikke direktivet ha noen 
 For returtyper som ikke implementerer node, brukes også _column_ for å mappe navnene på feltene i returtypen mot
 navnene i returobjektet i servicen.
 Hvis navnet i skjema er likt som navnet i jOOQ, trenger man som tidligere ikke oppgi direktivet.
-Dette gjelder både _record_- og _column_-direktivene.
+Dette gjelder både _table_- og _column_-direktivene.
 
 ### Example
 Hvis vi har dette skjemaet:
@@ -266,7 +266,7 @@ editCustomerAdresse(
   input: EditAdresseInput!
 ): EditPersonAdresseRespons! @service(name: "SERVICE_PERSONPROFIL") # Kunne vært PersonProfil eller ID også.
 
-input EditPersonProfilFolkeregistrertAdresseInput @record(table: "PERSON") { # Angir hvilken record som skal mappes til.
+input EditPersonProfilFolkeregistrertAdresseInput @table(name: "PERSON") { # Angir hvilken record som skal mappes til.
   co: String! @column(name: "ADRLIN1_HJEMSTED") # Angir hvilket felt i record som skal mappes til.
   gate: String! @column(name: "ADRLIN2_HJEMSTED")
   postnummerOgSted: String! @column(name: "ADRLIN3_HJEMSTED")

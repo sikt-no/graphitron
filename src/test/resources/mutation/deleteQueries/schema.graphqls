@@ -1,4 +1,4 @@
-input DeleteInput @record(table : "CUSTOMER") {
+input DeleteInput @table(name : "CUSTOMER") {
   id: ID!
   firstName: String @column(name : "FIRST_NAME")
   email: String

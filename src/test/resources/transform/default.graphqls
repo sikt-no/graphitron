@@ -1,6 +1,5 @@
 #defines default mutation directives.
 
-directive @record(table: String) on INPUT_OBJECT
 directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
 
 enum MutationType { UPDATE }

@@ -1,4 +1,4 @@
-input EndreInput @record(table : "CUSTOMER") {
+input EndreInput @table(name : "CUSTOMER") {
   id: ID!
   firstName: String! @column(name: "FIRST_NAME")
 }
