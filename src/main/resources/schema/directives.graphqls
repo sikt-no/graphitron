@@ -5,11 +5,6 @@ directive @splitQuery on FIELD_DEFINITION
 directive @notGenerated on FIELD_DEFINITION
 
 """
-Objektet blir gjort til en implementasjon av Node-interfacet som må ha et påkrevd felt 'id: ID!'
-"""
-directive @node on OBJECT
-
-"""
 Knytter en objekt- eller inputobjekt-type til en tabell i KjerneAPI.
 """
 directive @table(

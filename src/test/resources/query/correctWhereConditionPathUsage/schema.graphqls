@@ -8,7 +8,7 @@ type Film implements Node @table {
   languagesInput(s: In): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY,")
 }
 
-type Language @node @table {
+type Language implements Node @table {
   id: ID!
 }
 
