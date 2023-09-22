@@ -103,6 +103,14 @@ public class GenerateMojo extends AbstractMojo {
     @SuppressWarnings("unused")
     private List<GlobalTransform> globalRecordTransforms;
 
+    /**
+     * Indicates whether generated mutations should include validation of JOOQ records
+     * through the Jakarta Bean Validation specification.
+     */
+    @Parameter(property = "generate.shouldGenerateRecordValidation", defaultValue="true")
+    @SuppressWarnings("unused")
+    private boolean shouldGenerateRecordValidation;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -153,6 +161,10 @@ public class GenerateMojo extends AbstractMojo {
 
     public String getExternalTransforms() {
         return externalTransforms;
+    }
+
+    public boolean shouldGenerateRecordValidation() {
+        return shouldGenerateRecordValidation;
     }
 
     public List<GlobalTransform> getGlobalTransforms() {

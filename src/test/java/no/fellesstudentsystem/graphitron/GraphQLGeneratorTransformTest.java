@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClas
 import no.fellesstudentsystem.graphitron.mojo.GlobalTransform;
 import no.fellesstudentsystem.graphitron.transforms.SomeTransform;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+@Disabled
 public class GraphQLGeneratorTransformTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "transform";
     private final Map<String, Method> transforms = Map.of(

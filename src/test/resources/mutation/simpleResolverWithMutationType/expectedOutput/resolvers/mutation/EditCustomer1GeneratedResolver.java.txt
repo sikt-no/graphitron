@@ -32,9 +32,9 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
 
         List<CustomerRecord> inRecordList = new ArrayList<CustomerRecord>();
 
-
         if (in != null) {
-            for (var itIn : in) {
+            for (int itInIndex = 0; itInIndex < in.size(); itInIndex++) {
+                var itIn = in.get(itInIndex);
                 if (itIn == null) continue;
                 var inRecord = new CustomerRecord();
                 inRecord.attach(ctx.configuration());

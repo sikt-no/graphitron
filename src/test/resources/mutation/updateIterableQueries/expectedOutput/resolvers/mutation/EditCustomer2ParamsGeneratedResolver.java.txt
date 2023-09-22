@@ -33,7 +33,8 @@ public class EditCustomer2ParamsGeneratedResolver implements EditCustomer2Params
 
 
         if (input != null) {
-            for (var itInput : input) {
+            for (int itInputIndex = 0; itInputIndex < input.size(); itInputIndex++) {
+                var itInput = input.get(itInputIndex);
                 if (itInput == null) continue;
                 var inputRecord = new CustomerRecord();
                 inputRecord.attach(ctx.configuration());

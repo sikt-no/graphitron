@@ -75,6 +75,13 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return empty CodeBlock
+     */
+    public static CodeBlock empty() {
+        return CodeBlock.builder().build();
+    }
+
+    /**
      * @param addTarget Name of updatable collection to add something to.
      * @param addition The name of the content that should be added.
      * @return CodeBlock that adds something to an updatable collection.

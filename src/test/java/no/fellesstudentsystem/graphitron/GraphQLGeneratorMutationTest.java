@@ -79,7 +79,7 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     }
 
     @Test
-    void   generate_mutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
+    void   generate_serviceMutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedTypes");
     }
 
@@ -89,8 +89,20 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     }
 
     @Test
-    void generate_mutation_shouldGenerateResolversWithErrorHandling() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("exceptionResolvers");
+    void generate_serviceMutation_shouldGenerateResolversWithErrorHandling() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("exceptionServiceResolvers");
+    }
+
+    @Test
+    void generate_mutation_shouldGenerateResolversWithValidationErrorHandling() throws IOException {
+        GeneratorConfig.setShouldGenerateRecordValidation(true);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("validationErrorHandling");
+    }
+
+    @Test
+    void generate_serviceMutation_shouldGenerateResolversWithValidationErrorHandling() throws IOException {
+        GeneratorConfig.setShouldGenerateRecordValidation(true);
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceValidationErrorHandling");
     }
 
     @Test

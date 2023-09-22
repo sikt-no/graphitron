@@ -100,11 +100,14 @@ public abstract class TestCommon {
 
                 var expectedFileContent = expectedFile.stream().filter(it -> !it.startsWith("import")).collect(Collectors.joining("\n"));
                 var generatedFileContent = generatedFile.stream().filter(it -> !it.startsWith("import")).collect(Collectors.joining("\n"));
-                assertThat(generatedFileContent).isEqualToIgnoringWhitespace(expectedFileContent);
+                var generatedFileContentOutput = "\nGenerated file content:\n" + String.join("\n", generatedFile) + "\n";
+                assertThat(generatedFileContent).as(() -> generatedFileContentOutput).isEqualToIgnoringWhitespace(expectedFileContent);
 
                 var expectedFileImports = asImportList(expectedFile);
                 var generatedFileImports = asImportList(generatedFile);
-                assertThat(generatedFileImports).containsExactlyInAnyOrderElementsOf(expectedFileImports); // Allows us to ignore import order.
+                assertThat(generatedFileImports)
+                        .as(() -> generatedFileContentOutput)
+                        .containsExactlyInAnyOrderElementsOf(expectedFileImports); // Allows us to ignore import order.
 
                 return FileVisitResult.CONTINUE;
             }

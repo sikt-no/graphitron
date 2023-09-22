@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.shouldGenerateRecordValidation;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.extractType;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.getServiceReturnClassName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -42,7 +43,9 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             VARIABLE_GET_PARAM = "idContainer",
             VARIABLE_NODE_RESULT = "nodes",
             VARIABLE_SELECT = "select",
-            VARIABLE_FLAT_ARGS = "flatArguments";
+            VARIABLE_FLAT_ARGS = "flatArguments",
+            VARIABLE_VALIDATION_ERRORS = "validationErrors",
+            VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties";
 
     protected final ObjectField localField;
     protected UpdateContext context;
@@ -70,11 +73,15 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         if (!context.getRecordInputs().isEmpty()) {
             code
                     .addStatement("var $L = $T.flattenArgumentKeys($N.getArguments())", VARIABLE_FLAT_ARGS, ARGUMENTS.className, ENV_NAME)
+                    .add(shouldGenerateRecordValidation()
+                            ? CodeBlock.of("var $L = new $T<$T>();", VARIABLE_VALIDATION_ERRORS, HASH_SET.className, GRAPHQL_ERROR.className)
+                            : empty())
                     .add("\n");
         }
 
         code
                 .add(declareRecords(specInputs))
+                .add(shouldGenerateRecordValidation() ? generateValidationErrorHandling() : empty())
                 .add(generateUpdateMethodCall(target))
                 .add(generateResponsesAndGetCalls(target));
 
@@ -82,6 +89,14 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
                 .addCode(declareAllServiceClasses())
                 .addCode(code.build())
+                .build();
+    }
+
+    private CodeBlock generateValidationErrorHandling() {
+        return CodeBlock.builder()
+                .beginControlFlow("if (!$N.isEmpty())", VARIABLE_VALIDATION_ERRORS)
+                .addStatement("throw new $T($N)", ABORT_EXECUTION_EXCEPTION.className, VARIABLE_VALIDATION_ERRORS)
+                .endControlFlow()
                 .build();
     }
 
@@ -164,30 +179,38 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         var recordName = asRecordName(name);
 
         var code = CodeBlock.builder();
-
+        var propertiesToValidateDeclaration = shouldGenerateRecordValidation() && recursion == 0
+                ? CodeBlock.builder().addStatement("var $L = new $T<$T, $T<$T>>()", VARIABLE_PATHS_FOR_PROPERTIES, HASH_MAP.className, STRING.className, LIST.className, STRING.className).build()
+                : empty();
         var isIterable = target.isIterableWrapped();
         var iterableInputName = asIterableIf(targetName, isIterable);
+        var iterableIndexName = iterableInputName + "Index";
         if (isIterable) {
             if (!hasTable) {
                 return code.build();
             }
 
             code
-                    .add("\n")
                     .beginControlFlow("$L", ifNotNull(targetName))
-                    .beginControlFlow("for (var $L : $N)", iterableInputName, targetName)
+                    .beginControlFlow("for (int $L = 0; $N < $N.size(); $N++)", iterableIndexName, iterableIndexName, targetName, iterableIndexName)
+                    .addStatement("var $L = $N.get($N)", iterableInputName, targetName, iterableIndexName)
                     .addStatement("if ($N == null) continue", iterableInputName)
+                    .add(propertiesToValidateDeclaration)
                     .add(declareRecord(name, input.getRecordClassName()));
+        } else {
+            code.add(propertiesToValidateDeclaration);
         }
 
         for (var in : input.getInputsSortedByRequired()) {
-            var nextPath = path + "/" + in.getName();
+            var indexedPartOfPath = "/\" + " + iterableIndexName + " + \"/";
+            var nextPath = path + (isIterable ? indexedPartOfPath : "/") + in.getName();
             if (processedSchema.isInputType(in)) {
                 code
                         .addStatement("var $L = $N.get$L()", in.getName(), iterableInputName, capitalize(in.getName()))
                         .add(fillRecords(in, name, nextPath, recursion + 1));
             } else {
-                code.beginControlFlow("if ($N.contains($S))", VARIABLE_FLAT_ARGS, nextPath);
+                var nextPathWithoutIndices = nextPath.replaceAll("/\"(.*?)\"/", "/");
+                code.beginControlFlow("if ($N.contains($S))", VARIABLE_FLAT_ARGS, nextPathWithoutIndices);
                 var getCall = CodeBlock.of("$N" + in.getMappingFromFieldName().asGetCall(), iterableInputName);
                 var setCall = in.getRecordSetCall("$L");
                 code.add("$N", recordName);
@@ -196,12 +219,25 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 } else {
                     code.addStatement(setCall, getCall);
                 }
+                if (shouldGenerateRecordValidation()) {
+                    code.addStatement("$N.put($S, $T.of((\"$L\").split(\"/\")))",
+                            VARIABLE_PATHS_FOR_PROPERTIES, uncapitalize(in.getRecordMappingName()), LIST.className, nextPath);
+                }
                 code.endControlFlow();
             }
         }
 
+        var addViolationsBlock = shouldGenerateRecordValidation() && recursion == 0
+                ? CodeBlock.builder().addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VARIABLE_VALIDATION_ERRORS, RECORD_VALIDATOR.className, recordName, VARIABLE_PATHS_FOR_PROPERTIES, ENV_NAME).build()
+                : empty();
+
         if (isIterable) {
-            code.add(addToList(asListedName(recordName), recordName)).endControlFlow().endControlFlow();
+            code.add(addToList(asListedName(recordName), recordName))
+                    .add(addViolationsBlock)
+                    .endControlFlow()
+                    .endControlFlow();
+        } else {
+            code.add(addViolationsBlock);
         }
 
         if (!code.isEmpty()) { // Note: This is done after records are filled.

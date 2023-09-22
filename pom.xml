@@ -48,6 +48,10 @@
             <groupId>com.squareup</groupId>
             <artifactId>javapoet</artifactId>
         </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.jooq.pro-java-11</groupId>
@@ -110,7 +114,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-plugin-plugin</artifactId>
-                <version>3.9.0</version>
                 <executions>
                     <execution>
                         <id>mojo-descriptor</id>

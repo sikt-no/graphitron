@@ -26,6 +26,7 @@ The options are the same for both goals.
 * _schemaFiles_ - Set of schema files which should be used for the generation process.
 * _generatedSchemaCodePackage_ - The location of the graphql-codegen generated classes.
 * _jooqGeneratedPackage_ - The location of the jOOQ generated code.
+* _shouldGenerateRecordValidation_ - boolean (default _true_) that controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
 
 #### Special code references (to be removed)
 * _externalEnums_ - Path to the enum which lists the available enums to use in the schema.

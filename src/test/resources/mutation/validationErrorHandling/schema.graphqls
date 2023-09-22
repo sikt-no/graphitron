@@ -1,0 +1,18 @@
+input EditInput @table(name : "CUSTOMER") {
+  id: ID!
+  name: NameInput!
+}
+
+input NameInput {
+  firstName: String! @column(name: "FIRST_NAME")
+  surname: String! @column(name: "LAST_NAME")
+}
+
+type EditResponse {
+  id: ID! @column(name: "ID")
+}
+
+type Mutation {
+  editCustomer(id: ID!, in: EditInput): EditResponse! @mutation(typeName: UPDATE)
+  editCustomerIterable(id: [ID!]!, in: [EditInput!]!): [EditResponse!]! @mutation(typeName: UPDATE)
+}

@@ -35,7 +35,8 @@ public class EditFilmRatingNoConverterIterableGeneratedResolver implements EditF
 
 
         if (input != null) {
-            for (var itInput : input) {
+            for (int itInputIndex = 0; itInputIndex < input.size(); itInputIndex++) {
+                var itInput = input.get(itInputIndex);
                 if (itInput == null) continue;
                 var inputRecord = new FilmRecord();
                 inputRecord.attach(ctx.configuration());

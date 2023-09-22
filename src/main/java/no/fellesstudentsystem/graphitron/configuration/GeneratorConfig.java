@@ -64,6 +64,8 @@ public class GeneratorConfig {
         externalTransforms = new ExternalTransforms(transforms);
 
         GeneratorConfig.globalTransforms = globalTransforms;
+
+        GeneratorConfig.shouldGenerateRecordValidation = false;
     }
 
     /**
@@ -101,6 +103,7 @@ public class GeneratorConfig {
         externalTransforms = new ExternalTransforms(mojo.getExternalTransforms());
 
         GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
+        GeneratorConfig.shouldGenerateRecordValidation = mojo.shouldGenerateRecordValidation();
     }
 
     /**
@@ -155,6 +158,8 @@ public class GeneratorConfig {
             generatedJooqTablesPackage,
             generatedJooqKeysPackage,
             generatedJooqRecordsPackage;
+
+    private static boolean shouldGenerateRecordValidation;
 
     public static Class<?> TABLES_CLASS, KEYS_CLASS;
 
@@ -213,7 +218,6 @@ public class GeneratorConfig {
         return generatedJooqRecordsPackage;
     }
 
-
     public static ExternalEnums getExternalEnums() {
         return externalEnums;
     }
@@ -240,6 +244,14 @@ public class GeneratorConfig {
                 .filter(it -> it.getScope().equals(scope))
                 .map(GlobalTransform::getName)
                 .collect(Collectors.toList());
+    }
+
+    public static boolean shouldGenerateRecordValidation() {
+        return shouldGenerateRecordValidation;
+    }
+
+    public static void setShouldGenerateRecordValidation(boolean shouldGenerateRecordValidation) {
+        GeneratorConfig.shouldGenerateRecordValidation = shouldGenerateRecordValidation;
     }
 
     public static void setSchemaFiles(String file) {

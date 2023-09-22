@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.collectToList;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -51,7 +52,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (referenceField.hasNonReservedInputFields()) {
             code.add(createWhere(actualRefTable, referenceField, currentJoinSequence, !isRoot));
         } else if (isRoot) {
-            return CodeBlock.builder().build();
+            return empty();
         }
         return code.build();
     }
