@@ -1,16 +1,26 @@
 package no.fellesstudentsystem.graphitron.mojo;
 
+import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
 
 import java.util.List;
 import java.util.Set;
 
-@Mojo(name = "generate")
+@Mojo(name = "generate",
+      defaultPhase = GENERATE_SOURCES
+)
 public class GenerateMojo extends AbstractMojo {
+    /**
+     * The Maven project.
+     */
+    @Parameter(property = "project", required = true, readonly = true)
+    private MavenProject project;
+
     /**
      * Package root for this project. This is temporary and should be replaced once Graphitron is unlinked from FS.
      */
@@ -87,6 +97,8 @@ public class GenerateMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
         GraphQLGenerator.generate();
+
+        project.addCompileSourceRoot(getOutputPath());
     }
 
     public String getTopPackage() {
