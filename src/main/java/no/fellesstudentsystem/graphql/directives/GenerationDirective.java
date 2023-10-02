@@ -15,7 +15,7 @@ public enum GenerationDirective {
     ERROR("error", EnumSet.of(GenerationDirectiveParam.NAME)),
     MUTATION_TYPE("mutationType", EnumSet.of(GenerationDirectiveParam.TYPE)),
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION)),
-    MAP_ENUM("mapEnum", EnumSet.of(GenerationDirectiveParam.NAME)),
+    ENUM("enum", EnumSet.of(GenerationDirectiveParam.NAME)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.OVERRIDE));
 
     private final String name;

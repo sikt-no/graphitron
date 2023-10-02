@@ -33,7 +33,7 @@ public abstract class AbstractField {
         name = field.getName();
         if (field.hasDirective(COLUMN.getName())) {
             var columnValue = getDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(NAME));
-            unprocessedNameInput = fieldType.isID() ? columnValue.toLowerCase() : columnValue;
+            unprocessedNameInput = fieldType != null && fieldType.isID() ? columnValue.toLowerCase() : columnValue;
             upperCaseName = columnValue.toUpperCase();
         } else {
             unprocessedNameInput = name;

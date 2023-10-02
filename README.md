@@ -91,9 +91,40 @@ type OtherType {
 }
 ```
 
+#### column directive
+By default, Graphitron assumes each field not annotated with the **notGenerated** or **splitQuery** directives to have a name
+equal to the column it corresponds to in the jOOQ table. The **column** directive overrides this behaviour. Specifying
+the _name_-parameter allows for using schema names that are not connected to the names of jOOQ fields.
+This directive applies to normal type fields, input type fields, arguments and enum values.
+
+```graphql
+type Query {
+  query(
+    argument: String @column(name: "ACTUAL_ARGUMENT_NAME") # @column applied on an argument.
+  ): SomeType
+}
+
+type SomeType {
+  value: String @column(name: "ACTUAL_VALUE_NAME") # @column applied on a standard field.
+}
+
+input SomeInput {
+  value: String @column(name: "ACTUAL_VALUE_NAME") # @column applied on an input field.
+}
+
+enum SomeEnum { # @column applied on enum fields. Each of these must correspond to a jOOQ field.
+  E0 @column(name: "ACTUAL_E0")
+  E1 @column(name: "ACTUAL_E1")
+  E2 @column(name: "ACTUAL_E2")
+}
+```
+
+For determining which table the column should be taken from, see the [table](#table-directive) directive.
+
 ### Tables, joins and records
 #### table directive
-The **table** directive links the object type or input type to a table in the database. This targets jOOQ generated classes, so
+The **table** directive links the object type or input type to a table in the database. Any **column**-directives within
+this type will use this table as the source for the field mapping. This targets jOOQ generated classes, so
 the _name_ parameter must match the table name in jOOQ if it differs from the database. The _name_ parameter is optional,
 and does not need to be specified if the type name already equals the table name.
 
@@ -111,6 +142,9 @@ type OtherType @table(name: "TABLE_B") {
   name: String
 }
 ```
+
+If a table type contains other types that do not set their own tables, the previous table type is used instead.
+This also applies to enum types.
 
 #### reference directive
 There are, of course, many cases where the connection between two tables is more complex.
@@ -133,11 +167,6 @@ TODO: Examples
 Note that joins only apply to the field they are set on. Graphitron either sets separate aliases or uses implicit joins to
 manage several simultaneous joins from one table to another. If a field points to a type, all fields within this referred
 type will have access to the join operation.
-
-### Query field mapping
-By default, Graphitron assumes each field not annotated with the _notGenerated_ or _splitQuery_ directives to have a name
-equal to the column it corresponds to in the jOOQ table. The **column**-directive overrides this behaviour. Specifying
-the _name_-parameter allows for using fields names that are not connected to the names of jOOQ fields.
 
 ### Query conditions
 To either apply additional conditions or override some of the conditions added by default, use the **condition** directive.
@@ -259,7 +288,20 @@ TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, Lis
 _Resulting code_:
 ```java
 .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
- and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+```
+
+### Enums
+Enums can be mapped in two ways. The **column** directive is already covered [here](#column-directive).
+An alternative method is to set up a Java enum instead, for example through a jOOQ converter. These can be referenced
+using the **enum** directive, by pointing to the appropriate [enum](#special-code-references-to-be-removed) entry.
+
+```graphql
+enum SomeEnum @enum(name: "TheJavaEnum") {
+  E0
+  E1
+  E2
+}
 ```
 
 ### Mutation generation
@@ -485,7 +527,7 @@ interface Node {
 ```
 
 ### Error
-An interface used to enforce certain fields for mutations that use the **service**-directive.
+An interface used to enforce certain fields for mutations that use the **service** directive.
 
 ```graphql
 interface Error {

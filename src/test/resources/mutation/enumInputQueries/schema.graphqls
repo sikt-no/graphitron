@@ -25,4 +25,4 @@ type Mutation {
 
 enum RatingNoConverter { G, PG, R, } # No jOOQ converter.
 
-enum Rating @mapEnum(name: "RATING_TEST") { G, PG, R, } # With jOOQ converter.
+enum Rating @enum(name: "RATING_TEST") { G, PG, R, } # With jOOQ converter.

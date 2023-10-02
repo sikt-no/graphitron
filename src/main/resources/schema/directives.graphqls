@@ -21,10 +21,10 @@ directive @column(
   table: String,
   """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
   key: String
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
-"""Lenker denne enumen til en API enum eller DB-kolonneverdi."""
-directive @mapEnum(name: String!) on ENUM | ENUM_VALUE
+"""Links this schema enum to a Java enum."""
+directive @enum(name: String!) on ENUM
 
 """
 Knytter feltet til et service som inneholder en metode for å utføre denne spørringen.

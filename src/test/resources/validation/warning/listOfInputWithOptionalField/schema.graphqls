@@ -17,9 +17,9 @@ input InputWithOptionalField {
 }
 
 enum Rating {
-  G @mapEnum(name: "G"),
-  PG @mapEnum(name: "PG"),
-  PG_13 @mapEnum(name: "PG-13"),
-  R @mapEnum(name: "R"),
-  NC_17 @mapEnum(name: "NC-17")
+  G @column(name: "G"),
+  PG @column(name: "PG"),
+  PG_13 @column(name: "PG-13"),
+  R @column(name: "R"),
+  NC_17 @column(name: "NC-17")
 }

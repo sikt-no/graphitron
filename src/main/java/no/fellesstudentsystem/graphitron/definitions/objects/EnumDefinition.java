@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.MAP_ENUM;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ENUM;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 import static no.fellesstudentsystem.graphitron.definitions.fields.EnumField.from;
 
@@ -22,8 +22,8 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition>
 
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {
         super(enumTypeDefinition);
-        this.dbName = enumTypeDefinition.hasDirective(MAP_ENUM.getName())
-                ? DirectiveHelpers.getDirectiveArgumentString(enumTypeDefinition, MAP_ENUM, MAP_ENUM.getParamName(NAME))
+        this.dbName = enumTypeDefinition.hasDirective(ENUM.getName())
+                ? DirectiveHelpers.getDirectiveArgumentString(enumTypeDefinition, ENUM, ENUM.getParamName(NAME))
                 : null;
         this.valuesMap = from(enumTypeDefinition)
                 .stream()

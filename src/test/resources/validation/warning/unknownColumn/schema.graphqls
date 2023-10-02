@@ -32,9 +32,9 @@ type NestedRentalInfo {
 }
 
 enum Rating {
-    G @mapEnum(name: "G"), #enum values are not validated
-    PG @mapEnum(name: "PG"),
-    PG_13 @mapEnum(name: "PG-13"),
-    R @mapEnum(name: "R"),
-    NC_17 @mapEnum(name: "NC-17")
+    G @column(name: "G"), #enum values are not validated
+    PG @column(name: "PG"),
+    PG_13 @column(name: "PG-13"),
+    R @column(name: "R"),
+    NC_17 @column(name: "NC-17")
 }

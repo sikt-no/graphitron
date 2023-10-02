@@ -51,7 +51,7 @@ type Film @table {
 }
 
 enum Rating {
-  G @mapEnum(name: "G"),
-  PG_13 @mapEnum(name: "PG-13"),
-  R @mapEnum(name: "R"),
+  G @column(name: "G"),
+  PG_13 @column(name: "PG-13"),
+  R @column(name: "R"),
 }
