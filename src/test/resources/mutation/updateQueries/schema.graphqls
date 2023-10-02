@@ -17,10 +17,10 @@ type EditResponseWithCustomer {
 }
 
 type Mutation {
-  editCustomerInput(input: EditInput!): ID! @mutationType(typeName: UPDATE)
-  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutationType(typeName: UPDATE)
-  editCustomerInputAndResponse(input: EditInput!): EditResponse! @mutationType(typeName: UPDATE)
-  editCustomerWithCustomerResponse(input: EditInput!): EditResponseWithCustomer! @mutationType(typeName: UPDATE)
+  editCustomerInput(input: EditInput!): ID! @mutation(typeName: UPDATE)
+  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutation(typeName: UPDATE)
+  editCustomerInputAndResponse(input: EditInput!): EditResponse! @mutation(typeName: UPDATE)
+  editCustomerWithCustomerResponse(input: EditInput!): EditResponseWithCustomer! @mutation(typeName: UPDATE)
 }
 
 type Customer implements Node @table {

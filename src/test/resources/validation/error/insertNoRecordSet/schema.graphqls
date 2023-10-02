@@ -3,5 +3,5 @@ input InsertInput {
 }
 
 type Mutation {
-  registerCustomerInput(input: InsertInput!): ID! @mutationType(typeName: INSERT)
+  registerCustomerInput(input: InsertInput!): ID! @mutation(typeName: INSERT)
 }

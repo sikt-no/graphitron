@@ -16,10 +16,10 @@ type DeleteResponseWithCustomer {
 }
 
 type Mutation {
-  deleteCustomerInput(input: DeleteInput!): ID! @mutationType(typeName: DELETE)
-  deleteCustomer2Params(input: DeleteInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutationType(typeName: DELETE)
-  deleteCustomerInputAndResponse(input: DeleteInput!): DeleteResponse! @mutationType(typeName: DELETE)
-  deleteCustomerWithCustomerResponse(input: DeleteInput!): DeleteResponseWithCustomer! @mutationType(typeName: DELETE)
+  deleteCustomerInput(input: DeleteInput!): ID! @mutation(typeName: DELETE)
+  deleteCustomer2Params(input: DeleteInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutation(typeName: DELETE)
+  deleteCustomerInputAndResponse(input: DeleteInput!): DeleteResponse! @mutation(typeName: DELETE)
+  deleteCustomerWithCustomerResponse(input: DeleteInput!): DeleteResponseWithCustomer! @mutation(typeName: DELETE)
 }
 
 type Customer implements Node @table {

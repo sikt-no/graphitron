@@ -4,5 +4,5 @@ input EndreInput @table(name : "CUSTOMER") {
 }
 
 type Mutation {
-  editCustomer(in: EndreInput): ID! @mutationType(typeName: UPDATE)
+  editCustomer(in: EndreInput): ID! @mutation(typeName: UPDATE)
 }

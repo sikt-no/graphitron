@@ -11,6 +11,6 @@ type EditResponse1 {
 }
 
 type Mutation {
-  editCustomer0(id: ID!, in: EditInput): EditResponse0! @mutationType(typeName: UPDATE)
-  editCustomer1(id: [ID!]!, in: [EditInput!]!): EditResponse1! @mutationType(typeName: UPDATE)
+  editCustomer0(id: ID!, in: EditInput): EditResponse0! @mutation(typeName: UPDATE)
+  editCustomer1(id: [ID!]!, in: [EditInput!]!): EditResponse1! @mutation(typeName: UPDATE)
 }

@@ -47,8 +47,8 @@ public class ObjectField extends AbstractField implements GenerationTarget {
 
         join = field.hasDirective(COLUMN.getName()) ? getSqlColumnJoin(field) : null;
         serviceReference = field.hasDirective(SERVICE.getName()) ? getDirectiveArgumentString(field, SERVICE, SERVICE.getParamName(NAME)) : "";
-        mutationType = field.hasDirective(MUTATION_TYPE.getName())
-                ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION_TYPE, MUTATION_TYPE.getParamName(TYPE)))
+        mutationType = field.hasDirective(MUTATION.getName())
+                ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, MUTATION.getParamName(TYPE)))
                 : null;
     }
 

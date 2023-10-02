@@ -7,5 +7,5 @@ input InsertCustomerInput @table(name : "CUSTOMER") {
 }
 
 type Mutation {
-  registerCustomerInput(input: InsertCustomerInput!): ID! @mutationType(typeName: INSERT)
+  registerCustomerInput(input: InsertCustomerInput!): ID! @mutation(typeName: INSERT)
 }

@@ -17,10 +17,10 @@ type ListedResponse {
 }
 
 type Mutation {
-  editFilmRatingNoConverter(input: FilmInput1!): Response! @mutationType(typeName: UPDATE)
-  editFilmRatingNoConverterIterable(input: [FilmInput1!]!): ListedResponse! @mutationType(typeName: UPDATE)
-  editFilmRatingWithConverter(input: FilmInput2!): Response! @mutationType(typeName: UPDATE)
-  editFilmRatingWithConverterIterable(input: [FilmInput2!]!): ListedResponse! @mutationType(typeName: UPDATE)
+  editFilmRatingNoConverter(input: FilmInput1!): Response! @mutation(typeName: UPDATE)
+  editFilmRatingNoConverterIterable(input: [FilmInput1!]!): ListedResponse! @mutation(typeName: UPDATE)
+  editFilmRatingWithConverter(input: FilmInput2!): Response! @mutation(typeName: UPDATE)
+  editFilmRatingWithConverterIterable(input: [FilmInput2!]!): ListedResponse! @mutation(typeName: UPDATE)
 }
 
 enum RatingNoConverter { G, PG, R, } # No jOOQ converter.

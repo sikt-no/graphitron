@@ -3,5 +3,5 @@ type EditResponse {
 }
 
 type Mutation {
-  editCustomer(id: ID!): EditResponse! @mutationType(typeName: UPDATE)
+  editCustomer(id: ID!): EditResponse! @mutation(typeName: UPDATE)
 }

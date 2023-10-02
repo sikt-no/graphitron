@@ -2,7 +2,7 @@
 
 directive @service(name: String!) on FIELD_DEFINITION
 directive @error(name: String!) on OBJECT
-directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 

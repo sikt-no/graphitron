@@ -22,12 +22,12 @@ type Result {
 }
 
 type Mutation {
-  editCustomerWithCustomer(input: EditInput!): Response! @mutationType(typeName: UPDATE)
-  editCustomerWithCustomer2(input: EditInput!): Result! @mutationType(typeName: UPDATE)
-  deleteCustomerWithCustomer(input: EditInput!): Response! @mutationType(typeName: DELETE)
-  editCustomerWithCustomerIterable(input: [EditInput]!): ListedResponse! @mutationType(typeName: UPDATE)
-  editCustomerWithCustomerIterable2(input: [EditInput]!): ListedNodeResponse! @mutationType(typeName: UPDATE)
-  deleteCustomerWithCustomerIterable(input: [EditInput]!): ListedResponse! @mutationType(typeName: DELETE)
+  editCustomerWithCustomer(input: EditInput!): Response! @mutation(typeName: UPDATE)
+  editCustomerWithCustomer2(input: EditInput!): Result! @mutation(typeName: UPDATE)
+  deleteCustomerWithCustomer(input: EditInput!): Response! @mutation(typeName: DELETE)
+  editCustomerWithCustomerIterable(input: [EditInput]!): ListedResponse! @mutation(typeName: UPDATE)
+  editCustomerWithCustomerIterable2(input: [EditInput]!): ListedNodeResponse! @mutation(typeName: UPDATE)
+  deleteCustomerWithCustomerIterable(input: [EditInput]!): ListedResponse! @mutation(typeName: DELETE)
 }
 
 type Customer implements Node @table {

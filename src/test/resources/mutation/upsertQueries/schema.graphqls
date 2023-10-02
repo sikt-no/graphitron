@@ -21,10 +21,10 @@ type UpsertResponseWithCustomer {
 }
 
 type Mutation {
-  upsertCustomerInput(input: UpsertInput!): ID! @mutationType(typeName: UPSERT)
-  upsertCustomer2Params(input: UpsertInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutationType(typeName: UPSERT)
-  upsertCustomerInputAndResponse(input: UpsertInput!): UpsertResponse! @mutationType(typeName: UPSERT)
-  upsertCustomerWithCustomerResponse(input: UpsertInput!): UpsertResponseWithCustomer! @mutationType(typeName: UPSERT)
+  upsertCustomerInput(input: UpsertInput!): ID! @mutation(typeName: UPSERT)
+  upsertCustomer2Params(input: UpsertInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutation(typeName: UPSERT)
+  upsertCustomerInputAndResponse(input: UpsertInput!): UpsertResponse! @mutation(typeName: UPSERT)
+  upsertCustomerWithCustomerResponse(input: UpsertInput!): UpsertResponseWithCustomer! @mutation(typeName: UPSERT)
 }
 
 type Customer implements Node @table {

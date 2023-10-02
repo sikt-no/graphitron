@@ -100,7 +100,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
         GraphQLGenerator.getProcessedSchema(true).validate();
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "The following directives are declared in the code generator, but were not found in the GraphQL schema files: " +
-                        "reference, condition, service, mutationType, column, error, table, enum");
+                        "reference, mutation, condition, service, column, error, table, enum");
     }
 
     @Test

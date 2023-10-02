@@ -13,7 +13,7 @@ public enum GenerationDirective {
     COLUMN("column", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.NAME)),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.NAME)),
-    MUTATION_TYPE("mutationType", EnumSet.of(GenerationDirectiveParam.TYPE)),
+    MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.NAME)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.OVERRIDE));

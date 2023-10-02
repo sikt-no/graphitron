@@ -1,6 +1,6 @@
 #defines default mutation directives.
 
-directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 
 enum MutationType { UPDATE }
 

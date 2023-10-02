@@ -317,8 +317,8 @@ for queries. As usual, **column** may also be applied to adjust the mapping of i
 
 ```graphql
 type Mutation {
-  editCustomerInputAndResponse(input: EditInput!): EditResponse! @mutationType(typeName: UPDATE)
-  editCustomerWithCustomerResponse(input: EditInput!): EditResponseWithCustomer! @mutationType(typeName: UPDATE)
+  editCustomerInputAndResponse(input: EditInput!): EditResponse! @mutation(typeName: UPDATE)
+  editCustomerWithCustomerResponse(input: EditInput!): EditResponseWithCustomer! @mutation(typeName: UPDATE)
 }
 
 input EditInput @table(name: "CUSTOMER") { # Use @table to specify which jOOQ record/table this corresponds to.

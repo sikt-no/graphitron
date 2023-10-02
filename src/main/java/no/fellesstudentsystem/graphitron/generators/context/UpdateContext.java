@@ -211,7 +211,7 @@ public class UpdateContext {
     }
 
     /**
-     * @return Does this mutation have the {@link GenerationDirective#MUTATION_TYPE} directive set?
+     * @return Does this mutation have the {@link GenerationDirective#MUTATION} directive set?
      */
     public boolean hasMutationType() {
         return mutationType != null;

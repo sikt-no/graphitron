@@ -82,6 +82,6 @@ directive @condition(
   override: Boolean = false
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
-directive @mutationType(typeName: MutationType!) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }

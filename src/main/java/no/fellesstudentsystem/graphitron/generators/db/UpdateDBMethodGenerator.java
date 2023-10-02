@@ -44,7 +44,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     /**
      * @param target A {@link ObjectField} for which a mutation method should be generated for.
      *                       This must reference a field located within the Mutation type and with the
-     *                       "{@link GenerationDirective#MUTATION_TYPE mutationType}" directive set.
+     *                       "{@link GenerationDirective#MUTATION mutationType}" directive set.
      * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
      */
     @Override
