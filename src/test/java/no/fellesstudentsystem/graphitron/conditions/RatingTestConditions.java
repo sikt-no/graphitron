@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron.conditions;
 import no.sikt.graphitron.jooq.generated.testdata.tables.Film;
 import org.jooq.Condition;
 
-
 /**
  * Fake service for condition tests. Does not need to return meaningful values as only the generated result is tested.
  */

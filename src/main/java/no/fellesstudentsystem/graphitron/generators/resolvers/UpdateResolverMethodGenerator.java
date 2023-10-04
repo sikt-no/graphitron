@@ -261,10 +261,10 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     protected static CodeBlock applyGlobalTransforms(String recordName, TransformScope scope, boolean isIterable) {
         var code = CodeBlock.builder();
         GeneratorConfig
-                .getGlobalTransformNames(scope)
+                .getGlobalTransforms(scope)
                 .stream()
-                .filter(it -> GeneratorConfig.getExternalTransforms().contains(it))
-                .map(it -> GeneratorConfig.getExternalTransforms().get(it))
+                .filter(it -> GeneratorConfig.getExternalReferences().contains(it.getName()))
+                .map(it -> GeneratorConfig.getExternalReferences().getMethodFrom(it.getName(), it.getMethod()))
                 .forEach(transform -> code.add(applyTransform(recordName, transform, isIterable)));
         return code.build();
     }

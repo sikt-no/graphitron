@@ -42,7 +42,6 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
             VARIABLE_EXCEPTION = "e",
             VARIABLE_ERROR = "error",
             VARIABLE_CAUSE = "cause",
-            METHOD_GET_CAUSE = "getCauseField", // Hardcoded method name. Perhaps it should be tied to an interface?
             VALUE_UNDEFINED = "undefined";
 
 
@@ -98,22 +97,23 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
     private CodeBlock createCatchBlocks(ObjectField target) {
         var errorInterface = processedSchema.getInterface(ERROR_TYPE.getName());
         var hasPathField = errorInterface.hasField(FIELD_PATH);
-        var preparedErrorsMap = hasPathField ? getFieldErrorMap(target) : CodeBlock.of("");
         var preparedCode = errorInterface.hasField(FIELD_MESSAGE) ? createPreparedMessageCode() : CodeBlock.of("");
+        var externalReferences = GeneratorConfig.getExternalReferences();
 
         var code = CodeBlock.builder();
         for (var errorField : context.getAllErrors()) {
             var errorListName = asListedName(context.getErrorTypeDefinition(errorField.getTypeName()).getName());
             for (var exc : context.getExceptionDefinitions(errorField.getTypeName())) {
-                var exception = GeneratorConfig.getExternalExceptions().get(exc.getExceptionReference());
+                var reference = exc.getExceptionReference();
+                var exception = externalReferences.getClassFrom(reference);
                 code
                         .nextControlFlow("catch ($T $L)", ClassName.get(exception), VARIABLE_EXCEPTION)
                         .add(declareVariable(VARIABLE_ERROR, exc.getGraphClassName()))
                         .add(preparedCode);
                 if (hasPathField) {
-                    if (Stream.of(exception.getMethods()).map(Method::getName).anyMatch(it -> it.equals(METHOD_GET_CAUSE))) {
+                    if (Stream.of(exception.getMethods()).map(Method::getName).anyMatch(it -> it.equals(reference.getMethodName()))) {
                         code
-                                .add(preparedErrorsMap)
+                                .add(getFieldErrorMap(target, reference.getMethodName()))
                                 .addStatement(
                                         "$N.set$L($T.of(($S + $N).split($S)))",
                                         VARIABLE_ERROR,
@@ -135,10 +135,10 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
     }
 
     @NotNull
-    private CodeBlock getFieldErrorMap(ObjectField target) {
+    private CodeBlock getFieldErrorMap(ObjectField target, String methodName) {
         return CodeBlock
                 .builder()
-                .addStatement("var $L = $N.$L()", VARIABLE_CAUSE, VARIABLE_EXCEPTION, METHOD_GET_CAUSE)
+                .addStatement("var $L = $N.$L()", VARIABLE_CAUSE, VARIABLE_EXCEPTION, methodName)
                 .addStatement(
                         "var $L = $L.getOrDefault($N != null ? $N : \"\", $S)",
                         VARIABLE_CAUSE_NAME,
@@ -435,21 +435,22 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
      * Look for class object of the type returned by the specified service. Throw exception if not found.
      */
     private void checkService(ObjectField target) {
-        Validate.isTrue(localField.hasServiceReference(),
+        Validate.isTrue(
+                localField.hasServiceReference(),
                 "Requested to generate a method for '%s' in type '%s' without providing a service to call.",
-                localField.getName(), localObject.getName());
+                localField.getName(),
+                localObject.getName()
+        );
 
         var ref = localField.getServiceReference();
-        var services = GeneratorConfig.getExternalServices();
-        Validate.isTrue(services.contains(ref),
-                "Requested to generate a method for '%s' that calls service '%s', but no such service was found.",
-                localField.getName(), localField.getServiceReference());
-        var generatorService = services.get(ref);
-
-        var service = new ServiceWrapper(target.getName(), countParams(target.getInputFields(), false, processedSchema), generatorService);
-        Validate.isTrue(service.getMethod() != null,
+        var service = new ServiceWrapper(ref, countParams(target.getInputFields(), false, processedSchema));
+        Validate.isTrue(
+                service.getMethod() != null,
                 "Service '%s' contains no method with the name '%s' and %d parameter(s), which is required to generate the resolver.",
-                generatorService.getName(), target.getName(), service.getParamCount());
+                GeneratorConfig.getExternalReferences().getClassFrom(ref).getName(),
+                target.getName(),
+                service.getParamCount()
+        );
     }
 
     @Override

@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.validation;
 
 import graphql.com.google.common.collect.Sets;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
@@ -77,12 +78,13 @@ public class ProcessedDefinitionsValidator {
         );
         columnsByTableHavingImplicitJoin.forEach(this::validateTableExistsAndHasMethods);
 
-        var enumValueSet = GeneratorConfig.getExternalEnums();
+        var referenceSet = GeneratorConfig.getExternalReferences();
         schema.getEnums().values()
                 .stream()
                 .filter(EnumDefinition::hasDbEnumMapping)
-                .map(EnumDefinition::getDbName)
-                .filter(e -> !enumValueSet.contains(e.toUpperCase()))
+                .map(EnumDefinition::getEnumReference)
+                .map(CodeReference::getSchemaClassReference)
+                .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> LOGGER.warn("No enum with name '{}' found.", e));
 
         schema.getInputTypes().values()

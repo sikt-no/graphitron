@@ -5,7 +5,6 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.FilmActor;
 import no.sikt.graphitron.jooq.generated.testdata.tables.Language;
 import org.jooq.Condition;
 
-
 public class FilmActorTestConditions {
     public static Condition mainActor(Film film, FilmActor filmActor) {
         return null;

@@ -4,8 +4,10 @@ import graphql.language.ObjectField;
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
+import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.jetbrains.annotations.Nullable;
@@ -32,7 +34,7 @@ public abstract class AbstractField {
     private <T extends NamedNode<T> & DirectivesContainer<T>> AbstractField(T field, FieldType fieldType) {
         name = field.getName();
         if (field.hasDirective(COLUMN.getName())) {
-            var columnValue = getDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(NAME));
+            var columnValue = getDirectiveArgumentString(field, COLUMN, NAME);
             unprocessedNameInput = fieldType != null && fieldType.isID() ? columnValue.toLowerCase() : columnValue;
             upperCaseName = columnValue.toUpperCase();
         } else {
@@ -41,8 +43,7 @@ public abstract class AbstractField {
         }
 
         fieldReferences = new ArrayList<>();
-
-        if (!field.getDirectives(REFERENCE.getName()).isEmpty()) {
+        if (field.hasDirective(REFERENCE.getName())) {
             var refrenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
 
             Optional.ofNullable(refrenceDirective.getArgument(VIA.getName()))
@@ -60,8 +61,8 @@ public abstract class AbstractField {
 
         if (field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null) {
             condition = new SQLCondition(
-                    getDirectiveArgumentString(field, GenerationDirective.CONDITION, GenerationDirective.CONDITION.getParamName(GenerationDirectiveParam.NAME)),
-                    getOptionalDirectiveArgumentBoolean(field, GenerationDirective.CONDITION, GenerationDirective.CONDITION.getParamName(OVERRIDE)).orElse(false)
+                    new CodeReference(field, GenerationDirective.CONDITION, CONDITION, name),
+                    getOptionalDirectiveArgumentBoolean(field, GenerationDirective.CONDITION, OVERRIDE).orElse(false)
             );
         } else {
             condition = null;
@@ -74,22 +75,34 @@ public abstract class AbstractField {
     /**
      * Construct references from the {@link no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam#VIA via} parameter.
      */
-    private void addViaFieldReferences(Value viaValue) {
+    private void addViaFieldReferences(Value<?> viaValue) {
         var values = viaValue instanceof ArrayValue ? ((ArrayValue) viaValue).getValues() : List.of(((ObjectValue) viaValue));
 
         values.stream()
                 .filter(value -> value instanceof ObjectValue)
                 .forEach(value -> {
-                    List<ObjectField> objectFields = ((ObjectValue) value).getObjectFields();
-                    Optional<ObjectField> table = getObjectFieldByName(objectFields, TABLE.getName());
-                    Optional<ObjectField> key = getObjectFieldByName(objectFields, KEY.getName());
-                    Optional<ObjectField> condition = getObjectFieldByName(objectFields, GenerationDirectiveParam.CONDITION.getName());
+                    var objectFields = ((ObjectValue) value).getObjectFields();
+                    var table = getObjectFieldByName(objectFields, TABLE);
+                    var key = getOptionalObjectFieldByName(objectFields, KEY);
+                    var referencedCondition = getOptionalObjectFieldByName(objectFields, GenerationDirectiveParam.CONDITION)
+                            .map(ObjectField::getValue)
+                            .map(it -> (ObjectValue) it)
+                            .map(ObjectValue::getObjectFields)
+                            .map(fields ->
+                                    new SQLCondition(
+                                            new CodeReference(
+                                                    stringValueOf(getObjectFieldByName(fields, NAME)),
+                                                    getOptionalObjectFieldByName(fields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(name)
+                                            )
+                                    )
+                            ).orElse(null);
 
                     fieldReferences.add(
                             new FieldReference(
-                                    new JOOQTableMapping(table.map(AbstractField::stringValueOf).orElse("")),
-                                    key.map(AbstractField::stringValueOf).orElse(""),
-                                    condition.map(ii -> new SQLCondition(stringValueOf(ii))).orElse(null))
+                                    new JOOQTableMapping(stringValueOf(table)),
+                                    key.map(DirectiveHelpers::stringValueOf).orElse(""),
+                                    referencedCondition
+                            )
                     );
                 });
     }
@@ -181,22 +194,12 @@ public abstract class AbstractField {
      */
     @Nullable
     protected static <T extends NamedNode<T> & DirectivesContainer<T>> SQLImplicitFKJoin getSqlColumnJoin(T field) {
-        return getOptionalDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(TABLE))
+        return getOptionalDirectiveArgumentString(field, COLUMN, TABLE)
                 .map(table -> new SQLImplicitFKJoin(
                         table,
-                        getOptionalDirectiveArgumentString(field, COLUMN, COLUMN.getParamName(KEY)).orElse(""))
+                        getOptionalDirectiveArgumentString(field, COLUMN, KEY).orElse(""))
                 )
                 .orElse(null);
-    }
-
-    private static String stringValueOf(ObjectField objectField) {
-        return ((StringValue) objectField.getValue()).getValue();
-    }
-
-    private static Optional<ObjectField> getObjectFieldByName(List<ObjectField> objectFields, String name) {
-        return objectFields.stream()
-                .filter(objectField -> objectField.getName().equals(name))
-                .findFirst();
     }
 
     private boolean fieldReferencesContainsReferredFieldType(FieldType referringFieldType) {

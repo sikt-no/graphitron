@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.conditions;
 
-
 import no.sikt.graphitron.jooq.generated.testdata.tables.City;
 import org.jooq.Condition;
 

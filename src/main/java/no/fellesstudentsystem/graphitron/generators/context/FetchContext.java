@@ -76,8 +76,8 @@ public class FetchContext {
         if (pastJoinSequence.isEmpty() && localObject != null) {
 
             if (referenceObjectField.hasFieldReferences()) {
-                hasKeyReference = allFieldReferencesUsesIDReferences(localObject, referenceObjectField.getFieldReferences());
-            } else{
+                hasKeyReference = allFieldReferencesUseIDReferences(localObject, referenceObjectField.getFieldReferences());
+            } else {
                 hasKeyReference = usesIDReference(localObject, referenceObject.getTable());
             }
             targetObjectForID = hasKeyReference ? referenceObject : localObject;
@@ -91,7 +91,7 @@ public class FetchContext {
         this.previousContext = previousContext;
     }
 
-    private boolean allFieldReferencesUsesIDReferences(ObjectDefinition localObject, List<FieldReference> fieldReferences) {
+    private boolean allFieldReferencesUseIDReferences(ObjectDefinition localObject, List<FieldReference> fieldReferences) {
         boolean allFieldReferencesUsesIDReferences = true;
 
         for (int i = 0; i < fieldReferences.size(); i++) {

@@ -9,12 +9,12 @@ input EditInput2 @table(name : "CUSTOMER") {
   email: String
 }
 
-type SomeErrorA implements Error @error(name: "EXCEPTION_TEST") {
+type SomeErrorA implements Error @error(error: {name: "EXCEPTION_TEST"}) {
   path: [String!]!
   message: String!
 }
 
-type SomeErrorB implements Error @error(name: "EXCEPTION_TEST_CAUSE") {
+type SomeErrorB implements Error @error(error: {name: "EXCEPTION_TEST_CAUSE", method: "getCauseField"}) {
   path: [String!]!
   message: String!
 }
@@ -54,9 +54,9 @@ type EditCustomerResponse3 {
 }
 
 type Mutation {
-  editError(input: EditInput!): EditCustomerResponse! @service(name : "TEST_CUSTOMER")
-  editErrorUnion1(name: String! @column(name: "FIRST_NAME")): EditCustomerResponseUnion1! @service(name : "TEST_CUSTOMER")
-  editErrorUnion2(input: EditInput!): EditCustomerResponseUnion2! @service(name : "TEST_CUSTOMER")
+  editError(input: EditInput!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER"})
+  editErrorUnion1(name: String! @column(name: "FIRST_NAME")): EditCustomerResponseUnion1! @service(service : {name: "TEST_CUSTOMER"})
+  editErrorUnion2(input: EditInput!): EditCustomerResponseUnion2! @service(service : {name: "TEST_CUSTOMER"})
 }
 
 type Customer implements Node @table {

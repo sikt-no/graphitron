@@ -52,7 +52,7 @@ type EditCustomerResponse4 {
 }
 
 type Mutation {
-  editCustomerNested(input: EditInputLevel1!): EditCustomerResponse! @service(name : "TEST_CUSTOMER")
+  editCustomerNested(input: EditInputLevel1!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER"})
 }
 
 type Customer implements Node @table {

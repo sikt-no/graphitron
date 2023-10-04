@@ -6,6 +6,7 @@ import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
@@ -110,15 +111,15 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return CodeBlock.of(
                 "$L$L.getOrDefault($L, null)",
                 nullIfNullElse(variable),
-                mapOf(renderMapElements(enumEntry, flipDirection)),
+                mapOf(renderEnumMapElements(enumEntry, flipDirection)),
                 variable
         );
     }
 
-    private CodeBlock renderMapElements(EnumDefinition enumEntry, boolean flipDirection) {
+    private CodeBlock renderEnumMapElements(EnumDefinition enumEntry, boolean flipDirection) {
         var code = CodeBlock.builder();
         var hasEnumReference = enumEntry.hasDbEnumMapping();
-        var dbName = enumEntry.getDbName();
+        var enumReference = enumEntry.getEnumReference();
         var entryClassName = enumEntry.getGraphClassName();
         var entrySet = new ArrayList<>(enumEntry.getValuesMap().entrySet());
         var entrySetSize = entrySet.size();
@@ -126,12 +127,12 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
             var enumValue = entrySet.get(i);
             if (flipDirection) {
                 code
-                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName()))
-                        .add(", $T.$L", entryClassName, enumValue.getKey());
+                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getValue().getUpperCaseName()))
+                        .add(", $L", renderEnumKeySide(entryClassName, enumValue.getKey()));
             } else {
                 code
-                        .add("$T.$L, ", entryClassName, enumValue.getKey())
-                        .add(renderValueSide(hasEnumReference, dbName, enumValue.getValue().getUpperCaseName()));
+                        .add("$L, ", renderEnumKeySide(entryClassName, enumValue.getKey()))
+                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getValue().getUpperCaseName()));
             }
             if (i < entrySetSize - 1) {
                 code.add(", ");
@@ -140,16 +141,15 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return code.build();
     }
 
-    private CodeBlock renderValueSide(boolean hasEnumReference, String dbName, String valueName) {
-        var code = CodeBlock.builder();
-        if (hasEnumReference) {
-            var enumName = dbName.toUpperCase();
-            var apiEnumType = GeneratorConfig.getExternalEnums().get(enumName);
-            code.add("$T.$L", ClassName.get(apiEnumType.getPackageName(), apiEnumType.getSimpleName()), valueName);
-        } else {
-            code.add("$S", valueName);
-        }
-        return code.build();
+    private CodeBlock renderEnumKeySide(TypeName entryClassName, String keyName) {
+        return CodeBlock.of("$T.$L", entryClassName, keyName);
     }
 
+    private CodeBlock renderEnumValueSide(boolean hasEnumReference, CodeReference reference, String valueName) {
+        if (hasEnumReference) {
+            return CodeBlock.of("$T.$L", ClassName.get(GeneratorConfig.getExternalReferences().getClassFrom(reference)), valueName);
+        } else {
+            return CodeBlock.of("$S", valueName);
+        }
+    }
 }

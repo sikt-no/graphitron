@@ -23,65 +23,51 @@ directive @column(
   key: String
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
-"""Links this schema enum to a Java enum."""
-directive @enum(name: String!) on ENUM
+"""Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
+directive @enum(enumReference: ExternalCodeReference!) on ENUM
 
 """
-Knytter feltet til et service som inneholder en metode for å utføre denne spørringen.
-Servicemetoden må ha en signatur som matcher antall inputs og hete det samme som feltet.
+Use an external service to do the mutation operation.
+The signature of the method must match the inputs of the mutation.
+Available values are set in the plugin configuration.
 """
-directive @service(
-  """
-  Navn på service som inneholder en metode som heter det samme som dette feltet.
-  Tilgjengelige service finnes i kjerneapi-service under codegen_enums/GeneratorService.
-  """
-  name: String!
-) on FIELD_DEFINITION
+directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
 
 """
-Knytter feltet til en exception som skal fanges for dette denne feiltypen.
-Virker bare på typer som implementerer Error-interfacet.
+Map this type to a Java exception class.
+Only applicable on types that implement the Error interface.
+Available values are set in the plugin configuration.
 """
-directive @error(
-  """
-  Navn på exception som inneholder en metode som heter det samme som dette feltet.
-  Tilgjengelige service finnes i kjerneapi-service under codegen_enums/GeneratorException.
-  """
-  name: String!
-) on OBJECT
+directive @error(error: ExternalCodeReference!) on OBJECT
 
-"""Knytter feltet til en relatert tabell i KjerneAPI."""
+"""Helps create connections between tables where a simple implicit join would be insufficient."""
 directive @reference(
-  """Tabellen i KjerneAPI."""
+  """The jOOQ table to connect to."""
   table: String
 
-  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
+  """The key to use to create this reference."""
   key: String,
 
-  """
-  En skranke i KjerneAPI som begrenser hvilke rader som er av relevans for koblingen.
-  Tilgjengelige metoder finnes i no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition.
-  """
-  condition: String,
+  """Adjust the condition for this reference. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference,
 
-  """Eventuelle referanser som knytningen går via"""
+  """Extra reference steps that must be taken to complete the reference."""
   via: [ReferenceElement!]
-
 ) on FIELD_DEFINITION
 
-input ReferenceElement { table: String!, key: String, condition: String }
-
-"""Legger på ekstra begrensninger for dette feltet eller verdien."""
+"""Adjust constraints for this field, argument or input field."""
 directive @condition(
-  """
-  En skranke i KjerneAPI.
-  Tilgjengelige metoder finnes i no.fellesstudentsystem.kjerneapi.conditions.GeneratorCondition.
-  """
-  name: String,
-  """Hvis sant, overskriver det som ville vanligvis blitt generert av conditions for dette."""
+  """Condition to be used. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference,
+  """If true, this condition should be used instead of the usual checks that are generated."""
   override: Boolean = false
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 
+
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
+
+input ExternalCodeReference { name: String!, method: String }
+
+input ReferenceElement { table: String!, key: String, condition: ExternalCodeReference }

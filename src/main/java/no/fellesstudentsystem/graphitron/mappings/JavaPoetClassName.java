@@ -17,9 +17,6 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.Record;
 import org.jooq.Result;
 
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
-
 /**
  * Enum of all the classnames in use in the generator, which helps keep track of dependencies.
  * Preferably add any new non-dynamic class name retrievals here.
@@ -37,7 +34,6 @@ public enum JavaPoetClassName {
     LIST(ClassName.get(java.util.List.class)),
     ARRAY_LIST(ClassName.get(java.util.ArrayList.class)),
     ILLEGAL_ARGUMENT_EXCEPTION(ClassName.get(IllegalArgumentException.class)),
-    ILLEGAL_STATE_EXCEPTION(ClassName.get(IllegalStateException.class)),
     MAP(ClassName.get(java.util.Map.class)),
     GRAPHQL_ERROR(ClassName.get(GraphQLError.class)),
     ABORT_EXECUTION_EXCEPTION(ClassName.get(AbortExecutionException.class)),
@@ -48,7 +44,6 @@ public enum JavaPoetClassName {
     COMPLETABLE_FUTURE(ClassName.get(java.util.concurrent.CompletableFuture.class)),
     INJECT(ClassName.get(javax.inject.Inject.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
-    FIELD_HELPERS_EXTERNAL(ClassName.get(GeneratorConfig.getGeneratedJooqPackage(), "FieldHelpers")), // TODO: Need more generic and external record transform functions before this can be removed.
     FIELD_HELPERS(ClassName.get(FieldHelperHack.class)),
     ARGUMENTS(ClassName.get(no.fellesstudentsystem.graphql.helpers.arguments.Arguments.class)),
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqTablesClass())),
@@ -64,14 +59,11 @@ public enum JavaPoetClassName {
     SELECTION_SET(ClassName.get(SelectionSet.class)),
     CONNECTION_SELECTION_SET(ClassName.get(ConnectionSelectionSet.class)),
     RECORD_VALIDATOR(ClassName.get(RecordValidator.class)),
-    RECORD(ClassName.get(Record.class)),
     RELAY_EDGE_IMPL(ClassName.get(DefaultEdge.class)),
     RELAY_PAGE_INFO_IMPL(ClassName.get(DefaultPageInfo.class)),
     RELAY_CONNECTION(ClassName.get(ExtendedConnection.class)),
     RELAY_CONNECTION_IMPL(ClassName.get(ConnectionImpl.class)),
-    RELAY_CONNECTION_CURSOR_IMPL(ClassName.get(DefaultConnectionCursor.class)),
-    RESULT(ClassName.get(Result.class));
-
+    RELAY_CONNECTION_CURSOR_IMPL(ClassName.get(DefaultConnectionCursor.class));
 
     public final ClassName className;
 

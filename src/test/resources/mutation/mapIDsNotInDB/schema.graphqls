@@ -1,5 +1,5 @@
 type Mutation {
-  editCustomerAddress(in: EditAddressInput!): EditAddressResponse! @service(name: "TEST_CUSTOMER")
+  editCustomerAddress(in: EditAddressInput!): EditAddressResponse! @service(service: {name:"TEST_CUSTOMER"})
 }
 
 input EditAddressInput @table(name: "CUSTOMER") {

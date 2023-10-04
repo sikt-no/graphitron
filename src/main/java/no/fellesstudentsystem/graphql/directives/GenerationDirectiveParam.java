@@ -11,7 +11,11 @@ public enum GenerationDirectiveParam {
     CONDITION("condition"),
     OVERRIDE("override"),
     VIA("via"),
-    TYPE("typeName");
+    TYPE("typeName"),
+    ENUM("enumReference"),
+    SERVICE("service"),
+    ERROR("error"),
+    METHOD("method");
 
     private final String name;
 

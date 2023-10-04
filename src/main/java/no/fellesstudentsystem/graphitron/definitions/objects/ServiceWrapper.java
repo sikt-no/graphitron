@@ -2,16 +2,16 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 
@@ -27,16 +27,18 @@ public class ServiceWrapper {
     private final TypeName returnTypeName;
     private final Set<Class<?>> internalClasses;
 
-    public ServiceWrapper(String fieldName, int paramCount, Class<?> service) {
+    public ServiceWrapper(CodeReference reference, int paramCount) {
+        var references = GeneratorConfig.getExternalReferences();
+        var service = references.getClassFrom(reference);
+        var method = references.getMethodFrom(reference);
+
         this.paramCount = paramCount;
-        var methodOptional = getServiceReturnMethod(fieldName, service);
-        var wrapperName = methodOptional.map(Method::getReturnType).map(Class::getName).orElse("");
-        returnIsIterable = wrapperName.equals("java.util.List");
+        this.method = method;
+        returnIsIterable = method.getReturnType().getName().equals("java.util.List");
         serviceName = service.getSimpleName();
         packageName = service.getPackageName();
 
-        method = methodOptional.orElse(null);
-        returnType = method != null ? extractType(method.getGenericReturnType()) : null;
+        returnType = extractType(method.getGenericReturnType());
         if (returnType != null) {
             returnTypeInService = returnType.getEnclosingClass() == service;
             returnTypeName = getServiceReturnClassName(returnType.getName(), returnIsIterable);
@@ -45,17 +47,6 @@ public class ServiceWrapper {
             returnTypeName = null;
         }
         internalClasses = Arrays.stream(service.getClasses()).collect(Collectors.toSet());
-    }
-
-    /**
-     * @return The method object of the type returned by the service.
-     */
-    @NotNull
-    private Optional<Method> getServiceReturnMethod(String targetName, Class<?> service) {
-        return Stream
-                .of(service.getMethods())
-                .filter(m -> m.getName().equals(targetName) && m.getParameterTypes().length == paramCount)
-                .findFirst();
     }
 
     /**

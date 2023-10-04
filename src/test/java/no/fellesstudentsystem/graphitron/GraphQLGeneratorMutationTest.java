@@ -1,14 +1,11 @@
 package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
-import no.fellesstudentsystem.graphitron.enums.RatingTest;
-import no.fellesstudentsystem.graphitron.exceptions.TestException;
-import no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -20,11 +17,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class GraphQLGeneratorMutationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "mutation";
-
-    private final Map<String, Class<?>>
-            exceptions = Map.of("EXCEPTION_TEST", TestException.class, "EXCEPTION_TEST_CAUSE", TestExceptionCause.class),
-            services = Map.of("TEST_CUSTOMER", TestCustomerService.class),
-            enums = Map.of("RATING_TEST", RatingTest.class);
+    private final List<ExternalClassReference> references = List.of(
+            new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
+            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
+            new ExternalClassReference("EXCEPTION_TEST", "no.fellesstudentsystem.graphitron.exceptions.TestException"),
+            new ExternalClassReference("EXCEPTION_TEST_CAUSE", "no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause")
+    );
 
     public GraphQLGeneratorMutationTest() {
         super(SRC_TEST_RESOURCES_PATH);
@@ -49,11 +47,7 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
-                enums,
-                Map.of(),
-                services,
-                exceptions,
-                Map.of(),
+                references,
                 List.of()
         );
     }
@@ -164,10 +158,7 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     void generate_whenServiceNotFound_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage(
-                        "Requested to generate a method for 'editCustomerSimple' that calls service 'SERVICE_NOT_FOUND', " +
-                                "but no such service was found."
-                );
+                .hasMessage("Could not find external class with name SERVICE_NOT_FOUND");
     }
 
     @Test
@@ -175,9 +166,8 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         assertThatThrownBy(() -> generateFiles("error/serviceMethodNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
-                        "Service 'no.fellesstudentsystem.graphitron.services.TestCustomerService'" +
-                                " contains no method with the name 'editCustomerSimple'" +
-                                " and 2 parameter(s), which is required to generate the resolver."
+                        "Could not find method with name UNKNOWN_METHOD" +
+                                " in external class no.fellesstudentsystem.graphitron.services.TestCustomerService"
                 );
     }
 

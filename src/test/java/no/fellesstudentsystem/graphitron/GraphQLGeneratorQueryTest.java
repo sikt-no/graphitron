@@ -2,18 +2,13 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import no.fellesstudentsystem.graphitron.conditions.*;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.jooq.generated.testdata.enums.MpaaRating;
-import no.sikt.graphitron.jooq.generated.testdata.tables.*;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
-import java.util.AbstractMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -22,25 +17,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class GraphQLGeneratorQueryTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
 
-    private final Map<String, Class<?>> enums = Map.of("RATING", MpaaRating.class);
-    private final Map<String, Method> conditions = Map.ofEntries(
-            new AbstractMap.SimpleEntry<>("TEST_STORE_CUSTOMER", StoreTestConditions.class.getMethod("mostValuableCustomer", Store.class, Customer.class)),
-            new AbstractMap.SimpleEntry<>("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class.getMethod("customerAddressJoin", Customer.class, Address.class)),
-
-            new AbstractMap.SimpleEntry<>("TEST_CITY_NAME", CityTestConditions.class.getMethod("cityName", City.class, String.class)),
-            new AbstractMap.SimpleEntry<>("TEST_CITY_NAMES", CityTestConditions.class.getMethod("cityNames", City.class, List.class)),
-            new AbstractMap.SimpleEntry<>("TEST_CITY_ALL", CityTestConditions.class.getMethod("cityAll", City.class, String.class, List.class)),
-            new AbstractMap.SimpleEntry<>("TEST_CITY_INPUT_ALL", CityTestConditions.class.getMethod("cityInputAll", City.class, String.class, String.class, String.class)),
-
-            new AbstractMap.SimpleEntry<>("TEST_FILM_MAIN_ACTOR", FilmActorTestConditions.class.getMethod("mainActor", Film.class, FilmActor.class)),
-            new AbstractMap.SimpleEntry<>("TEST_FILM_STARRING_ACTOR", FilmActorTestConditions.class.getMethod("starringActor", Film.class, FilmActor.class)),
-
-            new AbstractMap.SimpleEntry<>("TEST_FILM_RATING", RatingTestConditions.class.getMethod("rating", Film.class, String.class)),
-            new AbstractMap.SimpleEntry<>("TEST_FILM_RATING_ALL", RatingTestConditions.class.getMethod("ratingAll", Film.class, String.class, Integer.class)),
-            new AbstractMap.SimpleEntry<>("TEST_FILM_RATING_INPUT_ALL", RatingTestConditions.class.getMethod("ratingInputAll", Film.class, Integer.class, String.class, Integer.class))
+    private final List<ExternalClassReference> references = List.of(
+            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
+            new ExternalClassReference("TEST_CITY", "no.fellesstudentsystem.graphitron.conditions.CityTestConditions"),
+            new ExternalClassReference("TEST_FILM_ACTOR", "no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions"),
+            new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions")
     );
 
-    public GraphQLGeneratorQueryTest() throws NoSuchMethodException {
+    public GraphQLGeneratorQueryTest() {
         super(SRC_TEST_RESOURCES_PATH);
     }
 
@@ -52,11 +37,7 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
-                enums,
-                conditions,
-                Map.of(),
-                Map.of(),
-                Map.of(),
+                references,
                 List.of()
         );
     }

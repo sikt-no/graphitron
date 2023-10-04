@@ -96,7 +96,7 @@ public class TableReflection {
         try {
             return Arrays
                     .stream(((TableImpl<?>) table.get().get(null)).fields())
-                    .filter(it -> it.getName().toUpperCase().equals(fieldName))
+                    .filter(it -> it.getName().equalsIgnoreCase(fieldName))
                     .findFirst()
                     .map(value -> value.getDataType().defaulted()) // This does not work for views.
                     .orElse(false);

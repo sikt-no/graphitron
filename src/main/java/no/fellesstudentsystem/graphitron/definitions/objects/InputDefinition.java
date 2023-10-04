@@ -37,7 +37,7 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
         this.hasTable = inputType.hasDirective(GenerationDirective.TABLE.getName());
         String tableName = getName().toUpperCase();
         if (hasTable) {
-            tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME)).orElse(tableName);
+            tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, NAME).orElse(tableName);
             table = new JOOQTableMapping(tableName);
         } else {
             table = null;

@@ -3,15 +3,12 @@ package no.fellesstudentsystem.graphitron;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.jooq.generated.testdata.enums.MpaaRating;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -20,8 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class GraphQLGeneratorValidationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "validation";
-
-    private final Map<String, Class<?>> enums = Map.of("RATING", MpaaRating.class);
+    private final List<ExternalClassReference> references = List.of(
+            new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest")
+    );
 
     public GraphQLGeneratorValidationTest() {
         super(SRC_TEST_RESOURCES_PATH);
@@ -35,11 +33,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
-                enums,
-                Map.of(),
-                Map.of(),
-                Map.of(),
-                Map.of(),
+                references,
                 List.of()
         );
     }

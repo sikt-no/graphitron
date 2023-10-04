@@ -28,23 +28,30 @@ The options are the same for both goals.
 * _jooqGeneratedPackage_ - The location of the jOOQ generated code.
 * _shouldGenerateRecordValidation_ - boolean (default _true_) that controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
 
-#### Special code references (to be removed)
-* _externalEnums_ - Path to the enum which lists the available enums to use in the schema.
-* _externalConditions_ - Path to the enum which lists the available conditions to use in the schema.
-* _externalServices_ - Path to the enum which lists the available mutation services to use in the schema.
-* _externalExceptions_ - Path to the enum which lists the available mutation exceptions to use in the schema.
-* _externalTransforms_ - Path to the enum which lists the available record transforms to use in the schema.
+#### Code references
+* _externalReferences_ - List of references to classes that can be applied through certain directives.
 * _globalRecordTransforms_ - List of transforms that should be applied to all records. The transform _name_ value must
-be present in _externalTransforms_. The _scope_ value specifies which mutations should be affected, but currently only
-_ALL_MUTATIONS_ is available.
+be present in _externalReferences_. The _scope_ value specifies which mutations should be affected, but currently only
+_ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
+
+Example of referencing a class through the configuration:
+```xml
+<externalReferences>
+  <reference> <!--The name of this outer element does not matter.-->
+    <schemaName>CUSTOMER_TRANSFORM</schemaName>
+    <path>some.path.CustomerTransform</path>
+  </reference>
+</externalReferences>
+```
 
 Example of applying a global transform in the POM:
 ```xml
 <globalRecordTransforms>
-    <aCustomerTransform>
-        <name>CUSTOMER_TRANSFORM</name> <!-- The name in the externalTransforms enum. -->
-        <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
-    </aCustomerTransform>
+  <reference>
+    <name>CUSTOMER_TRANSFORM</name> <!-- The name of the reference. -->
+    <method>someTransformMethod</method> <!-- Method in the referenced class to be applied. -->
+    <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
+  </reference>
 </globalRecordTransforms>
 ```
 
@@ -156,27 +163,126 @@ This is done through the **reference** directive, which contains the following p
 Setting this overrides whatever table may be set there. This must match a table name from jOOQs _Table_ class.
 * _key_ - If there are multiple foreign keys from one type to another, then this parameter is required for defining which
 key that should be used. This must match a key name from jOOQs _Keys_ class.
-* _condition_ - This parameter is used to place an additional constraint on the two tables, by referring to the correct [enum](#special-code-references-to-be-removed)
+* _condition_ - This parameter is used to place an additional constraint on the two tables, by referring to the correct [entry](#code-references)
 in the POM XML. In the cases where there is no way to deduce the key between the tables and the _key_ parameter is not set,
 this condition will be assumed to be an _on_ condition to be used in a join operation between the tables.
 The result will be a left join if the field is optional, otherwise a standard join.
 * _via_ - Invokes extra steps of the logic that all the previous parameters already use,
 allowing the usage of joins through tables which are not types in the schema.
 This parameter only specifies the extra steps to be taken in addition to the usual functionality og the previous parameters.
-TODO: Examples
 
 Note that joins only apply to the field they are set on. Graphitron either sets separate aliases or uses implicit joins to
 manage several simultaneous joins from one table to another. If a field points to a type, all fields within this referred
 type will have access to the join operation.
+
+The following examples will assume that this configuration is set: 
+```xml
+<externalReferences>
+  <reference>
+    <schemaName>CUSTOMER_CONDITION</schemaName>
+    <path>some.path.CustomerCondition</path>
+  </reference>
+</externalReferences>
+```
+
+For the first example we will apply this simple condition method on tables that do have a direct connection.
+```java
+class CustomerCondition {
+    static Condition addressJoin(Customer customer, Address address) { … }
+}
+```
+
+The method returns a jOOQ condition, which will be appended after the where-statement for the query.
+
+_Schema_:
+```graphql
+type Customer @table {
+  addresses: [Address!]! @splitQuery @reference(condition : {name: "CUSTOMER_CONDITION", method: "addressJoin"})
+}
+```
+
+_Generated result_:
+```java
+.and(some.path.CustomerCondition.addressJoin(CUSTOMER, ADDRESS))
+```
+
+The condition is thus an additional constraint applied on both tables.
+In a slightly different case where the tables are not directly connected, the join will behave differently.
+If the two tables did not have any foreign keys between them (or there are multiple, which one to use was not specified)
+the generated result would follow a pattern like the code below.
+
+```java
+.join(ADDRESS)
+.on(some.path.CustomerCondition.addressJoin(CUSTOMER, ADDRESS))
+```
+
+Providing only a key will yield a similar result. Note that in this example the key and the reference directive itself
+are redundant since there is only one key between the tables. Assume the _Address_ type has the **table** directive set.
+
+_Schema_:
+```graphql
+type Customer @table {
+  addresses: [Address!]! @splitQuery @reference(key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")
+}
+```
+
+_Generated result_:
+```java
+.join(ADDRESS)
+.onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+```
+
+Providing both a key and a condition will result in a sum of both the first and previous examples,
+meaning both a join on a key and one additional condition will be applied.
+
+Using the _via_ parameter will create additional occurrences of what the previous examples have already shown.
+Note that this parameter only works by adding additional steps before the other parameters,
+meaning they most likely have to be set as well. The same rules apply to the intermediate steps as to other join operations.
+If there is only one key between two tables, only the table reference is required.
+The example below is a simple illustration of this. Assume the _Film_ type has the **table** directive set.
+
+_Schema_:
+```graphql
+type Payment @table {
+  # The path here is PAYMENT -> RENTAL -> INVENTORY -> FILM
+  film: Film! @splitQuery @reference(via: [{table: "RENTAL"}, {table: "INVENTORY"}])
+}
+```
+
+First, Graphitron defines a few aliases for these joins. Currently, this creates one alias per step.
+
+```java
+var payment_rental = PAYMENT.rental().as("…");
+var payment_rental_inventory = payment_rental.inventory().as("…");
+var payment_rental_inventory_film = payment_rental_inventory.film().as("…");
+```
+
+Then, the alias is applied where necessary. This line is taken from the generated query.
+
+```java
+select.optional("title", payment_rental_inventory_film.TITLE).as("title")
+```
 
 ### Query conditions
 To either apply additional conditions or override some of the conditions added by default, use the **condition** directive.
 It can be applied to both input parameters and resolver fields, and the scope of the condition will match the element it is put on.
 It provides the following parameter options:
 
-* _name_ - Name of a condition defined in the [enum](#special-code-references-to-be-removed) in the POM XML.
+* _condition_ - Reference name and method name of a reference defined in an [entry](#code-references) in the POM XML.
 * _override_ - If true, disables the default checks that are added to all arguments, otherwise add the new condition in
 addition to the default ones.
+
+#### Example: Setup
+The following examples will assume this configuration exists:
+
+```xml
+<externalReferences>
+  <reference>
+    <schemaName>CITY_CONDITION</schemaName>
+    <path>some.path.CityCondition</path>
+  </reference>
+</externalReferences>
+```
 
 #### Example: No _override_ on input parameter
 Add this condition in addition to the ones automatically applied for this parameter.
@@ -184,18 +290,13 @@ The method must have the table and the input parameter type as parameters.
 
 _Schema_:
 ```graphql
-cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
-```
-
-_Enum entry_:
-```java
-TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class)
+cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"})
 ```
 
 _Resulting code_:
 ```java
 .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
-.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+.and(some.path.CityCondition.cityMethod(CITY, cityNames))
 ```
 
 #### Example: No _override_ on field with input parameters
@@ -207,19 +308,14 @@ _Schema_:
 cities(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY")
-): [City] @condition(name: "TEST_CITY_ALL")
-```
-
-_Enum entry_:
-```java
-TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
+): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"})
 ```
 
 _Resulting code_:
 ```java
 .where(CITY.COUNTRY_ID.eq(countryId))
 .and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
-.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+.and(some.path.CityCondition.cityMethod(CITY, countryId, cityNames))
 ```
 
 #### Example: Both field and parameters
@@ -232,17 +328,12 @@ The method must have the table and the input parameter type as parameters.
 
 _Schema_:
 ```graphql
-cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
-```
-
-_Enum entry_:
-```java
-TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class)
+cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"}, override: true)
 ```
 
 _Resulting code_:
 ```java
-.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
+.and(some.path.CityCondition.cityMethod(CITY, cityNames))
 ```
 
 #### Example: With _override_ on field with input parameters
@@ -254,17 +345,12 @@ _Schema_:
 cities(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY")
-): [City] @condition(name: "TEST_CITY_ALL", override: true)
-```
-
-_Enum entry_:
-```java
-TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
+): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
 ```
 
 _Resulting code_:
 ```java
-.where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+.where(some.path.CityCondition.cityMethodAllElements(CITY, countryId, cityNames))
 ```
 
 #### Example: With _override_ on both field and parameters
@@ -276,29 +362,23 @@ _Schema_:
 ```graphql
 cities(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
-): [City] @condition(name: "TEST_CITY_ALL", override: true)
-```
-
-_Enum entry_:
-```java
-TEST_CITY_NAMES(CityTestConditions.class, "cityNames", City.class, List.class),
-TEST_CITY_ALL(CityTestConditions.class, "cityAll", City.class, String.class, List.class)
+    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"}, override: true)
+): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
 ```
 
 _Resulting code_:
 ```java
-.where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
-.and(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
+.where(some.path.CityCondition.cityMethod(CITY, cityNames))
+.and(some.path.CityCondition.cityMethodAllElements(CITY, countryId, cityNames))
 ```
 
 ### Enums
 Enums can be mapped in two ways. The **column** directive is already covered [here](#column-directive).
 An alternative method is to set up a Java enum instead, for example through a jOOQ converter. These can be referenced
-using the **enum** directive, by pointing to the appropriate [enum](#special-code-references-to-be-removed) entry.
+using the **enum** directive, by pointing to the appropriate [entry](#code-references).
 
 ```graphql
-enum SomeEnum @enum(name: "TheJavaEnum") {
+enum SomeEnum @enum(enumReference: {name: "THE_ENUM_REFERENCE"}) {
   E0
   E1
   E2
@@ -351,9 +431,8 @@ Note that mutations need either the **mutationType** or the **service** directiv
 Mutations that should not be generated should have the **notGenerated** directive set.
 
 ### Mutation services
-More complex cases are supported through the **service** directive. It points to a class in the [enum](#special-code-references-to-be-removed)
-in the POM XML, which should contain a method with the same name as the mutation field name (to be changed soon). The right method is
-found through reflection by comparing the names and the number of parameters the method has.
+More complex cases are supported through the **service** directive. It points to a class [entry](#code-references)
+in the POM XML. The method is either specified through the directive or assumed to be the same as the field name.
 The directive invokes the creation of code that calls the specified class, rather than generating a query automatically.
 This allows the use of multiple record types at once, more complex return types and a certain level of exception handling.
 
@@ -365,7 +444,7 @@ It is therefore recommended to avoid using this feature. The following example w
 
 _Schema_:
 ```graphql
-edit(someInput: InputA!): ID! @service(name: "SERVICE")
+edit(someInput: InputA!): ID! @service(service: {name: "SERVICE_REFERENCE"}) # Assumes method name is the same as field.
 
 input InputA @table {
   b: InputB
@@ -401,11 +480,11 @@ type Mutation {
   editCustomer(
     # someValue: String # It is also allowed to put an extra input here when using services.
     editInput: EditCustomerInput!
-  ): Customer! @service(name: "SERVICE_CUSTOMER") # Returning just an ID is allowed as well.
+  ): Customer! @service(service: {name: "SERVICE_CUSTOMER"}) # Returning just an ID is allowed as well.
 
   editCustomerWithResponse(
     editInput: EditCustomerInput!
-  ): EditCustomerResponse! @service(name: "SERVICE_CUSTOMER")
+  ): EditCustomerResponse! @service(service: {name: "SERVICE_CUSTOMER", method: "editCustomerAndRespond"}) # Example of a case where the method name does not match the field name.
 }
 
 input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ table/record to use.
@@ -425,7 +504,7 @@ public class CustomerService {
     public CustomerRecord editCustomer(CustomerRecord person) { … }
 
     // EditCustomerResponse is an instance of a static class within the service.
-    public EditCustomerResponse editCustomerWithResponse(CustomerRecord person) { … }
+    public EditCustomerResponse editCustomerAndRespond(CustomerRecord person) { … }
 
     public static class EditCustomerResponse {
         public CustomerRecord getCustomer() { … }
@@ -438,7 +517,7 @@ This example shows the more complex case, where a nested custom return class is 
 
 _Schema_:
 ```graphql
-edit(id: ID!): ReturnA! @service(name: "EDIT_SERVICE")
+edit(id: ID!): ReturnA! @service(service: {name: "EDIT_SERVICE"})
 
 type ReturnA {
   returnB: ReturnB
@@ -467,13 +546,13 @@ public class EditSomethingService {
 #### Error handling (subject to change)
 Graphitron allows for simple error handling when using services. In the schema a type is an error type if it implements
 the _Error_ interface and has the error **directive** set. Unions of such types are also considered error types.
-The error reference must be in the response type to be automatically mapped, and it must refer to the [enum](#special-code-references-to-be-removed)
+The error reference must be in the response type to be automatically mapped, and it must refer to an [entry](#code-references)
 in the POM XML. Only the first error to be thrown will be returned, as this uses a try-catch to map which error should be returned.
 
 _Schema_:
 ```graphql
 type Mutation {
-  editCustomer(id: ID!): EditCustomerPayload! @service(name: "SERVICE_CUSTOMER")
+  editCustomer(id: ID!): EditCustomerPayload! @service(service: {name: "SERVICE_CUSTOMER"})
 }
 
 type EditCustomerPayload {
@@ -481,15 +560,11 @@ type EditCustomerPayload {
   errors: [SomeError!]!
 }
 
-type SomeError implements Error @error(name: "EXCEPTION_ILLEGAL") {
+# Note that @error uses the method parameter differently than other directives. It is not strictly required, but if set should return a string.
+type SomeError implements Error @error(error: {name: "EXCEPTION_ILLEGAL", method: "getCauseField"}) {
   path: [String!]!
   message: String!
 }
-```
-
-_Enum entry_:
-```java
-EXCEPTION_ILLEGAL(SomethingIllegalException.class) // Exception that could be thrown in the service.
 ```
 
 There will be generated one catch block per error that can be returned. In this case we have only one.
@@ -501,7 +576,7 @@ try {
 } catch (SomethingIllegalException e) {
     var error = new SomeError();
     error.setMessage(e.getMessage());
-    var cause = e.getCauseField(); // Required method.
+    var cause = e.getCauseField(); // This section will not be generated if this method is not set in the schema.
 
     // This map is constructed automatically if there are fields that can be the cause.
     var causeName = Map.of().getOrDefault(cause != null ? cause : "", "undefined");
@@ -509,9 +584,6 @@ try {
     editCustomerErrorsList.add(error); // Update error list that is automatically defined somewhere above.
 }
 ```
-
-The `getCauseField` method is  currently hardcoded and required for this setup to work. Hopefully we can get a better
-and more intuitive solution in place. If the method is missing, no cause will be added.
 
 ## Special interfaces
 Currently, Graphitron reserves two interface names for special purposes, _Node_ and _Error_.

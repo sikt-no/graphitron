@@ -16,11 +16,11 @@ public class TestCustomerService {
         this.context = context;
     }
 
-    public String editCustomer0(String id) {
+    public String editCustomerID(String id) {
         return null;
     }
 
-    public List<String> editCustomer1(List<String> id) {
+    public List<String> editCustomerIDList(List<String> id) {
         return null;
     }
 
@@ -36,7 +36,7 @@ public class TestCustomerService {
         return null;
     }
 
-    public String editCustomerSimple(String id) {
+    public String simple(String id) {
         return null;
     }
 

@@ -2,37 +2,31 @@ package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
 
 public class SQLCondition {
-    private final String conditionName;
+    private final CodeReference conditionReference;
     private final boolean override;
 
-    public SQLCondition(String conditionName) {
-        this(conditionName, false);
+    public SQLCondition(CodeReference conditionReference) {
+        this(conditionReference, false);
     }
 
-    public SQLCondition(String conditionName, boolean override) {
-        this.conditionName = conditionName;
+    public SQLCondition(CodeReference conditionReference, boolean override) {
+        this.conditionReference = conditionReference;
         this.override = override;
     }
 
     public CodeBlock formatToString(List<CodeBlock> methodInputs) {
-        if (!GeneratorConfig.getExternalConditions().contains(conditionName)) {
-            throw new IllegalArgumentException("Condition with name '" + conditionName + "' does not exist.");
-        }
-
-        var method = GeneratorConfig.getExternalConditions().get(conditionName);
+        var method = GeneratorConfig.getExternalReferences().getMethodFrom(conditionReference);
         var methodName = method.getName();
+
         var declaringName = method.getDeclaringClass().getName();
-        var paramTypes = method.getParameterTypes();
-        var nParams = paramTypes.length;
-        if (methodInputs.size() < nParams) {
-            throw new IllegalArgumentException(
-                    "Too few inputs for method '" + methodName + "' in class '" + declaringName + "'."
-            );
+        if (methodInputs.size() < method.getParameterTypes().length) {
+            throw new IllegalArgumentException("Too few inputs for method '" + methodName + "' in class '" + declaringName + "'.");
         }
 
         return CodeBlock

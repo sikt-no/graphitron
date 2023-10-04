@@ -2,17 +2,16 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.TYPE;
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentEnum;
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 
 /**
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.
@@ -34,7 +33,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
             GraphQLReservedName.PAGINATION_BEFORE.getName()
     );
 
-    private final String serviceReference;
+    private final CodeReference serviceReference;
 
     public ObjectField(FieldDefinition field) {
         super(field);
@@ -46,9 +45,10 @@ public class ObjectField extends AbstractField implements GenerationTarget {
         isGenerated = isResolver && !field.hasDirective(NOT_GENERATED.getName());
 
         join = field.hasDirective(COLUMN.getName()) ? getSqlColumnJoin(field) : null;
-        serviceReference = field.hasDirective(SERVICE.getName()) ? getDirectiveArgumentString(field, SERVICE, SERVICE.getParamName(NAME)) : "";
+
+        serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
         mutationType = field.hasDirective(MUTATION.getName())
-                ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, MUTATION.getParamName(TYPE)))
+                ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
                 : null;
     }
 
@@ -141,9 +141,9 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     }
 
     /**
-     * @return The name of the service that this field is related to.
+     * @return The reference to the external service that this field is related to.
      */
-    public String getServiceReference() {
+    public CodeReference getServiceReference() {
         return serviceReference;
     }
 
@@ -151,7 +151,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
      * @return Does this field have a service reference defined?
      */
     public boolean hasServiceReference() {
-        return !serviceReference.isEmpty();
+        return serviceReference != null;
     }
 
     public boolean hasMutationType() {

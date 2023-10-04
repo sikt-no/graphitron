@@ -1,14 +1,12 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
 import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
-import no.fellesstudentsystem.graphitron.mojo.GlobalTransform;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.*;
 
-import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,11 +34,7 @@ public class GeneratorConfig {
             String outputDir,
             String outputPkg,
             String jooqPkg,
-            Map<String, Class<?>> enums,
-            Map<String, Method> conditions,
-            Map<String, Class<?>> services,
-            Map<String, Class<?>> exceptions,
-            Map<String, Method> transforms,
+            List<ExternalClassReference> references,
             List<GlobalTransform> globalTransforms
     ) {
         systemPackage = topPackage;
@@ -57,11 +51,7 @@ public class GeneratorConfig {
 
         setJOOQClasses();
 
-        externalEnums = new ExternalEnums(enums);
-        externalConditions = new ExternalConditions(conditions);
-        externalServices = new ExternalServices(services);
-        externalExceptions = new ExternalExceptions(exceptions);
-        externalTransforms = new ExternalTransforms(transforms);
+        externalReferences = new ExternalReferences(references);
 
         GeneratorConfig.globalTransforms = globalTransforms;
 
@@ -95,12 +85,7 @@ public class GeneratorConfig {
         generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
 
         setJOOQClasses();
-
-        externalEnums = new ExternalEnums(mojo.getExternalEnums());
-        externalConditions = new ExternalConditions(mojo.getExternalConditions());
-        externalServices = new ExternalServices(mojo.getExternalServices());
-        externalExceptions = new ExternalExceptions(mojo.getExternalExceptions());
-        externalTransforms = new ExternalTransforms(mojo.getExternalTransforms());
+        externalReferences = new ExternalReferences(mojo.getExternalReferences());
 
         GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
         GeneratorConfig.shouldGenerateRecordValidation = mojo.shouldGenerateRecordValidation();
@@ -136,11 +121,7 @@ public class GeneratorConfig {
         generatedJooqTablesPackage = null;
         generatedJooqKeysPackage = null;
         generatedJooqRecordsPackage = null;
-        externalEnums = new ExternalEnums(Map.of());
-        externalConditions = new ExternalConditions(Map.of());
-        externalServices = new ExternalServices(Map.of());
-        externalExceptions = new ExternalExceptions(Map.of());
-        externalTransforms = new ExternalTransforms(Map.of());
+        externalReferences = new ExternalReferences(List.of());
         globalTransforms = List.of();
         TABLES_CLASS = null;
         KEYS_CLASS = null;
@@ -163,11 +144,7 @@ public class GeneratorConfig {
 
     public static Class<?> TABLES_CLASS, KEYS_CLASS;
 
-    private static ExternalEnums externalEnums;
-    private static ExternalConditions externalConditions;
-    private static ExternalServices externalServices;
-    private static ExternalExceptions externalExceptions;
-    private static ExternalTransforms externalTransforms;
+    private static ExternalReferences externalReferences;
     private static List<GlobalTransform> globalTransforms;
 
     public static String getSystemPackage() {
@@ -218,31 +195,14 @@ public class GeneratorConfig {
         return generatedJooqRecordsPackage;
     }
 
-    public static ExternalEnums getExternalEnums() {
-        return externalEnums;
+    public static ExternalReferences getExternalReferences() {
+        return externalReferences;
     }
 
-    public static ExternalConditions getExternalConditions() {
-        return externalConditions;
-    }
-
-    public static ExternalServices getExternalServices() {
-        return externalServices;
-    }
-
-    public static ExternalExceptions getExternalExceptions() {
-        return externalExceptions;
-    }
-
-    public static ExternalTransforms getExternalTransforms() {
-        return externalTransforms;
-    }
-
-    public static List<String> getGlobalTransformNames(TransformScope scope) {
+    public static List<GlobalTransform> getGlobalTransforms(TransformScope scope) {
         return globalTransforms
                 .stream()
                 .filter(it -> it.getScope().equals(scope))
-                .map(GlobalTransform::getName)
                 .collect(Collectors.toList());
     }
 

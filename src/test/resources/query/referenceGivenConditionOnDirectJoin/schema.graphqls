@@ -4,7 +4,7 @@ type Query {
 
 type Customer @table {
   id: ID!
-  historicalAddresses: [Address!]! @splitQuery @reference(condition : "TEST_CUSTOMER_ADDRESS")
+  historicalAddresses: [Address!]! @splitQuery @reference(condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddressJoin"})
 }
 
 type Address @table {

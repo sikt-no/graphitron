@@ -5,7 +5,7 @@ type Query {
 type Inventory @table {
   id: ID!
   # join path: INVENTORY -> FILM -> FILM_ACTOR (via condition) -> ACTOR
-  mainActors: [Actor!]! @splitQuery @reference(via: [{table: "FILM"}, {table: "FILM_ACTOR", condition: "TEST_FILM_MAIN_ACTOR"}])
+  mainActors: [Actor!]! @splitQuery @reference(via: [{table: "FILM"}, {table: "FILM_ACTOR", condition: {name: "TEST_FILM_ACTOR", method: "mainActor"}}])
 }
 
 type Actor @table {

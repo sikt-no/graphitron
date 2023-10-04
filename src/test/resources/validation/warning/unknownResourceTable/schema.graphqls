@@ -4,7 +4,7 @@ type Query {
 }
 
 type Mutation {
-    editCustomerInput(input: EditInput!): ID! @service(name: "TEST_CUSTOMER")
+    editCustomerInput(input: EditInput!): ID! @service(service: {name: "TEST_CUSTOMER"})
 }
 
 input EditInput @table(name: "UNKNOWN_TABLE") {

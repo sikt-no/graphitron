@@ -1,14 +1,14 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.ObjectTypeDefinition;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 
 /**
  * Represents the default GraphQL object, parsed as an exception type.
@@ -16,7 +16,7 @@ import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDire
 public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition> {
     private final boolean isGenerated;
     private final List<ObjectField> objectFields;
-    private final String exceptionReference;
+    private final CodeReference exceptionReference;
 
     public ExceptionDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
@@ -25,7 +25,7 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
 
         isGenerated = getFields().stream().anyMatch(ObjectField::isGenerated);
 
-        exceptionReference = objectDefinition.hasDirective(ERROR.getName()) ? getDirectiveArgumentString(objectDefinition, ERROR, ERROR.getParamName(NAME)) : "";
+        exceptionReference = objectDefinition.hasDirective(ERROR.getName()) ? new CodeReference(objectDefinition, ERROR, GenerationDirectiveParam.ERROR, objectDefinition.getName()) : null;
     }
 
     /**
@@ -40,9 +40,9 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
     }
 
     /**
-     * @return The name of the java exception that this object is related to.
+     * @return The reference to the Java exception that this schema object is related to.
      */
-    public String getExceptionReference() {
+    public CodeReference getExceptionReference() {
         return exceptionReference;
     }
 
@@ -50,7 +50,7 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
      * @return Does this object have a reference to a java exception defined?
      */
     public boolean hasExceptionReference() {
-        return !exceptionReference.isEmpty();
+        return exceptionReference != null;
     }
 
     /**

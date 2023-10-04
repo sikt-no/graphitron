@@ -32,7 +32,7 @@ public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinit
         hasTable = objectDefinition.hasDirective(GenerationDirective.TABLE.getName());
         if (hasTable) {
             table = new JOOQTableMapping(
-                    getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.TABLE, GenerationDirective.TABLE.getParamName(NAME))
+                    getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.TABLE, NAME)
                             .orElse(getName().toUpperCase())
             );
         } else {

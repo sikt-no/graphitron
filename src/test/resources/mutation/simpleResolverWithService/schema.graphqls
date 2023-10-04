@@ -12,11 +12,11 @@ type EditResponse2 {
 }
 
 type Mutation {
-  editCustomer0(id: ID!): EditResponse0! @service(name : "TEST_CUSTOMER")
-  editCustomer1(id: [ID!]!): EditResponse1! @service(name : "TEST_CUSTOMER")
-  editCustomerRecord0(id: ID!): EditResponse0! @service(name : "TEST_CUSTOMER")
-  editCustomerRecord1(id: [ID!]!): EditResponse1! @service(name : "TEST_CUSTOMER")
-  editCustomerRecord2(id: [ID!]!): EditResponse2! @service(name : "TEST_CUSTOMER") # Also map one node type.
+  editCustomer0(id: ID!): EditResponse0! @service(service : {name: "TEST_CUSTOMER", method: "editCustomerID"})
+  editCustomer1(id: [ID!]!): EditResponse1! @service(service : {name: "TEST_CUSTOMER", method: "editCustomerIDList"})
+  editCustomerRecord0(id: ID!): EditResponse0! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerRecord1(id: [ID!]!): EditResponse1! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerRecord2(id: [ID!]!): EditResponse2! @service(service : {name: "TEST_CUSTOMER"}) # Also map one node type.
 }
 
 type Customer implements Node @table {

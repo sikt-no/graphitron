@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -36,11 +35,7 @@ public class UpdateContext {
 
         if (target.hasServiceReference()) {
             var reference = target.getServiceReference();
-            service = new ServiceWrapper(
-                    target.getName(),
-                    countParams(target.getInputFields(), false, processedSchema),
-                    GeneratorConfig.getExternalServices().get(reference)
-            );
+            service = new ServiceWrapper(reference, countParams(target.getInputFields(), false, processedSchema));
         } else {
             service = null;
         }

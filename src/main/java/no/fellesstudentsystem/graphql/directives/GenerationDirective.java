@@ -11,12 +11,12 @@ public enum GenerationDirective {
     NOT_GENERATED("notGenerated"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
     COLUMN("column", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY)),
-    SERVICE("service", EnumSet.of(GenerationDirectiveParam.NAME)),
-    ERROR("error", EnumSet.of(GenerationDirectiveParam.NAME)),
+    SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE)),
+    ERROR("error", EnumSet.of(GenerationDirectiveParam.ERROR)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION)),
-    ENUM("enum", EnumSet.of(GenerationDirectiveParam.NAME)),
-    CONDITION("condition", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.OVERRIDE));
+    ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
+    CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE));
 
     private final String name;
 
@@ -36,10 +36,10 @@ public enum GenerationDirective {
         return name;
     }
 
-    public String getParamName(GenerationDirectiveParam param) {
+    public GenerationDirectiveParam checkParamIsValid(GenerationDirectiveParam param) {
         if (!paramSet.contains(param)) {
             throw new IllegalArgumentException("Directive " + name + " has no parameter called " + param.getName() + ".");
         }
-        return param.getName();
+        return param;
     }
 }

@@ -6,13 +6,13 @@ type Film @table {
     id: ID!
  }
 
-enum Rating @enum(name: "RATING") {
+enum Rating @enum(enumReference: {name: "RATING_TEST"}) {
     G,
     PG,
     R,
 }
 
-enum Rating2 @enum(name: "UNKOWN_ENUM") {
+enum Rating2 @enum(enumReference: {name: "UNKOWN_ENUM"}) {
     G,
     PG,
     R,

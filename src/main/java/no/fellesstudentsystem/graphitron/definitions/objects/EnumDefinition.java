@@ -1,8 +1,9 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.EnumTypeDefinition;
-import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.EnumField;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 
 import java.util.List;
 import java.util.Map;
@@ -10,20 +11,19 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ENUM;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 import static no.fellesstudentsystem.graphitron.definitions.fields.EnumField.from;
 
 /**
  * Representation of a GraphQL enum type.
  */
 public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition> {
-    private final String dbName;
+    private final CodeReference enumReference;
     private final Map<String, EnumField> valuesMap;
 
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {
         super(enumTypeDefinition);
-        this.dbName = enumTypeDefinition.hasDirective(ENUM.getName())
-                ? DirectiveHelpers.getDirectiveArgumentString(enumTypeDefinition, ENUM, ENUM.getParamName(NAME))
+        this.enumReference = enumTypeDefinition.hasDirective(ENUM.getName())
+                ? new CodeReference(enumTypeDefinition, ENUM, GenerationDirectiveParam.ENUM)
                 : null;
         this.valuesMap = from(enumTypeDefinition)
                 .stream()
@@ -31,17 +31,17 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition>
     }
 
     /**
-     * @return Name of the API enum that should correspond to this one.
+     * @return Reference to the external Java enum that should correspond to the one in the schema.
      */
-    public String getDbName() {
-        return dbName;
+    public CodeReference getEnumReference() {
+        return enumReference;
     }
 
     /**
      * @return Does this enum map to another enum in the API?
      */
     public boolean hasDbEnumMapping() {
-        return dbName != null;
+        return enumReference != null;
     }
 
     /**

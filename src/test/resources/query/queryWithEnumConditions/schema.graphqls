@@ -1,43 +1,43 @@
 type Query {
   paramCondition(
-    rating: Rating!  @condition(name: "TEST_FILM_RATING"),
+    rating: Rating!  @condition(condition: {name: "TEST_FILM_RATING"}),
     releaseYear: String! @column(name: "RELEASE_YEAR")
   ): [Film]
 
   paramConditionOverride(
-    rating: Rating! @condition(name: "TEST_FILM_RATING", override: true),
+    rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}, override: true),
     releaseYear: String! @column(name: "RELEASE_YEAR")
   ): [Film]
 
   fieldCondition(
     rating: Rating!,
     releaseYear: String! @column(name: "RELEASE_YEAR")
-  ): [Film] @condition(name: "TEST_FILM_RATING_ALL")
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"})
 
   fieldConditionOverride(
     rating: Rating!,
     releaseYear: String! @column(name: "RELEASE_YEAR")
-  ): [Film] @condition(name: "TEST_FILM_RATING_ALL", override: true)
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
 
   fieldAndParamCondition(
-    rating: Rating! @condition(name: "TEST_FILM_RATING"),
+    rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}),
     releaseYear: String! @column(name: "RELEASE_YEAR")
-  ): [Film] @condition(name: "TEST_FILM_RATING_ALL")
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"})
 
   fieldAndParamConditionOverride(
-    rating: Rating! @condition(name: "TEST_FILM_RATING"),
+    rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}),
     releaseYear: String! @column(name: "RELEASE_YEAR")
-  ): [Film] @condition(name: "TEST_FILM_RATING_ALL", override: true)
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
 
   fieldAndParamConditionOverrideBoth(
-    rating: Rating! @condition(name: "TEST_FILM_RATING", override: true),
+    rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}, override: true),
     releaseYear: String! @column(name: "RELEASE_YEAR")
-  ): [Film] @condition(name: "TEST_FILM_RATING_ALL", override: true)
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
 
   fieldInputCondition(
-    ratingIn: FilmInput, # Potentially support: @condition(name: "TEST_FILM_RATING_INPUT")
+    ratingIn: FilmInput, # Potentially support: @condition(condition: {name: "TEST_FILM_RATING"})
     releaseYear: String! @column(name: "RELEASE_YEAR")
-  ): [Film] @condition(name: "TEST_FILM_RATING_INPUT_ALL")
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingInputAll"})
 }
 
 input FilmInput {

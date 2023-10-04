@@ -1,43 +1,43 @@
 type Query {
   paramCondition(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
+    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"})
   ): [City]
 
   paramConditionOverride(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
+    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"}, override: true)
   ): [City]
 
   fieldCondition(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY")
-  ): [City] @condition(name: "TEST_CITY_ALL")
+  ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"})
 
   fieldConditionOverride(
     countryId: String! @column(name: "COUNTRY_ID"),
     cityNames: [String!] @column(name: "CITY")
-  ): [City] @condition(name: "TEST_CITY_ALL", override: true)
+  ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"}, override: true)
 
   fieldAndParamCondition(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
-  ): [City] @condition(name: "TEST_CITY_ALL")
+    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"})
+  ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"})
 
   fieldAndParamConditionOverride(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES")
-  ): [City] @condition(name: "TEST_CITY_ALL", override: true)
+    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"})
+  ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"}, override: true)
 
   fieldAndParamConditionOverrideBoth(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(name: "TEST_CITY_NAMES", override: true)
-  ): [City] @condition(name: "TEST_CITY_ALL", override: true)
+    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"}, override: true)
+  ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"}, override: true)
 
   fieldInputCondition(
     countryId: String! @column(name: "COUNTRY_ID"),
-    cityInput: CityInput # Potentially support: @condition(name: "TEST_CITY_INPUT")
-  ): [City] @condition(name: "TEST_CITY_INPUT_ALL")
+    cityInput: CityInput # Potentially support: @condition(condition: {name: "TEST_CITY", method: ""})
+  ): [City] @condition(condition: {name: "TEST_CITY", method: "cityInputAll"})
 }
 
 type City @table {
@@ -47,6 +47,6 @@ type City @table {
 }
 
 input CityInput {
-  name: String! @column(name: "CITY") @condition(name: "TEST_CITY_NAME")
+  name: String! @column(name: "CITY") @condition(condition: {name: "TEST_CITY", method: "cityName"})
   cityId: String! @column(name: "CITY_ID")
 }

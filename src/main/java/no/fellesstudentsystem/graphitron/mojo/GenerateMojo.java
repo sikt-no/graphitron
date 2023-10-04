@@ -2,6 +2,8 @@ package no.fellesstudentsystem.graphitron.mojo;
 
 import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -62,39 +64,11 @@ public class GenerateMojo extends AbstractMojo {
     private String jooqGeneratedPackage;
 
     /**
-     * External enums that can be referenced in code generation.
+     * External references that can be used in code generation.
      */
-    @Parameter(property = "generate.externalEnums")
+    @Parameter(property = "generate.externalReferences")
     @SuppressWarnings("unused")
-    private String externalEnums;
-
-    /**
-     * External conditions that can be referenced in code generation.
-     */
-    @Parameter(property = "generate.externalConditions")
-    @SuppressWarnings("unused")
-    private String externalConditions;
-
-    /**
-     * External services that can be referenced in code generation.
-     */
-    @Parameter(property = "generate.externalServices")
-    @SuppressWarnings("unused")
-    private String externalServices;
-
-    /**
-     * External exceptions that can be referenced in code generation.
-     */
-    @Parameter(property = "generate.externalExceptions")
-    @SuppressWarnings("unused")
-    private String externalExceptions;
-
-    /**
-     * External exceptions that can be referenced in code generation.
-     */
-    @Parameter(property = "generate.externalTransforms")
-    @SuppressWarnings("unused")
-    private String externalTransforms;
+    private List<ExternalClassReference> externalReferences;
 
     /**
      * Transforms that apply to all records, or a subset of records.
@@ -143,32 +117,8 @@ public class GenerateMojo extends AbstractMojo {
         return jooqGeneratedPackage;
     }
 
-    public String getExternalEnums() {
-        return externalEnums;
-    }
-
-    public String getExternalConditions() {
-        return externalConditions;
-    }
-
-    public String getExternalServices() {
-        return externalServices;
-    }
-
-    public String getExternalExceptions() {
-        return externalExceptions;
-    }
-
-    public String getExternalTransforms() {
-        return externalTransforms;
-    }
-
     public boolean shouldGenerateRecordValidation() {
         return shouldGenerateRecordValidation;
-    }
-
-    public List<GlobalTransform> getGlobalTransforms() {
-        return globalRecordTransforms;
     }
 
     public void setTopPackage(String topPackage) {
@@ -185,6 +135,14 @@ public class GenerateMojo extends AbstractMojo {
 
     public void setSchemaFiles(Set<String> schemaFiles) {
         this.schemaFiles = schemaFiles;
+    }
+
+    public List<ExternalClassReference> getExternalReferences() {
+        return externalReferences;
+    }
+
+    public List<GlobalTransform> getGlobalTransforms() {
+        return globalRecordTransforms;
     }
 
     public void setGeneratedSchemaCodePackage(String generatedSchemaCodePackage) {

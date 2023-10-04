@@ -17,15 +17,15 @@ type EditResponseWithCustomer {
 }
 
 type Mutation {
-  editCustomerSimple(id: ID!): ID! @service(name : "TEST_CUSTOMER")
+  editCustomerSimple(id: ID!): ID! @service(service : {name: "TEST_CUSTOMER", method: "simple"})
   " Note: there are two methods with this name, but it resolves correctly based on number of arguments. Doesn't check the types though."
-  editCustomerInput(input: EditInput!): ID! @service(name : "TEST_CUSTOMER")
-  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @service(name : "TEST_CUSTOMER")
-  editCustomerResponse(id: ID!): EditResponse! @service(name : "TEST_CUSTOMER")
-  editCustomerInputAndResponse(input: EditInput!): EditResponse! @service(name : "TEST_CUSTOMER")
+  editCustomerInput(input: EditInput!): ID! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerResponse(id: ID!): EditResponse! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerInputAndResponse(input: EditInput!): EditResponse! @service(service : {name: "TEST_CUSTOMER"})
   " Column should not matter. It may change some internal variable names."
-  editCustomerWithCustomer(id: ID!): Customer! @column(name : "Terminator") @service(name : "TEST_CUSTOMER")
-  editCustomerWithCustomerResponse(id: ID!): EditResponseWithCustomer! @service(name : "TEST_CUSTOMER")
+  editCustomerWithCustomer(id: ID!): Customer! @column(name : "Terminator") @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerWithCustomerResponse(id: ID!): EditResponseWithCustomer! @service(service : {name: "TEST_CUSTOMER"})
 }
 
 type Customer implements Node @table {

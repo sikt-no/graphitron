@@ -3,7 +3,9 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.*;
+import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -11,9 +13,9 @@ import java.util.Optional;
 
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForMethodByKey;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.REFERENCE;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 
 public class FieldReference {
     private final JOOQTableMapping table;
@@ -25,11 +27,16 @@ public class FieldReference {
         var relatedTableKey = "";
         SQLCondition relatedTableCondition = null;
         if (field.hasDirective(REFERENCE.getName())) {
-            relatedTable = getOptionalDirectiveArgumentString(field, REFERENCE, REFERENCE.getParamName(TABLE)).orElse("");
-            relatedTableKey = getOptionalDirectiveArgumentString(field, REFERENCE, REFERENCE.getParamName(KEY)).orElse("");
-            relatedTableCondition = getOptionalDirectiveArgumentString(field, REFERENCE, REFERENCE.getParamName(CONDITION))
-                    .map(SQLCondition::new)
-                    .orElse(null);
+            relatedTable = getOptionalDirectiveArgumentString(field, REFERENCE, TABLE).orElse("");
+            relatedTableKey = getOptionalDirectiveArgumentString(field, REFERENCE, KEY).orElse("");
+
+            var referenceFields = getOptionalDirectiveArgumentObjectFields(field, REFERENCE, CONDITION);
+            if (referenceFields.isPresent()) {
+                var fields = referenceFields.get();
+                var classReference = stringValueOf(getObjectFieldByName(fields, NAME));
+                var methodName = getOptionalObjectFieldByName(fields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(field.getName());
+                relatedTableCondition = new SQLCondition(new CodeReference(classReference, methodName));
+            }
         }
 
         table = new JOOQTableMapping(relatedTable);
@@ -73,7 +80,7 @@ public class FieldReference {
      * @param previousJoinTable Previously encountered table.
      * @param pastJoinSequence The entire sequence of implicit joins up to this point.
      * @param tableCodeNameBackup Backup for the table name should it be undefined.
-     * @param shortAliasName Short name for Alias due to character limit on Oracle Alias values (JIRA reference: https://unit.atlassian.net/browse/ROK-685)
+     * @param shortAliasName Short name for Alias due to character limit on Oracle Alias values (JIRA reference: <a href="https://unit.atlassian.net/browse/ROK-685">ROK-685</a>)
      * @return new SQLAlias from the parameters.
      */
     @Nullable
