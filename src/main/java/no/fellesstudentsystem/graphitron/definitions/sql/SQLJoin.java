@@ -82,7 +82,7 @@ public class SQLJoin {
      * @return An instance of {@link SQLJoinStatement}.
      */
     public SQLJoinStatement toStatement(String joinTargetTable, String aliasName) {
-        return new SQLJoinStatement(joinSourceTable, joinTargetTable, aliasName, getJoinFields(), getJoinType());
+        return new SQLJoinStatement(joinSourceTable, joinTargetTable, aliasName, aliasName, getJoinFields(), getJoinType());
     }
 
     /**
@@ -92,6 +92,6 @@ public class SQLJoin {
      * @return An instance of {@link SQLJoinStatement}.
      */
     public SQLJoinStatement toStatement(String joinSourceTable, String joinTargetTable, String aliasName) {
-        return new SQLJoinStatement(joinSourceTable, joinTargetTable, aliasName, getJoinFields(), getJoinType());
+        return new SQLJoinStatement(joinSourceTable, joinTargetTable, aliasName, aliasName, getJoinFields(), getJoinType());
     }
 }

@@ -11,6 +11,7 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.CRC32;
 
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.findReferencedObjectDefinition;
 import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesIDReference;
@@ -330,11 +331,14 @@ public class FetchContext {
     private String processReference(FieldReference fRef, JOOQTableMapping table, String previousJoinSequence, String previousTableName) {
         String currentJoinSequence;
         String snakeCasedGraphPath = getSnakeCasedGraphPath();
+        String referenceName = (snakeCasedGraphPath.isBlank() ? table.getName() : snakeCasedGraphPath);
+        String shortAliasName = createShortAliasName(referenceName, previousTableName);
         var alias = fRef.createAliasFor(
-                snakeCasedGraphPath.isBlank() ? table.getName() : snakeCasedGraphPath,
+                referenceName,
                 previousTableName,
                 previousJoinSequence,
-                table.getCodeName()
+                table.getCodeName(),
+                shortAliasName
         );
         if (alias != null) {
             aliasList.add(alias);
@@ -344,7 +348,8 @@ public class FetchContext {
                     referenceObjectField,
                     previousTableName,
                     previousJoinSequence,
-                    table.getName()
+                    table.getName(),
+                    shortAliasName
             );
             joinList.add(join);
             currentJoinSequence = join.getJoinAlias();
@@ -361,7 +366,8 @@ public class FetchContext {
                 referenceObjectField,
                 previousTableName,
                 currentJoinSequence != null && currentJoinSequence.endsWith(refTableCode) ? currentJoinSequence : previousJoinSequence,
-                table.getName()
+                table.getName(),
+                createShortAliasName(referenceObjectField.getName(), previousTableName)
         );
         joinList.add(join);
         return join.getJoinAlias();
@@ -380,5 +386,12 @@ public class FetchContext {
 
     private static String createMetodCallString(String className, String methodName) {
         return className + "." + methodName + "()";
+    }
+
+    public String createShortAliasName(String referenceName, String previousJoinTable) {
+        CRC32 crc32 = new CRC32();
+        crc32.reset();
+        crc32.update(referenceName.getBytes());
+        return previousJoinTable + "_" + crc32.getValue() + "";
     }
 }

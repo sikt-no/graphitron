@@ -57,7 +57,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         var codeBuilder = CodeBlock.builder();
         for (var join : joinList) {
             var aliasName = join.getJoinAlias();
-            codeBuilder.addStatement("var " + aliasName + " = " + join.getJoinTargetTable() + ".as(\"" + aliasName + "\")");
+            var shortAliasName = join.getJoinShortAliasName();
+            codeBuilder.addStatement("var " + aliasName + " = " + join.getJoinTargetTable() + ".as(\"" + shortAliasName + "\")");
         }
         for (var alias : aliasList) {
             codeBuilder.addStatement(alias.toString());

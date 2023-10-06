@@ -16,9 +16,9 @@ import org.jooq.impl.DSL;
 public class StoreDBQueries {
     public Map<String, City> cityOfMostValuableCustomerForStore(DSLContext ctx,
             Set<String> storeIder, SelectionSet select) {
-        var store_cityofmostvaluablecustomer = CUSTOMER.as("store_cityofmostvaluablecustomer");
-        var address_cityofmostvaluablecustomer = ADDRESS__ADDRESS_CITY_ID_FKEY.as("address_cityofmostvaluablecustomer");
-        var store_cityofmostvaluablecustomer_address = store_cityofmostvaluablecustomer.address().as("store_cityofmostvaluablecustomer_address");
+        var store_cityofmostvaluablecustomer = CUSTOMER.as("STORE_3239846765");
+        var address_cityofmostvaluablecustomer = ADDRESS__ADDRESS_CITY_ID_FKEY.as("ADDRESS_3639882127");
+        var store_cityofmostvaluablecustomer_address = store_cityofmostvaluablecustomer.address().as("CUSTOMER_839618971");
         return ctx
                 .select(
                         STORE.getId(),

@@ -17,7 +17,7 @@ import org.jooq.impl.DSL;
 public class AddressDBQueries {
     public Map<String, List<Customer>> customersForAddress(DSLContext ctx, Set<String> addressIder,
             SelectionSet select) {
-        var address_customers = CUSTOMER.as("address_customers");
+        var address_customers = CUSTOMER.as("ADDRESS_1191842373");
         return ctx
                 .select(
                         ADDRESS.getId(),

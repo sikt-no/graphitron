@@ -8,17 +8,18 @@ import java.util.List;
  * This class then contains all the information necessary to construct a complete join statement.
  */
 public class SQLJoinStatement extends SQLJoin {
-    private final String joinTargetTable, joinAlias;
+    private final String joinTargetTable, joinAlias, joinShortAliasName;
 
     /**
      * @param joinTargetTable The "right" side of a join statement. This is the table to be joined with.
      * @param joinFields List of any conditions for the join operation.
      * @param joinType What kind of join operation is to be used.
      */
-    public SQLJoinStatement(String joinSourceTable, String joinTargetTable, String joinAlias, List<SQLJoinField> joinFields, SQLJoinType joinType) {
+    public SQLJoinStatement(String joinSourceTable, String joinTargetTable, String joinAlias, String joinShortAliasName, List<SQLJoinField> joinFields, SQLJoinType joinType) {
         super(joinSourceTable, joinFields, joinType);
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;
+        this.joinShortAliasName = joinShortAliasName;
     }
 
     /**
@@ -40,6 +41,10 @@ public class SQLJoinStatement extends SQLJoin {
      */
     public String getJoinAlias() {
         return joinAlias;
+    }
+
+    public String getJoinShortAliasName() {
+        return joinShortAliasName;
     }
 
     /**

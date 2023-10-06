@@ -18,7 +18,7 @@ import org.jooq.impl.DSL;
 public class FilmDBQueries {
     public Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIder,
             List<String> s, SelectionSet select) {
-        var film_languages = LANGUAGE.as("film_languages");
+        var film_languages = LANGUAGE.as("FILM_317255161");
         return ctx
                 .select(
                         FILM.getId(),
@@ -36,7 +36,7 @@ public class FilmDBQueries {
 
     public Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIder,
             In s, SelectionSet select) {
-        var film_languagesinput = LANGUAGE.as("film_languagesinput");
+        var film_languagesinput = LANGUAGE.as("FILM_317255161");
         return ctx
                 .select(
                         FILM.getId(),

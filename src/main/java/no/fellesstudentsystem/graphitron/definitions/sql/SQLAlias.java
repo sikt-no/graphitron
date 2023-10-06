@@ -4,16 +4,17 @@ package no.fellesstudentsystem.graphitron.definitions.sql;
  * For multiple joins on the same table, aliases are required to distinguish them.
  */
 public class SQLAlias {
-    private final String joinTargetMethod, name, joinSourceTable;
+    private final String joinTargetMethod, name, joinSourceTable, shortAliasName;
 
     /**
      * @param joinSourceTable  The table to be joined from.
      * @param joinTargetMethod The table to be joined with, using the provided method.
      */
-    public SQLAlias(String name, String joinSourceTable, String joinTargetMethod) {
+    public SQLAlias(String name, String joinSourceTable, String joinTargetMethod, String shortAliasName) {
         this.joinSourceTable = joinSourceTable;
         this.joinTargetMethod = joinTargetMethod;
         this.name = name.replaceAll("[.]", "_").replaceAll("[()]", "");
+        this.shortAliasName = shortAliasName;
     }
 
     /**
@@ -39,6 +40,6 @@ public class SQLAlias {
 
     @Override
     public String toString() {
-        return "var " + name + " = " + joinSourceTable + "." + joinTargetMethod + "().as(\"" + name + "\")";
+        return "var " + name + " = " + joinSourceTable + "." + joinTargetMethod + "().as(\"" + shortAliasName + "\")";
     }
 }

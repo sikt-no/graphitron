@@ -73,10 +73,11 @@ public class FieldReference {
      * @param previousJoinTable Previously encountered table.
      * @param pastJoinSequence The entire sequence of implicit joins up to this point.
      * @param tableCodeNameBackup Backup for the table name should it be undefined.
+     * @param shortAliasName Short name for Alias due to character limit on Oracle Alias values (JIRA reference: https://unit.atlassian.net/browse/ROK-685)
      * @return new SQLAlias from the parameters.
      */
     @Nullable
-    public SQLAlias createAliasFor(String referenceName, String previousJoinTable, String pastJoinSequence, String tableCodeNameBackup) {
+    public SQLAlias createAliasFor(String referenceName, String previousJoinTable, String pastJoinSequence, String tableCodeNameBackup, String shortAliasName) {
         var relationTableSource = !table.getCodeName().isEmpty() ? table.getCodeName() : tableCodeNameBackup;
         var hasNaturalImplicitJoin = tableHasMethod(previousJoinTable, relationTableSource);
         Optional<String> joinReference = tableKey.isEmpty() || hasNaturalImplicitJoin ? Optional.empty() : searchTableForMethodByKey(previousJoinTable, tableKey);
@@ -85,7 +86,8 @@ public class FieldReference {
             return new SQLAlias(
                     (joinSourceTable + "_" + referenceName).toLowerCase(),
                     joinSourceTable,
-                    joinReference.orElse(relationTableSource)
+                    joinReference.orElse(relationTableSource),
+                    shortAliasName
             );
         }
         return null;
@@ -96,13 +98,15 @@ public class FieldReference {
             String previousJoinTable,
             String pastJoinSequence,
             String tableNameBackup,
-            SQLJoinField joinField
+            SQLJoinField joinField,
+            String shortAliasName
     ) {
         var name = table.getName();
         return new SQLJoinStatement(
                 !pastJoinSequence.isEmpty() ? pastJoinSequence : previousJoinTable,
                 !name.isEmpty() ? name : tableNameBackup,
                 (previousJoinTable + "_" + reference.getName()).toLowerCase(),
+                shortAliasName,
                 List.of(joinField),
                 reference.getFieldType().isNonNullable() ? SQLJoinType.JOIN : SQLJoinType.LEFT
         );
@@ -111,14 +115,14 @@ public class FieldReference {
     /**
      * @return A join statement based on a condition.
      */
-    public SQLJoinStatement createConditionJoinFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup) {
-        return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnCondition(tableCondition));
+    public SQLJoinStatement createConditionJoinFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup, String shortAliasName) {
+        return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnCondition(tableCondition), shortAliasName);
     }
 
     /**
      * @return A join statement based on a key reference.
      */
-    public SQLJoinStatement createJoinOnKeyFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup) {
-        return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnKey(tableKey));
+    public SQLJoinStatement createJoinOnKeyFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup, String shortAliasName) {
+        return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnKey(tableKey), shortAliasName);
     }
 }

@@ -14,8 +14,8 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Film> filmForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var film_filmlanguage = LANGUAGE.as("film_filmlanguage");
-        var film_originallanguage = LANGUAGE.as("film_originallanguage");
+        var film_filmlanguage = LANGUAGE.as("FILM_3109808573");
+        var film_originallanguage = LANGUAGE.as("FILM_3747961961");
         return ctx
                 .select(
                         DSL.row(

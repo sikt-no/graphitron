@@ -16,10 +16,10 @@ import org.jooq.impl.DSL;
 public class PaymentDBQueries {
     public Map<String, Language> originalLanguageForPayment(DSLContext ctx, Set<String> paymentIder,
             SelectionSet select) {
-        var film_originallanguage = LANGUAGE.as("film_originallanguage");
-        var payment_rental = PAYMENT.rental().as("payment_rental");
-        var payment_rental_inventory = payment_rental.inventory().as("payment_rental_inventory");
-        var payment_rental_inventory_film = payment_rental_inventory.film().as("payment_rental_inventory_film");
+        var film_originallanguage = LANGUAGE.as("FILM_317255161");
+        var payment_rental = PAYMENT.rental().as("PAYMENT_3873506811");
+        var payment_rental_inventory = payment_rental.inventory().as("RENTAL_4126102745");
+        var payment_rental_inventory_film = payment_rental_inventory.film().as("INVENTORY_3033617302");
         return ctx
                 .select(
                         PAYMENT.getId(),
