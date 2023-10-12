@@ -1,0 +1,17 @@
+type Query {
+  store(id: ID!): Store
+}
+
+type Store @table {
+  id: ID!
+  city: City! @reference(via: [{table: "CUSTOMER"}, {table: "ADDRESS"}])
+  payment: Payment!
+}
+
+type City @table {
+  id: ID!
+}
+
+type Payment @table {
+  id: ID!
+}

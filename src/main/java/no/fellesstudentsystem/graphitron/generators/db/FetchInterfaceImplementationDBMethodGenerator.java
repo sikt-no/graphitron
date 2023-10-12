@@ -59,7 +59,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         String idName = "id";
 
         var code = CodeBlock.builder()
-                .add(createSelectAliases(context.getJoinList(), context.getAliasList()))
+                .add(createSelectAliases(context.getJoinSet(), context.getAliasSet()))
                 .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
@@ -74,13 +74,13 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .unindent()
                 .add(")\n")
                 .add(".from(" + tableName + ")\n")
-                .add(createSelectJoins(context.getJoinList()))
+                .add(createSelectJoins(context.getJoinSet()))
                 .add(".where($N.has$N($N))\n",
                         tableName,
                         StringUtils.capitalize(argumentName),
                         argumentName
                 )
-                .add(createSelectConditions(context.getConditionList()))
+                .add(createSelectConditions(context.getConditionSet()))
                 .addStatement("." + (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups")
                                 + "($T::value1, $T::value2)",
                         RECORD2.className,

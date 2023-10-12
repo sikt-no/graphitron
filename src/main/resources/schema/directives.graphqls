@@ -12,16 +12,8 @@ directive @table(
   name: String
 ) on OBJECT | INPUT_OBJECT
 
-"""Knytter feltet (eller argumentet) til en kolonne i KjerneAPI."""
-directive @column(
-  """Kolonnenavn i KjerneAPI."""
-  name: String!,
-
-  """Slå opp navnet i en relatert tabell i stedet. Tabellnavn i KjerneAPI."""
-  table: String,
-  """Fremmednøkkelen som knytter sammen den relaterte tabellen til gjeldende tabell."""
-  key: String
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+"""Overrides the jOOQ field this schema field should correspond to in the generated code."""
+directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
 directive @enum(enumReference: ExternalCodeReference!) on ENUM
@@ -53,7 +45,7 @@ directive @reference(
 
   """Extra reference steps that must be taken to complete the reference."""
   via: [ReferenceElement!]
-) on FIELD_DEFINITION
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """Adjust constraints for this field, argument or input field."""
 directive @condition(

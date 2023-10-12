@@ -1,17 +1,17 @@
 package no.fellesstudentsystem.graphitron.validation;
 
-import graphql.com.google.common.collect.Sets;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.apache.commons.lang3.Validate;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +31,7 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableFi
  */
 public class ProcessedDefinitionsValidator {
     private final ProcessedSchema schema;
+    private final List<ObjectField> allFields;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
     private static final String
             ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
@@ -38,177 +39,270 @@ public class ProcessedDefinitionsValidator {
 
     public ProcessedDefinitionsValidator(ProcessedSchema schema) {
         this.schema = schema;
+        allFields = schema
+                .getObjects()
+                .values()
+                .stream()
+                .flatMap(it -> it.getFields().stream())
+                .collect(Collectors.toList());
     }
 
     /**
      * Validate the various mappings set in the schema towards jOOQ tables and keys.
      */
     public void validateThatProcessedDefinitionsConformToJOOQNaming() {
-        schema.getObjects().values().forEach(objectDefinition -> {
-            var fields = objectDefinition.getFields();
-            if (objectDefinition.hasTable()) {
-                String tableName = objectDefinition.getTable().getName();
-                Set<String> dbNamesForFieldsThatShouldBeValidated = getDbNamesForFieldsThatShouldBeValidated(
-                        fields
-                                .stream()
-                                .filter(f -> !f.hasImplicitJoin())
-                                .collect(Collectors.toList())
-                );
-                validateTableExistsAndHasMethods(tableName, dbNamesForFieldsThatShouldBeValidated);
-            }
-            checkPaginationSpecs(fields);
+        schema.getObjects().values().forEach(it -> checkPaginationSpecs(it.getFields()));
+
+        validateTableAndFieldUsage();
+        validateInterfaces();
+        validateInputFields();
+        validateExternalMappingReferences();
+        validateMutationRequiredFields();
+    }
+
+    private void validateTableAndFieldUsage() {
+        var tableMethodsRequired = getUsedTablesWithRequiredMethods();
+        tableMethodsRequired
+                .keySet()
+                .stream()
+                .filter(it -> !TableReflection.tableExists(it))
+                .forEach(it -> LOGGER.warn("No table with name '{}' found in {}", it, GeneratorConfig.getGeneratedJooqTablesClass().getName()));
+
+        tableMethodsRequired
+                .entrySet()
+                .stream()
+                .filter(it -> TableReflection.tableExists(it.getKey()))
+                .forEach(entry -> {
+                    var tableName = entry.getKey();
+                    var allFieldNames = TableReflection.getFieldNamesForTable(tableName);
+                    var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).collect(Collectors.toList());
+                    var missingElements = nonFieldElements
+                            .stream()
+                            .filter(it -> TableReflection.searchTableForMethodWithName(tableName, it).isEmpty())
+                            .collect(Collectors.toList());
+
+                    if (!missingElements.isEmpty()) {
+                        LOGGER.warn("No field(s) or method(s) with name(s) '{}' found in table '{}'", missingElements.stream().sorted().collect(Collectors.joining(", ")), tableName);
+                    }
+                });
+    }
+
+    @NotNull
+    private HashMap<String, HashSet<String>> getUsedTablesWithRequiredMethods() {
+        var tableMethodsRequired = new HashMap<String, HashSet<String>>();
+        schema.getObjects().values().stream().filter(it -> it.hasTable() || it.isRoot()).forEach(object -> {
+            var flattenedFields = flattenObjectFields(object.isRoot() ? null : object.getTable().getName(), object.getFields());
+            unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
-        schema.getObjects().values().forEach(objectDefinition -> objectDefinition
-                .getFields()
-                .stream()
-                .filter(ObjectField::isGenerated)
-                .forEach(this::validateGeneratedField)
-        );
+        schema.getInputTypes().values().stream().filter(AbstractTableObjectDefinition::hasTable).forEach(input -> {
+            var flattenedFields = flattenInputFields(input.getTable().getName(), input.getFields(), false);
 
-        Map<String, Set<String>> columnsByTableHavingImplicitJoin = new HashMap<>();
-        schema.getObjects().values().forEach(objectDefinition -> objectDefinition
-                .getFields()
-                .stream()
-                .filter(ObjectField::hasImplicitJoin)
-                .forEach(objectField -> addColumnForTable(
-                        columnsByTableHavingImplicitJoin,
-                        objectField.getImplicitJoin().getTable().getName(),
-                        objectField.getUpperCaseName())
-                )
-        );
-        columnsByTableHavingImplicitJoin.forEach(this::validateTableExistsAndHasMethods);
+            unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
+        });
+        return tableMethodsRequired;
+    }
 
+    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenObjectFields(String lastTable, Collection<ObjectField> fields) {
+        var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
+        var lastTableIsNonNull = lastTable != null;
+        for (var field : fields) {
+            if (schema.isObject(field) && !schema.isInterface(field)) {
+                var table = lastTableIsNonNull
+                        ? lastTable
+                        : (schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getName() : null);
+                var object = schema.getObjectOrConnectionNode(field);
+                if (!object.hasTable()) {
+                    flattenObjectFields(table, object.getFields()).forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
+                }
+            }
+
+            var hasCondition = field.hasOverridingCondition();
+            if (field.hasNonReservedInputFields() && field.isGenerated()) {
+                var targetTable = schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getName() : lastTable;
+                flattenInputFields(targetTable, field.getNonReservedInputFields(), field.hasOverridingCondition())
+                        .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
+            }
+
+            flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
+        }
+        return flatFields;
+    }
+
+    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenInputFields(String lastTable, Collection<InputField> fields, boolean hasOverridingCondition) {
+        var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
+        for (var field : fields) {
+            var hasCondition = hasOverridingCondition || field.hasOverridingCondition();
+            if (schema.isInputType(field)) {
+                var object = schema.getInputType(field);
+                if (!object.hasTable()) {
+                    flattenInputFields(lastTable, object.getFields(), hasCondition)
+                            .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
+                }
+            } else if (field.isGenerated() && !ObjectField.RESERVED_PAGINATION_NAMES.contains(field.getName())) {
+                flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
+            }
+        }
+        return flatFields;
+    }
+
+    private HashMap<String, HashSet<String>> unpackReferences(Map<String, ArrayList<FieldWithOverrideStatus>> flattenedFields) {
+        var tableMethodsRequired = new HashMap<String, HashSet<String>>();
+        for (var fieldEntry : flattenedFields.entrySet()) {
+            var table = fieldEntry.getKey();
+            var fields = fieldEntry.getValue();
+            for (var fieldWithConditionStatus : fields) {
+                var field = fieldWithConditionStatus.field;
+                var fieldIsTableObject = schema.isTableObject(field);
+                var lastTable = table;
+                if (field.hasFieldReferences()) {
+                    for (var reference : field.getFieldReferences()) {
+                        if (reference.hasTableKey() && lastTable != null) {
+                            var key = reference.getTableKey();
+                            var nextTable = reference.hasTable()
+                                    ? reference.getTable().getName()
+                                    : (fieldIsTableObject ? schema.getObjectOrConnectionNode(field).getTable().getName() : lastTable);
+                            var reverseKeyFound = TableReflection.searchTableForMethodWithName(nextTable, key).isPresent(); // In joins the key can also be used in reverse.
+                            tableMethodsRequired
+                                    .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
+                                    .add(key);
+                        } else if (reference.hasTable() && lastTable != null) {
+                            tableMethodsRequired
+                                    .computeIfAbsent(lastTable, (k) -> new HashSet<>())
+                                    .add(reference.getTable().getCodeName());
+                        }
+
+                        if (reference.hasTable()) {
+                            lastTable = reference.getTable().getName();
+                        }
+                    }
+                } else if (fieldIsTableObject && !(field instanceof TopLevelObjectField) && !field.isResolver()) {
+                    tableMethodsRequired
+                            .computeIfAbsent(lastTable, (k) -> new HashSet<>())
+                            .add(schema.getObjectOrConnectionNode(field).getTable().getCodeName());
+                }
+
+                if (fieldIsTableObject) {
+                    lastTable = schema.getObjectOrConnectionNode(field).getTable().getName();
+                }
+
+                var fieldIsDBMapped = !schema.isObject(field) // TODO: If it has a condition on the reference and no other path, it should also be excluded.
+                        && !schema.isInputType(field)
+                        && !schema.isJavaMappedEnum(field)
+                        && !schema.isUnion(field)
+                        && !field.hasOverridingCondition()
+                        && !fieldWithConditionStatus.hasOverrideCondition;
+                if (lastTable != null && fieldIsDBMapped) {
+                    // New set is added anyway to be able to check tables only.
+                    var listToAddTo = tableMethodsRequired.computeIfAbsent(lastTable, (k) -> new HashSet<>());
+                    if (!field.getFieldType().isID()) {
+                        listToAddTo.add(field.getUpperCaseName());
+                    }
+                }
+            }
+        }
+        return tableMethodsRequired;
+    }
+
+    private void validateExternalMappingReferences() {
         var referenceSet = GeneratorConfig.getExternalReferences();
-        schema.getEnums().values()
+        schema
+                .getEnums()
+                .values()
                 .stream()
-                .filter(EnumDefinition::hasDbEnumMapping)
+                .filter(EnumDefinition::hasJavaEnumMapping)
                 .map(EnumDefinition::getEnumReference)
                 .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> LOGGER.warn("No enum with name '{}' found.", e));
 
-        schema.getInputTypes().values()
+        allFields
                 .stream()
-                .filter(InputDefinition::hasTable)
-                .forEach(inputDefinition -> validateTableExistsAndHasMethods(inputDefinition.getTable().getName(), Set.of()));
+                .filter(ObjectField::hasServiceReference)
+                .map(ObjectField::getServiceReference)
+                .map(CodeReference::getSchemaClassReference)
+                .filter(e -> !referenceSet.contains(e))
+                .forEach(e -> LOGGER.warn("No service with name '{}' found.", e));
 
-        var mutation = schema.getMutationType();
-        if (mutation != null) {
-            mutation
-                    .getFields()
+        allFields
+                .stream()
+                .filter(ObjectField::hasCondition)
+                .map(ObjectField::getCondition)
+                .map(SQLCondition::getConditionReference)
+                .map(CodeReference::getSchemaClassReference)
+                .filter(e -> !referenceSet.contains(e))
+                .forEach(e -> LOGGER.warn("No condition with name '{}' found.", e));
+
+        schema
+                .getExceptions()
+                .values()
+                .stream()
+                .filter(ExceptionDefinition::hasExceptionReference)
+                .map(ExceptionDefinition::getExceptionReference)
+                .map(CodeReference::getSchemaClassReference)
+                .filter(e -> !referenceSet.contains(e))
+                .forEach(e -> LOGGER.warn("No exception with name '{}' found.", e));
+    }
+
+    private void validateInterfaces() {
+        for (var field : allFields.stream().filter(ObjectField::isGenerated).collect(Collectors.toList())) {
+            var typeName = field.getTypeName();
+            var name = Optional
+                    .ofNullable(schema.getObjectOrConnectionNode(typeName))
+                    .map(AbstractObjectDefinition::getName)
+                    .orElse(typeName);
+
+            if (schema.isInterface(name)) {
+                Validate.isTrue(
+                        field.getInputFields().size() == 1,
+                        "Only exactly one input field is currently supported for fields returning interfaces. " +
+                                "'%s' has %s input fields", field.getName(), field.getInputFields().size()
+                );
+                Validate.isTrue(
+                        !field.isIterableWrapped(),
+                        "Generating fields returning collections/lists of interfaces is not supported. " +
+                                "'%s' must return only one %s", field.getName(), field.getFieldType().getName()
+                );
+                if (!(field instanceof TopLevelObjectField)) {
+                    LOGGER.warn("interface ({}) returned in non root object. This is not fully supported. Use with care", name);
+                }
+            }
+        }
+    }
+
+    private void validateInputFields() {
+        var oneLayerFlattenedFields = allFields
+                .stream()
+                .filter(schema::isTableObject)
+                .flatMap(it -> it.getNonReservedInputFields().stream())
+                .filter(AbstractField::isIterableWrapped)
+                .filter(schema::isInputType)
+                .collect(Collectors.toList());
+        for (var field : oneLayerFlattenedFields) {
+            var messageStart = String.format("Argument '%s' is of collection of InputFields ('%s') type.", field.getName(), field.getFieldType().getName());
+
+            var inputDefinitionFields = schema.getInputType(field).getFields();
+            inputDefinitionFields.stream().filter(AbstractField::isIterableWrapped).findFirst().ifPresent(it -> {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)",
+                                messageStart,
+                                it.getName()
+                        )
+                );
+            });
+
+            var optionalFields = inputDefinitionFields
                     .stream()
-                    .filter(ObjectField::isGenerated)
-                    .filter(ObjectField::hasMutationType)
-                    .forEach(this::validateRecordRequiredFields);
-        }
-    }
-
-    private void validateGeneratedField(ObjectField generatedField) {
-        String typeName = generatedField.getTypeName();
-        Optional<String> nodeName = Optional.ofNullable(schema.getConnectionObjects().get(typeName))
-                .map(ConnectionObjectDefinition::getNodeType);
-
-        String name = nodeName.orElse(typeName);
-
-        var object = schema.getObjects().get(name);
-        if (schema.getInterfaces().containsKey(name)) {
-            Validate.isTrue(generatedField.getInputFields().size() == 1,
-                    "Only exactly one input field is currently supported for fields returning interfaces. " +
-                            "'%s' has %s input fields", generatedField.getName(), generatedField.getInputFields().size());
-            Validate.isTrue(!generatedField.isIterableWrapped(),
-                    "Generating fields returning collections/lists of interfaces is not supported. " +
-                            "'%s' must return only one %s", generatedField.getName(), generatedField.getFieldType().getName());
-            if (!(generatedField instanceof TopLevelObjectField)) {
-                LOGGER.warn("interface ({}) returned in non root object. This is not fully supported. Use with care", name );
+                    .filter(it -> it.getFieldType().isNullable())
+                    .map(AbstractField::getName)
+                    .collect(Collectors.toList());
+            if (!optionalFields.isEmpty()) {
+                LOGGER.warn(
+                        "{} Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: '{}'",
+                        messageStart,
+                        String.join("', '", optionalFields)
+                );
             }
-        } else if (object != null && object.hasTable()) {
-            validateInputFields(generatedField.getNonReservedInputFields(), object.getTable());
-        }
-    }
-
-    private void validateInputFields(List<InputField> nonReservedInputFields, JOOQTableMapping table) {
-        var inputs = schema.getInputTypes();
-        nonReservedInputFields.forEach(field -> {
-            FieldType fieldType = field.getFieldType();
-
-            if (fieldType.isIterableWrapped()) {
-                Optional.ofNullable(inputs.get(fieldType.getName()))
-                        .ifPresent(definition -> validateConditionTupleGenerationForField(definition, field));
-            }
-        });
-
-        var flatInputs = new ArrayList<InputField>();
-        var inputBuffer = new LinkedList<>(nonReservedInputFields);
-        var seen = new HashSet<String>();
-        while (!inputBuffer.isEmpty()) {
-            var f = inputBuffer.poll();
-            if (inputs.containsKey(f.getTypeName()) && !seen.contains(f.getName() + f.getTypeName())) {
-                var definition = inputs.get(f.getTypeName());
-                inputBuffer.addAll(definition.getInputs());
-                seen.add(f.getName() + f.getTypeName());
-            } else {
-                flatInputs.add(f);
-            }
-        }
-
-        Set<String> inputFieldDbNames = flatInputs
-                .stream()
-                .filter(inputField -> !inputField.getFieldType().isID())
-                .filter(inputField -> !inputField.hasImplicitJoin())
-                .map(AbstractField::getUpperCaseName)
-                .collect(Collectors.toSet());
-        validateTableExistsAndHasMethods(table.getName(), inputFieldDbNames);
-    }
-
-    private void validateConditionTupleGenerationForField(InputDefinition inputDefinition, InputField inputField) {
-        List<String> optionalFields = new ArrayList<>();
-        String messageStart = String.format("Argument '%s' is of collection of InputFields ('%s') type.", inputField.getName(), inputField.getFieldType().getName());
-
-        inputDefinition.getInputs().forEach(field -> {
-            if (field.getFieldType().isNullable()) {
-                optionalFields.add(field.getName());
-            }
-            if (field.isIterableWrapped()) {
-                throw new IllegalArgumentException(String.format("%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)", messageStart, field.getName()));
-            }
-        });
-
-        if (!optionalFields.isEmpty()) {
-            LOGGER.warn("{} Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: '{}'", messageStart, String.join("', '", optionalFields));
-        }
-    }
-
-    private Set<String> getDbNamesForFieldsThatShouldBeValidated(Collection<ObjectField> objectFields) {
-        Set<String> fieldNames = new HashSet<>();
-        objectFields.stream().filter(o -> !o.getFieldType().isID()).forEach(objectField ->
-                Optional.ofNullable(schema.getObjects().get(objectField.getTypeName())).ifPresentOrElse(
-                        objectDefinition -> {
-                            if (!objectDefinition.hasTable()) {
-                                fieldNames.addAll(getDbNamesForFieldsThatShouldBeValidated(objectDefinition.getFields()));
-                            }
-                        },
-                        () -> {
-                            if (!objectField.hasImplicitJoin()) {
-                                fieldNames.add(objectField.getUpperCaseName());
-                            }
-                        }
-                ));
-        return fieldNames;
-    }
-
-    private void validateTableExistsAndHasMethods(String tableName, Set<String> expectedMethodNames) {
-        if (!TableReflection.tableExists(tableName)) {
-            LOGGER.warn("No table with name '{}' found in {}", tableName, GeneratorConfig.getGeneratedJooqTablesClass().getName());
-        } else {
-            validateTableHasMethods(tableName, expectedMethodNames);
-        }
-    }
-
-    public void validateTableHasMethods(String tableName, Set<String> methodNames) {
-        var methodsNotFoundInTable = Sets.difference(methodNames, TableReflection.getFieldNamesForTable(tableName));
-
-        if (!methodsNotFoundInTable.isEmpty()) {
-            LOGGER.warn("No column(s) with name(s) '{}' found in table '{}'", methodsNotFoundInTable.stream().sorted().collect(Collectors.joining(", ")), tableName);
         }
     }
 
@@ -224,18 +318,22 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    private void addColumnForTable(Map<String, Set<String>> columnsByTable, String table, String column) {
-        Optional.ofNullable(columnsByTable.get(table)).ifPresentOrElse(
-                columns -> columns.add(column),
-                () -> columnsByTable.put(table, Sets.newHashSet(column))
-        );
+    private void validateMutationRequiredFields() {
+        var mutation = schema.getMutationType();
+        if (mutation != null) {
+            mutation
+                    .getFields()
+                    .stream()
+                    .filter(ObjectField::isGenerated)
+                    .filter(ObjectField::hasMutationType)
+                    .forEach(this::validateRecordRequiredFields);
+        }
     }
 
     private void validateRecordRequiredFields(ObjectField target) {
         var mutationType = target.getMutationType();
         if (mutationType.equals(MutationType.INSERT) || mutationType.equals(MutationType.UPSERT)) {
-            var context = new UpdateContext(target, schema);
-            var recordInputs = context.getRecordInputs().values();
+            var recordInputs = new UpdateContext(target, schema).getRecordInputs().values();
             if (recordInputs.isEmpty()) {
                 throw new IllegalArgumentException(
                         "Mutation "
@@ -253,7 +351,7 @@ public class ProcessedDefinitionsValidator {
         var tableName = inputObject.getTable().getName();
 
         // WARNING: FS-SPECIFIC CODE. This must be generalized at some point.
-        var splitFieldsOnIsID = inputObject.getInputs().stream().collect(Collectors.partitioningBy(it -> it.getFieldType().isID()));
+        var splitFieldsOnIsID = inputObject.getFields().stream().collect(Collectors.partitioningBy(it -> it.getFieldType().isID()));
         var containedRequiredIDFields = new HashSet<String>();
         var containedOptionalIDFields = new HashSet<String>();
         for (var idField : splitFieldsOnIsID.get(true)) {
@@ -303,6 +401,16 @@ public class ProcessedDefinitionsValidator {
                             missingFields
                     )
             );
+        }
+    }
+
+    private final static class FieldWithOverrideStatus {
+        AbstractField field;
+        boolean hasOverrideCondition;
+
+        public FieldWithOverrideStatus(AbstractField field, boolean hasOverrideCondition) {
+            this.field = field;
+            this.hasOverrideCondition = hasOverrideCondition;
         }
     }
 }

@@ -1,0 +1,7 @@
+#defines default query directives.
+
+directive @reference(table: String, key: String, condition: ExternalCodeReference, via: [ReferenceElement!]) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+directive @condition(condition: ExternalCodeReference, override: Boolean = false) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+input ExternalCodeReference { name: String!, method: String }
+input ReferenceElement { table: String!, key: String, condition: ExternalCodeReference }

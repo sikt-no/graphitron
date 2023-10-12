@@ -1,9 +1,0 @@
-directive @deprecated on OBJECT #directive not recognized by generator. It's meant for other purposes
-
-type Query {
-  customer(id: ID!): Customer
-}
-
-type Customer @table @deprecated {
-  id: ID!
-}

@@ -4,7 +4,10 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeName;
 import graphql.language.TypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
+
+import java.util.List;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -12,7 +15,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
  * A generalized implementation of {@link ObjectSpecification}.
  * Contains functionality that is common between the different kinds of GraphQL objects.
  */
-public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>> implements ObjectSpecification<T> {
+public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U extends AbstractField> implements ObjectSpecification<T> {
     private final String name;
     private final TypeName graphClassName;
     private final T objectTypeDefinition;
@@ -37,4 +40,9 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>> impl
     public T getTypeDefinition() {
         return objectTypeDefinition;
     }
+
+    /**
+     * @return The fields contained within this object.
+     */
+    public abstract List<U> getFields();
 }

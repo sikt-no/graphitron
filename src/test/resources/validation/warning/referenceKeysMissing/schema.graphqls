@@ -1,0 +1,8 @@
+type Query {
+  store(id: ID!): Store
+}
+
+type Customer @table {
+  id: ID!
+  city: String! @reference(via: [{table: "ADDRESS", key: "FAKE_KEY"}], key: "NOT_A_KEY")
+}

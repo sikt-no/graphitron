@@ -4,7 +4,7 @@ type Mutation {
 
 input EditAddressInput @table(name: "CUSTOMER") {
   id: ID!
-  addressId: ID! @column(name: "ADDRESS_ID")
+  addressId: ID! @field(name: "ADDRESS_ID")
 }
 
 type EditAddressResponse {

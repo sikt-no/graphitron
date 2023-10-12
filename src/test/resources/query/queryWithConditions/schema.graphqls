@@ -1,52 +1,52 @@
 type Query {
   paramCondition(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"})
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "TEST_CITY"})
   ): [City]
 
   paramConditionOverride(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"}, override: true)
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "TEST_CITY"}, override: true)
   ): [City]
 
   fieldCondition(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY")
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY")
   ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"})
 
   fieldConditionOverride(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY")
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY")
   ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"}, override: true)
 
   fieldAndParamCondition(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"})
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "TEST_CITY"})
   ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"})
 
   fieldAndParamConditionOverride(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"})
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "TEST_CITY"})
   ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"}, override: true)
 
   fieldAndParamConditionOverrideBoth(
-    countryId: String! @column(name: "COUNTRY_ID"),
-    cityNames: [String!] @column(name: "CITY") @condition(condition: {name: "TEST_CITY"}, override: true)
+    countryId: String! @field(name: "COUNTRY_ID"),
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "TEST_CITY"}, override: true)
   ): [City] @condition(condition: {name: "TEST_CITY", method: "cityAll"}, override: true)
 
   fieldInputCondition(
-    countryId: String! @column(name: "COUNTRY_ID"),
+    countryId: String! @field(name: "COUNTRY_ID"),
     cityInput: CityInput # Potentially support: @condition(condition: {name: "TEST_CITY", method: ""})
   ): [City] @condition(condition: {name: "TEST_CITY", method: "cityInputAll"})
 }
 
 type City @table {
   id: ID! 
-  name: String! @column(name: "CITY")
-  lastUpdate: DateTime! @column(name: "LAST_UPDATE")
+  name: String! @field(name: "CITY")
+  lastUpdate: DateTime! @field(name: "LAST_UPDATE")
 }
 
 input CityInput {
-  name: String! @column(name: "CITY") @condition(condition: {name: "TEST_CITY", method: "cityName"})
-  cityId: String! @column(name: "CITY_ID")
+  name: String! @field(name: "CITY") @condition(condition: {name: "TEST_CITY", method: "cityName"})
+  cityId: String! @field(name: "CITY_ID")
 }

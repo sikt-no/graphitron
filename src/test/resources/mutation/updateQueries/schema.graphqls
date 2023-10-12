@@ -1,31 +1,31 @@
 input EditInput @table(name : "CUSTOMER") {
   id: ID!
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
   email: String
 }
 
 type EditResponse {
   id: ID!
-  firstName: String @column(name : "FIRST_NAME")
-  email: String @column(name : "emailField")
+  firstName: String @field(name : "FIRST_NAME")
+  email: String @field(name : "emailField")
 }
 
 type EditResponseWithCustomer {
   id: ID!
-  customer: Customer @column(name : "customField")
+  customer: Customer @field(name : "customField")
   post: Postadresse
 }
 
 type Mutation {
   editCustomerInput(input: EditInput!): ID! @mutation(typeName: UPDATE)
-  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutation(typeName: UPDATE)
+  editCustomer2Params(input: EditInput!, lastName: String @field(name: "LAST_NAME")): ID! @mutation(typeName: UPDATE)
   editCustomerInputAndResponse(input: EditInput!): EditResponse! @mutation(typeName: UPDATE)
   editCustomerWithCustomerResponse(input: EditInput!): EditResponseWithCustomer! @mutation(typeName: UPDATE)
 }
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
   email: String
 }

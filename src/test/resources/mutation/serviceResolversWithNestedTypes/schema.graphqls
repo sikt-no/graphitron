@@ -1,23 +1,23 @@
 input EditInputLevel1 @table(name : "CUSTOMER") {
   id: ID!
   editA1: EditInputLevel2A!
-  editA2: EditInputLevel2A @column(name : "editDouble")
+  editA2: EditInputLevel2A @field(name : "editDouble")
   editB: EditInputLevel2B
   editC1: EditInputLevel2C!
   editC2: [EditInputLevel2C!]!
 }
 
 input EditInputLevel2A @table(name : "CUSTOMER") {
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
 }
 
 input EditInputLevel2B @table(name : "CUSTOMER") {
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
   edit3: [EditInputLevel3!]
 }
 
 input EditInputLevel2C {
-  lastName: String! @column(name: "LAST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
 }
 
 input EditInputLevel3 @table(name : "CUSTOMER") {
@@ -26,7 +26,7 @@ input EditInputLevel3 @table(name : "CUSTOMER") {
 }
 
 input EditInputLevel4 @table(name : "CUSTOMER") {
-  lastName: String! @column(name: "LAST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
 }
 
 type EditCustomerResponse {
@@ -36,19 +36,19 @@ type EditCustomerResponse {
 }
 
 type EditCustomerResponse2 {
-  id: ID! @column(name : "id2")
+  id: ID! @field(name : "id2")
   customer: Customer
 }
 
 type EditCustomerResponse3 {
-  id: ID! @column(name : "id3")
-  customer: Customer @column(name : "customer3")
-  EditCustomerResponse4: [EditCustomerResponse4!] @column(name : "edit4")
+  id: ID! @field(name : "id3")
+  customer: Customer @field(name : "customer3")
+  EditCustomerResponse4: [EditCustomerResponse4!] @field(name : "edit4")
 }
 
 type EditCustomerResponse4 {
-  id: ID! @column(name : "id4")
-  payment: Payment @column(name : "payment4")
+  id: ID! @field(name : "id4")
+  payment: Payment @field(name : "payment4")
 }
 
 type Mutation {
@@ -57,8 +57,8 @@ type Mutation {
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
   email: String
   payment: Payment @splitQuery @notGenerated
 }
@@ -66,6 +66,6 @@ type Customer implements Node @table {
 type Payment implements Node @table {
   id: ID!
   amount: Int
-  date: DateTime @column(name : "PAYMENT_DATE")
-  lastUpdate: DateTime @column(name : "LAST_UPDATE")
+  date: DateTime @field(name : "PAYMENT_DATE")
+  lastUpdate: DateTime @field(name : "LAST_UPDATE")
 }

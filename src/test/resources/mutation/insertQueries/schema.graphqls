@@ -1,35 +1,35 @@
 input InsertInput @table(name : "CUSTOMER") {
   id: ID!
-  customerId: String! @column(name: "CUSTOMER_ID")
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
-  storeId: String! @column(name: "STORE_ID")
-  addressId: String! @column(name: "ADDRESS_ID")
-  active: Boolean! @column(name: "ACTIVEBOOL")
-  createdDate: Date! @column(name: "CREATE_DATE")
+  customerId: String! @field(name: "CUSTOMER_ID")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+  storeId: String! @field(name: "STORE_ID")
+  addressId: String! @field(name: "ADDRESS_ID")
+  active: Boolean! @field(name: "ACTIVEBOOL")
+  createdDate: Date! @field(name: "CREATE_DATE")
 }
 
 type InsertResponse {
   id: ID!
-  firstName: String @column(name : "FIRST_NAME")
-  email: String @column(name : "emailField")
+  firstName: String @field(name : "FIRST_NAME")
+  email: String @field(name : "emailField")
 }
 
 type InsertResponseWithCustomer {
   id: ID!
-  customer: Customer @column(name : "customField")
+  customer: Customer @field(name : "customField")
 }
 
 type Mutation {
   insertCustomerInput(input: InsertInput!): ID! @mutation(typeName: INSERT)
-  insertCustomer2Params(input: InsertInput!, lastName: String @column(name: "LAST_NAME")): ID! @mutation(typeName: INSERT)
+  insertCustomer2Params(input: InsertInput!, lastName: String @field(name: "LAST_NAME")): ID! @mutation(typeName: INSERT)
   insertCustomerInputAndResponse(input: InsertInput!): InsertResponse! @mutation(typeName: INSERT)
   insertCustomerWithCustomerResponse(input: InsertInput!): InsertResponseWithCustomer! @mutation(typeName: INSERT)
 }
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
   email: String
 }

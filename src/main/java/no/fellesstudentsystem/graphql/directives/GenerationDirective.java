@@ -10,11 +10,11 @@ public enum GenerationDirective {
     SPLIT_QUERY("splitQuery"),
     NOT_GENERATED("notGenerated"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
-    COLUMN("column", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY)),
+    FIELD("field", EnumSet.of(GenerationDirectiveParam.NAME)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE)),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.ERROR)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
-    REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION)),
+    REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.VIA)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE));
 
@@ -36,10 +36,9 @@ public enum GenerationDirective {
         return name;
     }
 
-    public GenerationDirectiveParam checkParamIsValid(GenerationDirectiveParam param) {
+    public void checkParamIsValid(GenerationDirectiveParam param) {
         if (!paramSet.contains(param)) {
             throw new IllegalArgumentException("Directive " + name + " has no parameter called " + param.getName() + ".");
         }
-        return param;
     }
 }

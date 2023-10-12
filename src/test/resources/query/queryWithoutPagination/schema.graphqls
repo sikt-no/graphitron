@@ -4,5 +4,5 @@ type Film implements Node @table {
 }
 
 type Query {
-  films(releaseYear: String! @column(name : "RELEASE_YEAR")): [Film!]
+  films(releaseYear: String! @field(name : "RELEASE_YEAR")): [Film!]
 }

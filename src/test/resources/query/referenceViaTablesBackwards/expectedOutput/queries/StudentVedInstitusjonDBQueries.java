@@ -16,7 +16,7 @@ import org.jooq.impl.DSL;
 
 public class StudentVedInstitusjonDBQueries {
     public Map<String, List<Eksamenstilpasningssoknad>> eksamenstilpasningssoknaderForStudentVedInstitusjon(
-            DSLContext ctx, Set<String> studentVedInstitusjonIder, SelectionSet select) {
+            DSLContext ctx, Set<String> studentVedInstitusjonIds, SelectionSet select) {
         var eksamenstilpasning_vurderingsmelding = EKSAMENSTILPASNING.vurderingsmelding().as("eksamenstilpasning_vurderingsmelding");
         return ctx
                 .select(
@@ -27,7 +27,7 @@ public class StudentVedInstitusjonDBQueries {
                         ).mapping(Functions.nullOnAllNull(Eksamenstilpasningssoknad::new)).as("eksamenstilpasningssoknader")
                 )
                 .from(EKSAMENSTILPASNING)
-                .where(eksamenstilpasning_vurderingsmelding.hasStudentIds(studentVedInstitusjonIder))
+                .where(eksamenstilpasning_vurderingsmelding.hasStudentIds(studentVedInstitusjonIds))
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

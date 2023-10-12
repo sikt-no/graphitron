@@ -1,0 +1,22 @@
+type Query {
+  rental(id: ID!): Rental
+}
+
+type Rental @table {
+  id: ID!
+  # join path: RENTAL -> INVENTORY -> FILM -> FILM_ACTOR(via condition)
+  mainActor: FilmActor @splitQuery @reference(
+    via: [{table: "INVENTORY"}, {table: "FILM"}],
+    condition: {name: "TEST_FILM_ACTOR"})
+
+}
+
+type FilmActor @table(name : "FILM_ACTOR") {
+  id: ID!
+  actor: Actor!
+}
+
+type Actor @table {
+  id: ID!
+  lastName: String! @field(name: "LAST_NAME")
+}

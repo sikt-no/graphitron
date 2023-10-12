@@ -118,21 +118,21 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
 
     private CodeBlock renderEnumMapElements(EnumDefinition enumEntry, boolean flipDirection) {
         var code = CodeBlock.builder();
-        var hasEnumReference = enumEntry.hasDbEnumMapping();
+        var hasEnumReference = enumEntry.hasJavaEnumMapping();
         var enumReference = enumEntry.getEnumReference();
         var entryClassName = enumEntry.getGraphClassName();
-        var entrySet = new ArrayList<>(enumEntry.getValuesMap().entrySet());
+        var entrySet = new ArrayList<>(enumEntry.getFields());
         var entrySetSize = entrySet.size();
         for (int i = 0; i < entrySetSize; i++) {
             var enumValue = entrySet.get(i);
             if (flipDirection) {
                 code
-                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getValue().getUpperCaseName()))
-                        .add(", $L", renderEnumKeySide(entryClassName, enumValue.getKey()));
+                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getUpperCaseName()))
+                        .add(", $L", renderEnumKeySide(entryClassName, enumValue.getName()));
             } else {
                 code
-                        .add("$L, ", renderEnumKeySide(entryClassName, enumValue.getKey()))
-                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getValue().getUpperCaseName()));
+                        .add("$L, ", renderEnumKeySide(entryClassName, enumValue.getName()))
+                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getUpperCaseName()));
             }
             if (i < entrySetSize - 1) {
                 code.add(", ");

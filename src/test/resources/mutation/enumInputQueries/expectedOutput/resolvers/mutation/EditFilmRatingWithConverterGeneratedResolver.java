@@ -34,7 +34,7 @@ public class EditFilmRatingWithConverterGeneratedResolver implements EditFilmRat
 
         if (input != null) {
             if (flatArguments.contains("input/rating")) {
-                inputRecord.setRating(input.getRating() == null ? null : Map.of(Rating.R, RatingTest.R, Rating.G, RatingTest.G, Rating.PG, RatingTest.PG).getOrDefault(input.getRating(), null));
+                inputRecord.setRating(input.getRating() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(input.getRating(), null));
             }
             if (flatArguments.contains("input/id")) {
                 inputRecord.setId(input.getId());

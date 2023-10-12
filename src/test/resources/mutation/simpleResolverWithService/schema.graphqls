@@ -1,13 +1,13 @@
 type EditResponse0 {
-  id0: ID! @column(name: "ID")
+  id0: ID! @field(name: "ID")
 }
 
 type EditResponse1 {
-  id1: [ID!]! @column(name: "ID")
+  id1: [ID!]! @field(name: "ID")
 }
 
 type EditResponse2 {
-  id2: [ID!]! @column(name: "ID")
+  id2: [ID!]! @field(name: "ID")
   customers: [Customer!]!
 }
 
@@ -21,6 +21,6 @@ type Mutation {
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
 }

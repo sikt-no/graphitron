@@ -4,7 +4,7 @@ type Query {
 
 type StudentVedInstitusjon @table(name: "STUDENT") {
   id: ID!
-  studentnummer: String! @column(name: "STUDENTNR_TILDELT")
+  studentnummer: String! @field(name: "STUDENTNR_TILDELT")
   #via tables starting from the referred type (EKSAMENSTILPASNING): EKSAMENSTILPASNING -> VURDERINGSMELDING -> STUDENT
   eksamenstilpasningssoknader: [Eksamenstilpasningssoknad!]! @splitQuery @reference(
   via: [{table: "EKSAMENSTILPASNING"}, {table: "VURDERINGSMELDING"}, {table: "STUDENT"}])
@@ -13,7 +13,7 @@ type StudentVedInstitusjon @table(name: "STUDENT") {
 type Eksamenstilpasningssoknad @table(name: "EKSAMENSTILPASNING") {
   id: ID!
   vurderingsmelding: Vurderingsmelding! @splitQuery @notGenerated
-  soknadsdato: Date @column(name: "DATO_SOKNAD")
+  soknadsdato: Date @field(name: "DATO_SOKNAD")
 }
 
 type Vurderingsmelding @table {

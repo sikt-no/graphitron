@@ -1,0 +1,13 @@
+type Query {
+  customer(id: ID!): Customer
+}
+
+type Customer @table {
+  id: ID!
+  historicalAddresses: [Address!]! @splitQuery @reference(condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddressJoin"})
+}
+
+type Address @table {
+  id: ID!
+  address: String
+}

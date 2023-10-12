@@ -14,25 +14,19 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Film> filmForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var film_filmlanguage = LANGUAGE.as("FILM_3109808573");
-        var film_originallanguage = LANGUAGE.as("FILM_3747961961");
         return ctx
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
                                 DSL.row(
-                                        film_filmlanguage.getId().as("id")
+                                        FILM.filmLanguageIdFkey().getId().as("id")
                                 ).mapping(Functions.nullOnAllNull(Language::new)).as("filmLanguage"),
                                 DSL.row(
-                                        film_originallanguage.getId().as("id")
+                                        FILM.filmOriginalLanguageIdFkey().getId().as("id")
                                 ).mapping(Functions.nullOnAllNull(Language::new)).as("originalLanguage")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
                 )
                 .from(FILM)
-                .leftJoin(film_filmlanguage)
-                .onKey(FILM__FILM_LANGUAGE_ID_FKEY)
-                .leftJoin(film_originallanguage)
-                .onKey(FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY)
                 .where(FILM.ID.eq(id))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);

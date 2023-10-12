@@ -1,71 +1,71 @@
 type Query {
-  films(ids: [ID!]! @column(name: "FILM_ID")): [Film]
+  films(ids: [ID!]! @field(name: "FILM_ID")): [Film]
 }
 
 """Type med flere enn 22 felter"""
 type Film implements Node @table {
   id: ID!
   title: String!
-  title2: String! @column(name: "TITLE")
-  title3: String! @column(name: "TITLE")
-  title4: String! @column(name: "TITLE")
-  title5: String! @column(name: "TITLE")
-  title6: String! @column(name: "TITLE")
-  title7: String! @column(name: "TITLE")
-  title8: String! @column(name: "TITLE")
-  title9: String! @column(name: "TITLE")
-  title10: String! @column(name: "TITLE")
-  title11: String! @column(name: "TITLE")
-  title12: String! @column(name: "TITLE")
-  title13: String! @column(name: "TITLE")
-  title14: String! @column(name: "TITLE")
-  title15: String! @column(name: "TITLE")
-  title16: String! @column(name: "TITLE")
-  title17: String! @column(name: "TITLE")
-  title18: String! @column(name: "TITLE")
-  title19: String! @column(name: "TITLE")
-  title20: String! @column(name: "TITLE")
+  title2: String! @field(name: "TITLE")
+  title3: String! @field(name: "TITLE")
+  title4: String! @field(name: "TITLE")
+  title5: String! @field(name: "TITLE")
+  title6: String! @field(name: "TITLE")
+  title7: String! @field(name: "TITLE")
+  title8: String! @field(name: "TITLE")
+  title9: String! @field(name: "TITLE")
+  title10: String! @field(name: "TITLE")
+  title11: String! @field(name: "TITLE")
+  title12: String! @field(name: "TITLE")
+  title13: String! @field(name: "TITLE")
+  title14: String! @field(name: "TITLE")
+  title15: String! @field(name: "TITLE")
+  title16: String! @field(name: "TITLE")
+  title17: String! @field(name: "TITLE")
+  title18: String! @field(name: "TITLE")
+  title19: String! @field(name: "TITLE")
+  title20: String! @field(name: "TITLE")
   description: String!
   length: Int!
   duration1: Duration1
   duration2: Duration2
-  rate: Int @column(name: "RENTAL_RATE")
-  languageName: String @column(name: "name", table: "LANGUAGE", key: "_filmLanguageIdFkey")
+  rate: Int @field(name: "RENTAL_RATE")
+  languageName: String @field(name: "name") @reference(table: "LANGUAGE", key: "FILM__FILM_LANGUAGE_ID_FKEY")
   rating: Rating
 }
 
 """Referert type med færre enn 22 felter"""
 type Duration1 {
-  duration: Int @column(name: "RENTAL_DURATION")
+  duration: Int @field(name: "RENTAL_DURATION")
 }
 
 """Referert type med flere enn 22 felter"""
 type Duration2 {
-  duration: Int @column(name: "RENTAL_DURATION")
-  duration2: Int @column(name: "RENTAL_DURATION")
-  duration3: Int @column(name: "RENTAL_DURATION")
-  duration4: Int @column(name: "RENTAL_DURATION")
-  duration5: Int @column(name: "RENTAL_DURATION")
-  duration6: Int @column(name: "RENTAL_DURATION")
-  duration7: Int @column(name: "RENTAL_DURATION")
-  duration8: Int @column(name: "RENTAL_DURATION")
-  duration9: Int @column(name: "RENTAL_DURATION")
-  duration10: Int @column(name: "RENTAL_DURATION")
-  duration11: Int @column(name: "RENTAL_DURATION")
-  duration12: Int @column(name: "RENTAL_DURATION")
-  duration13: Int @column(name: "RENTAL_DURATION")
-  duration14: Int @column(name: "RENTAL_DURATION")
-  duration15: Int @column(name: "RENTAL_DURATION")
-  duration16: Int @column(name: "RENTAL_DURATION")
-  duration17: Int @column(name: "RENTAL_DURATION")
-  duration18: Int @column(name: "RENTAL_DURATION")
-  duration19: Int @column(name: "RENTAL_DURATION")
-  duration20: Int @column(name: "RENTAL_DURATION")
-  duration21: Int @column(name: "RENTAL_DURATION")
-  duration22: Int @column(name: "RENTAL_DURATION")
-  duration23: Int @column(name: "RENTAL_DURATION")
-  duration24: Int @column(name: "RENTAL_DURATION")
-  duration25: Int @column(name: "RENTAL_DURATION")
+  duration: Int @field(name: "RENTAL_DURATION")
+  duration2: Int @field(name: "RENTAL_DURATION")
+  duration3: Int @field(name: "RENTAL_DURATION")
+  duration4: Int @field(name: "RENTAL_DURATION")
+  duration5: Int @field(name: "RENTAL_DURATION")
+  duration6: Int @field(name: "RENTAL_DURATION")
+  duration7: Int @field(name: "RENTAL_DURATION")
+  duration8: Int @field(name: "RENTAL_DURATION")
+  duration9: Int @field(name: "RENTAL_DURATION")
+  duration10: Int @field(name: "RENTAL_DURATION")
+  duration11: Int @field(name: "RENTAL_DURATION")
+  duration12: Int @field(name: "RENTAL_DURATION")
+  duration13: Int @field(name: "RENTAL_DURATION")
+  duration14: Int @field(name: "RENTAL_DURATION")
+  duration15: Int @field(name: "RENTAL_DURATION")
+  duration16: Int @field(name: "RENTAL_DURATION")
+  duration17: Int @field(name: "RENTAL_DURATION")
+  duration18: Int @field(name: "RENTAL_DURATION")
+  duration19: Int @field(name: "RENTAL_DURATION")
+  duration20: Int @field(name: "RENTAL_DURATION")
+  duration21: Int @field(name: "RENTAL_DURATION")
+  duration22: Int @field(name: "RENTAL_DURATION")
+  duration23: Int @field(name: "RENTAL_DURATION")
+  duration24: Int @field(name: "RENTAL_DURATION")
+  duration25: Int @field(name: "RENTAL_DURATION")
 }
 
 enum Rating {

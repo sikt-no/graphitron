@@ -39,4 +39,8 @@ public class SQLCondition {
     public boolean isOverride() {
         return override;
     }
+
+    public CodeReference getConditionReference() {
+        return conditionReference;
+    }
 }

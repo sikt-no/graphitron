@@ -2,13 +2,15 @@ package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * An extension of {@link SQLJoin} with additional data on which table to join towards and which alias should be used.
  * This class then contains all the information necessary to construct a complete join statement.
  */
 public class SQLJoinStatement extends SQLJoin {
-    private final String joinTargetTable, joinAlias, joinShortAliasName;
+    private final String joinTargetTable, joinAlias, joinShortAliasName, comparableJoinString;
+    private final CodeBlock joinString;
 
     /**
      * @param joinTargetTable The "right" side of a join statement. This is the table to be joined with.
@@ -20,6 +22,8 @@ public class SQLJoinStatement extends SQLJoin {
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;
         this.joinShortAliasName = joinShortAliasName;
+        joinString = super.toJoinString(joinAlias);
+        comparableJoinString = joinString.toString();
     }
 
     /**
@@ -51,6 +55,19 @@ public class SQLJoinStatement extends SQLJoin {
      * @return A string that contains a complete join statement followed by all conditions set for this join.
      */
     public CodeBlock toJoinString() {
-        return super.toJoinString(joinAlias);
+        return joinString;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof SQLJoinStatement)) return false;
+        SQLJoinStatement that = (SQLJoinStatement) o;
+        return Objects.equals(comparableJoinString, that.comparableJoinString);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(comparableJoinString);
     }
 }

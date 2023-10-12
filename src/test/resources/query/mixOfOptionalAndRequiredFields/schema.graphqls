@@ -5,7 +5,7 @@
 
 type Query {
   inventory(
-    id: String! @column(name: "INVENTORY_ID")
+    id: String! @field(name: "INVENTORY_ID")
   ): Inventory
 }
 
@@ -23,67 +23,67 @@ type Store @table {
 }
 
 type StoreFieldsWithOptional {
-  filmId: Int! @column(name: "FILM_ID")
-  lastUpdate: DateTime @column(name: "LAST_UPDATE")
+  filmId: Int! @field(name: "FILM_ID")
+  lastUpdate: DateTime @field(name: "LAST_UPDATE")
 }
 
 type StoreFieldsAllRequired {
-  filmId: Int! @column(name: "FILM_ID")
-  addressId: Int! @column(name: "ADDRESS_ID")
+  filmId: Int! @field(name: "FILM_ID")
+  addressId: Int! @field(name: "ADDRESS_ID")
 }
 
 """Type med flere enn 22 felter"""
 type Film @table {
   id: ID!
   title: String!
-  title2: String! @column(name: "TITLE")
-  title3: String! @column(name: "TITLE")
-  title4: String! @column(name: "TITLE")
-  title5: String! @column(name: "TITLE")
-  title6: String! @column(name: "TITLE")
-  title7: String! @column(name: "TITLE")
-  title8: String! @column(name: "TITLE")
-  title9: String! @column(name: "TITLE")
-  title10: String! @column(name: "TITLE")
-  title11: String! @column(name: "TITLE")
-  title12: String! @column(name: "TITLE")
-  title13: String! @column(name: "TITLE")
-  title14: String! @column(name: "TITLE")
-  title15: String! @column(name: "TITLE")
-  title16: String! @column(name: "TITLE")
-  title17: String! @column(name: "TITLE")
-  title18: String! @column(name: "TITLE")
-  title19: String! @column(name: "TITLE")
-  title20: String! @column(name: "TITLE")
-  title21: String! @column(name: "TITLE")
-  title22: String! @column(name: "TITLE")
-  title23: String! @column(name: "TITLE")
+  title2: String! @field(name: "TITLE")
+  title3: String! @field(name: "TITLE")
+  title4: String! @field(name: "TITLE")
+  title5: String! @field(name: "TITLE")
+  title6: String! @field(name: "TITLE")
+  title7: String! @field(name: "TITLE")
+  title8: String! @field(name: "TITLE")
+  title9: String! @field(name: "TITLE")
+  title10: String! @field(name: "TITLE")
+  title11: String! @field(name: "TITLE")
+  title12: String! @field(name: "TITLE")
+  title13: String! @field(name: "TITLE")
+  title14: String! @field(name: "TITLE")
+  title15: String! @field(name: "TITLE")
+  title16: String! @field(name: "TITLE")
+  title17: String! @field(name: "TITLE")
+  title18: String! @field(name: "TITLE")
+  title19: String! @field(name: "TITLE")
+  title20: String! @field(name: "TITLE")
+  title21: String! @field(name: "TITLE")
+  title22: String! @field(name: "TITLE")
+  title23: String! @field(name: "TITLE")
   description: Description! #required, with optional "sub fields"
 }
 
 """Referert, påkrevd type med flere enn 22 felter"""
 type Description {
   description: String!
-  description2: String @column(name: "DESCRIPTION")
-  description3: String @column(name: "DESCRIPTION")
-  description4: String @column(name: "DESCRIPTION")
-  description5: String @column(name: "DESCRIPTION")
-  description6: String @column(name: "DESCRIPTION")
-  description7: String @column(name: "DESCRIPTION")
-  description8: String @column(name: "DESCRIPTION")
-  description9: String @column(name: "DESCRIPTION")
-  description10: String @column(name: "DESCRIPTION")
-  description11: String @column(name: "DESCRIPTION")
-  description12: String @column(name: "DESCRIPTION")
-  description13: String @column(name: "DESCRIPTION")
-  description14: String @column(name: "DESCRIPTION")
-  description15: String @column(name: "DESCRIPTION")
-  description16: String @column(name: "DESCRIPTION")
-  description17: String @column(name: "DESCRIPTION")
-  description18: String @column(name: "DESCRIPTION")
-  description19: String @column(name: "DESCRIPTION")
-  description20: String @column(name: "DESCRIPTION")
-  description21: String @column(name: "DESCRIPTION")
-  description22: String @column(name: "DESCRIPTION")
-  description23: String @column(name: "DESCRIPTION")
+  description2: String @field(name: "DESCRIPTION")
+  description3: String @field(name: "DESCRIPTION")
+  description4: String @field(name: "DESCRIPTION")
+  description5: String @field(name: "DESCRIPTION")
+  description6: String @field(name: "DESCRIPTION")
+  description7: String @field(name: "DESCRIPTION")
+  description8: String @field(name: "DESCRIPTION")
+  description9: String @field(name: "DESCRIPTION")
+  description10: String @field(name: "DESCRIPTION")
+  description11: String @field(name: "DESCRIPTION")
+  description12: String @field(name: "DESCRIPTION")
+  description13: String @field(name: "DESCRIPTION")
+  description14: String @field(name: "DESCRIPTION")
+  description15: String @field(name: "DESCRIPTION")
+  description16: String @field(name: "DESCRIPTION")
+  description17: String @field(name: "DESCRIPTION")
+  description18: String @field(name: "DESCRIPTION")
+  description19: String @field(name: "DESCRIPTION")
+  description20: String @field(name: "DESCRIPTION")
+  description21: String @field(name: "DESCRIPTION")
+  description22: String @field(name: "DESCRIPTION")
+  description23: String @field(name: "DESCRIPTION")
 }

@@ -5,39 +5,27 @@ import graphql.language.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.TopLevelObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
-import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_QUERY;
+
 
 /**
  * Represents the default GraphQL object.
  * Objects which do not fall within a different object category will become instances of this class.
  * This is typically the only object type used in table referencing and joining operations.
  */
-public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition> implements GenerationTarget {
-    private final JOOQTableMapping table;
-    private final boolean hasTable, isGenerated, isRoot;
+public class ObjectDefinition extends AbstractTableObjectDefinition<ObjectTypeDefinition, ObjectField> implements GenerationTarget {
+    private final boolean isGenerated, isRoot;
     private final List<ObjectField> objectFields;
     private final Set<String> implementsInterfaces;
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
-        hasTable = objectDefinition.hasDirective(GenerationDirective.TABLE.getName());
-        if (hasTable) {
-            table = new JOOQTableMapping(
-                    getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.TABLE, NAME)
-                            .orElse(getName().toUpperCase())
-            );
-        } else {
-            table = null;
-        }
 
         isRoot = getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_QUERY.getName())
                 || getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_MUTATION.getName());
@@ -52,24 +40,6 @@ public class ObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinit
                 .collect(Collectors.toSet());
     }
 
-    /**
-     * @return Table objects which holds table names.
-     */
-    public JOOQTableMapping getTable() {
-        return table;
-    }
-
-    /**
-     * @return Does this object have the "{@link GenerationDirective#TABLE table}" directive
-     * which implies a connection to a database table?
-     */
-    public boolean hasTable() {
-        return hasTable;
-    }
-
-    /**
-     * @return The exact name of the database table that this object corresponds to.
-     */
     public List<ObjectField> getFields() {
         return objectFields;
     }

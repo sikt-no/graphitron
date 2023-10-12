@@ -16,39 +16,33 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
-    public Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIder,
-            List<String> s, SelectionSet select) {
-        var film_languages = LANGUAGE.as("FILM_317255161");
+    public Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIds,
+                                                        List<String> s, SelectionSet select) {
         return ctx
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_languages.getId().as("id")
+                                FILM.filmLanguageIdFkey().getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Language::new)).as("languages")
                 )
                 .from(FILM)
-                .join(film_languages)
-                .onKey(FILM__FILM_LANGUAGE_ID_FKEY,)
-                .where(FILM.hasIds(filmIder))
-                .and(s != null && s.size() > 0 ? film_languages.NAME.in(s) : DSL.noCondition())
+                .where(FILM.hasIds(filmIds))
+                .and(s != null && s.size() > 0 ? FILM.filmLanguageIdFkey().NAME.in(s) : DSL.noCondition())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
-    public Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIder,
-            In s, SelectionSet select) {
-        var film_languagesinput = LANGUAGE.as("FILM_317255161");
+    public Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIds,
+                                                             In s, SelectionSet select) {
         return ctx
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_languagesinput.getId().as("id")
+                                FILM.filmLanguageIdFkey().getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Language::new)).as("languagesInput")
                 )
                 .from(FILM)
-                .join(film_languagesinput)
-                .onKey(FILM__FILM_LANGUAGE_ID_FKEY,)
-                .where(FILM.hasIds(filmIder))
-                .and(s != null && s.getName() != null && s.getName().size() > 0 ? film_languagesinput.NAME.in(s.getName()) : DSL.noCondition())
+                .where(FILM.hasIds(filmIds))
+                .and(s != null && s.getName() != null && s.getName().size() > 0 ? FILM.filmLanguageIdFkey().NAME.in(s.getName()) : DSL.noCondition())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

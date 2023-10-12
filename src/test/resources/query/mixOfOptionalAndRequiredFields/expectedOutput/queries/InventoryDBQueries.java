@@ -18,7 +18,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, Store> storeForInventory(DSLContext ctx, Set<String> inventoryIder,
+    public Map<String, Store> storeForInventory(DSLContext ctx, Set<String> inventoryIds,
             SelectionSet select) {
         return ctx
                 .select(
@@ -40,11 +40,11 @@ public class InventoryDBQueries {
                         ).mapping((a0, a1, a2, a3) -> a0 == null && (a1 == null || new StoreFieldsWithOptional().equals(a1)) && (a2 == null || new StoreFieldsWithOptional().equals(a2)) && (a3 == null || new StoreFieldsAllRequired().equals(a3)) ? null : new Store(a0, a1, a2, a3)).as("store")
                 )
                 .from(INVENTORY)
-                .where(INVENTORY.hasIds(inventoryIder))
+                .where(INVENTORY.hasIds(inventoryIds))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmForInventory(DSLContext ctx, Set<String> inventoryIder,
+    public Map<String, Film> filmForInventory(DSLContext ctx, Set<String> inventoryIds,
             SelectionSet select) {
         return ctx
                 .select(
@@ -156,7 +156,7 @@ public class InventoryDBQueries {
                         ).as("film")
                 )
                 .from(INVENTORY)
-                .where(INVENTORY.hasIds(inventoryIder))
+                .where(INVENTORY.hasIds(inventoryIds))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

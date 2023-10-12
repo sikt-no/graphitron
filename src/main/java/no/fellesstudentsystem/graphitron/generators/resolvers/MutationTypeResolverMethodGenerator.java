@@ -254,7 +254,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                     .getRecordInputs()
                     .entrySet()
                     .stream()
-                    .filter(it -> processedSchema.getInputType(it.getValue()).getInputs().stream().anyMatch(f -> f.getFieldType().isID()))
+                    .filter(it -> processedSchema.getInputType(it.getValue()).getFields().stream().anyMatch(f -> f.getFieldType().isID()))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("Could not find a suitable ID to return for '" + containerField.getName() + "'."));
             shouldMap = true;

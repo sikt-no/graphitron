@@ -1,6 +1,6 @@
 input EndreInput @table(name : "CUSTOMER") {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
 }
 
 type Mutation {

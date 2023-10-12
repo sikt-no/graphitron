@@ -1,9 +1,9 @@
 input InsertCustomerInput @table(name : "CUSTOMER") {
-  customerID: String! @column(name : "CUSTOMER_ID")
-  active: Boolean! @column(name: "ACTIVEBOOL")
-  lastName: String! @column(name : "LAST_NAME")
-  storeID: String! @column(name : "STORE_ID")
-  addressID: String! @column(name : "ADDRESS_ID")
+  customerID: String! @field(name : "CUSTOMER_ID")
+  active: Boolean! @field(name: "ACTIVEBOOL")
+  lastName: String! @field(name : "LAST_NAME")
+  storeID: String! @field(name : "STORE_ID")
+  addressID: String! @field(name : "ADDRESS_ID")
 }
 
 type Mutation {

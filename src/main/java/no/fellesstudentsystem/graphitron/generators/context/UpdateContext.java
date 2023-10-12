@@ -83,7 +83,7 @@ public class UpdateContext {
                 if (object.hasTable()) {
                     numFields++;
                 }
-                numFields += countParams(object.getInputs(), inRecord || object.hasTable(), processedSchema);
+                numFields += countParams(object.getFields(), inRecord || object.hasTable(), processedSchema);
             } else if (!inRecord) {
                 numFields++;
             }
@@ -119,7 +119,7 @@ public class UpdateContext {
         serviceInputs.put(asListedRecordNameIf(target.getName(), target.isIterableWrapped()), target);
         processedSchema
                 .getInputType(target)
-                .getInputs()
+                .getFields()
                 .stream()
                 .filter(processedSchema::isTableInputType)
                 .flatMap(in -> parseInputs(in, recursion + 1).entrySet().stream())
@@ -144,7 +144,7 @@ public class UpdateContext {
      * @return The error type or union of error types with this name if it exists.
      */
     @NotNull
-    public AbstractObjectDefinition<?> getErrorTypeDefinition(String name) {
+    public AbstractObjectDefinition<?, ?> getErrorTypeDefinition(String name) {
         return processedSchema.isUnion(name) ? processedSchema.getUnion(name) : processedSchema.getException(name);
     }
 
@@ -185,7 +185,7 @@ public class UpdateContext {
                 fields.put(field.getUpperCaseName(), pathIteration + field.getName());
             } else {
                 var inputType = processedSchema.getInputType(field);
-                fields.putAll(getAllNestedInputFieldMappingsWithPaths(inputType.getInputs(), pathIteration + inputType.getName()));
+                fields.putAll(getAllNestedInputFieldMappingsWithPaths(inputType.getFields(), pathIteration + inputType.getName()));
             }
         }
         return fields;

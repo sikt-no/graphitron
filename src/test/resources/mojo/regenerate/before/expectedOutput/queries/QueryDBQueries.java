@@ -19,7 +19,7 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating"),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating"),
                                 select.optional("length", FILM.LENGTH).as("length")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
                 )

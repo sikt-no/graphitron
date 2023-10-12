@@ -1,5 +1,5 @@
 input EditInput @table(name : "CUSTOMER") {
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
   email: String
 }
 

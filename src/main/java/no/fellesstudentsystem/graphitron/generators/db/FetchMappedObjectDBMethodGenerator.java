@@ -1,11 +1,12 @@
 package no.fellesstudentsystem.graphitron.generators.db;
 
-import com.squareup.javapoet.*;
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -37,39 +38,37 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var refObject = ReferenceHelpers.findReferencedObjectDefinition(target, processedSchema);
         var localObject = getLocalObject();
-
         var context = new FetchContext(processedSchema, target, localObject);
-        var selectRowCode = generateSelectRow(context);
-        var hasKeyReference = context.hasKeyReference();
+        var referenceTableName = context.getReferenceTable().getName();
 
-        var actualRefTable = refObject.getTable().getName();
+        // Note that this must happen before alias declaration.
+        var selectCode = generateSelectRow(context);
+        var where = formatWhereContents(context);
+
         var code = CodeBlock
                 .builder()
-                .add(declareAliasesAndSetInitialCode(context, actualRefTable))
-                .add(selectRowCode)
+                .add(declareAliasesAndSetInitialCode(context))
+                .add(selectCode)
                 .add(".as($S)\n", target.getName())
                 .unindent()
                 .unindent()
                 .add(")\n")
-                .add(".from(")
-                .add(hasKeyReference || isRoot ? actualRefTable : localObject.getTable().getName())
-                .add(")\n")
-                .add(createSelectJoins(context.getJoinList()))
-                .add(formatWhereContents(target, context.getCurrentJoinSequence(), hasKeyReference, actualRefTable))
-                .add(createSelectConditions(context.getConditionList()))
-                .add(setPaginationAndFetch(target, actualRefTable));
+                .add(".from($N)\n", context.hasKeyReference() || isRoot ? referenceTableName : localObject.getTable().getName())
+                .add(createSelectJoins(context.getJoinSet()))
+                .add(where)
+                .add(createSelectConditions(context.getConditionSet()))
+                .add(setPaginationAndFetch(target, referenceTableName));
 
-        return getSpecBuilder(target, refObject.getGraphClassName())
+        return getSpecBuilder(target, context.getReferenceObject().getGraphClassName())
                 .addCode(code.build())
                 .build();
     }
 
-    private CodeBlock declareAliasesAndSetInitialCode(FetchContext context, String actualRefTable) {
+    private CodeBlock declareAliasesAndSetInitialCode(FetchContext context) {
         var code = CodeBlock
                 .builder()
-                .add(createSelectAliases(context.getJoinList(), context.getAliasList()))
+                .add(createSelectAliases(context.getJoinSet(), context.getAliasSet()))
                 .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
@@ -82,7 +81,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             var qualifiedId = TableReflection.getQualifiedId(referenceTableName, localTableName);
 
             code
-                    .add(context.hasKeyReference() ? actualRefTable + String.format(".get%s()", qualifiedId) : localTableName + ".getId()")
+                    .add(context.hasKeyReference() ? referenceTableName + String.format(".get%s()", qualifiedId) : localTableName + ".getId()")
                     .add(",\n");
         }
         return code.build();
@@ -123,7 +122,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock setPaginationAndFetch(ObjectField referenceField, String actualRefTable) {
-        var refObject = ReferenceHelpers.findReferencedObjectDefinition(referenceField, processedSchema);
+        var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         var refTable = refObject.getTable().getName();
         var code = CodeBlock.builder();
         if (isRoot || referenceField.hasForwardPagination()) {

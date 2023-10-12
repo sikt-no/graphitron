@@ -21,12 +21,12 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("paramCondition")
                 )
                 .from(FILM)
-                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(rating))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null)).eq(rating))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null)))
                 .and(FILM.RELEASE_YEAR.eq(releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
@@ -38,11 +38,11 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("paramConditionOverride")
                 )
                 .from(FILM)
-                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null)))
                 .and(FILM.RELEASE_YEAR.eq(releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
@@ -54,13 +54,13 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("fieldCondition")
                 )
                 .from(FILM)
-                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(rating))
+                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null)).eq(rating))
                 .and(FILM.RELEASE_YEAR.eq(releaseYear))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null), releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }
@@ -71,11 +71,11 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("fieldConditionOverride")
                 )
                 .from(FILM)
-                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null), releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }
@@ -86,14 +86,14 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("fieldAndParamCondition")
                 )
                 .from(FILM)
-                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(rating))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
+                .where(FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null)).eq(rating))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null)))
                 .and(FILM.RELEASE_YEAR.eq(releaseYear))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null), releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }
@@ -104,12 +104,12 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("fieldAndParamConditionOverride")
                 )
                 .from(FILM)
-                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null)))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null), releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }
@@ -120,12 +120,12 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("fieldAndParamConditionOverrideBoth")
                 )
                 .from(FILM)
-                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null)))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(rating, null), releaseYear))
+                .where(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.rating(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null)))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingAll(FILM, rating == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(rating, null), releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }
@@ -136,14 +136,14 @@ public class QueryDBQueries {
                 .select(
                         DSL.row(
                                 FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("fieldInputCondition")
                 )
                 .from(FILM)
                 .where(ratingIn != null ? FILM.RELEASE_YEAR.eq(ratingIn.getReleaseYear()) : DSL.noCondition())
-                .and(ratingIn != null ? FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "PG-13", Rating.PG_13, "G", Rating.G).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(s, null)).eq(ratingIn.getRating()) : DSL.noCondition())
+                .and(ratingIn != null ? FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null)).eq(ratingIn.getRating()) : DSL.noCondition())
                 .and(FILM.RELEASE_YEAR.eq(releaseYear))
-                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingInputAll(FILM, ratingIn != null ? ratingIn.getReleaseYear() : null, ratingIn != null ? ratingIn.getRating() == null ? null : Map.of(Rating.R, "R", Rating.PG_13, "PG-13", Rating.G, "G").getOrDefault(ratingIn.getRating(), null) : null, releaseYear))
+                .and(no.fellesstudentsystem.graphitron.conditions.RatingTestConditions.ratingInputAll(FILM, ratingIn != null ? ratingIn.getReleaseYear() : null, ratingIn != null ? ratingIn.getRating() == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(ratingIn.getRating(), null) : null, releaseYear))
                 .orderBy(FILM.getIdFields())
                 .fetch(0, Film.class);
     }

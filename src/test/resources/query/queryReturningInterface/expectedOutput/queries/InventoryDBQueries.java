@@ -17,7 +17,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, List<Rental>> rentalsForInventory(DSLContext ctx, Set<String> inventoryIder,
+    public Map<String, List<Rental>> rentalsForInventory(DSLContext ctx, Set<String> inventoryIds,
             SelectionSet select) {
         return ctx
                 .select(
@@ -27,7 +27,7 @@ public class InventoryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Rental::new)).as("rentals")
                 )
                 .from(RENTAL)
-                .where(RENTAL.hasInventoryIds(inventoryIder))
+                .where(RENTAL.hasInventoryIds(inventoryIds))
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 

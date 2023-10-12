@@ -4,8 +4,8 @@ input In {
 
 type Film implements Node @table {
   id: ID!
-  languages(s: [String] @column(name: "NAME")): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY,")
-  languagesInput(s: In): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY,")
+  languages(s: [String] @field(name: "NAME")): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY")
+  languagesInput(s: In): [Language!]! @splitQuery @reference(key: "FILM__FILM_LANGUAGE_ID_FKEY")
 }
 
 type Language implements Node @table {

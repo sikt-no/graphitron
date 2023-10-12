@@ -33,7 +33,7 @@ public class EditFilmRatingNoConverterGeneratedResolver implements EditFilmRatin
 
         if (input != null) {
             if (flatArguments.contains("input/rating")) {
-                inputRecord.setRating(input.getRating() == null ? null : Map.of(RatingNoConverter.R, "R", RatingNoConverter.G, "G", RatingNoConverter.PG, "PG").getOrDefault(input.getRating(), null));
+                inputRecord.setRating(input.getRating() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(input.getRating(), null));
             }
             if (flatArguments.contains("input/id")) {
                 inputRecord.setId(input.getId());

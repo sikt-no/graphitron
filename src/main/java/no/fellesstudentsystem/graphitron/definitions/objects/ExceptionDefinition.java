@@ -13,7 +13,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
 /**
  * Represents the default GraphQL object, parsed as an exception type.
  */
-public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition> {
+public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
     private final boolean isGenerated;
     private final List<ObjectField> objectFields;
     private final CodeReference exceptionReference;
@@ -28,9 +28,6 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
         exceptionReference = objectDefinition.hasDirective(ERROR.getName()) ? new CodeReference(objectDefinition, ERROR, GenerationDirectiveParam.ERROR, objectDefinition.getName()) : null;
     }
 
-    /**
-     * @return The exact name of the database table that this object corresponds to.
-     */
     public List<ObjectField> getFields() {
         return objectFields;
     }

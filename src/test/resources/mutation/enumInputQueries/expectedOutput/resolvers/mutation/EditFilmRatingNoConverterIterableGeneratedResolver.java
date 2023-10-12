@@ -41,7 +41,7 @@ public class EditFilmRatingNoConverterIterableGeneratedResolver implements EditF
                 var inputRecord = new FilmRecord();
                 inputRecord.attach(ctx.configuration());
                 if (flatArguments.contains("input/rating")) {
-                    inputRecord.setRating(itInput.getRating() == null ? null : Map.of(RatingNoConverter.R, "R", RatingNoConverter.G, "G", RatingNoConverter.PG, "PG").getOrDefault(itInput.getRating(), null));
+                    inputRecord.setRating(itInput.getRating() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(itInput.getRating(), null));
                 }
                 if (flatArguments.contains("input/id")) {
                     inputRecord.setId(itInput.getId());

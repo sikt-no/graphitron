@@ -7,7 +7,7 @@ type Customer @table {
   address: CustomerAddress!
 }
 
-type CustomerAddress  {
-  district: String @column(name: "district", table: "ADDRESS") #should NOT trigger warning
-  destruct: String @column(name: "destruct", table: "ADDRESS") #non-existent column, should trigger warning
+type CustomerAddress {
+  district: String @field(name: "district") @reference(table: "ADDRESS") #should NOT trigger warning
+  destruct: String @field(name: "destruct") @reference(table: "ADDRESS") #non-existent column, should trigger warning
 }

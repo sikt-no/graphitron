@@ -2,24 +2,22 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.ObjectField;
 import graphql.language.*;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
-import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.COLUMN;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.REFERENCE;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.CONDITION;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.TABLE;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
 
 /**
  * This class represents the general functionality associated with GraphQLs object fields.
@@ -27,14 +25,15 @@ import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
 public abstract class AbstractField {
     private final FieldType fieldType;
     private final String name, upperCaseName, unprocessedNameInput;
+    private final boolean isGenerated;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingFromFieldName, mappingFromColumn;
 
     private <T extends NamedNode<T> & DirectivesContainer<T>> AbstractField(T field, FieldType fieldType) {
         name = field.getName();
-        if (field.hasDirective(COLUMN.getName())) {
-            var columnValue = getDirectiveArgumentString(field, COLUMN, NAME);
+        if (field.hasDirective(FIELD.getName())) {
+            var columnValue = getDirectiveArgumentString(field, FIELD, NAME);
             unprocessedNameInput = fieldType != null && fieldType.isID() ? columnValue.toLowerCase() : columnValue;
             upperCaseName = columnValue.toUpperCase();
         } else {
@@ -52,7 +51,7 @@ public abstract class AbstractField {
 
             if (refrenceDirective.getArguments().stream()
                     .map(Argument::getName)
-                    .anyMatch(it -> it.equals(TABLE.getName()) || it.equals(GenerationDirectiveParam.CONDITION.getName()) || it.equals(KEY.getName()))) {
+                    .anyMatch(it -> it.equals(TABLE.getName()) || it.equals(CONDITION.getName()) || it.equals(KEY.getName()))) {
                 fieldReferences.add(new FieldReference(field));
             } else if (fieldType != null && !fieldReferencesContainsReferredFieldType(fieldType)) {
                 fieldReferences.add(new FieldReference(new JOOQTableMapping(fieldType.getName()), "", null));
@@ -70,6 +69,7 @@ public abstract class AbstractField {
         this.fieldType = fieldType;
         mappingFromFieldName = new MethodMapping(name);
         mappingFromColumn = new MethodMapping(unprocessedNameInput);
+        isGenerated = !field.hasDirective(NOT_GENERATED.getName());
     }
 
     /**
@@ -84,7 +84,7 @@ public abstract class AbstractField {
                     var objectFields = ((ObjectValue) value).getObjectFields();
                     var table = getObjectFieldByName(objectFields, TABLE);
                     var key = getOptionalObjectFieldByName(objectFields, KEY);
-                    var referencedCondition = getOptionalObjectFieldByName(objectFields, GenerationDirectiveParam.CONDITION)
+                    var referencedCondition = getOptionalObjectFieldByName(objectFields, CONDITION)
                             .map(ObjectField::getValue)
                             .map(it -> (ObjectValue) it)
                             .map(ObjectValue::getObjectFields)
@@ -189,17 +189,15 @@ public abstract class AbstractField {
         return hasCondition() && condition.isOverride();
     }
 
+    public boolean isGenerated() {
+        return isGenerated;
+    }
+
     /**
-     * Create a join that is limited to a single field.
+     * @return Does this field point to a resolver method?
      */
-    @Nullable
-    protected static <T extends NamedNode<T> & DirectivesContainer<T>> SQLImplicitFKJoin getSqlColumnJoin(T field) {
-        return getOptionalDirectiveArgumentString(field, COLUMN, TABLE)
-                .map(table -> new SQLImplicitFKJoin(
-                        table,
-                        getOptionalDirectiveArgumentString(field, COLUMN, KEY).orElse(""))
-                )
-                .orElse(null);
+    public boolean isResolver() {
+        return false;
     }
 
     private boolean fieldReferencesContainsReferredFieldType(FieldType referringFieldType) {

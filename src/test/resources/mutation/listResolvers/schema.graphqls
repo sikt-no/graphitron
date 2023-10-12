@@ -8,12 +8,12 @@ type Mutation {
 
 input EditInput @table(name: "CUSTOMER") {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
   email: String
 }
 
 type EditResponse {
   id: ID!
   firstName: [String!]
-  email: String @column(name: "secretEmail")
+  email: String @field(name: "secretEmail")
 }

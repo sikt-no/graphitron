@@ -1,0 +1,8 @@
+type Query {
+  customer(id: ID!): Customer
+}
+
+type Customer @table {
+  id: ID!
+  historicalAddressesAddress: [String!]! @field(name: "ADDRESS") @reference(table: "ADDRESS", condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddressJoin"})
+}

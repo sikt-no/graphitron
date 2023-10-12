@@ -13,14 +13,14 @@ type Film implements Node @table {
 
 type Query {
   filmTwoArguments(
-    releaseYear: String! @column(name : "RELEASE_YEAR"),
-    languageID: [Int!] @column(name : "LANGUAGE_ID"),
+    releaseYear: String! @field(name : "RELEASE_YEAR"),
+    languageID: [Int!] @field(name : "LANGUAGE_ID"),
     first: Int = 100,
     after: String
   ): QueryFilm2Connection
   filmFiveArguments(
-    releaseYear: String! @column(name : "RELEASE_YEAR"),
-    languageID: [Int!] @column(name : "LANGUAGE_ID"),
+    releaseYear: String! @field(name : "RELEASE_YEAR"),
+    languageID: [Int!] @field(name : "LANGUAGE_ID"),
     "Optional"
     description: String,
     "Mandatory"

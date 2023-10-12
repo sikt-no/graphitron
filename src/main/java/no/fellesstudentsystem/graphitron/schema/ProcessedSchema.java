@@ -109,28 +109,36 @@ public class ProcessedSchema {
      * @return Does this name belong to an enum type in the schema?
      */
     public boolean isEnum(String name) {
-        return enums.containsKey(name);
+        return enums.containsKey(name) || isConnectionObject(name) && isEnum(getConnectionObject(name).getNodeType());
     }
 
     /**
      * @return Does this field point to an enum type in the schema?
      */
     public boolean isEnum(AbstractField field) {
-        return enums.containsKey(field.getTypeName());
+        return enums.containsKey(field.getTypeName()) || isConnectionObject(field) && isEnum(getConnectionObject(field).getNodeType());
+    }
+
+    /**
+     * @return Does this field point to an enum type in the schema and does it have the {@link GenerationDirective#ENUM} directive set?
+     */
+    public boolean isJavaMappedEnum(AbstractField field) {
+        return Optional.ofNullable(getEnum(field)).map(EnumDefinition::hasJavaEnumMapping).orElse(false);
     }
 
     /**
      * @return Get an enum with this name.
      */
     public EnumDefinition getEnum(String name) {
-        return enums.get(name);
+        return enums.get(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
     }
 
     /**
      * @return Get the enum that this field points to.
      */
     public EnumDefinition getEnum(AbstractField field) {
-        return enums.get(field.getTypeName());
+        var typeName = field.getTypeName();
+        return enums.get(isConnectionObject(typeName) ? getConnectionObject(typeName).getNodeType() : typeName);
     }
 
     /**
@@ -144,28 +152,29 @@ public class ProcessedSchema {
      * @return Does this name belong to an interface type in the schema?
      */
     public boolean isInterface(String name) {
-        return interfaces.containsKey(name);
+        return interfaces.containsKey(name) || isConnectionObject(name) && isInterface(getConnectionObject(name).getNodeType());
     }
 
     /**
      * @return Does this field point to an interface type in the schema?
      */
     public boolean isInterface(AbstractField field) {
-        return interfaces.containsKey(field.getTypeName());
+        return interfaces.containsKey(field.getTypeName()) || isConnectionObject(field) && isInterface(getConnectionObject(field).getNodeType());
     }
 
     /**
      * @return Get an interface with this name.
      */
     public InterfaceDefinition getInterface(String name) {
-        return interfaces.get(name);
+        return interfaces.get(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
     }
 
     /**
      * @return Get the interface that this field points to.
      */
     public InterfaceDefinition getInterface(AbstractField field) {
-        return interfaces.get(field.getTypeName());
+        var typeName = field.getTypeName();
+        return interfaces.get(isConnectionObject(typeName) ? getConnectionObject(typeName).getNodeType() : typeName);
     }
 
     /**
@@ -190,10 +199,46 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this field point to an object type in the schema that is connected to a database table?
+     * @return Get an object with this name.
+     */
+    public ObjectDefinition getObject(String name) {
+        return objects.get(name);
+    }
+
+    /**
+     * @return Get the object that this field points to.
+     */
+    public ObjectDefinition getObject(AbstractField field) {
+        return objects.get(field.getTypeName());
+    }
+
+    /**
+     * @return Get an object or connection node with this name.
+     */
+    public ObjectDefinition getObjectOrConnectionNode(String name) {
+        return getObject(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+    }
+
+    /**
+     * @return Get the object or connection node that this field points to.
+     */
+    public ObjectDefinition getObjectOrConnectionNode(AbstractField field) {
+        var typeName = field.getTypeName();
+        return getObject(isConnectionObject(typeName) ? getConnectionObject(field).getNodeType() : typeName);
+    }
+
+    /**
+     * @return Does this name belong to an object type or connection node in the schema that is connected to a database table?
+     */
+    public boolean isTableObject(String name) {
+        return isObject(name) && getObject(name).hasTable() || isConnectionObject(name) && isTableObject(getConnectionObject(name).getNodeType());
+    }
+
+    /**
+     * @return Does this field point to an object type or connection node in the schema that is connected to a database table?
      */
     public boolean isTableObject(AbstractField field) {
-        return isObject(field) && getObject(field).hasTable();
+        return isObject(field) && getObject(field).hasTable() || isConnectionObject(field) && isTableObject(getConnectionObject(field).getNodeType());
     }
 
     /**
@@ -208,20 +253,6 @@ public class ProcessedSchema {
      */
     public boolean implementsNode(AbstractField field) {
         return isObject(field) && getObject(field).implementsInterface(NODE_TYPE.getName());
-    }
-
-    /**
-     * @return Get an object with this name.
-     */
-    public ObjectDefinition getObject(String name) {
-        return objects.get(name);
-    }
-
-    /**
-     * @return Get the object that this field points to.
-     */
-    public ObjectDefinition getObject(AbstractField field) {
-        return objects.get(field.getTypeName());
     }
 
     /**
@@ -306,7 +337,7 @@ public class ProcessedSchema {
      * @return Does this field point to an input type with a table set in the schema?
      */
     public boolean isTableInputType(AbstractField field) {
-        return Optional.ofNullable(inputs.get(field.getTypeName())).map(InputDefinition::hasTable).orElse(false);
+        return Optional.ofNullable(getInputType(field)).map(InputDefinition::hasTable).orElse(false);
     }
 
     /**
@@ -327,7 +358,14 @@ public class ProcessedSchema {
      * @return Does this name belong to a union type in the schema?
      */
     public boolean isUnion(String name) {
-        return unions.containsKey(name);
+        return unions.containsKey(name) || isConnectionObject(name) && isUnion(getConnectionObject(name).getNodeType());
+    }
+
+    /**
+     * @return Does this field belong to a union type in the schema?
+     */
+    public boolean isUnion(AbstractField field) {
+        return unions.containsKey(field.getTypeName()) || isConnectionObject(field) && isUnion(getConnectionObject(field).getNodeType());
     }
 
     /**
@@ -351,7 +389,14 @@ public class ProcessedSchema {
      * @return Get a union type with this name.
      */
     public UnionDefinition getUnion(String name) {
-        return unions.get(name);
+        return unions.get(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+    }
+
+    /**
+     * @return Get a union type that this field points to.
+     */
+    public UnionDefinition getUnion(AbstractField field) {
+        return unions.get(isConnectionObject(field) ? getConnectionObject(field).getNodeType() : field);
     }
 
     /**

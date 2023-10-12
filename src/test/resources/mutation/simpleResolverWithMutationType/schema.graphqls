@@ -1,13 +1,13 @@
 input EditInput @table(name : "CUSTOMER") {
-  firstName: String! @column(name: "FIRST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
 }
 
 type EditResponse0 {
-  id0: ID! @column(name: "ID")
+  id0: ID! @field(name: "ID")
 }
 
 type EditResponse1 {
-  id1: [ID!]! @column(name: "ID")
+  id1: [ID!]! @field(name: "ID")
 }
 
 type Mutation {

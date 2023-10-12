@@ -4,12 +4,12 @@ input EditInput @table(name : "CUSTOMER") {
 }
 
 input NameInput {
-  firstName: String! @column(name: "FIRST_NAME")
-  surname: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  surname: String! @field(name: "LAST_NAME")
 }
 
 type EditResponse {
-  id: ID! @column(name: "ID")
+  id: ID! @field(name: "ID")
 }
 
 type Mutation {

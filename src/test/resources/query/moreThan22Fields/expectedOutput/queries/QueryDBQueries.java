@@ -105,7 +105,7 @@ public class QueryDBQueries {
                                 ).as("duration2"),
                                 select.optional("rate", FILM.RENTAL_RATE).as("rate"),
                                 select.optional("languageName", FILM.filmLanguageIdFkey().NAME).as("languageName"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("R", Rating.R, "G", Rating.G, "PG", Rating.PG).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.R, "R", Rating.G, "G", Rating.PG, "PG").getOrDefault(s, null))).as("rating")
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG", Rating.PG, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG, "PG", Rating.R, "R").getOrDefault(s, null))).as("rating")
                         ).mapping(Film.class, r ->
                                 Arrays.stream(r).allMatch(Objects::isNull) ? null : new Film(
                                         (String) r[0],

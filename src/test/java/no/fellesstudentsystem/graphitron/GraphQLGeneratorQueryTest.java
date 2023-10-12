@@ -20,8 +20,6 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
 
     private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
             new ExternalClassReference("TEST_CITY", "no.fellesstudentsystem.graphitron.conditions.CityTestConditions"),
             new ExternalClassReference("TEST_FILM_ACTOR", "no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions"),
             new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions")
@@ -100,45 +98,10 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumConditions");
     }
 
-    @Test
-    void generate_referenceGivenKey_shouldJoinTables() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKey");
-    }
-
-    @Test
-    void generate_referenceGivenConditionOnDirectJoin_shouldApplyCondition() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenConditionOnDirectJoin");
-    }
-
-    @Test
-    void generate_referenceViaTables_shouldCreateJoinViaTables() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTables");
-    }
-
     @Disabled("not supported yet")
     @Test
     void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTablesBackwards");
-    }
-
-    @Test
-    void generate_referenceGivenConditionViaTables_shouldCreateJoinViaTablesThenCondition() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenConditionViaTables");
-    }
-
-    @Test
-    void generate_referenceViaTableWithCondition_shouldCreateJoinViaTableWithCondition() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTableWithCondition");
-    }
-
-    @Test
-    void generate_referenceGivenKeyViaTables_shouldCreateJoinViaTablesThenKey() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKeyViaTables");
-    }
-
-    @Test
-    void generate_referenceGivenKeyViaTableWithConditionAndTableWithKey_shouldCreateJoinViaTablesThenKey() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceGivenKeyViaTableWithConditionAndTableWithKey");
     }
 
     @Test

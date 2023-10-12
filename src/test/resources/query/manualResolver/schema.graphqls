@@ -1,5 +1,5 @@
 type Query {
-  customers(storeIds: [ID!]! @column(name: "STORE_ID")): [Customer]
+  customers(storeIds: [ID!]! @field(name: "STORE_ID")): [Customer]
 }
 
 type Customer implements Node @table {

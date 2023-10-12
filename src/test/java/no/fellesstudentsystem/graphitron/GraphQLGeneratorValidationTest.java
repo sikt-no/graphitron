@@ -7,7 +7,6 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -18,7 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class GraphQLGeneratorValidationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "validation";
     private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest")
+            new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
+            new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions")
     );
 
     public GraphQLGeneratorValidationTest() {
@@ -41,7 +41,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_nonRootObjectThatReturnsInterface_shouldCreateResolverAndLogWarning() {
         getProcessedSchema("resolverReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No column(s) with name(s) 'NODEREF' found in table 'CUSTOMER'",
+                "No field(s) or method(s) with name(s) 'NODEREF' found in table 'CUSTOMER'",
                 "interface (Node) returned in non root object. This is not fully supported. Use with care");
     }
 
@@ -134,8 +134,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownColumn_shouldLogWarning() {
         getProcessedSchema("warning/unknownColumn");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No column(s) with name(s) 'NONEXISTENTDURATION, NONEXISTENTRATE, RATING2, TITLE2' found in table 'FILM'",
-                "No column(s) with name(s) 'NON_EXISTENT_ID' found in table 'FILM'"
+                "No field(s) or method(s) with name(s) 'NONEXISTENTDURATION, NONEXISTENTRATE, NON_EXISTENT_ID, RATING2, TITLE2' found in table 'FILM'"
         );
     }
 
@@ -143,7 +142,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownColumnForImplicitJoin_shouldLogWarning() {
         getProcessedSchema("warning/unknownColumnForImplicitJoin");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No column(s) with name(s) 'DESTRUCT' found in table 'ADDRESS'"
+                "No field(s) or method(s) with name(s) 'DESTRUCT' found in table 'ADDRESS'"
         );
     }
 
@@ -163,12 +162,6 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
                         "forward(first and after fields) or backwards(last and before fields) pagination, yet " +
                         "neither was found. No pagination was generated for this type."
         );
-    }
-
-    @Test
-    void generate_whenDirectiveNotRecognizedByGenerator_shouldNotLogWarning() throws IOException {
-        generateFiles("warning/unrecognizedDirective");
-        assertThat(getLogMessagesWithLevelWarn()).isEmpty();
     }
 
     @Test
@@ -199,6 +192,37 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
         assertThatThrownBy(() -> getProcessedSchema("error/insertNoRecordSet"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Mutation registerCustomerInput is set as an insert operation, but does not link any input to tables.");
+    }
+
+    @Test
+    void generate_whenImplicitJoinDoesNotExist_shouldLogWarning() {
+        getProcessedSchema("warning/implicitJoinDoesNotExist");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "No field(s) or method(s) with name(s) 'customer, payment' found in table 'STORE'"
+        );
+    }
+
+    @Test
+    void generate_whenKeyMissing_shouldLogWarning() {
+        getProcessedSchema("warning/referenceKeysMissing");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "No field(s) or method(s) with name(s) 'FAKE_KEY' found in table 'CUSTOMER'",
+                "No field(s) or method(s) with name(s) 'NOT_A_KEY' found in table 'ADDRESS'"
+        );
+    }
+
+    @Test
+    void generate_whenKeyUsedInReverse_shouldNotLogWarning() {
+        getProcessedSchema("warning/referenceKeysReversed");
+        assertThat(getLogMessagesWithLevelWarn()).isEmpty();
+    }
+
+    @Test
+    void generate_whenFieldsDoNotMatchDBAndHasOverridingCondition_shouldNotLogWarning() {
+        getProcessedSchema("warning/queryWithNonMappedArguments");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "No field(s) or method(s) with name(s) 'FAKEFIELD0, FAKEFIELD2, FAKEFIELD4' found in table 'FILM'"
+        );
     }
 
     private Set<String> getLogMessagesWithLevelWarn() {

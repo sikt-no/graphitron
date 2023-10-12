@@ -1,20 +1,23 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
+import java.util.Objects;
+
 /**
  * For multiple joins on the same table, aliases are required to distinguish them.
  */
 public class SQLAlias {
-    private final String joinTargetMethod, name, joinSourceTable, shortAliasName;
+    private final String joinTargetMethod, name, joinSourceTable, shortName, rendered;
 
     /**
-     * @param joinSourceTable  The table to be joined from.
      * @param joinTargetMethod The table to be joined with, using the provided method.
+     * @param joinSourceTable  The table to be joined from.
      */
-    public SQLAlias(String name, String joinSourceTable, String joinTargetMethod, String shortAliasName) {
+    public SQLAlias(String name, String shortName, String joinTargetMethod, String joinSourceTable) {
         this.joinSourceTable = joinSourceTable;
         this.joinTargetMethod = joinTargetMethod;
         this.name = name.replaceAll("[.]", "_").replaceAll("[()]", "");
-        this.shortAliasName = shortAliasName;
+        this.shortName = shortName;
+        rendered = "var " + this.name + " = " + joinSourceTable + "." + joinTargetMethod + "().as(\"" + shortName + "\")";
     }
 
     /**
@@ -38,8 +41,28 @@ public class SQLAlias {
         return name;
     }
 
+    /**
+     * @return Shortened alias name that will not exceed the max character limit for aliases.
+     */
+    public String getShortName() {
+        return shortName;
+    }
+
     @Override
     public String toString() {
-        return "var " + name + " = " + joinSourceTable + "." + joinTargetMethod + "().as(\"" + shortAliasName + "\")";
+        return rendered;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof SQLAlias)) return false;
+        SQLAlias sqlAlias = (SQLAlias) o;
+        return Objects.equals(joinTargetMethod, sqlAlias.joinTargetMethod) && Objects.equals(name, sqlAlias.name) && Objects.equals(joinSourceTable, sqlAlias.joinSourceTable);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(joinTargetMethod, name, joinSourceTable);
     }
 }

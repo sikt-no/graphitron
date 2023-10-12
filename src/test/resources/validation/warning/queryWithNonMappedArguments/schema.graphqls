@@ -1,0 +1,46 @@
+type Query {
+  paramCondition(
+    fakeField0: Rating! @condition(condition: {name: "TEST_FILM_RATING"}),
+    fakeField1: Rating! @condition(condition: {name: "TEST_FILM_RATING"}, override: true), # Covered by argument condition.
+    releaseYear: String! @field(name: "RELEASE_YEAR")
+  ): [Film]
+
+  fieldCondition0(
+    fakeField2: Rating!,
+    releaseYear: String! @field(name: "RELEASE_YEAR")
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"})
+
+  fieldCondition1(
+    fakeField3: Rating!, # Covered by field condition.
+    releaseYear: String! @field(name: "RELEASE_YEAR")
+  ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
+
+  # Not supported yet, only checked in validation.
+  fieldInputCondition(
+    in0: FilmInput0 @condition(condition: {name: "TEST_FILM_RATING"}),
+    in1: FilmInput1 @condition(condition: {name: "TEST_FILM_RATING"}, override: true),
+    releaseYear: String! @field(name: "RELEASE_YEAR")
+  ): [Film]
+}
+
+input FilmInput0 {
+  releaseYear: String! @field(name: "RELEASE_YEAR")
+  fakeField4: String
+  rating: Rating!
+}
+
+input FilmInput1 {
+  releaseYear: String! @field(name: "RELEASE_YEAR")
+  fakeField5: String # Covered by input condition.
+  rating: Rating!
+}
+
+type Film @table {
+  id: ID!
+}
+
+enum Rating {
+  G @field(name: "G"),
+  PG_13 @field(name: "PG-13"),
+  R @field(name: "R"),
+}

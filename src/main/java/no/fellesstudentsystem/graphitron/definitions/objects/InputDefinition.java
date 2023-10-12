@@ -6,9 +6,6 @@ import graphql.language.InputObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
-import no.fellesstudentsystem.graphql.directives.GenerationDirective;
-import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 
 import java.util.List;
 import java.util.Set;
@@ -18,14 +15,11 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordClassName;
 import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 
 /**
  * Represents a default GraphQL input type.
  */
-public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDefinition> {
-    private final JOOQTableMapping table;
-    private final boolean hasTable;
+public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTypeDefinition, InputField> {
     private final List<InputField> inputs;
     private final Set<String> requiredInputs;
     private final TypeName recordClassName;
@@ -33,38 +27,18 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
     public InputDefinition(InputObjectTypeDefinition inputType) {
         super(inputType);
         inputs = inputType.getInputValueDefinitions().stream().map(InputField::new).collect(Collectors.toList());
-
-        this.hasTable = inputType.hasDirective(GenerationDirective.TABLE.getName());
-        String tableName = getName().toUpperCase();
-        if (hasTable) {
-            tableName = DirectiveHelpers.getOptionalDirectiveArgumentString(inputType, GenerationDirective.TABLE, NAME).orElse(tableName);
-            table = new JOOQTableMapping(tableName);
-        } else {
-            table = null;
-        }
-        recordClassName = ClassName.get(GeneratorConfig.getGeneratedJooqRecordsPackage(), asRecordClassName(new RecordMethodMapping(tableName).getName()));
-        requiredInputs = hasTable ? getRequiredFields(getTable().getName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
-    }
-
-    /**
-     * @return Table objects which holds table names.
-     */
-    public JOOQTableMapping getTable() {
-        return table;
-    }
-
-    /**
-     * @return Does this object have the "{@link GenerationDirective#TABLE node}" directive
-     * which implies a connection to a database table?
-     */
-    public boolean hasTable() {
-        return hasTable;
+        var uppercaseName = getName().toUpperCase();
+        recordClassName = ClassName.get(
+                GeneratorConfig.getGeneratedJooqRecordsPackage(),
+                asRecordClassName(new RecordMethodMapping(hasTable() ? getTable().getName() : uppercaseName).getName())
+        );
+        requiredInputs = hasTable() ? getRequiredFields(getTable().getName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
     }
 
     /**
      * @return List of input fields contained within this input type.
      */
-    public List<InputField> getInputs() {
+    public List<InputField> getFields() {
         return inputs;
     }
 
@@ -80,8 +54,8 @@ public class InputDefinition extends AbstractObjectDefinition<InputObjectTypeDef
      * @return Is this field non-nullable in the database?
      */
     private boolean isRequired(InputField field) {
-        if (field.getFieldType().isID() && hasTable) {
-            var hackedIDFields = getHackedIDFields(table.getName(), field.getRecordMappingName());
+        if (field.getFieldType().isID() && hasTable()) {
+            var hackedIDFields = getHackedIDFields(getTable().getName(), field.getRecordMappingName());
             if (hackedIDFields.isPresent()) {
                 if (requiredInputs.containsAll(hackedIDFields.get())) {
                     return true;

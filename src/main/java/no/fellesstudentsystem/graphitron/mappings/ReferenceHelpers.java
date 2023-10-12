@@ -1,9 +1,7 @@
 package no.fellesstudentsystem.graphitron.mappings;
 
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
@@ -35,7 +33,6 @@ public class ReferenceHelpers {
             return false;
         }
 
-        // Denne er suspekt. Så vidt jeg kan forstå så forhindrer den self-joins, noe som er et gyldig use case.
         if (localTableName.equals(refTableName)) {
             return false;
         }
@@ -44,16 +41,6 @@ public class ReferenceHelpers {
             throw new IllegalStateException("Can not automatically infer join of '" + localTableName +  "' and '" + refTableName + "'.");
         }
 
-        var implicitJoinIsPossible = tableHasMethod(localTableName, referenceObjectTable.getCodeName());
-        return !implicitJoinIsPossible;
-    }
-
-    public static ObjectDefinition findReferencedObjectDefinition(AbstractField referenceField, ProcessedSchema processedSchema) {
-        if (processedSchema.isConnectionObject(referenceField)) {
-            var objectDefinition = processedSchema.getConnectionObject(referenceField);
-            return processedSchema.getObject(objectDefinition.getNodeType());
-        } else {
-            return processedSchema.getObject(referenceField);
-        }
+        return searchTableForMethodWithName(localTableName, referenceObjectTable.getCodeName()).isEmpty();
     }
 }

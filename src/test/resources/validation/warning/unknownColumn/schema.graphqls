@@ -1,40 +1,40 @@
 type Query {
     filmGenerated(
         id: ID!, #ID types should not trigger warning
-        languageID: Int! @column(name: "LANGUAGE_ID"), #should NOT trigger warning
-        nonExistentID: [Int!] @column(name: "NON_EXISTENT_ID"), #should trigger warning
+        languageID: Int! @field(name: "LANGUAGE_ID"), #should NOT trigger warning
+        nonExistentID: [Int!] @field(name: "NON_EXISTENT_ID"), #should trigger warning
     ): Film
 
     filmNotGenerated(
-        notGenerated: [String!] @column(name: "NOT_GENERATED")
+        notGenerated: [String!] @field(name: "NOT_GENERATED")
     ): Film @notGenerated #should not trigger warning when marked with '@notGenerated'
 }
 
 type Film @table {
     id: ID!
     id2: ID! #No ID2 column, but ID types should not trigger warning
-    title: String @column(name: "TITLE") #should NOT trigger warning
-    title2: String @column(name: "TITLE2") #should trigger warning
+    title: String @field(name: "TITLE") #should NOT trigger warning
+    title2: String @field(name: "TITLE2") #should trigger warning
     rating: Rating #should NOT trigger warning
-    rating2: Rating @column(name: "RATING2") #should trigger warning
+    rating2: Rating @field(name: "RATING2") #should trigger warning
     rentalInfo: RentalInfo
 }
 
 type RentalInfo {
-    duration: Int @column(name: "RENTAL_DURATION") #should NOT trigger warning
+    duration: Int @field(name: "RENTAL_DURATION") #should NOT trigger warning
     nonExistentDuration: Int #should trigger warning
     nestedInfo: NestedRentalInfo
 }
 
 type NestedRentalInfo {
-    rate: Int @column(name: "RENTAL_RATE") #should NOT trigger warning
+    rate: Int @field(name: "RENTAL_RATE") #should NOT trigger warning
     nonExistentRate: Int #should trigger warning
 }
 
 enum Rating {
-    G @column(name: "G"), #enum values are not validated
-    PG @column(name: "PG"),
-    PG_13 @column(name: "PG-13"),
-    R @column(name: "R"),
-    NC_17 @column(name: "NC-17")
+    G @field(name: "G"), #enum values are not validated
+    PG @field(name: "PG"),
+    PG_13 @field(name: "PG-13"),
+    R @field(name: "R"),
+    NC_17 @field(name: "NC-17")
 }

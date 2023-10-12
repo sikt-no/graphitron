@@ -16,7 +16,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
-    public Map<String, List<Inventory>> inventoryForFilm(DSLContext ctx, Set<String> filmIder,
+    public Map<String, List<Inventory>> inventoryForFilm(DSLContext ctx, Set<String> filmIds,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
@@ -27,18 +27,18 @@ public class FilmDBQueries {
                         ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventory")
                 )
                 .from(INVENTORY)
-                .where(INVENTORY.hasFilmIds(filmIder))
+                .where(INVENTORY.hasFilmIds(filmIds))
                 .orderBy(INVENTORY.getIdFields())
                 .seek(INVENTORY.getIdValues(after))
                 .limit(pageSize + 1)
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
-    public Integer countInventoryForFilm(DSLContext ctx, Set<String> filmIder) {
+    public Integer countInventoryForFilm(DSLContext ctx, Set<String> filmIds) {
         return ctx
                 .select(DSL.count().as("totalCount"))
                 .from(INVENTORY)
-                .where(INVENTORY.hasFilmIds(filmIder))
+                .where(INVENTORY.hasFilmIds(filmIds))
                 .fetchOne(0, Integer.class);
     }
 }

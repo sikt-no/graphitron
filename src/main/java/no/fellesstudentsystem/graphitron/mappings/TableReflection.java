@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.mappings;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import org.apache.commons.lang3.StringUtils;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 import org.jooq.impl.TableImpl;
@@ -15,6 +16,8 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
@@ -88,21 +91,17 @@ public class TableReflection {
      * @return Does this field have a default value in this jOOQ table? Does not work for views.
      */
     public static boolean tableFieldHasDefaultValue(String tableName, String fieldName) {
-        var table = getTablesField(tableName);
+        var table = getTableObject(tableName);
         if (table.isEmpty()) {
             return false;
         }
 
-        try {
-            return Arrays
-                    .stream(((TableImpl<?>) table.get().get(null)).fields())
-                    .filter(it -> it.getName().equalsIgnoreCase(fieldName))
-                    .findFirst()
-                    .map(value -> value.getDataType().defaulted()) // This does not work for views.
-                    .orElse(false);
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
+        return Arrays
+                .stream(table.get().fields())
+                .filter(it -> it.getName().equalsIgnoreCase(fieldName))
+                .findFirst()
+                .map(value -> value.getDataType().defaulted()) // This does not work for views.
+                .orElse(false);
     }
 
     /**
@@ -115,22 +114,83 @@ public class TableReflection {
     }
 
     /**
-     * Search this jOOQ table for a method that represents this foreign key reference.
+     * Search this jOOQ table for a method that matches this name.
      * @param tableName Name of the jOOQ table.
-     * @param keyName Name of the key that might have a method associated with it.
-     * @return The name of a method that represents this foreign key reference if it exists.
+     * @param name Name that might have a method associated with it.
+     * @return The name of a method that matches the provided name if it exists.
      */
-    public static Optional<String> searchTableForMethodByKey(String tableName, String keyName) {
+    public static Optional<String> searchTableForMethodWithName(String tableName, String name) {
+        var keyMethod = searchTableForKeyMethodName(tableName, name);
+        if (keyMethod.isPresent()) {
+            return keyMethod;
+        }
+
         var field = getTablesField(tableName);
         if (field.isEmpty()) {
             return Optional.empty();
         }
-        var k = keyName.replace("_", "");
+
+        var adjustedName = name.replace("_", "");
         return Stream
                 .of(field.get().getType().getMethods())
                 .map(Method::getName)
-                .filter(m -> m.replace("_", "").equalsIgnoreCase(k))
+                .filter(m -> m.replace("_", "").equalsIgnoreCase(adjustedName))
                 .findFirst();
+    }
+
+    /**
+     * Search this jOOQ table for a method that matches this name.
+     * @param table Name of the jOOQ table.
+     * @return The name of a method that matches a key between the tables if exists.
+     */
+    public static Optional<String> searchTableForKeyMethodName(String table, String key) {
+        var source = getTableObject(table);
+
+        if (source.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return source
+                .get()
+                .getReferences()
+                .stream()
+                .map(it -> matchName(key, it))
+                .filter(it -> !it.isEmpty())
+                .findFirst();
+    }
+
+    private static String matchName(String key, ForeignKey<?, ?> referenceKey) {
+        var unquoted = referenceKey.getQualifiedName().unquotedName().toString();
+        var split = unquoted.split("\\.");
+        var replace = unquoted.replace(".", "__");
+        if (replace.equalsIgnoreCase(key)) {
+            return uncapitalize(Arrays.stream(referenceKey.getName().split("_")).map(StringUtils::capitalize).collect(Collectors.joining()));
+        }
+
+        if (split[split.length - 1].equalsIgnoreCase(key)) {
+            var splitDouble = Arrays
+                    .stream(referenceKey.getName().split("__"))
+                    .map(String::toLowerCase)
+                    .map(it -> Arrays.stream(it.split("_")).map(StringUtils::capitalize).collect(Collectors.joining()))
+                    .map(StringUtils::capitalize)
+                    .collect(Collectors.joining("_"));
+            return uncapitalize(splitDouble);
+        }
+
+        return "";
+    }
+
+    private static Optional<Table<?>> getTableObject(String table) {
+        var field = getTablesField(table);
+        if (field.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(((Table<?>) field.get().get(null)));
+        } catch (IllegalAccessException e) {
+            return Optional.empty();
+        }
     }
 
     /**

@@ -1,18 +1,18 @@
 input EditInput @table(name : "CUSTOMER") {
   id: ID!
-  firstName: String @column(name : "FIRST_NAME")
-  postalCode: String @column(name : "POSTAL_CODE")
+  firstName: String @field(name : "FIRST_NAME")
+  postalCode: String @field(name : "POSTAL_CODE")
 }
 
 type EditResponse {
   id: ID!
-  firstName: String @column(name : "FIRST_NAME")
-  postalCode: String @column(name : "POSTAL_CODE")
+  firstName: String @field(name : "FIRST_NAME")
+  postalCode: String @field(name : "POSTAL_CODE")
 }
 
 type EditResponseWithCustomer {
   id: ID!
-  customer: Customer @column(name : "c")
+  customer: Customer @field(name : "c")
   payment: Payment
 }
 
@@ -20,26 +20,26 @@ type Mutation {
   editCustomerSimple(id: ID!): ID! @service(service : {name: "TEST_CUSTOMER", method: "simple"})
   " Note: there are two methods with this name, but it resolves correctly based on number of arguments. Doesn't check the types though."
   editCustomerInput(input: EditInput!): ID! @service(service : {name: "TEST_CUSTOMER"})
-  editCustomer2Params(input: EditInput!, lastName: String @column(name: "LAST_NAME")): ID! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomer2Params(input: EditInput!, lastName: String @field(name: "LAST_NAME")): ID! @service(service : {name: "TEST_CUSTOMER"})
   editCustomerResponse(id: ID!): EditResponse! @service(service : {name: "TEST_CUSTOMER"})
   editCustomerInputAndResponse(input: EditInput!): EditResponse! @service(service : {name: "TEST_CUSTOMER"})
   " Column should not matter. It may change some internal variable names."
-  editCustomerWithCustomer(id: ID!): Customer! @column(name : "Terminator") @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerWithCustomer(id: ID!): Customer! @field(name : "Terminator") @service(service : {name: "TEST_CUSTOMER"})
   editCustomerWithCustomerResponse(id: ID!): EditResponseWithCustomer! @service(service : {name: "TEST_CUSTOMER"})
 }
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
-  postalCode: String @column(name : "POSTAL_CODE")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+  postalCode: String @field(name : "POSTAL_CODE")
   payment: [Payment!]! @splitQuery @notGenerated
-  lastUpdate: DateTime @column(name : "LAST_UPDATE")
+  lastUpdate: DateTime @field(name : "LAST_UPDATE")
 }
 
 type Payment implements Node @table {
   id: ID!
   amount: Int
-  date: DateTime @column(name : "PAYMENT_DATE")
-  lastUpdate: DateTime @column(name : "LAST_UPDATE")
+  date: DateTime @field(name : "PAYMENT_DATE")
+  lastUpdate: DateTime @field(name : "LAST_UPDATE")
 }

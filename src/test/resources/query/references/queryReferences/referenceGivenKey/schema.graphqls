@@ -1,0 +1,13 @@
+type Customer @table {
+  id: ID!
+}
+
+type Address @table {
+  id: ID!
+  customers: [Customer!]! @splitQuery @reference(key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")
+}
+
+type Query {
+  address(cityID: String! @field(name : "CITY_ID")): [Address!]!
+}
+

@@ -1,0 +1,9 @@
+type Address @table {
+  id: ID!
+  customersLastNames: [String!]! @field(name: "LAST_NAME") @reference(table: "CUSTOMER", key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")
+}
+
+type Query {
+  address(cityID: String! @field(name : "CITY_ID")): [Address!]!
+}
+

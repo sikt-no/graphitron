@@ -6,13 +6,10 @@ import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.*;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.zip.CRC32;
 
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForMethodByKey;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasMethod;
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.REFERENCE;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
@@ -74,62 +71,67 @@ public class FieldReference {
         return tableCondition != null;
     }
 
-    /**
-     * Create an alias for this reference.
-     * @param referenceName The name of the join end point. Used for making the alias unique.
-     * @param previousJoinTable Previously encountered table.
-     * @param pastJoinSequence The entire sequence of implicit joins up to this point.
-     * @param tableCodeNameBackup Backup for the table name should it be undefined.
-     * @param shortAliasName Short name for Alias due to character limit on Oracle Alias values (JIRA reference: <a href="https://unit.atlassian.net/browse/ROK-685">ROK-685</a>)
-     * @return new SQLAlias from the parameters.
-     */
-    @Nullable
-    public SQLAlias createAliasFor(String referenceName, String previousJoinTable, String pastJoinSequence, String tableCodeNameBackup, String shortAliasName) {
-        var relationTableSource = !table.getCodeName().isEmpty() ? table.getCodeName() : tableCodeNameBackup;
-        var hasNaturalImplicitJoin = tableHasMethod(previousJoinTable, relationTableSource);
-        Optional<String> joinReference = tableKey.isEmpty() || hasNaturalImplicitJoin ? Optional.empty() : searchTableForMethodByKey(previousJoinTable, tableKey);
-        if (hasNaturalImplicitJoin || joinReference.isPresent()) {
-            String joinSourceTable = pastJoinSequence == null || pastJoinSequence.isEmpty() ? previousJoinTable : pastJoinSequence;
-            return new SQLAlias(
-                    (joinSourceTable + "_" + referenceName).toLowerCase(),
-                    joinSourceTable,
-                    joinReference.orElse(relationTableSource),
-                    shortAliasName
-            );
-        }
-        return null;
-    }
-
     private SQLJoinStatement createJoinFor(
-            AbstractField reference,
+            String referencePath,
+            String tableNameBackup,
             String previousJoinTable,
             String pastJoinSequence,
-            String tableNameBackup,
             SQLJoinField joinField,
-            String shortAliasName
+            boolean isNullable
     ) {
-        var name = table.getName();
+        var tableName = !table.getName().isEmpty() ? table.getName() : tableNameBackup;
+        var adjustedReference = pastJoinSequence.equals(tableName) ? tableName.toLowerCase() : referencePath;
         return new SQLJoinStatement(
                 !pastJoinSequence.isEmpty() ? pastJoinSequence : previousJoinTable,
-                !name.isEmpty() ? name : tableNameBackup,
-                (previousJoinTable + "_" + reference.getName()).toLowerCase(),
-                shortAliasName,
+                tableName,
+                createAliasName(previousJoinTable, adjustedReference),
+                createShortAliasName(previousJoinTable, adjustedReference),
                 List.of(joinField),
-                reference.getFieldType().isNonNullable() ? SQLJoinType.JOIN : SQLJoinType.LEFT
+                isNullable ? SQLJoinType.JOIN : SQLJoinType.LEFT
         );
     }
 
     /**
      * @return A join statement based on a condition.
      */
-    public SQLJoinStatement createConditionJoinFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup, String shortAliasName) {
-        return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnCondition(tableCondition), shortAliasName);
+    public SQLJoinStatement createConditionJoinFor(String referencePath, String previousJoinTable, String pastJoinSequence, String tableNameBackup, boolean isNullable) {
+        var conditionName = tableCondition.getConditionReference().getMethodName().toLowerCase();
+        return createJoinFor(
+                referencePath + "_" + (conditionName.isEmpty() ? tableNameBackup : conditionName),
+                tableNameBackup,
+                previousJoinTable,
+                pastJoinSequence,
+                new SQLJoinOnCondition(tableCondition),
+                isNullable
+        );
     }
 
     /**
      * @return A join statement based on a key reference.
      */
-    public SQLJoinStatement createJoinOnKeyFor(AbstractField reference, String previousJoinTable, String pastJoinSequence, String tableNameBackup, String shortAliasName) {
-        return createJoinFor(reference, previousJoinTable, pastJoinSequence, tableNameBackup, new SQLJoinOnKey(tableKey), shortAliasName);
+    public SQLJoinStatement createJoinOnKeyFor(String referencePath, String previousJoinTable, String pastJoinSequence, String tableNameBackup, boolean isNullable) {
+        var keyName = tableKey.toLowerCase();
+        return createJoinFor(
+                referencePath + "_" + (keyName.isEmpty() ? tableNameBackup : keyName),
+                tableNameBackup,
+                previousJoinTable,
+                pastJoinSequence,
+                new SQLJoinOnKey(tableKey),
+                isNullable
+        );
+    }
+
+    public String createAliasName(String previous, String referencePath) {
+        return (previous + "_" + referencePath).toLowerCase();
+    }
+
+    /**
+     * Short name for Alias due to character limit on Oracle Alias values (JIRA reference: <a href="https://unit.atlassian.net/browse/ROK-685">ROK-685</a>).
+     */
+    public String createShortAliasName(String from, String to) {
+        var crc32 = new CRC32();
+        crc32.reset();
+        crc32.update(to.getBytes());
+        return from + "_" + crc32.getValue();
     }
 }

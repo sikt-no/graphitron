@@ -1,6 +1,6 @@
 input EditInput @table(name : "CUSTOMER") {
   id: ID!
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
   email: String
 }
 
@@ -14,7 +14,7 @@ type ListedResponse {
 
 type Result {
   id: ID!
-  customer: Customer @column(name : "customField")
+  customer: Customer @field(name : "customField")
   post: Postadresse
 }
 
@@ -27,7 +27,7 @@ type Mutation {
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
   email: String
 }

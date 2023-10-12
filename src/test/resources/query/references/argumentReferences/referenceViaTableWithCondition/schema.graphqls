@@ -1,0 +1,11 @@
+type Query {
+  inventory(
+    id: ID!,
+    # join path: INVENTORY -> FILM -> FILM_ACTOR (via condition) -> ACTOR
+    lastName: String! @field(name: "LAST_NAME") @reference(via: [{table: "FILM"}, {table: "FILM_ACTOR", condition: {name: "TEST_FILM_ACTOR", method: "mainActor"}}])
+  ): Inventory
+}
+
+type Inventory @table {
+  id: ID!
+}

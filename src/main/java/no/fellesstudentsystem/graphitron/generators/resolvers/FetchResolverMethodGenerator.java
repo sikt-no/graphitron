@@ -148,8 +148,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                 referenceField.isIterableWrapped() || getLocalObject().isRoot() && !hasFPagination
         );
         if (hasFPagination) {
-            var connectionObject = processedSchema.getConnectionObject(referenceField);
-            TypeName nodeClassName = processedSchema.getObject(connectionObject.getNodeType()).getGraphClassName();
+            TypeName nodeClassName = processedSchema.getObjectOrConnectionNode(referenceField).getGraphClassName();
             returnClassName = ParameterizedTypeName.get(RELAY_CONNECTION.className, nodeClassName);
         }
         return returnClassName;

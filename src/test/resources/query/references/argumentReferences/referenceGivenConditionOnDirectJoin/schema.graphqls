@@ -1,0 +1,7 @@
+type Query {
+  customer(id: ID!, address: String @reference(table: "ADDRESS", condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddressJoin"})): Customer
+}
+
+type Customer @table {
+  id: ID!
+}

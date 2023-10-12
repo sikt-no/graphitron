@@ -42,7 +42,7 @@ public class EditFilmRatingWithConverterIterableGeneratedResolver implements Edi
                 var inputRecord = new FilmRecord();
                 inputRecord.attach(ctx.configuration());
                 if (flatArguments.contains("input/rating")) {
-                    inputRecord.setRating(itInput.getRating() == null ? null : Map.of(Rating.R, RatingTest.R, Rating.G, RatingTest.G, Rating.PG, RatingTest.PG).getOrDefault(itInput.getRating(), null));
+                    inputRecord.setRating(itInput.getRating() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(itInput.getRating(), null));
                 }
                 if (flatArguments.contains("input/id")) {
                     inputRecord.setId(itInput.getId());

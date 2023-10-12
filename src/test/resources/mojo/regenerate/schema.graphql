@@ -1,5 +1,5 @@
 type Query {
-  film(releaseYear: Int! @column(name : "RELEASE_YEAR")): Film
+  film(releaseYear: Int! @field(name : "RELEASE_YEAR")): Film
 }
 
 type Film @table {
@@ -9,7 +9,7 @@ type Film @table {
 }
 
 enum Rating {
-  G @column(name: "G"),
-  PG_13 @column(name: "PG-13"),
-  R @column(name: "R"),
+  G @field(name: "G"),
+  PG_13 @field(name: "PG-13"),
+  R @field(name: "R"),
 }

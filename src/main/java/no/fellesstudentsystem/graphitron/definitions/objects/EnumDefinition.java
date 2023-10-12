@@ -6,8 +6,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.EnumField;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ENUM;
@@ -16,18 +14,16 @@ import static no.fellesstudentsystem.graphitron.definitions.fields.EnumField.fro
 /**
  * Representation of a GraphQL enum type.
  */
-public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition> {
+public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumField> {
     private final CodeReference enumReference;
-    private final Map<String, EnumField> valuesMap;
+    private final List<EnumField> enumFields;
 
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {
         super(enumTypeDefinition);
         this.enumReference = enumTypeDefinition.hasDirective(ENUM.getName())
                 ? new CodeReference(enumTypeDefinition, ENUM, GenerationDirectiveParam.ENUM)
                 : null;
-        this.valuesMap = from(enumTypeDefinition)
-                .stream()
-                .collect(Collectors.toMap(EnumField::getName, Function.identity()));
+        this.enumFields = from(enumTypeDefinition);
     }
 
     /**
@@ -40,15 +36,12 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition>
     /**
      * @return Does this enum map to another enum in the API?
      */
-    public boolean hasDbEnumMapping() {
+    public boolean hasJavaEnumMapping() {
         return enumReference != null;
     }
 
-    /**
-     * @return A map of the enum values for this enum object.
-     */
-    public Map<String, EnumField> getValuesMap() {
-        return valuesMap;
+    public List<EnumField> getFields() {
+        return enumFields;
     }
 
     /**

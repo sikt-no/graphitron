@@ -1,16 +1,15 @@
 package no.fellesstudentsystem.graphitron.generators.db;
 
 import com.squareup.javapoet.CodeBlock;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -23,7 +22,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Abstract generator for various database fetching methods.
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    final String idParamName = uncapitalize(getLocalObject().getName()) + "Ider";
+    final String idParamName = uncapitalize(getLocalObject().getName()) + "Ids";
     final boolean isRoot = getLocalObject().isRoot();
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -33,47 +32,51 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(ObjectField referenceField, String currentJoinSequence, boolean hasKeyReference, String actualRefTable) {
+    protected CodeBlock formatWhereContents(FetchContext context) {
         var code = CodeBlock.builder().add(".where(");
+        var iteratedSourceSequence = context.getCurrentJoinSequence();
 
         if (!isRoot) {
             var localTableName = getLocalObject().getTable().getName();
-            var qualifiedId = TableReflection.getQualifiedId(actualRefTable, localTableName);
+            var qualifiedId = TableReflection.getQualifiedId(context.getReferenceTable().getName(), localTableName);
 
             code
                     .add(
-                            hasKeyReference
-                                    ? actualRefTable + String.format(".has%ss($N)", qualifiedId)
+                            context.hasKeyReference()
+                                    ? iteratedSourceSequence + String.format(".has%ss($N)", qualifiedId)
                                     : localTableName + ".hasIds($N)",
                             idParamName
                     )
                     .add(")\n");
         }
-        if (referenceField.hasNonReservedInputFields()) {
-            code.add(createWhere(actualRefTable, referenceField, currentJoinSequence, !isRoot));
+        if (context.getReferenceObjectField().hasNonReservedInputFields()) {
+            code.add(createWhere(context, !isRoot));
         } else if (isRoot) {
             return empty();
         }
         return code.build();
     }
 
-    private CodeBlock createWhere(String actualRefTable, ObjectField referenceField, String currentJoinSequence, boolean hasWhere) {
+    private CodeBlock createWhere(FetchContext context, boolean hasWhere) {
+        var referenceField = context.getReferenceObjectField();
         var inputConditions = getInputConditions(referenceField.getNonReservedInputFields());
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
+        var iteratedSourceSequence = context.getCurrentJoinSequence();
 
-        for (InputCondition inputCondition : flatInputs) {
-            InputField field = inputCondition.getInput();
+        for (var inputCondition : flatInputs) {
+            var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
             var checksNotEmpty = !checks.isEmpty();
+            var fieldSequence = field.hasFieldReferences() ? context.iterateSourceMultipleSequences(field.getFieldReferences()) : iteratedSourceSequence;
             if (!referenceField.hasOverridingCondition() && !field.hasOverridingCondition()) {
                 var fieldType = field.getFieldType();
                 var fieldTypeName = fieldType.getName();
                 codeBlockBuilder
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
-                        .add(currentJoinSequence + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
+                        .add("$L.$N", fieldSequence, field.getUpperCaseName())
                         .add(toJOOQEnumConverter(fieldTypeName))
                         .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name);
                 if (checksNotEmpty) {
@@ -86,7 +89,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
 
             if (field.hasCondition()) {
-                var conditionInputs = List.of(CodeBlock.of(actualRefTable), getCheckedNameWithPath(inputCondition));
+                var conditionInputs = List.of(CodeBlock.of(fieldSequence), getCheckedNameWithPath(inputCondition));
                 codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
             }
             if (!codeBlockBuilder.isEmpty()) {
@@ -94,14 +97,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        for (Map.Entry<InputField, List<InputCondition>> conditionTuple : inputConditions.getConditionTuples().entrySet()) {
-            codeBlockBuilder.add(createTupleCondition(actualRefTable, hasWhere, conditionTuple.getKey(), conditionTuple.getValue()));
+        for (var conditionTuple : inputConditions.getConditionTuples().entrySet()) {
+            codeBlockBuilder.add(createTupleCondition(context, hasWhere, conditionTuple.getKey().getName(), conditionTuple.getValue()));
             hasWhere = true;
         }
 
         if (referenceField.hasCondition()) {
             var inputs = Stream.concat(
-                    Stream.of(CodeBlock.of(actualRefTable)),
+                    Stream.of(CodeBlock.of(iteratedSourceSequence)),
                     flatInputs.stream().map(this::getCheckedNameWithPath)
             ).collect(Collectors.toList());
             codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs), hasWhere));
@@ -119,34 +122,35 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         );
     }
 
-    private CodeBlock createTupleCondition(String actualRefTable, boolean hasWhere, InputField argumentInputField, List<InputCondition> conditions) {
+    private CodeBlock createTupleCondition(FetchContext context, boolean hasWhere, String argumentInputFieldName, List<InputCondition> conditions) {
         var codeBlockBuilder = CodeBlock.builder();
-        var argumentName = argumentInputField.getName();
 
         codeBlockBuilder
                 .add(hasWhere ? ".and(" : "")
-                .add("$N != null && $N.size() > 0 ?\n", argumentName, argumentName)
+                .add("$N != null && $N.size() > 0 ?\n", argumentInputFieldName, argumentInputFieldName)
                 .indent().indent()
                 .add("$T.row(\n", DSL.className)
                 .indent().indent();
 
+        var iteratedSourceSequence = context.getCurrentJoinSequence();
         for (int i = 0; i < conditions.size(); i++) {
-            InputField field = conditions.get(i).getInput();
+            var field = conditions.get(i).getInput();
             var fieldType = field.getFieldType();
             var fieldTypeName = fieldType.getName();
+            var fieldSequence = field.hasFieldReferences() ? context.iterateSourceMultipleSequences(field.getFieldReferences()) : iteratedSourceSequence;
 
             codeBlockBuilder
-                    .add(actualRefTable + getJoinedFieldSource(field, actualRefTable) + "." + field.getUpperCaseName())
+                    .add("$L.$N", fieldSequence, field.getUpperCaseName())
                     .add(toJOOQEnumConverter(fieldTypeName))
                     .add(i < conditions.size()-1 ? ",\n" : "");
         }
         codeBlockBuilder
                 .unindent().unindent()
                 .add("\n)")
-                .add(".in($N.stream().map(input -> $T.row(\n", argumentName, DSL.className)
+                .add(".in($N.stream().map(input -> $T.row(\n", argumentInputFieldName, DSL.className)
                 .indent().indent()
                 .add(conditions.stream()
-                        .map(it -> "input" + it.getNameWithPath().replaceFirst(argumentName, ""))
+                        .map(it -> "input" + it.getNameWithPath().replaceFirst(argumentInputFieldName, ""))
                         .collect(Collectors.joining(",\n")))
                 .unindent().unindent()
                 .add(")\n)")
@@ -164,12 +168,5 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return CodeBlock.of((hasWhere ? ".and(" : "") + "$L)\n", condition);
         }
         return condition;
-    }
-
-    private String getJoinedFieldSource(InputField field, String refTableName) {
-        if (field.hasImplicitJoin()) {
-            return getAppliedImplicitJoin(field.getImplicitJoin(), refTableName);
-        }
-        return "";
     }
 }

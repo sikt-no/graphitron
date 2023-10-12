@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLImplicitFKJoin;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
@@ -22,7 +21,6 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
     private final List<InputField> inputFields;
     private final List<InputField> nonReservedFields;
-    private final SQLImplicitFKJoin join;
     private final MutationType mutationType;
     private final boolean isGenerated;
     private final boolean isResolver;
@@ -43,8 +41,6 @@ public class ObjectField extends AbstractField implements GenerationTarget {
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName()))
         ).collect(Collectors.toList());
         isGenerated = isResolver && !field.hasDirective(NOT_GENERATED.getName());
-
-        join = field.hasDirective(COLUMN.getName()) ? getSqlColumnJoin(field) : null;
 
         serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
         mutationType = field.hasDirective(MUTATION.getName())
@@ -124,20 +120,6 @@ public class ObjectField extends AbstractField implements GenerationTarget {
      */
     public boolean hasBackwardPagination() {
         return hasBackwardPagination;
-    }
-
-    /**
-     * @return The optional key to use as implicit join.
-     */
-    public SQLImplicitFKJoin getImplicitJoin() {
-        return join;
-    }
-
-    /**
-     * @return Does this field have a join key that should be used?
-     */
-    public boolean hasImplicitJoin() {
-        return join != null;
     }
 
     /**

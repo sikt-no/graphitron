@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import org.jetbrains.annotations.NotNull;
@@ -36,27 +35,22 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var refObject = ReferenceHelpers.findReferencedObjectDefinition(target, processedSchema);
-        var localObject = getLocalObject();
-
-        var context = new FetchContext(processedSchema, target, localObject);
-        var hasKeyReference = context.hasKeyReference();
-
-        var actualRefTable = refObject.getTable().getName();
+        var context = new FetchContext(processedSchema, target, getLocalObject());
+        var where = formatWhereContents(context);
 
         var code = CodeBlock
                 .builder()
                 .add("return $N\n", Dependency.CONTEXT_NAME)
-                .indent().indent()
+                .indent()
+                .indent()
                 .add(".select($T.count().as($S))\n", DSL.className, TOTAL_COUNT_NAME)
-                .add(".from(")
-                .add(actualRefTable)
-                .add(")\n")
-                .add(createSelectJoins(context.getJoinList()))
-                .add(formatWhereContents(target, context.getCurrentJoinSequence(), hasKeyReference, actualRefTable))
-                .add(createSelectConditions(context.getConditionList()))
+                .add(".from($N)\n", context.getReferenceTable().getName())
+                .add(createSelectJoins(context.getJoinSet()))
+                .add(where)
+                .add(createSelectConditions(context.getConditionSet()))
                 .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
-                .unindent().unindent();
+                .unindent()
+                .unindent();
 
         return getSpecBuilder(target)
                 .addCode(code.build())

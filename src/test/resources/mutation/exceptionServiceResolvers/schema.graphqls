@@ -1,8 +1,8 @@
 input EditInput @table(name : "CUSTOMER") {
   id: ID!
-  name: String @column(name: "FIRST_NAME")
-  lastName: String @column(name: "LAST_NAME")
-  edit2: EditInput2 @column(name : "editDouble")
+  name: String @field(name: "FIRST_NAME")
+  lastName: String @field(name: "LAST_NAME")
+  edit2: EditInput2 @field(name : "editDouble")
 }
 
 input EditInput2 @table(name : "CUSTOMER") {
@@ -44,24 +44,24 @@ type EditCustomerResponseUnion2 {
 }
 
 type EditCustomerResponse2 {
-  id: ID! @column(name : "id2")
+  id: ID! @field(name : "id2")
   customer: Customer
 }
 
 type EditCustomerResponse3 {
-  id: ID! @column(name : "id3")
-  customer: Customer @column(name : "customer3")
+  id: ID! @field(name : "id3")
+  customer: Customer @field(name : "customer3")
 }
 
 type Mutation {
   editError(input: EditInput!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER"})
-  editErrorUnion1(name: String! @column(name: "FIRST_NAME")): EditCustomerResponseUnion1! @service(service : {name: "TEST_CUSTOMER"})
+  editErrorUnion1(name: String! @field(name: "FIRST_NAME")): EditCustomerResponseUnion1! @service(service : {name: "TEST_CUSTOMER"})
   editErrorUnion2(input: EditInput!): EditCustomerResponseUnion2! @service(service : {name: "TEST_CUSTOMER"})
 }
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
-  lastName: String! @column(name: "LAST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
   email: String
 }

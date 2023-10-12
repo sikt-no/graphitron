@@ -7,7 +7,7 @@ type PageInfo {
 
 type Inventory implements Node @table {
   id: ID!
-  storeId: String! @column(name : "STORE_ID")
+  storeId: String! @field(name : "STORE_ID")
 }
 
 type InventoryConnection {
@@ -39,6 +39,6 @@ type FilmConnectionEdge {
 }
 
 type Query {
-  film(releaseYear: String! @column(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
-  film2(releaseYear: String! @column(name : "RELEASE_YEAR")): [Film]
+  film(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
+  film2(releaseYear: String! @field(name : "RELEASE_YEAR")): [Film]
 }

@@ -22,5 +22,5 @@ type FilmConnectionEdge {
 }
 
 type Query {
-  films(releaseYear: String! @column(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
+  films(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
 }

@@ -1,47 +1,47 @@
 type Query {
   paramCondition(
     rating: Rating!  @condition(condition: {name: "TEST_FILM_RATING"}),
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film]
 
   paramConditionOverride(
     rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}, override: true),
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film]
 
   fieldCondition(
     rating: Rating!,
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"})
 
   fieldConditionOverride(
     rating: Rating!,
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
 
   fieldAndParamCondition(
     rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}),
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"})
 
   fieldAndParamConditionOverride(
     rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}),
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
 
   fieldAndParamConditionOverrideBoth(
     rating: Rating! @condition(condition: {name: "TEST_FILM_RATING"}, override: true),
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingAll"}, override: true)
 
   fieldInputCondition(
     ratingIn: FilmInput, # Potentially support: @condition(condition: {name: "TEST_FILM_RATING"})
-    releaseYear: String! @column(name: "RELEASE_YEAR")
+    releaseYear: String! @field(name: "RELEASE_YEAR")
   ): [Film] @condition(condition: {name: "TEST_FILM_RATING", method: "ratingInputAll"})
 }
 
 input FilmInput {
-  releaseYear: String! @column(name: "RELEASE_YEAR")
+  releaseYear: String! @field(name: "RELEASE_YEAR")
   rating: Rating!
 }
 
@@ -51,7 +51,7 @@ type Film @table {
 }
 
 enum Rating {
-  G @column(name: "G"),
-  PG_13 @column(name: "PG-13"),
-  R @column(name: "R"),
+  G @field(name: "G"),
+  PG_13 @field(name: "PG-13"),
+  R @field(name: "R"),
 }

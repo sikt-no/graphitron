@@ -1,23 +1,23 @@
 input EditInputLevel1 @table(name : "CUSTOMER") {
   id: ID!
   editA1: EditInputLevel2A!
-  editA2: EditInputLevel2A @column(name : "editDouble")
+  editA2: EditInputLevel2A @field(name : "editDouble")
   editB: EditInputLevel2B
   editC1: EditInputLevel2C!
   editC2: [EditInputLevel2C!]!
 }
 
 input EditInputLevel2A @table(name : "CUSTOMER") {
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
 }
 
 input EditInputLevel2B @table(name : "CUSTOMER") {
-  firstName: String @column(name : "FIRST_NAME")
+  firstName: String @field(name : "FIRST_NAME")
   edit3: [EditInputLevel3!]
 }
 
 input EditInputLevel2C {
-  lastName: String! @column(name: "LAST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
 }
 
 input EditInputLevel3 @table(name : "CUSTOMER") {
@@ -26,7 +26,7 @@ input EditInputLevel3 @table(name : "CUSTOMER") {
 }
 
 input EditInputLevel4 @table(name : "CUSTOMER") {
-  lastName: String! @column(name: "LAST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
 }
 
 type EditCustomerResponse {
@@ -40,7 +40,7 @@ type Mutation {
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @column(name: "FIRST_NAME")
+  firstName: String! @field(name: "FIRST_NAME")
   email: String
 }
 

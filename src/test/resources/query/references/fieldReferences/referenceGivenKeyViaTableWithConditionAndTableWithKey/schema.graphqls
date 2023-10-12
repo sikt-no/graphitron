@@ -1,0 +1,12 @@
+type Query {
+  store(id: ID!): Store
+}
+
+type Store @table {
+  id: ID!
+  #join path: STORE -> CUSTOMER (via condition) -> ADDRESS (via key) -> CITY (via key)
+  cityNameOfMostValuableCustomer: String! @field(name: "NAME") @reference(
+    via: [{table: "CUSTOMER", condition: {name: "TEST_STORE_CUSTOMER", method: "mostValuableCustomer"}}, {table: "ADDRESS", key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}],
+    table: "CITY",
+    key: "ADDRESS__ADDRESS_CITY_ID_FKEY")
+}

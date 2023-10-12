@@ -19,8 +19,8 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
-    public Map<String, List<FilmCategory>> categoriesForFilm(DSLContext ctx, Set<String> filmIder,
-            OriginalCategoryInput categoryIn, SelectionSet select) {
+    public Map<String, List<FilmCategory>> categoriesForFilm(DSLContext ctx, Set<String> filmIds,
+                                                             OriginalCategoryInput categoryIn, SelectionSet select) {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
@@ -30,14 +30,14 @@ public class FilmDBQueries {
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categories")
                 )
                 .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIder))
+                .where(FILM_CATEGORY.hasFilmIds(filmIds))
                 .and(FILM_CATEGORY.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
                 .and(FILM_CATEGORY.category().NAME.eq(categoryIn.getName()))
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
     public Map<String, List<FilmCategory>> categoriesForInputListForFilm(DSLContext ctx,
-            Set<String> filmIder, List<OriginalCategoryInput> categoryInList, SelectionSet select) {
+                                                                         Set<String> filmIds, List<OriginalCategoryInput> categoryInList, SelectionSet select) {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
@@ -47,7 +47,7 @@ public class FilmDBQueries {
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputList")
                 )
                 .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIder))
+                .where(FILM_CATEGORY.hasFilmIds(filmIds))
                 .and(categoryInList != null && categoryInList.size() > 0 ?
                         DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED,
@@ -61,7 +61,7 @@ public class FilmDBQueries {
     }
 
     public Map<String, List<FilmCategory>> categoriesForMixOfListAndSingleInputForFilm(
-            DSLContext ctx, Set<String> filmIder, OriginalCategoryInput categoryIn,
+            DSLContext ctx, Set<String> filmIds, OriginalCategoryInput categoryIn,
             List<OriginalCategoryInput> categoryInList, SelectionSet select) {
         return ctx
                 .select(
@@ -72,7 +72,7 @@ public class FilmDBQueries {
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForMixOfListAndSingleInput")
                 )
                 .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIder))
+                .where(FILM_CATEGORY.hasFilmIds(filmIds))
                 .and(FILM_CATEGORY.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
                 .and(FILM_CATEGORY.category().NAME.eq(categoryIn.getName()))
                 .and(categoryInList != null && categoryInList.size() > 0 ?
@@ -88,8 +88,8 @@ public class FilmDBQueries {
     }
 
     public Map<String, List<FilmCategory>> categoriesForInputWithOneFieldListForFilm(DSLContext ctx,
-            Set<String> filmIder, List<OriginalCategoryInputWithOneField> categoryInListOneField,
-            SelectionSet select) {
+                                                                                     Set<String> filmIds, List<OriginalCategoryInputWithOneField> categoryInListOneField,
+                                                                                     SelectionSet select) {
         return ctx
                 .select(
                         FILM_CATEGORY.getFilmId(),
@@ -99,7 +99,7 @@ public class FilmDBQueries {
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithOneFieldList")
                 )
                 .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIder))
+                .where(FILM_CATEGORY.hasFilmIds(filmIds))
                 .and(categoryInListOneField != null && categoryInListOneField.size() > 0 ?
                         DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED
@@ -111,7 +111,7 @@ public class FilmDBQueries {
     }
 
     public Map<String, List<FilmCategory>> categoriesForInputWithNestedFieldListForFilm(
-            DSLContext ctx, Set<String> filmIder,
+            DSLContext ctx, Set<String> filmIds,
             List<OriginalCategoryInputNested> categoryInListNestedField, SelectionSet select) {
         return ctx
                 .select(
@@ -122,7 +122,7 @@ public class FilmDBQueries {
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithNestedFieldList")
                 )
                 .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIder))
+                .where(FILM_CATEGORY.hasFilmIds(filmIds))
                 .and(categoryInListNestedField != null && categoryInListNestedField.size() > 0 ?
                         DSL.row(
                                 FILM_CATEGORY.LAST_UPDATED,

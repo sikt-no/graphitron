@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -9,7 +10,7 @@ import java.util.stream.Collectors;
 /**
  * Represents a GraphQL union type.
  */
-public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinition> {
+public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinition, ObjectField> {
     private final List<String> fieldTypeNames;
 
     public UnionDefinition(UnionTypeDefinition typeDefinition) {
@@ -26,6 +27,10 @@ public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinitio
      */
     public List<String> getFieldTypeNames() {
         return fieldTypeNames;
+    }
+
+    public List<ObjectField> getFields() {
+        return List.of();
     }
 
     /**

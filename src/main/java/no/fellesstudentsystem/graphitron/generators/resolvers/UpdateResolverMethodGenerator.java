@@ -157,7 +157,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         }
 
         input
-                .getInputs()
+                .getFields()
                 .stream()
                 .filter(processedSchema::isInputType)
                 .forEach(in -> code.add(declareRecords(in, recursion + 1)));

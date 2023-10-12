@@ -1,11 +1,11 @@
 input InsertCustomerInput @table(name : "CUSTOMER") {
-  customerID: String! @column(name : "CUSTOMER_ID")
-  active: Boolean! @column(name: "ACTIVEBOOL")
-  firstName: String @column(name : "FIRST_NAME") #should not be optional
-  lastName: String! @column(name : "LAST_NAME")
-  storeID: String! @column(name : "STORE_ID")
-  addressID: String! @column(name : "ADDRESS_ID")
-  createdDate: Date @column(name : "CREATE_DATE")  #should not be optional
+  customerID: String! @field(name : "CUSTOMER_ID")
+  active: Boolean! @field(name: "ACTIVEBOOL")
+  firstName: String @field(name : "FIRST_NAME") #should not be optional
+  lastName: String! @field(name : "LAST_NAME")
+  storeID: String! @field(name : "STORE_ID")
+  addressID: String! @field(name : "ADDRESS_ID")
+  createdDate: Date @field(name : "CREATE_DATE")  #should not be optional
 }
 
 type Mutation {
