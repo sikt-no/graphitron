@@ -92,7 +92,7 @@ public abstract class TestCommon {
         Files.walkFileTree(Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME), new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) throws IOException {
-                String expectedFileName = expectedOutputFile.getFileName().toString().replace(".txt", "");
+                String expectedFileName = expectedOutputFile.getFileName().toString();
                 expectedFileNames.add(expectedFileName);
                 var expectedFile = readFileAsStrings(expectedOutputFile);
                 assertThat(generatedFiles.keySet()).contains(expectedFileName);
