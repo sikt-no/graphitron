@@ -20,7 +20,6 @@ In order to find the schema files and any custom methods, Graphitron also provid
 The options are the same for both goals.
 
 #### General settings
-* _topPackage_ - The top level package for the project for which code should be generated. Will be removed in the future.
 * _outputPath_ - The location where the code will be generated.
 * _outputPackage_ - The package path of the generated code.
 * _schemaFiles_ - Set of schema files which should be used for the generation process.

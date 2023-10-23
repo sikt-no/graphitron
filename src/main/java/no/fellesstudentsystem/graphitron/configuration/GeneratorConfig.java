@@ -29,7 +29,6 @@ public class GeneratorConfig {
      * Set the generator properties from code. Intended for tests.
      */
     public static void setProperties(
-            String topPackage,
             Set<String> files,
             String outputDir,
             String outputPkg,
@@ -37,7 +36,6 @@ public class GeneratorConfig {
             List<ExternalClassReference> references,
             List<GlobalTransform> globalTransforms
     ) {
-        systemPackage = topPackage;
         schemaFiles = files;
         outputDirectory = outputDir;
         outputPackage = outputPkg;
@@ -71,7 +69,6 @@ public class GeneratorConfig {
             }
         }
 
-        systemPackage = mojo.getTopPackage();
         schemaFiles = inputFiles;
         outputDirectory = mojo.getOutputPath() + "/" + PLUGIN_OUTPUT_PATH;
         outputPackage = mojo.getOutputPackage();
@@ -111,7 +108,6 @@ public class GeneratorConfig {
      * Clear all configurations. Intended for tests.
      */
     public static void clear() {
-        systemPackage = null;
         schemaFiles = null;
         outputDirectory = null;
         outputPackage = null;
@@ -130,7 +126,6 @@ public class GeneratorConfig {
     private static Set<String> schemaFiles;
 
     private static String
-            systemPackage,
             outputDirectory,
             outputPackage,
             generatedSchemaResolversPackage,
@@ -146,10 +141,6 @@ public class GeneratorConfig {
 
     private static ExternalReferences externalReferences;
     private static List<GlobalTransform> globalTransforms;
-
-    public static String getSystemPackage() {
-        return systemPackage;
-    }
 
     public static Set<String> schemaFiles() {
         return schemaFiles;

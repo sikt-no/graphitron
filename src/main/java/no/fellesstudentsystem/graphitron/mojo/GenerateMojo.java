@@ -28,12 +28,6 @@ public class GenerateMojo extends AbstractMojo {
     private MavenProject project;
 
     /**
-     * Package root for this project. This is temporary and should be replaced once Graphitron is unlinked from FS.
-     */
-    @Parameter(property = "generate.topPackage", defaultValue = "no.fellesstudentsystem", required = true)
-    private String topPackage;
-
-    /**
      * The location where the code should be exported to.
      */
     @Parameter(property = "generate.outputPath", defaultValue = "${project.build.directory}/generated-sources")
@@ -93,10 +87,6 @@ public class GenerateMojo extends AbstractMojo {
         project.addCompileSourceRoot(getOutputPath());
     }
 
-    public String getTopPackage() {
-        return topPackage;
-    }
-
     public String getOutputPath() {
         return outputPath;
     }
@@ -119,10 +109,6 @@ public class GenerateMojo extends AbstractMojo {
 
     public boolean shouldGenerateRecordValidation() {
         return shouldGenerateRecordValidation;
-    }
-
-    public void setTopPackage(String topPackage) {
-        this.topPackage = topPackage;
     }
 
     public void setOutputPath(String outputPath) {

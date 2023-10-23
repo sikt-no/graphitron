@@ -34,8 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class TestCommon {
     public static final String
             DIRECTIVES_NAME = "default.graphqls",
-            DEFAULT_SYSTEM_PACKAGE = "fake.code",
-            DEFAULT_OUTPUT_PACKAGE = DEFAULT_SYSTEM_PACKAGE + ".generated",
+            DEFAULT_OUTPUT_PACKAGE = "fake.code.generated",
             DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.jooq.generated.testdata",
             SRC_ROOT = "src/test/resources",
             SRC_DIRECTIVES = SRC_ROOT + "/" + DIRECTIVES_NAME,

@@ -44,7 +44,6 @@ public class GraphQLGeneratorTransformTest extends TestCommon {
     @Override
     protected void setProperties() {
         GeneratorConfig.setProperties(
-                DEFAULT_SYSTEM_PACKAGE,
                 Set.of(),
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,

@@ -80,7 +80,6 @@ public class WatcherMojoTest {
     private WatcherMojo getMojo(String targetSchemaFile, Path tempDir) {
         var mojo = new WatcherMojo();
         mojo.setSchemaFiles(Set.of(SRC_DIRECTIVES, targetSchemaFile));
-        mojo.setTopPackage(DEFAULT_SYSTEM_PACKAGE);
         mojo.setOutputPath(tempDir.toString());
         mojo.setOutputPackage(DEFAULT_OUTPUT_PACKAGE);
         mojo.setGeneratedSchemaCodePackage(DEFAULT_OUTPUT_PACKAGE);
