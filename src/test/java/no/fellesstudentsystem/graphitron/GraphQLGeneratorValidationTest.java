@@ -40,7 +40,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_nonRootObjectThatReturnsInterface_shouldCreateResolverAndLogWarning() {
-        getProcessedSchema("resolverReturningInterface", false);
+        getProcessedSchema("resolverReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No column(s) with name(s) 'NODEREF' found in table 'CUSTOMER'",
                 "interface (Node) returned in non root object. This is not fully supported. Use with care");
@@ -48,21 +48,21 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_queryThatReturnsInterfaceWhenIllegalArguments_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/queryReturningInterfaceIllegalArguments", false))
+        assertThatThrownBy(() -> getProcessedSchema("error/queryReturningInterfaceIllegalArguments"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Only exactly one input field is currently supported for fields returning interfaces. 'nodes' has 2 input fields");
     }
 
     @Test
     void generate_resolverThatReturnsInterfaceWhenIllegalArguments_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/resolverReturningInterfaceIllegalArguments", false))
+        assertThatThrownBy(() -> getProcessedSchema("error/resolverReturningInterfaceIllegalArguments"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Only exactly one input field is currently supported for fields returning interfaces. 'nodeRef' has 0 input fields");
     }
 
     @Test
     void generate_queryThatReturnsListOfInterfaces_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/queryReturningInterfaceCollection", false))
+        assertThatThrownBy(() -> getProcessedSchema("error/queryReturningInterfaceCollection"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Generating fields returning collections/lists of interfaces is not supported. 'nodes' must return only one Node");
     }
@@ -89,20 +89,11 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     }
 
     @Test
-    void generate_whenRecognizedDirectivesNotUsedInSchema_shouldLogWarning() {
-        GeneratorConfig.setSchemaFiles(getSourceTestPath() + "warning/unusedDirective/schema.graphqls");
-        GraphQLGenerator.getProcessedSchema(true).validate();
-        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "The following directives are declared in the code generator, but were not found in the GraphQL schema files: " +
-                        "reference, mutation, condition, service, column, error, table, enum");
-    }
-
-    @Test
     void generate_whenSpecifiedSchemaRootDirectory_shouldInfoLogAllExpectedSchemaFiles() {
         var testDirectory = getSourceTestPath() + "testReadingSchemasInDirectory";
         GeneratorConfig.setSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
 
-        GraphQLGenerator.getProcessedSchema(false).validate();
+        GraphQLGenerator.getProcessedSchema().validate();
         assertThat(getLogMessagesWithLevel(Level.INFO).stream().anyMatch(msg ->
                 msg.startsWith("Reading graphql schemas [") && msg.contains("schema1.graphqls") && msg.contains("schema2.graphqls")
                         && msg.contains("schema3.graphqls") && !msg.contains("notASchema"))
@@ -111,14 +102,14 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenArgumentHasListOfInputsWithListField_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/listOfInputWithNestedList", false))
+        assertThatThrownBy(() -> getProcessedSchema("error/listOfInputWithNestedList"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'ids' are not supported on such types (used for generating condition tuples)");
     }
 
     @Test
     void generate_whenArgumentHasListOfInputsWithOptionalField_shouldLogWarning() {
-        getProcessedSchema("warning/listOfInputWithOptionalField", false);
+        getProcessedSchema("warning/listOfInputWithOptionalField");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "Argument 'inputWithOptionalField' is of collection of InputFields ('InputWithOptionalField') type. Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: 'title', 'rating'"
         );
@@ -126,7 +117,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenUnknownNodeTable_shouldLogWarning() {
-        getProcessedSchema("warning/unknownNodeTable", false);
+        getProcessedSchema("warning/unknownNodeTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No table with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata.Tables"
         );
@@ -134,7 +125,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenUnknownResourceTable_shouldLogWarning() {
-        getProcessedSchema("warning/unknownResourceTable", false);
+        getProcessedSchema("warning/unknownResourceTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No table with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata.Tables"
         );
@@ -142,7 +133,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenUnknownColumn_shouldLogWarning() {
-        getProcessedSchema("warning/unknownColumn", false);
+        getProcessedSchema("warning/unknownColumn");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No column(s) with name(s) 'NONEXISTENTDURATION, NONEXISTENTRATE, RATING2, TITLE2' found in table 'FILM'",
                 "No column(s) with name(s) 'NON_EXISTENT_ID' found in table 'FILM'"
@@ -151,7 +142,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenUnknownColumnForImplicitJoin_shouldLogWarning() {
-        getProcessedSchema("warning/unknownColumnForImplicitJoin", false);
+        getProcessedSchema("warning/unknownColumnForImplicitJoin");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No column(s) with name(s) 'DESTRUCT' found in table 'ADDRESS'"
         );
@@ -159,7 +150,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenUnknownEnum_shouldLogWarning() {
-        getProcessedSchema("warning/unknownEnum", false);
+        getProcessedSchema("warning/unknownEnum");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "No enum with name 'UNKOWN_ENUM' found."
         );
@@ -167,7 +158,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenIncorrectPaginationSpec_shouldLogWarning() {
-        getProcessedSchema("error/queryIncorrectPagination", false);
+        getProcessedSchema("error/queryIncorrectPagination");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "Type ActorConnection ending with the reserved suffix 'Connection' must have either " +
                         "forward(first and after fields) or backwards(last and before fields) pagination, yet " +
@@ -183,7 +174,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenMutationTypeHasMissingMapping_shouldLogWarning() {
-        getProcessedSchema("warning/insertMissingRecordMapping", false);
+        getProcessedSchema("warning/insertMissingRecordMapping");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database. Missing required fields: FIRST_NAME",
                 "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: FIRST_NAME"
@@ -192,13 +183,13 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenMutationTypeHasMissingMappingWithDefault_shouldNotLogWarning() {
-        getProcessedSchema("warning/insertMissingRecordMappingWithDefault", false);
+        getProcessedSchema("warning/insertMissingRecordMappingWithDefault");
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();
     }
 
     @Test
     void generate_whenMutationTypeHasMissingRequiredMapping_shouldLogWarning() {
-        getProcessedSchema("warning/insertMissingRecordRequiredMapping", false);
+        getProcessedSchema("warning/insertMissingRecordRequiredMapping");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
                 "Input type InsertCustomerInput referencing table CUSTOMER does not map all fields required by the database as non-nullable. Nullable required fields: FIRST_NAME"
         );
@@ -206,7 +197,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
 
     @Test
     void generate_whenInsertMutationTypeHasNoRecord_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/insertNoRecordSet", false))
+        assertThatThrownBy(() -> getProcessedSchema("error/insertNoRecordSet"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Mutation registerCustomerInput is set as an insert operation, but does not link any input to tables.");
     }

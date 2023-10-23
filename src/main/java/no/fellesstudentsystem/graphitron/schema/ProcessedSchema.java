@@ -6,10 +6,9 @@ import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
-import no.fellesstudentsystem.graphitron.validation.DirectiveDefinitionsValidator;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
-import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
 import java.util.Map;
 import java.util.Optional;
@@ -36,14 +35,6 @@ public class ProcessedSchema {
     private final ObjectDefinition mutationType;
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
-        this(typeRegistry, true);
-    }
-
-    public ProcessedSchema(TypeDefinitionRegistry typeRegistry, boolean warnDirectives) {
-        if (warnDirectives) {
-            new DirectiveDefinitionsValidator(typeRegistry.getDirectiveDefinitions()).warnMismatchedDirectives();
-        }
-
         var objectTypes = typeRegistry.getTypes(ObjectTypeDefinition.class);
         enums = EnumDefinition.processEnumDefinitions(typeRegistry.getTypes(EnumTypeDefinition.class))
                 .stream()

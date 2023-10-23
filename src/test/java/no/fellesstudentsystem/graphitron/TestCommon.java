@@ -57,7 +57,7 @@ public abstract class TestCommon {
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
-        var processedSchema = getProcessedSchema(schemaParentFolder, false);
+        var processedSchema = getProcessedSchema(schemaParentFolder);
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
                 new FetchResolverClassGenerator(processedSchema)
@@ -126,10 +126,10 @@ public abstract class TestCommon {
     }
 
     @NotNull
-    protected ProcessedSchema getProcessedSchema(String schemaParentFolder, boolean warnDirectives) {
+    protected ProcessedSchema getProcessedSchema(String schemaParentFolder) {
         GeneratorConfig.setSchemaFiles(SRC_DIRECTIVES, subpathDirectives, sourceTestPath + schemaParentFolder + "/schema.graphqls");
 
-        var processedSchema = GraphQLGenerator.getProcessedSchema(warnDirectives);
+        var processedSchema = GraphQLGenerator.getProcessedSchema();
         processedSchema.validate();
         return processedSchema;
     }

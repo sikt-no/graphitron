@@ -32,7 +32,7 @@ public class GraphQLGeneratorTransformTest extends TestCommon {
 
     @Override
     protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
-        var processedSchema = getProcessedSchema(schemaParentFolder, false);
+        var processedSchema = getProcessedSchema(schemaParentFolder);
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema)

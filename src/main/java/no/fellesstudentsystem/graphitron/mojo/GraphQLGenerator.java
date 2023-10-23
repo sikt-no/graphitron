@@ -32,14 +32,7 @@ public class GraphQLGenerator {
      * Execute the code generation on the default set of generators and logging settings.
      */
     public static void generate() {
-        generate(true);
-    }
-
-    /**
-     * Execute the code generation on the default set of generators.
-     */
-    public static void generate(boolean warnDirectives) {
-        var processedSchema = getProcessedSchema(warnDirectives);
+        var processedSchema = getProcessedSchema();
         processedSchema.validate();
 
         var generators = List.of(
@@ -64,13 +57,12 @@ public class GraphQLGenerator {
     }
 
     /**
-     * @param warnDirectives Should the processing step warn of directive issues?
      * @return A Graphitron-interpreted version of the schema files set in {@link GeneratorConfig}.
      */
-    public static ProcessedSchema getProcessedSchema(boolean warnDirectives) {
+    public static ProcessedSchema getProcessedSchema() {
         // GeneratorConfig.loadProperties();
         var schemaLocations = GeneratorConfig.schemaFiles();
         LOGGER.info("Reading graphql schemas {}", schemaLocations);
-        return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations), warnDirectives);
+        return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations));
     }
 }
