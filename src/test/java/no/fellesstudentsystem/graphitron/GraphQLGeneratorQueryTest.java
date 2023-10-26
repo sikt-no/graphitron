@@ -13,6 +13,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 public class GraphQLGeneratorQueryTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
@@ -153,5 +155,16 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     void generate_queryThatReturnsInterface_shouldCreateResolver() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();
+    }
+
+    @Test
+    void generate_whenImplementsNodeWithoutTable_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/implementsNodeWithoutTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Type Film needs to have the @table directive set to be able to implement interface Node");
+    }
+    @Test
+    void generate_simpleInterfaceWithoutTable_shouldNotThrowException() {
+        assertDoesNotThrow(() -> generateFiles("simpleInterfaceWithoutTable"));
     }
 }

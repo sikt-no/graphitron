@@ -41,6 +41,10 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
     public MethodSpec generate(ObjectField target) {
         var implementation = getLocalObject();
         var implementationTableObject = implementation.getTable();
+        if(implementationTableObject == null) {
+            var interfaceName = interfacesReturnedByObjectField.containsKey(target) ? interfacesReturnedByObjectField.get(target).getName() : "";
+            throw new IllegalArgumentException(String.format("Type %s needs to have the @table directive set to be able to implement interface %s", implementation.getName(), interfaceName));
+        }
         var tableName = implementationTableObject.getName();
 
         ObjectField implementationReference = new ObjectField(new FieldDefinition(getLocalObject().getName(),

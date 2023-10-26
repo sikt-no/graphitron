@@ -1,0 +1,8 @@
+type Film implements Node {
+    id: ID!
+}
+
+type Query {
+    node(id: ID!): Node
+    film: Film
+}

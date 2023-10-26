@@ -1,0 +1,12 @@
+interface test {
+    id: ID
+}
+
+type Film implements test {
+    id: ID!
+}
+
+type Query {
+    node(id: ID!): Node
+    film: Film
+}
