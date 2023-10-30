@@ -37,7 +37,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var iteratedSourceSequence = context.getCurrentJoinSequence();
 
         if (!isRoot) {
-            var localTableName = getLocalObject().getTable().getName();
+            var localTableName = getLocalTableName();
             var qualifiedId = TableReflection.getQualifiedId(context.getReferenceTable().getName(), localTableName);
 
             code
@@ -55,6 +55,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return empty();
         }
         return code.build();
+    }
+
+    protected String getLocalTableName() {
+        var localObject = getLocalObject();
+        var localTable = localObject.hasTable() ? localObject.getTable() : processedSchema.getPreviousTableObjectForObject(localObject).getTable();
+        if (localTable == null) {
+            throw new IllegalStateException("Could not associate type " + localObject.getName() + " with a table.");
+        }
+
+        return localTable.getName();
     }
 
     private CodeBlock createWhere(FetchContext context, boolean hasWhere) {

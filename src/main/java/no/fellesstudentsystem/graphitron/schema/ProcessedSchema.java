@@ -5,18 +5,18 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
 
 /**
@@ -33,6 +33,8 @@ public class ProcessedSchema {
     private final Set<String> objectsWithTableOrConnection;
     private final ObjectDefinition queryType;
     private final ObjectDefinition mutationType;
+
+    private final Map<String, ObjectDefinition> objectWithPreviousTable;
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
         var objectTypes = typeRegistry.getTypes(ObjectTypeDefinition.class);
@@ -89,6 +91,9 @@ public class ProcessedSchema {
         unions = UnionDefinition.processUnionDefinitions(typeRegistry.getTypes(UnionTypeDefinition.class))
                 .stream()
                 .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
+
+        // queryType may be null in certain tests.
+        objectWithPreviousTable = queryType != null ? buildPreviousTableMap(queryType) : Map.of();
     }
 
     /**
@@ -435,5 +440,46 @@ public class ProcessedSchema {
                 .getType();
         var edge = new EdgeObjectDefinition(objects.get(new FieldType(nodeFieldType).getName()).getTypeDefinition());
         return new ConnectionObjectDefinition(object, edge);
+    }
+
+    /**
+     * @return The closest table on or above this object. Assumes only one table can be associated with the object.
+     */
+    public ObjectDefinition getPreviousTableObjectForObject(ObjectDefinition object) {
+        return objectWithPreviousTable.get(object.getName());
+    }
+
+    /**
+     * Create a map of which objects should be related to which tables. Note that this enforces that each type is only connected to one table.
+     */
+    private Map<String, ObjectDefinition> buildPreviousTableMap(ObjectDefinition object) {
+        return buildPreviousTableMap(object, null, new HashSet<>(), 0);
+    }
+
+    private Map<String, ObjectDefinition> buildPreviousTableMap(ObjectDefinition object, ObjectDefinition lastObject, HashSet<String> seenObjects, int recursion) {
+        recursionCheck(recursion);
+        if (seenObjects.contains(object.getName())) {
+            return Map.of();
+        }
+        seenObjects.add(object.getName());
+
+        var previousTableMap = new HashMap<String, ObjectDefinition>();
+        var tableObject = object.hasTable() ? object : lastObject;
+        if (tableObject != null) {
+            previousTableMap.put(object.getName(), tableObject);
+        }
+
+        object
+                .getFields()
+                .stream()
+                .filter(this::isObject)
+                .map(this::getObjectOrConnectionNode)
+                .filter(Objects::nonNull)
+                .filter(it -> !previousTableMap.containsKey(it.getName()))
+                .forEach(it ->
+                        previousTableMap.putAll(buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1))
+                );
+
+        return previousTableMap;
     }
 }

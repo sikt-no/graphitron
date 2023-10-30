@@ -28,7 +28,8 @@ public class FormatCodeBlocks {
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
-            EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className);
+            EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className),
+            EMPTY_BLOCK = CodeBlock.builder().build();
 
     /**
      * @param variableName The name of the ArrayList variable.
@@ -78,7 +79,7 @@ public class FormatCodeBlocks {
      * @return empty CodeBlock
      */
     public static CodeBlock empty() {
-        return CodeBlock.builder().build();
+        return EMPTY_BLOCK;
     }
 
     /**

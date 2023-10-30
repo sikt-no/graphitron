@@ -18,7 +18,8 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "validation";
     private final List<ExternalClassReference> references = List.of(
             new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
-            new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions")
+            new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
+            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions")
     );
 
     public GraphQLGeneratorValidationTest() {

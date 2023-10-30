@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
+import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -134,7 +134,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         }
 
         if (!fieldIsMappable(target)) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var record = findUsableRecord(target);
@@ -171,12 +171,12 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      */
     private CodeBlock generateResponseForNode(ObjectField target) {
         if (!target.isIterableWrapped()) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var record = findUsableRecord(target);
         if (!record.isIterableWrapped()) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var targetTypeName = target.getTypeName();
@@ -231,7 +231,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                     .addStatement(field.getMappingFromFieldName().asSetCall("$L"), getIDMappingCode(field, previousField))
                     .build();
         }
-        return CodeBlock.of("");
+        return empty();
     }
 
     @NotNull

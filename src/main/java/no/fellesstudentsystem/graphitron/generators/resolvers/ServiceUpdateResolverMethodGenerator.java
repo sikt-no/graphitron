@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
+import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.context.UpdateContext.countParams;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
@@ -97,7 +97,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
     private CodeBlock createCatchBlocks(ObjectField target) {
         var errorInterface = processedSchema.getInterface(ERROR_TYPE.getName());
         var hasPathField = errorInterface.hasField(FIELD_PATH);
-        var preparedCode = errorInterface.hasField(FIELD_MESSAGE) ? createPreparedMessageCode() : CodeBlock.of("");
+        var preparedCode = errorInterface.hasField(FIELD_MESSAGE) ? createPreparedMessageCode() : empty();
         var externalReferences = GeneratorConfig.getExternalReferences();
 
         var code = CodeBlock.builder();
@@ -223,7 +223,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         recursionCheck(recursion);
 
         if (!fieldIsMappable(target)) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var responseObject = processedSchema.getObject(target);
@@ -288,7 +288,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         recursionCheck(recursion);
 
         if (!fieldIsMappable(target)) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var responseObject = processedSchema.getObject(target);

@@ -17,6 +17,7 @@ public enum GraphQLReservedName {
     CONNECTION_PAGE_INFO_NODE("PageInfo"),
 
     NODE_TYPE("Node"),
+    NODE_ID("id"),
     ERROR_TYPE("Error"),
     SCHEMA_CONNECTION_SUFFIX("Connection"),
     SCHEMA_ROOT_NODE_QUERY("Query"),

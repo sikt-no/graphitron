@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.generators.context;
+package no.fellesstudentsystem.graphitron.configuration;
 
 public class Recursion {
     /**

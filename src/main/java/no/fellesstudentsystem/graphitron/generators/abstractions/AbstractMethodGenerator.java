@@ -16,8 +16,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.mapOf;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.nullIfNullElse;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 
 /**
@@ -78,7 +77,7 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
      */
     protected CodeBlock toJOOQEnumConverter(String enumType) {
         if (!processedSchema.isEnum(enumType)) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var enumEntry = processedSchema.getEnum(enumType);
@@ -100,7 +99,7 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
      */
     protected CodeBlock toGraphEnumConverter(String enumType, CodeBlock field) {
         if (!processedSchema.isEnum(enumType)) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var enumEntry = processedSchema.getEnum(enumType);

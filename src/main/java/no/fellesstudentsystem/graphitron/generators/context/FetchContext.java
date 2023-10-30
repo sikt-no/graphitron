@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesIDReference;
+import static no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers.usesReverseReference;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
 /**
@@ -24,9 +24,8 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 public class FetchContext {
     private final FetchContext previousContext;
     private final ObjectField referenceObjectField;
-    private final ObjectDefinition referenceObject;
+    private final ObjectDefinition referenceObject, previousTableObject, localObject;
     private final String currentJoinSequence;
-    private final ObjectDefinition previousTableObject;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
     private final LinkedHashSet<SQLAlias> aliasSet;
@@ -71,19 +70,23 @@ public class FetchContext {
         this.joinSet = joinSet;
         this.aliasSet = aliasSet;
         this.conditionSet = conditionSet;
+        this.localObject = localObject;
 
-        var targetObjectForID = previousTableObject != null ? previousTableObject : referenceObject;
-        if (pastJoinSequence.isEmpty() && localObject != null) {
+        var targetObjectForID = previousTableObject != null ? previousTableObject : localObject;
+        var tempPreviousTableObject = targetObjectForID != null && targetObjectForID.hasTable()
+                ? targetObjectForID
+                : processedSchema.getPreviousTableObjectForObject(targetObjectForID);
+        if (pastJoinSequence.isEmpty() && tempPreviousTableObject != null) {
             if (referenceObjectField.hasFieldReferences()) {
-                hasKeyReference = allFieldReferencesUseIDReferences(localObject, referenceObjectField.getFieldReferences());
+                hasKeyReference = allFieldReferencesUseIDReferences(tempPreviousTableObject, referenceObjectField.getFieldReferences());
             } else {
-                hasKeyReference = usesIDReference(localObject, referenceObject.getTable());
+                hasKeyReference = usesReverseReference(tempPreviousTableObject, referenceObject.getTable());
             }
-            targetObjectForID = hasKeyReference ? referenceObject : localObject;
+            tempPreviousTableObject = hasKeyReference ? referenceObject : tempPreviousTableObject;
         }
 
         this.referenceObjectField = referenceObjectField;
-        this.previousTableObject = targetObjectForID;
+        this.previousTableObject = tempPreviousTableObject;
         graphPath = pastGraphPath + (pastGraphPath.isEmpty() ? "" : "/");
         snakeCasedGraphPath = graphPath
                 .replaceAll("/\\z", "") //remove slash at end of string
@@ -104,10 +107,10 @@ public class FetchContext {
             var referenceObjectTable = i == fieldReferences.size()-1 ? referenceObject.getTable() : fieldReference.getTable();
 
             if (i == 0) {
-                allFieldReferencesUsesIDReferences = !hasRelationConditionOrKey && usesIDReference(localObject, referenceObjectTable);
+                allFieldReferencesUsesIDReferences = !hasRelationConditionOrKey && usesReverseReference(localObject, referenceObjectTable);
             } else {
                 JOOQTableMapping sourceTable = fieldReferences.get(i - 1).getTable();
-                allFieldReferencesUsesIDReferences = !hasRelationConditionOrKey && usesIDReference(sourceTable, referenceObjectTable) && allFieldReferencesUsesIDReferences;
+                allFieldReferencesUsesIDReferences = !hasRelationConditionOrKey && usesReverseReference(sourceTable, referenceObjectTable) && allFieldReferencesUsesIDReferences;
             }
         }
         return allFieldReferencesUsesIDReferences;
@@ -244,7 +247,7 @@ public class FetchContext {
                 processedSchema,
                 referenceObjectField,
                 currentJoinSequence,
-                null,
+                localObject,
                 referenceObject.hasTable() ? referenceObject : previousTableObject,
                 joinSet,
                 aliasSet,

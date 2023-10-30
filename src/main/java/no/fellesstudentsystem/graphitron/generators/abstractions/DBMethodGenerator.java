@@ -90,46 +90,44 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      * @return Code block which contains the entire recursive structure of the row statement.
      */
     protected CodeBlock generateSelectRow(FetchContext context) {
-        var codeBlockBuilder = CodeBlock
-                .builder()
-                .add("$T.row(\n", DSL.className)
-                .indent()
-                .indent();
-
-        var fieldsWithoutTable = context.getReferenceObject()
+        var fieldsWithoutSplitting = context
+                .getReferenceObject()
                 .getFields()
                 .stream()
-                .filter(f -> !(f.isResolver() &&
-                        (processedSchema.isObject(f) || processedSchema.isInterface(f))))
+                .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
                 .collect(Collectors.toList());
-        var fieldsWithoutTableSize = fieldsWithoutTable.size();
-        for (int i = 0; i < fieldsWithoutTableSize; i++) {
-            var field = fieldsWithoutTable.get(i);
+        var fieldsWithoutSplittingSize = fieldsWithoutSplitting.size();
+        // if (fieldsWithoutSplittingSize == 0) {
+        //     return empty(); // $T.noField($T.inline(($T) null)) // Need to figure out how to handle empty rows.
+        // }
 
-            codeBlockBuilder.add(
-                    processedSchema.isObject(field)
-                            ? generateSelectRow(context.nextContext(field))
-                            : generateForScalarField(field, context)
-            );
-            codeBlockBuilder.add(".as($S)", field.getName());
-            codeBlockBuilder.add((i < fieldsWithoutTableSize - 1) ? ",\n" : "\n");
+        var rowContentCode = CodeBlock.builder().indent().indent();
+        for (int i = 0; i < fieldsWithoutSplittingSize; i++) {
+            var field = fieldsWithoutSplitting.get(i);
+            var innerRowCode = processedSchema.isObject(field)
+                    ? generateSelectRow(context.nextContext(field))
+                    : generateForScalarField(field, context);
+            rowContentCode
+                    .add("$L.as($S)", innerRowCode, field.getName())
+                    .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
         }
-        codeBlockBuilder.unindent().unindent();
-        codeBlockBuilder.add(").mapping(");
 
-        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutTable.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
+        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock mappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
-                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutTable, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
-                : createMappingFunction(context, fieldsWithoutTable, maxTypeSafeFieldSizeIsExceeded);
+                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
+                : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
-        if (maxTypeSafeFieldSizeIsExceeded) {
-            codeBlockBuilder.add(wrapWithExplicitMapping(mappingFunction, context, fieldsWithoutTable));
-        } else {
-            codeBlockBuilder.add(mappingFunction);
-        }
-        codeBlockBuilder.add(")");
-        return codeBlockBuilder.build();
+        rowContentCode
+                .unindent()
+                .unindent()
+                .add(").mapping(")
+                .add(maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(mappingFunction, context, fieldsWithoutSplitting) : mappingFunction);
+
+        return CodeBlock
+                .builder()
+                .add("$T.row(\n$L)", DSL.className, rowContentCode.build())
+                .build();
     }
 
     private CodeBlock createMappingFunction(FetchContext context, List<ObjectField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
@@ -241,7 +239,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         if (field.getFieldType().isID()) {
             var hasKeyReference = !context.hasJoinedAlreadyOrWillJoin()
                     && context.hasKeyReference()
-                    && ReferenceHelpers.usesIDReference(context.getPreviousTableObject(), context.getReferenceTable());
+                    && ReferenceHelpers.usesReverseReference(context.getPreviousTableObject(), context.getReferenceTable());
             var qualifiedId = "Id";
             if (hasKeyReference) {
                 qualifiedId = TableReflection.getQualifiedId(context.getPreviousTableObject().getName(), context.getReferenceTable().getName());

@@ -54,7 +54,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .unindent()
                 .add(")\n")
-                .add(".from($N)\n", context.hasKeyReference() || isRoot ? referenceTableName : localObject.getTable().getName())
+                .add(".from($N)\n", context.hasKeyReference() || isRoot ? referenceTableName : getLocalTableName())
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(where)
                 .add(createSelectConditions(context.getConditionSet()))
@@ -76,7 +76,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent();
         if (!isRoot) {
-            var localTableName = getLocalObject().getTable().getName();
+            var localTableName = getLocalTableName();
             var referenceTableName = context.getReferenceTable().getName();
             var qualifiedId = TableReflection.getQualifiedId(referenceTableName, localTableName);
 

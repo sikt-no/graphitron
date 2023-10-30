@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.getStringSetTypeName;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMap;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
 
 /**
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
@@ -56,7 +57,6 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         var localName = implementation.getName();
 
         String argumentName = target.getInputFields().get(0).getName() + "s";
-        String idName = "id";
 
         var code = CodeBlock.builder()
                 .add(createSelectAliases(context.getJoinSet(), context.getAliasSet()))
@@ -69,7 +69,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .add(tableName + ".getId(),\n")
                 .add(selectCode)
                 .unindent()
-                .add(".as($S)", idName)
+                .add(".as($S)", NODE_ID.getName())
                 .add("\n")
                 .unindent()
                 .add(")\n")

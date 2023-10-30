@@ -28,7 +28,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMapIf;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.context.Recursion.recursionCheck;
+import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -121,7 +121,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     @NotNull
     protected CodeBlock declareRecords(List<InputField> specInputs) {
         if (context.getRecordInputs().isEmpty()) {
-            return CodeBlock.of("");
+            return empty();
         }
 
         var code = CodeBlock.builder();

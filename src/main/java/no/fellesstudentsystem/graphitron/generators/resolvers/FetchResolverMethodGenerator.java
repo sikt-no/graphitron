@@ -4,6 +4,7 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
@@ -20,13 +21,13 @@ import java.util.stream.Collectors;
 
 import static java.util.Map.entry;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnCompletedFuture;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -236,27 +237,28 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     @NotNull
     private CodeBlock getMethodCallTail(ObjectField referenceField) {
         var localObject = getLocalObject();
-        var closeMethodCall = CodeBlock.builder();
-        if (!localObject.isRoot()) {
-            closeMethodCall
-                    .endControlFlow("")
-                    .addStatement("return $T.newMappedDataLoader(batchLoader)", DATA_LOADER_FACTORY.className)
-                    .endControlFlow(")")
-                    .add(
-                            "return loader.load($N.getExecutionStepInfo().getPath().toString() + $S + $N.getId(), $N)",
-                            ENV_NAME,
-                            EXECUTION_STEP_PATH_ID_DELIMITER,
-                            uncapitalize(localObject.getName()),
-                            ENV_NAME
-                    );
-
-            if (referenceField.getFieldType().isIterableNonNullable()) {
-                closeMethodCall.addStatement(".thenApply(data -> $T.ofNullable(data).orElse($L))", OPTIONAL.className, listOf());
-            } else {
-                closeMethodCall.add(";");
-            }
+        if (localObject.isRoot()) {
+            return empty();
         }
-        return closeMethodCall.build();
+
+        var tailBlock = CodeBlock.builder();
+        // Should probably check for implementing Node interface, but that breaks everything now.
+        if (localObject.getFields().stream().map(AbstractField::getName).anyMatch(it -> it.equals(NODE_ID.getName()))) {
+            tailBlock.add(" + $S + $N.getId()", EXECUTION_STEP_PATH_ID_DELIMITER, uncapitalize(localObject.getName()));
+        }
+        tailBlock.add(", $N)", ENV_NAME);
+
+        if (referenceField.getFieldType().isIterableNonNullable()) {
+            tailBlock.add(".thenApply(data -> $T.ofNullable(data).orElse($L))", OPTIONAL.className, listOf());
+        }
+
+        return CodeBlock
+                .builder()
+                .endControlFlow("") // Has to be empty string to get that one semicolon that is required.
+                .addStatement("return $T.newMappedDataLoader(batchLoader)", DATA_LOADER_FACTORY.className)
+                .endControlFlow(")")
+                .addStatement("return loader.load($N.getExecutionStepInfo().getPath().toString()$L", ENV_NAME, tailBlock.build())
+                .build();
     }
 
     /**

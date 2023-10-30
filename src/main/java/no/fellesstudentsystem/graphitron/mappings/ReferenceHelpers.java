@@ -17,15 +17,14 @@ public class ReferenceHelpers {
      * @param referenceObjectTable The object that is joined with, the right side of the join expression.
      * @return Is there a foreign key reference from the source object to the reference object?
      */
-    public static boolean usesIDReference(ObjectDefinition sourceObject, JOOQTableMapping referenceObjectTable) {
+    public static boolean usesReverseReference(ObjectDefinition sourceObject, JOOQTableMapping referenceObjectTable) {
         if (sourceObject == null || sourceObject.isRoot() || !sourceObject.hasTable()) {
             return false;
         }
-        JOOQTableMapping sourceObjectTable = sourceObject.getTable();
-        return usesIDReference(sourceObjectTable, referenceObjectTable);
+        return usesReverseReference(sourceObject.getTable(), referenceObjectTable);
     }
 
-    public static boolean usesIDReference(JOOQTableMapping sourceObjectTable, JOOQTableMapping referenceObjectTable) {
+    public static boolean usesReverseReference(JOOQTableMapping sourceObjectTable, JOOQTableMapping referenceObjectTable) {
         var localTableName = sourceObjectTable.getName();
         var refTableName = referenceObjectTable.getName();
 
