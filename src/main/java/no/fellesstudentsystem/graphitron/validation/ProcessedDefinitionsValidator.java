@@ -1,13 +1,16 @@
 package no.fellesstudentsystem.graphitron.validation;
 
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
-import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
-import no.fellesstudentsystem.graphitron.definitions.objects.*;
+import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.AbstractTableObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
+import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
+import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.apache.commons.lang3.Validate;
@@ -17,10 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.mappings.PersonHack.asHackedIDFields;
-import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableFieldHasDefaultValue;
 
@@ -30,10 +30,10 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableFi
  * The intention is that the warnings should provide information on potential issues should an issue occur later.
  */
 public class ProcessedDefinitionsValidator {
-    private final ProcessedSchema schema;
+    protected final ProcessedSchema schema;
     private final List<ObjectField> allFields;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
-    private static final String
+    protected static final String
             ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
             ERROR_MISSING_NON_NULLABLE = "Input type %s referencing table %s does not map all fields required by the database as non-nullable. Nullable required fields: %s";
 
@@ -346,51 +346,32 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    private void checkRequiredFields(InputField recordInput) {
+    protected void checkRequiredFields(InputField recordInput) {
         var inputObject = schema.getInputType(recordInput);
         var tableName = inputObject.getTable().getName();
 
-        // WARNING: FS-SPECIFIC CODE. This must be generalized at some point.
-        var splitFieldsOnIsID = inputObject.getFields().stream().collect(Collectors.partitioningBy(it -> it.getFieldType().isID()));
-        var containedRequiredIDFields = new HashSet<String>();
-        var containedOptionalIDFields = new HashSet<String>();
-        for (var idField : splitFieldsOnIsID.get(true)) {
-            var hackedIDFields = getHackedIDFields(tableName, idField.getRecordMappingName());
-            if (hackedIDFields.isPresent()) {
-                if (idField.getFieldType().isNullable()) {
-                    containedOptionalIDFields.addAll(hackedIDFields.get());
-                } else {
-                    containedRequiredIDFields.addAll(hackedIDFields.get());
-                }
-            }
-        }
-
-        var hackedRequiredDBFields = asHackedIDFields(getRequiredFields(tableName))
+        var requiredDBFields = getRequiredFields(tableName)
                 .stream()
-                .filter(it -> !tableFieldHasDefaultValue(tableName, it))
-                .collect(Collectors.toList()); // No need to complain when it has a default set. Note that this does not work for views.
-        var recordFieldNames = Stream
-                .concat(
-                        splitFieldsOnIsID.get(false).stream().map(InputField::getUpperCaseName),
-                        Stream.concat(containedOptionalIDFields.stream(), containedRequiredIDFields.stream())
-                )
-                .collect(Collectors.toSet());
-        checkRequiredFieldsExist(recordFieldNames, hackedRequiredDBFields, recordInput, ERROR_MISSING_FIELD);
+                .map(String::toUpperCase)
+                .filter(it -> !tableFieldHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
+                .collect(Collectors.toList());
+        var recordFieldNames =
+                inputObject.getFields()
+                        .stream()
+                        .map(InputField::getUpperCaseName)
+                        .collect(Collectors.toSet());
+        checkRequiredFieldsExist(recordFieldNames, requiredDBFields, recordInput, ERROR_MISSING_FIELD);
 
-        var requiredRecordFieldNames = Stream
-                .concat(
-                        containedRequiredIDFields.stream(),
-                        splitFieldsOnIsID
-                                .get(false)
-                                .stream()
-                                .filter(it -> it.getFieldType().isNonNullable())
-                                .map(InputField::getUpperCaseName)
-                )
-                .collect(Collectors.toSet());
-        checkRequiredFieldsExist(requiredRecordFieldNames, hackedRequiredDBFields, recordInput, ERROR_MISSING_NON_NULLABLE);
+        var requiredRecordFieldNames =
+                inputObject.getFields()
+                        .stream()
+                        .filter(it -> it.getFieldType().isNonNullable())
+                        .map(InputField::getUpperCaseName)
+                        .collect(Collectors.toSet());
+        checkRequiredFieldsExist(requiredRecordFieldNames, requiredDBFields, recordInput, ERROR_MISSING_NON_NULLABLE);
     }
 
-    private void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {
+    protected void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {
         if (!actualFields.containsAll(requiredFields)) {
             var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
             LOGGER.warn(

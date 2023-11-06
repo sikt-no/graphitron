@@ -1,13 +1,13 @@
 package no.fellesstudentsystem.graphitron;
 
+import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
+import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -16,17 +16,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 @Disabled
-public class GraphQLGeneratorTransformTest extends TestCommon {
-    public static final String SRC_TEST_RESOURCES_PATH = "transform";
-    private final List<ExternalClassReference> references =
-            List.of(new ExternalClassReference("TEST_TRANSFORM", "no.fellesstudentsystem.graphitron.transforms.SomeTransform"));
+public class GraphQLGeneratorExtendedFunctionalityTest extends TestCommon {
+    public static final String SRC_TEST_RESOURCES_PATH = "query";
+    private static final String EXCEPTION_MSG = "I've been expecting you";
 
-    private final List<GlobalTransform> globalTransforms = List.of(
-            new GlobalTransform("TEST_TRANSFORM", "someTransform", TransformScope.ALL_MUTATIONS)
-    );
-
-    public GraphQLGeneratorTransformTest() {
+    public GraphQLGeneratorExtendedFunctionalityTest() {
         super(SRC_TEST_RESOURCES_PATH);
     }
 
@@ -37,7 +34,6 @@ public class GraphQLGeneratorTransformTest extends TestCommon {
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema)
         );
-
         return generateFiles(generators);
     }
 
@@ -48,14 +44,28 @@ public class GraphQLGeneratorTransformTest extends TestCommon {
                 tempOutputDirectory.toString(),
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
-                references,
-                globalTransforms,
-                List.of()
+                List.of(),
+                List.of(),
+                List.of(new Extension(ProcessedDefinitionsValidator.class.getName(), ExceptionThrowingValidator.class.getName()))
         );
     }
 
     @Test
-    void generate_mutation_shouldGenerateResolversWithTransform() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithTransforms");
+    void generate_shouldUseExtendedValidator() throws IOException {
+        assertThatThrownBy(() -> getProcessedSchema("queryWithPagination"))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage(EXCEPTION_MSG);
+    }
+
+    public static class ExceptionThrowingValidator extends ProcessedDefinitionsValidator {
+
+        public ExceptionThrowingValidator(ProcessedSchema schema) {
+            super(schema);
+        }
+
+        @Override
+        public void validateThatProcessedDefinitionsConformToJOOQNaming() {
+            throw new UnsupportedOperationException(EXCEPTION_MSG);
+        }
     }
 }

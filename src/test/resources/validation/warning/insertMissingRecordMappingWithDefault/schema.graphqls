@@ -3,7 +3,7 @@ type Mutation {
 }
 
 input Input @table(name: "FILM") {
-  id: ID!
+  id: ID! @field(name: "FILM_ID")
   title: String!
   languageId: Int! @field(name: "LANGUAGE_ID")
   fulltext: String!

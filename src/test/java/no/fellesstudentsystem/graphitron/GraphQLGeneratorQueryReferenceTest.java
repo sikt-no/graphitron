@@ -42,6 +42,7 @@ public class GraphQLGeneratorQueryReferenceTest extends TestCommon {
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
                 references,
+                List.of(),
                 List.of()
         );
     }

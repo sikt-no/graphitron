@@ -32,6 +32,9 @@ The options are the same for both goals.
 * _globalRecordTransforms_ - List of transforms that should be applied to all records. The transform _name_ value must
 be present in _externalReferences_. The _scope_ value specifies which mutations should be affected, but currently only
 _ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
+* _extensions_ - Graphitron classes allow for extensions, allowing plugin users to provide their own implementations to control the code generation process. 
+Currently, all extensions are instantiated via [ExtendedFunctionality](src/main/java/no/fellesstudentsystem/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
+We plan to enhance this: all generator classes will be made extensible for wider customization options.
 
 Example of referencing a class through the configuration:
 ```xml
@@ -52,6 +55,21 @@ Example of applying a global transform in the POM:
     <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
   </reference>
 </globalRecordTransforms>
+```
+
+Example of extending/customizing certain classes:
+```xml
+  <!-- The elements should contain fully-qualified class names -->
+  <extensions>
+    <element>
+      <extendedClass>no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator</extendedClass>
+      <extensionClass>no.fellesstudentsystem.graphitron.validation.FSProcessedDefinitionsValidator</extensionClass>
+    </element>
+    <element>
+      <extendedClass>no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition</extendedClass>
+      <extensionClass>no.fellesstudentsystem.graphitron.definitions.objects.FSInputDefinition</extensionClass>
+    </element>
+  </extensions>
 ```
 
 ## Directives

@@ -23,6 +23,7 @@ public class TableReflectionTest {
                 "",
                 DEFAULT_JOOQ_PACKAGE,
                 List.of(),
+                List.of(),
                 List.of()
         );
     }

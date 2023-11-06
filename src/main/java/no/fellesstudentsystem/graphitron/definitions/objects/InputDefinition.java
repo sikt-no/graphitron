@@ -6,6 +6,7 @@ import graphql.language.InputObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 
 import java.util.List;
 import java.util.Set;
@@ -13,7 +14,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordClassName;
-import static no.fellesstudentsystem.graphitron.mappings.PersonHack.getHackedIDFields;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 
 /**
@@ -21,7 +21,7 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequ
  */
 public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTypeDefinition, InputField> {
     private final List<InputField> inputs;
-    private final Set<String> requiredInputs;
+    protected final Set<String> requiredInputs;
     private final TypeName recordClassName;
 
     public InputDefinition(InputObjectTypeDefinition inputType) {
@@ -53,11 +53,13 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
     /**
      * @return Is this field non-nullable in the database?
      */
-    private boolean isRequired(InputField field) {
+    protected boolean isRequired(InputField field) {
         if (field.getFieldType().isID() && hasTable()) {
-            var hackedIDFields = getHackedIDFields(getTable().getName(), field.getRecordMappingName());
-            if (hackedIDFields.isPresent()) {
-                if (requiredInputs.containsAll(hackedIDFields.get())) {
+            var idFields = TableReflection.getRequiredFields(getTable().getName()).stream()
+                    .map(String::toUpperCase)
+                    .collect(Collectors.toList());
+            if (!idFields.isEmpty()) {
+                if (requiredInputs.containsAll(idFields)) {
                     return true;
                 }
             }
@@ -79,7 +81,7 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
     public static List<InputDefinition> processInputDefinitions(List<InputObjectTypeDefinition> inputs) {
         return inputs
                 .stream()
-                .map(InputDefinition::new)
+                .map(it -> GeneratorConfig.getExtendedFunctionality().createExtensionIfAvailable(InputDefinition.class, new Class[]{InputObjectTypeDefinition.class}, it))
                 .collect(Collectors.toList());
     }
 }

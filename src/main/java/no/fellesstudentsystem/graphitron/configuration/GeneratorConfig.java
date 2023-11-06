@@ -1,8 +1,10 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
-import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReferences;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.*;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
+import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
 
 import java.net.URL;
 import java.util.HashSet;
@@ -34,7 +36,8 @@ public class GeneratorConfig {
             String outputPkg,
             String jooqPkg,
             List<ExternalClassReference> references,
-            List<GlobalTransform> globalTransforms
+            List<GlobalTransform> globalTransforms,
+            List<Extension> extendedClasses
     ) {
         schemaFiles = files;
         outputDirectory = outputDir;
@@ -52,8 +55,8 @@ public class GeneratorConfig {
         externalReferences = new ExternalReferences(references);
 
         GeneratorConfig.globalTransforms = globalTransforms;
-
         GeneratorConfig.shouldGenerateRecordValidation = false;
+        extendedFunctionality = new ExtendedFunctionality(extendedClasses);
     }
 
     /**
@@ -86,6 +89,7 @@ public class GeneratorConfig {
 
         GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
         GeneratorConfig.shouldGenerateRecordValidation = mojo.shouldGenerateRecordValidation();
+        extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions());
     }
 
     /**
@@ -141,6 +145,8 @@ public class GeneratorConfig {
 
     private static ExternalReferences externalReferences;
     private static List<GlobalTransform> globalTransforms;
+
+    private static ExtendedFunctionality extendedFunctionality;
 
     public static Set<String> schemaFiles() {
         return schemaFiles;
@@ -219,5 +225,9 @@ public class GeneratorConfig {
 
     public static void setOutputDirectory(String path) {
         outputDirectory = path + "/" + PLUGIN_OUTPUT_PATH;
+    }
+
+    public static ExtendedFunctionality getExtendedFunctionality() {
+        return extendedFunctionality;
     }
 }

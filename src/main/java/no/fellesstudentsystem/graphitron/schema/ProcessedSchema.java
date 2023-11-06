@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.schema;
 
 import graphql.language.*;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
@@ -100,7 +101,8 @@ public class ProcessedSchema {
      * Ensure that the definitions created in this class match database names where applicable.
      */
     public void validate() {
-        new ProcessedDefinitionsValidator(this).validateThatProcessedDefinitionsConformToJOOQNaming();
+        ProcessedDefinitionsValidator processedDefinitionsValidator = GeneratorConfig.getExtendedFunctionality().createExtensionIfAvailable(ProcessedDefinitionsValidator.class, new Class[]{ProcessedSchema.class}, this);
+        processedDefinitionsValidator.validateThatProcessedDefinitionsConformToJOOQNaming();
     }
 
     /**

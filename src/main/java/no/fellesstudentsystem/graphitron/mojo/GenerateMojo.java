@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.mojo;
 
-import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
+import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
@@ -12,6 +12,8 @@ import org.apache.maven.project.MavenProject;
 
 import java.util.List;
 import java.util.Set;
+
+import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
 
 /**
  * Mojo for a single run of the code generation.
@@ -79,6 +81,10 @@ public class GenerateMojo extends AbstractMojo {
     @SuppressWarnings("unused")
     private boolean shouldGenerateRecordValidation;
 
+    @Parameter(property = "generate.extensions")
+    @SuppressWarnings("unused")
+    private List<Extension> extensions;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -129,6 +135,11 @@ public class GenerateMojo extends AbstractMojo {
 
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
+    }
+
+
+    public List<Extension> getExtensions() {
+        return extensions;
     }
 
     public void setGeneratedSchemaCodePackage(String generatedSchemaCodePackage) {
