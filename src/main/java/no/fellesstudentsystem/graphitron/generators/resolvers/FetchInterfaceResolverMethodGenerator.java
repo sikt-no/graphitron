@@ -80,7 +80,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                     );
                     dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
-                    spec.beginControlFlow("if (tablePartOfId.equals($T.$N.getViewId().toString()))", TABLES.className, implementation.getTable().getName());
+                    spec.beginControlFlow("if (tablePartOfId.equals($T.$N.getViewId().toString()))", TABLES.className, implementation.getTable().getMappingName());
                     spec.addStatement(CodeBlock.builder().addNamed(
                                     "return $env:N.getDataLoaderRegistry().<$string:T, $returnType:T>computeIfAbsent(tablePartOfId, name ->$W" +
                                             "$dataloader:T.newMappedDataLoader(($batchLoader:T<$string:T, $implementationClass:T>) (keys, loaderEnvironment) ->$>$W" +

@@ -4,7 +4,6 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -100,15 +99,24 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumConditions");
     }
 
-    @Disabled("not supported yet")
-    @Test
-    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceViaTablesBackwards");
-    }
-
     @Test
     void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("splitQueryForTypeWithoutTable");
+    }
+
+    @Test
+    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceBackwards");
+    }
+
+    @Test
+    void generate_referenceViaTablesBackwardsAndJoin_shouldCreateJoinViaTablesBackwards() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceBackwardsWithExtraJoin");
+    }
+
+    @Test
+    void generate_conditionOnReverseJoin_shouldFindAppropriateConditionSource() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceBackwardWithCondition");
     }
 
     @Test

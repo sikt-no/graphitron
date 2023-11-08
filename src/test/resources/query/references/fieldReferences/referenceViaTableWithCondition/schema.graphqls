@@ -5,5 +5,5 @@ type Query {
 type Inventory @table {
   id: ID!
   # join path: INVENTORY -> FILM -> FILM_ACTOR (via condition) -> ACTOR
-  mainActorLastNames: [String!]! @field(name: "LAST_NAME") @reference(via: [{table: "FILM"}, {table: "FILM_ACTOR", condition: {name: "TEST_FILM_ACTOR", method: "mainActor"}}], table: "ACTOR")
+  mainActorLastNames: [String!]! @field(name: "LAST_NAME") @reference(via: [{table: "FILM"}, {table: "FILM_ACTOR", condition: {name: "TEST_FILM_ACTOR", method: "film_filmActor"}}], table: "ACTOR")
 }

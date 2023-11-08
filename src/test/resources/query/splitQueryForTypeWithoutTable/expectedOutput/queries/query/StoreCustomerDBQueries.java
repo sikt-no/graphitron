@@ -13,22 +13,22 @@ import org.jooq.Functions;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
-
 public class StoreCustomerDBQueries {
     public Map<String, Customer> customerForStoreCustomer(DSLContext ctx,
                                                           Set<String> storeCustomerIds, SelectionSet select) {
-        var store_customer_mostvaluablecustomer = CUSTOMER.as("STORE_3066483439");
+        var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx
                 .select(
                         STORE.getId(),
                         DSL.row(
-                                store_customer_mostvaluablecustomer.getId().as("id")
+                                store_customerstoreidfkey_customer.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Customer::new)).as("customer")
                 )
                 .from(STORE)
-                .join(store_customer_mostvaluablecustomer)
-                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.mostValuableCustomer(STORE, store_customer_mostvaluablecustomer))
+                .join(store_customerstoreidfkey_customer)
+                .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.hasIds(storeCustomerIds))
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

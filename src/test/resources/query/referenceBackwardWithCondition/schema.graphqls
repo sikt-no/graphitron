@@ -1,0 +1,15 @@
+type Query {
+  address(id: ID!): Address
+}
+
+type Address @table {
+  id: ID!
+  store(id: ID): Store! @splitQuery @reference(
+    via: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}],
+    condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}
+  )
+}
+
+type Store @table {
+  id: ID!
+}

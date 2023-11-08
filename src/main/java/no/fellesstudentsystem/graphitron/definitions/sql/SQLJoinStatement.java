@@ -1,6 +1,11 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
+import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JoinElement;
+import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -9,46 +14,43 @@ import java.util.Objects;
  * This class then contains all the information necessary to construct a complete join statement.
  */
 public class SQLJoinStatement extends SQLJoin {
-    private final String joinTargetTable, joinAlias, joinShortAliasName, comparableJoinString;
+    private final JoinElement joinTargetTable;
+    private final String comparableJoinString;
+    private final Alias joinAlias;
     private final CodeBlock joinString;
 
     /**
      * @param joinTargetTable The "right" side of a join statement. This is the table to be joined with.
      * @param joinFields List of any conditions for the join operation.
-     * @param joinType What kind of join operation is to be used.
+     * @param nullable What kind of join operation is to be used.
      */
-    public SQLJoinStatement(String joinSourceTable, String joinTargetTable, String joinAlias, String joinShortAliasName, List<SQLJoinField> joinFields, SQLJoinType joinType) {
-        super(joinSourceTable, joinFields, joinType);
+    public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, Alias joinAlias, List<SQLJoinField> joinFields, boolean nullable) {
+        super(joinSequence, joinFields, nullable);
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;
-        this.joinShortAliasName = joinShortAliasName;
-        joinString = super.toJoinString(joinAlias);
+        joinString = super.toJoinString(joinAlias.getMappingName());
         comparableJoinString = joinString.toString();
     }
 
     /**
      * @return Source table to join from. The "left" side of a join statement.
      */
-    public String getJoinSourceTable() {
-        return super.getJoinSourceTable();
+    public JoinListSequence getJoinSequence() {
+        return super.getJoinSequence();
     }
 
     /**
      * @return The target table to be joined with. The "right" side of a join statement.
      */
-    public String getJoinTargetTable() {
+    public JoinElement getJoinTargetTable() {
         return joinTargetTable;
     }
 
     /**
      * @return The alias to be used to uniquely distinguish this join operation.
      */
-    public String getJoinAlias() {
+    public Alias getJoinAlias() {
         return joinAlias;
-    }
-
-    public String getJoinShortAliasName() {
-        return joinShortAliasName;
     }
 
     /**

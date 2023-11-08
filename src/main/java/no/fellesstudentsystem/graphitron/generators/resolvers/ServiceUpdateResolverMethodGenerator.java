@@ -411,8 +411,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                 .getObject(typeName)
                 .getFields()
                 .stream()
-                .map(AbstractField::getFieldType)
-                .anyMatch(FieldType::isID);
+                .anyMatch(AbstractField::isID);
     }
 
     /**

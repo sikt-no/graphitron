@@ -1,12 +1,4 @@
-#defines all default mutation directives.
-
-directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
-directive @error(error: ExternalCodeReference!) on OBJECT
-directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
-
-input ExternalCodeReference { name: String!, method: String }
-
-enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
+# defines mutation default schema.
 
 interface Error {
   path: [String!]!

@@ -30,9 +30,9 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
         var uppercaseName = getName().toUpperCase();
         recordClassName = ClassName.get(
                 GeneratorConfig.getGeneratedJooqRecordsPackage(),
-                asRecordClassName(new RecordMethodMapping(hasTable() ? getTable().getName() : uppercaseName).getName())
+                asRecordClassName(new RecordMethodMapping(hasTable() ? getTable().getMappingName() : uppercaseName).getName())
         );
-        requiredInputs = hasTable() ? getRequiredFields(getTable().getName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
+        requiredInputs = hasTable() ? getRequiredFields(getTable().getMappingName()).stream().map(String::toUpperCase).collect(Collectors.toSet()) : Set.of();
     }
 
     /**
@@ -54,8 +54,8 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
      * @return Is this field non-nullable in the database?
      */
     protected boolean isRequired(InputField field) {
-        if (field.getFieldType().isID() && hasTable()) {
-            var idFields = TableReflection.getRequiredFields(getTable().getName()).stream()
+        if (field.isID() && hasTable()) {
+            var idFields = TableReflection.getRequiredFields(getTable().getMappingName()).stream()
                     .map(String::toUpperCase)
                     .collect(Collectors.toList());
             if (!idFields.isEmpty()) {

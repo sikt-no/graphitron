@@ -18,21 +18,24 @@ import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
     public Map<String, List<Rental>> rentalsForInventory(DSLContext ctx, Set<String> inventoryIds,
-            SelectionSet select) {
+                                                         SelectionSet select) {
+        var inventory_rentalinventoryidfkey_rental = RENTAL.as("inventory_1049504228");
         return ctx
                 .select(
-                        RENTAL.getInventoryId(),
+                        INVENTORY.getId(),
                         DSL.row(
-                                RENTAL.getId().as("id")
+                                inventory_rentalinventoryidfkey_rental.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Rental::new)).as("rentals")
                 )
-                .from(RENTAL)
-                .where(RENTAL.hasInventoryIds(inventoryIds))
+                .from(INVENTORY)
+                .join(inventory_rentalinventoryidfkey_rental)
+                .onKey(RENTAL__RENTAL_INVENTORY_ID_FKEY)
+                .where(INVENTORY.hasIds(inventoryIds))
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
     public Map<String, Inventory> loadInventoryByIdsAsNode(DSLContext ctx, Set<String> ids,
-            SelectionSet select) {
+                                                           SelectionSet select) {
         return ctx
                 .select(
                         INVENTORY.getId(),

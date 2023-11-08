@@ -17,17 +17,20 @@ import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
     public Map<String, List<Inventory>> inventoryForFilm(DSLContext ctx, Set<String> filmIds,
-            Integer pageSize, String after, SelectionSet select) {
+                                                         Integer pageSize, String after, SelectionSet select) {
+        var film_inventoryfilmidfkey_inventory_left = INVENTORY.as("film_2576628581");
         return ctx
                 .select(
-                        INVENTORY.getFilmId(),
+                        FILM.getId(),
                         DSL.row(
-                                INVENTORY.getId().as("id"),
-                                select.optional("storeId", INVENTORY.STORE_ID).as("storeId")
+                                film_inventoryfilmidfkey_inventory_left.getId().as("id"),
+                                select.optional("storeId", film_inventoryfilmidfkey_inventory_left.STORE_ID).as("storeId")
                         ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventory")
                 )
-                .from(INVENTORY)
-                .where(INVENTORY.hasFilmIds(filmIds))
+                .from(FILM)
+                .leftJoin(film_inventoryfilmidfkey_inventory_left)
+                .onKey(INVENTORY__INVENTORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
                 .orderBy(INVENTORY.getIdFields())
                 .seek(INVENTORY.getIdValues(after))
                 .limit(pageSize + 1)
@@ -35,10 +38,13 @@ public class FilmDBQueries {
     }
 
     public Integer countInventoryForFilm(DSLContext ctx, Set<String> filmIds) {
+        var film_inventoryfilmidfkey_inventory_left = INVENTORY.as("film_2576628581");
         return ctx
                 .select(DSL.count().as("totalCount"))
-                .from(INVENTORY)
-                .where(INVENTORY.hasFilmIds(filmIds))
+                .from(FILM)
+                .leftJoin(film_inventoryfilmidfkey_inventory_left)
+                .onKey(INVENTORY__INVENTORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
                 .fetchOne(0, Integer.class);
     }
 }

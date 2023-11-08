@@ -248,7 +248,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         }
         tailBlock.add(", $N)", ENV_NAME);
 
-        if (referenceField.getFieldType().isIterableNonNullable()) {
+        if (referenceField.isIterableWrapped() && referenceField.isNonNullable()) {
             tailBlock.add(".thenApply(data -> $T.ofNullable(data).orElse($L))", OPTIONAL.className, listOf());
         }
 

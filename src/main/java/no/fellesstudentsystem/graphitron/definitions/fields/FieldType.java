@@ -72,22 +72,15 @@ public class FieldType {
         return isIterableWrapped;
     }
 
-    /**
-     * @return Is this data type non-nullable?
-     */
-    public boolean isNonNullable() {
-        return isNonNullable;
-    }
-
     public boolean isNullable() {
         return !isNonNullable;
     }
 
     /**
-     * @return Is this data type's list wrapping non-nullable?
+     * @return Is this data type's list wrapping nullable?
      */
-    public boolean isIterableNonNullable() {
-        return isIterableNonNullable;
+    public boolean isIterableNullable() {
+        return !isIterableNonNullable;
     }
 
     /**

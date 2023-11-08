@@ -1,8 +1,4 @@
-#defines default mutation directives.
-
-directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
-
-enum MutationType { UPDATE }
+# defines default mutation schema.
 
 type Query {
   "Dummy query, since the schema insists that there must be at least one."

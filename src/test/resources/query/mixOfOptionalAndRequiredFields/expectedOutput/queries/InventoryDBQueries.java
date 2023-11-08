@@ -19,7 +19,7 @@ import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
     public Map<String, Store> storeForInventory(DSLContext ctx, Set<String> inventoryIds,
-            SelectionSet select) {
+                                                SelectionSet select) {
         return ctx
                 .select(
                         INVENTORY.getId(),
@@ -45,7 +45,7 @@ public class InventoryDBQueries {
     }
 
     public Map<String, Film> filmForInventory(DSLContext ctx, Set<String> inventoryIds,
-            SelectionSet select) {
+                                              SelectionSet select) {
         return ctx
                 .select(
                         INVENTORY.getId(),

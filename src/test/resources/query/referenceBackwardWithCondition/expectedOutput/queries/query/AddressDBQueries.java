@@ -1,0 +1,35 @@
+package fake.code.generated.queries.query;
+
+import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+
+import fake.graphql.example.package.model.Store;
+import java.lang.String;
+import java.util.Map;
+import java.util.Set;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import org.jooq.DSLContext;
+import org.jooq.Functions;
+import org.jooq.Record2;
+import org.jooq.impl.DSL;
+
+public class AddressDBQueries {
+    public Map<String, Store> storeForAddress(DSLContext ctx, Set<String> addressIds, String id,
+                                              SelectionSet select) {
+        var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
+        return ctx
+                .select(
+                        ADDRESS.getId(),
+                        DSL.row(
+                                address_customeraddressidfkey_customer.store().getId().as("id")
+                        ).mapping(Functions.nullOnAllNull(Store::new)).as("store")
+                )
+                .from(ADDRESS)
+                .join(address_customeraddressidfkey_customer)
+                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .where(ADDRESS.hasIds(addressIds))
+                .and(id != null ? address_customeraddressidfkey_customer.store().ID.eq(id) : DSL.noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_customeraddressidfkey_customer, address_customeraddressidfkey_customer.store()))
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+}

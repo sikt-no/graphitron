@@ -16,14 +16,16 @@ public class TopLevelObjectField extends ObjectField {
     public TopLevelObjectField(FieldDefinition field) {
         super(field);
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
-        super.setInputAndPagination(field, true);
     }
 
-    /**
-     * @return Should this field result in a generated method in a resolver?
-     */
+    @Override
     public boolean isGenerated() {
         return isGenerated;
+    }
+
+    @Override
+    public boolean isRootField() {
+        return true;
     }
 
     /**

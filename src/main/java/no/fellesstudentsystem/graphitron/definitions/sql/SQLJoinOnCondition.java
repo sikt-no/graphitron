@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
+import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
 import java.util.List;
 
 /**
@@ -26,7 +27,7 @@ public class SQLJoinOnCondition extends SQLJoinField {
     }
 
     @Override
-    public CodeBlock toJoinString(String joinSourceTable, String aliasName) {
-        return condition.formatToString(List.of(CodeBlock.of(joinSourceTable), CodeBlock.of(aliasName)));
+    public CodeBlock toJoinString(JoinListSequence joinSequence, String aliasName) {
+        return condition.formatToString(List.of(joinSequence.render(), CodeBlock.of(aliasName)));
     }
 }

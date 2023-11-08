@@ -46,43 +46,40 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
             var interfaceName = interfacesReturnedByObjectField.containsKey(target) ? interfacesReturnedByObjectField.get(target).getName() : "";
             throw new IllegalArgumentException(String.format("Type %s needs to have the @table directive set to be able to implement interface %s", implementation.getName(), interfaceName));
         }
-        var tableName = implementationTableObject.getName();
 
         ObjectField implementationReference = new ObjectField(new FieldDefinition(getLocalObject().getName(),
                 new TypeName(getLocalObject().getName())));
 
         var context = new FetchContext(processedSchema, implementationReference, implementation);
         var selectCode = generateSelectRow(context);
-        var returnType = implementation.getGraphClassName();
-        var localName = implementation.getName();
 
         String argumentName = target.getInputFields().get(0).getName() + "s";
+        var querySource = context.renderQuerySource(implementationTableObject);
 
         var code = CodeBlock.builder()
-                .add(createSelectAliases(context.getJoinSet(), context.getAliasSet()))
+                .add(createSelectAliases(context.getJoinSet()))
                 .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
                 .add(".select(\n")
                 .indent()
                 .indent()
-                .add(tableName + ".getId(),\n")
+                .add("$L.getId(),\n", querySource)
                 .add(selectCode)
                 .unindent()
-                .add(".as($S)", NODE_ID.getName())
-                .add("\n")
+                .add(".as($S)\n", NODE_ID.getName())
                 .unindent()
                 .add(")\n")
-                .add(".from(" + tableName + ")\n")
+                .add(".from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
-                .add(".where($N.has$N($N))\n",
-                        tableName,
+                .add(".where($L.has$N($N))\n",
+                        querySource,
                         StringUtils.capitalize(argumentName),
                         argumentName
                 )
                 .add(createSelectConditions(context.getConditionSet()))
-                .addStatement("." + (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups")
-                                + "($T::value1, $T::value2)",
+                .addStatement(".$L($T::value1, $T::value2)",
+                        (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),
                         RECORD2.className,
                         RECORD2.className
                 )
@@ -90,8 +87,8 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .unindent();
 
         return getDefaultSpecBuilder(
-                "load" + localName + "By" + StringUtils.capitalize(argumentName) + "As" + StringUtils.capitalize(target.getName()),
-                wrapStringMap(returnType)
+                "load" + implementation.getName() + "By" + StringUtils.capitalize(argumentName) + "As" + StringUtils.capitalize(target.getName()),
+                wrapStringMap(implementation.getGraphClassName())
         )
                 .addParameter(getStringSetTypeName(), argumentName)
                 .addParameter(SELECTION_SET.className, SELECTION_NAME)

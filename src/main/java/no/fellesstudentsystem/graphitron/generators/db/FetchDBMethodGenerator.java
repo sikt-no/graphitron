@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
-import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.util.List;
@@ -34,20 +33,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      */
     protected CodeBlock formatWhereContents(FetchContext context) {
         var code = CodeBlock.builder().add(".where(");
-        var iteratedSourceSequence = context.getCurrentJoinSequence();
 
         if (!isRoot) {
-            var localTableName = getLocalTableName();
-            var qualifiedId = TableReflection.getQualifiedId(context.getReferenceTable().getName(), localTableName);
-
-            code
-                    .add(
-                            context.hasKeyReference()
-                                    ? iteratedSourceSequence + String.format(".has%ss($N)", qualifiedId)
-                                    : localTableName + ".hasIds($N)",
-                            idParamName
-                    )
-                    .add(")\n");
+            code.add("$L.hasIds($N))\n", context.renderQuerySource(getLocalTable()), idParamName);
         }
         if (context.getReferenceObjectField().hasNonReservedInputFields()) {
             code.add(createWhere(context, !isRoot));
@@ -57,38 +45,25 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
-    protected String getLocalTableName() {
-        var localObject = getLocalObject();
-        var localTable = localObject.hasTable() ? localObject.getTable() : processedSchema.getPreviousTableObjectForObject(localObject).getTable();
-        if (localTable == null) {
-            throw new IllegalStateException("Could not associate type " + localObject.getName() + " with a table.");
-        }
-
-        return localTable.getName();
-    }
-
     private CodeBlock createWhere(FetchContext context, boolean hasWhere) {
         var referenceField = context.getReferenceObjectField();
         var inputConditions = getInputConditions(referenceField.getNonReservedInputFields());
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
-        var iteratedSourceSequence = context.getCurrentJoinSequence();
 
         for (var inputCondition : flatInputs) {
             var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
             var checksNotEmpty = !checks.isEmpty();
-            var fieldSequence = field.hasFieldReferences() ? context.iterateSourceMultipleSequences(field.getFieldReferences()) : iteratedSourceSequence;
+            var renderedSequence = context.iterateJoinSequenceFor(field).render();
             if (!referenceField.hasOverridingCondition() && !field.hasOverridingCondition()) {
-                var fieldType = field.getFieldType();
-                var fieldTypeName = fieldType.getName();
                 codeBlockBuilder
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
-                        .add("$L.$N", fieldSequence, field.getUpperCaseName())
-                        .add(toJOOQEnumConverter(fieldTypeName))
-                        .add(fieldType.isIterableWrapped() ? ".in($N)" : ".eq($N)", name);
+                        .add("$L.$N", renderedSequence, field.getUpperCaseName())
+                        .add(toJOOQEnumConverter(field.getTypeName()))
+                        .add(field.isIterableWrapped() ? ".in($N)" : ".eq($N)", name);
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
                 }
@@ -99,7 +74,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
 
             if (field.hasCondition()) {
-                var conditionInputs = List.of(CodeBlock.of(fieldSequence), getCheckedNameWithPath(inputCondition));
+                var conditionInputs = List.of(renderedSequence, getCheckedNameWithPath(inputCondition));
                 codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
             }
             if (!codeBlockBuilder.isEmpty()) {
@@ -114,7 +89,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (referenceField.hasCondition()) {
             var inputs = Stream.concat(
-                    Stream.of(CodeBlock.of(iteratedSourceSequence)),
+                    Stream.of(context.getCurrentJoinSequence().render()),
                     flatInputs.stream().map(this::getCheckedNameWithPath)
             ).collect(Collectors.toList());
             codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs), hasWhere));
@@ -142,16 +117,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add("$T.row(\n", DSL.className)
                 .indent().indent();
 
-        var iteratedSourceSequence = context.getCurrentJoinSequence();
         for (int i = 0; i < conditions.size(); i++) {
             var field = conditions.get(i).getInput();
-            var fieldType = field.getFieldType();
-            var fieldTypeName = fieldType.getName();
-            var fieldSequence = field.hasFieldReferences() ? context.iterateSourceMultipleSequences(field.getFieldReferences()) : iteratedSourceSequence;
+            var fieldSequence = context.iterateJoinSequenceFor(field).render();
 
             codeBlockBuilder
                     .add("$L.$N", fieldSequence, field.getUpperCaseName())
-                    .add(toJOOQEnumConverter(fieldTypeName))
+                    .add(toJOOQEnumConverter(field.getTypeName()))
                     .add(i < conditions.size()-1 ? ",\n" : "");
         }
         codeBlockBuilder

@@ -40,11 +40,12 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         var code = CodeBlock
                 .builder()
+                .add(createSelectAliases(context.getJoinSet()))
                 .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
                 .add(".select($T.count().as($S))\n", DSL.className, TOTAL_COUNT_NAME)
-                .add(".from($N)\n", context.getReferenceTable().getName())
+                .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(where)
                 .add(createSelectConditions(context.getConditionSet()))

@@ -7,7 +7,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -40,7 +39,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField target) {
         var localObject = getLocalObject();
         var context = new FetchContext(processedSchema, target, localObject);
-        var referenceTableName = context.getReferenceTable().getName();
 
         // Note that this must happen before alias declaration.
         var selectCode = generateSelectRow(context);
@@ -54,11 +52,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .unindent()
                 .add(")\n")
-                .add(".from($N)\n", context.hasKeyReference() || isRoot ? referenceTableName : getLocalTableName())
+                .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(where)
                 .add(createSelectConditions(context.getConditionSet()))
-                .add(setPaginationAndFetch(target, referenceTableName));
+                .add(setPaginationAndFetch(target, context.getReferenceTable().getMappingName()));
 
         return getSpecBuilder(target, context.getReferenceObject().getGraphClassName())
                 .addCode(code.build())
@@ -68,7 +66,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock declareAliasesAndSetInitialCode(FetchContext context) {
         var code = CodeBlock
                 .builder()
-                .add(createSelectAliases(context.getJoinSet(), context.getAliasSet()))
+                .add(createSelectAliases(context.getJoinSet()))
                 .add("return $N\n", Dependency.CONTEXT_NAME)
                 .indent()
                 .indent()
@@ -76,13 +74,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent();
         if (!isRoot) {
-            var localTableName = getLocalTableName();
-            var referenceTableName = context.getReferenceTable().getName();
-            var qualifiedId = TableReflection.getQualifiedId(referenceTableName, localTableName);
-
-            code
-                    .add(context.hasKeyReference() ? referenceTableName + String.format(".get%s()", qualifiedId) : localTableName + ".getId()")
-                    .add(",\n");
+            code.add("$L.getId(),\n", context.renderQuerySource(getLocalTable()));
         }
         return code.build();
     }
@@ -123,7 +115,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock setPaginationAndFetch(ObjectField referenceField, String actualRefTable) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
-        var refTable = refObject.getTable().getName();
+        var refTable = refObject.getTable().getMappingName();
         var code = CodeBlock.builder();
         if (isRoot || referenceField.hasForwardPagination()) {
             code.add(".orderBy($N.getIdFields())\n", actualRefTable);

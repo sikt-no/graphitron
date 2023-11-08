@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
+import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -29,9 +30,9 @@ public abstract class SQLJoinField implements Comparable<SQLJoinField> {
     abstract public String getMethodCallName();
 
     /**
-     * @param joinSourceTable The table that from which the join is originating. In other words, the left side of the join.
+     * @param joinSequence The source from which the join is originating. In other words, the left side of the join.
      * @param aliasName The name of the table alias to be used for this particular join statement.
      * @return A CodeBlock that contains a complete condition statement.
      */
-    abstract public CodeBlock toJoinString(String joinSourceTable, String aliasName);
+    abstract public CodeBlock toJoinString(JoinListSequence joinSequence, String aliasName);
 }

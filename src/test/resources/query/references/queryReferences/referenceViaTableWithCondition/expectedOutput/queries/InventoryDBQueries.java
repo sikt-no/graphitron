@@ -15,20 +15,20 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, List<Actor>> mainActorsForInventory(DSLContext ctx,
-                                                           Set<String> inventoryIds, SelectionSet select) {
-        var film_film_actor_mainactor = FILM_ACTOR.as("FILM_809568702");
+    public Map<String, List<Actor>> mainActorsForInventory(DSLContext ctx, Set<String> inventoryIds,
+                                                           SelectionSet select) {
+        var inventory_film_film_filmactor_film_actor = FILM_ACTOR.as("inventory_2747546302");
         return ctx
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                film_film_actor_mainactor.actor().getId().as("id"),
-                                select.optional("lastName", film_film_actor_mainactor.actor().LAST_NAME).as("lastName")
+                                inventory_film_film_filmactor_film_actor.actor().getId().as("id"),
+                                select.optional("lastName", inventory_film_film_filmactor_film_actor.actor().LAST_NAME).as("lastName")
                         ).mapping(Functions.nullOnAllNull(Actor::new)).as("mainActors")
                 )
                 .from(INVENTORY)
-                .join(film_film_actor_mainactor)
-                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.mainActor(INVENTORY.film(), film_film_actor_mainactor))
+                .join(inventory_film_film_filmactor_film_actor)
+                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(INVENTORY.film(), inventory_film_film_filmactor_film_actor))
                 .where(INVENTORY.hasIds(inventoryIds))
                 .fetchGroups(Record2::value1, Record2::value2);
     }

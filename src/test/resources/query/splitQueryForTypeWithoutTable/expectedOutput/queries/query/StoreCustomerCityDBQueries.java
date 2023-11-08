@@ -16,18 +16,19 @@ import org.jooq.impl.DSL;
 public class StoreCustomerCityDBQueries {
     public Map<String, City> cityForStoreCustomerCity(DSLContext ctx,
                                                       Set<String> storeCustomerCityIds, SelectionSet select) {
-        var store_customer_mostvaluablecustomer = CUSTOMER.as("STORE_3066483439");
+        var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx
                 .select(
                         STORE.getId(),
                         DSL.row(
-                                store_customer_mostvaluablecustomer.address().city().getId().as("id")
+                                store_customerstoreidfkey_customer.address().city().getId().as("id")
                         ).mapping(Functions.nullOnAllNull(City::new)).as("city")
                 )
                 .from(STORE)
-                .join(store_customer_mostvaluablecustomer)
-                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.mostValuableCustomer(STORE, store_customer_mostvaluablecustomer))
+                .join(store_customerstoreidfkey_customer)
+                .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.hasIds(storeCustomerCityIds))
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

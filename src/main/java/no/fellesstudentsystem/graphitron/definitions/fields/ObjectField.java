@@ -36,7 +36,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     public ObjectField(FieldDefinition field) {
         super(field);
         isResolver = field.hasDirective(SPLIT_QUERY.getName());
-        inputFields = setInputAndPagination(field, false);
+        inputFields = setInputAndPagination(field, isRootField());
         nonReservedFields = inputFields.stream().filter(inputField ->
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName()))
         ).collect(Collectors.toList());
@@ -48,7 +48,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
                 : null;
     }
 
-    protected List<InputField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
+    private List<InputField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
         var inputs = field.getInputValueDefinitions();
         var inputFields = new ArrayList<InputField>();
 

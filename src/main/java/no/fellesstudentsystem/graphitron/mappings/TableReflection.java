@@ -1,20 +1,21 @@
 package no.fellesstudentsystem.graphitron.mappings;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
 import org.apache.commons.lang3.StringUtils;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.isFSKeyFormat;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -23,39 +24,89 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class TableReflection {
     private final static Set<Field> TABLE_FIELDS = Set.of(GeneratorConfig.getGeneratedJooqTablesClass().getFields());
     private final static Map<String, Field> POSSIBLE_TABLE_FIELDS = TABLE_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
+    private final static Set<Field> KEY_FIELDS = Set.of(GeneratorConfig.getGeneratedJooqKeysClass().getFields());
+    private final static Map<String, Field> POSSIBLE_KEY_FIELDS = KEY_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
 
     /**
-     * @return Does the left table have exactly one reference to the right table?
+     * @return The implicit key between these two tables.
      */
-    public static boolean hasSingleReference(String leftTableName, String rightTableName) {
-        var tableClass = GeneratorConfig.getGeneratedJooqTablesClass();
-        try {
-            var leftTable = (Table<?>) tableClass.getField(leftTableName).get(null);
-            var rightTable = (Table<?>) tableClass.getField(rightTableName).get(null);
-            var keys = leftTable.getReferencesTo(rightTable);
-            return keys.size() == 1;
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            return false;
+    public static Optional<String> findImplicitKey(String leftTableName, String rightTableName) {
+        var leftTableOptional = getTableObject(leftTableName);
+        if (leftTableOptional.isEmpty()) {
+            return Optional.empty();
         }
+        var rightTableOptional = getTableObject(rightTableName);
+        if (rightTableOptional.isEmpty()) {
+            return Optional.empty();
+        }
+        var leftTable = leftTableOptional.get();
+        var rightTable = rightTableOptional.get();
+
+        var keys = leftTable.getReferencesTo(rightTable);
+        if (keys.size() == 1) {
+            return Optional.of(getFixedKeyName(keys.get(0)));
+        }
+        var reverseKeys = rightTable.getReferencesTo(leftTable);
+        if (reverseKeys.size() == 1) {
+            return Optional.of(getFixedKeyName(reverseKeys.get(0)));
+        }
+        return Optional.empty();
     }
 
     /**
-     * @return The ID name of a foreign key reference from the left table to the right table, if one exists.
+     * @return The kind of relation that is present between these tables.
      */
-    public static String getQualifiedId(String leftTableName, String rightTableName) {
-        var tableClass = GeneratorConfig.getGeneratedJooqTablesClass();
-        try {
-            var leftTable = (Table<?>) tableClass.getField(leftTableName).get(null);
-            var rightTable = (Table<?>) tableClass.getField(rightTableName).get(null);
-            var keys = leftTable.getReferencesTo(rightTable);
-            if (keys.size() == 1) {
-                var keyName = keys.get(0).getName();
-                return (String) leftTable.getClass().getMethod("getQualifier", String.class).invoke(leftTable, keyName);
-            }
-            return null;
-        } catch (NoSuchFieldException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            return null;
+    public static TableRelationType inferRelationType(String leftTableName, String rightTableName, JOOQMapping preferredKey) {
+        var leftTable = getTableObject(leftTableName);
+        if (leftTable.isEmpty()) {
+            return TableRelationType.NONE;
         }
+        var rightTable = getTableObject(rightTableName);
+        if (rightTable.isEmpty()) {
+            return TableRelationType.NONE;
+        }
+
+        var keysSize = leftTable.get().getReferencesTo(rightTable.get()).size();
+        var reverseKeys = rightTable.get().getReferencesTo(leftTable.get());
+        var reverseKeysSize = reverseKeys.size();
+
+        // If keys should be prioritized, reverse keys are checked before normal implicit joins.
+        if (preferredKey != null) {
+            if (keysSize > 1) {
+                return TableRelationType.KEY;
+            }
+            if (reverseKeysSize > 1) {
+                return TableRelationType.REVERSE_KEY;
+            }
+
+            // The unlikely case where there are single references both ways, and for some reason the reverse reference is preferred.
+            if (reverseKeysSize == 1 && matchName(preferredKey.getMappingName(), reverseKeys.get(0)).isPresent()) {
+                return TableRelationType.REVERSE_IMPLICIT;
+            }
+        }
+
+        // Normally, references the "right" way are prioritized.
+        if (keysSize == 1) {
+            return TableRelationType.IMPLICIT;
+        }
+        if (keysSize > 1) {
+            return TableRelationType.KEY;
+        }
+
+        if (reverseKeysSize == 1) {
+            return TableRelationType.REVERSE_IMPLICIT;
+        }
+        if (reverseKeysSize > 1) {
+            return TableRelationType.REVERSE_KEY;
+        }
+        return TableRelationType.NONE;
+    }
+
+    /**
+     * @return Does this table have any references to itself?
+     */
+    public static boolean hasSelfRelation(String tableName) {
+        return !inferRelationType(tableName, tableName, null).equals(TableRelationType.NONE);
     }
 
     /**
@@ -63,6 +114,34 @@ public class TableReflection {
      */
     public static boolean tableExists(String tableName) {
         return POSSIBLE_TABLE_FIELDS.containsKey(tableName);
+    }
+
+    /**
+     * @return Does this key exist in the generated jOOQ code?
+     */
+    public static boolean keyExists(String keyName) {
+        return POSSIBLE_KEY_FIELDS.containsKey(keyName);
+    }
+
+    /**
+     * @return Does this table or key exist in the generated jOOQ code?
+     */
+    public static boolean tableOrKeyExists(String name) {
+        return POSSIBLE_KEY_FIELDS.containsKey(name) || POSSIBLE_TABLE_FIELDS.containsKey(name);
+    }
+
+    /**
+     * @return Which table does this key point to?
+     */
+    public static Optional<String> getKeyTargetTable(String keyName) {
+        return getKeyObject(keyName).map(it -> it.getKey().getTable().getName().toUpperCase());
+    }
+
+    /**
+     * @return Which table does this key belong to?
+     */
+    public static Optional<String> getKeySourceTable(String keyName) {
+        return getKeyObject(keyName).map(it -> it.getTable().getName().toUpperCase());
     }
 
     /**
@@ -86,19 +165,33 @@ public class TableReflection {
     }
 
     /**
+     * @return Is this field nullable in the jOOQ table?.
+     */
+    public static Optional<Boolean> fieldIsNullable(String tableName, String fieldName) {
+        var field = getTablesField(tableName);
+        if (field.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(
+                    Arrays
+                            .stream(((TableImpl<?>) field.get().get(null)).fields())
+                            .filter(it -> it.getName().equalsIgnoreCase(fieldName))
+                            .anyMatch(it -> it.getDataType().nullable())
+            );
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
      * @return Does this field have a default value in this jOOQ table? Does not work for views.
      */
     public static boolean tableFieldHasDefaultValue(String tableName, String fieldName) {
-        var table = getTableObject(tableName);
-        if (table.isEmpty()) {
-            return false;
-        }
-
-        return Arrays
-                .stream(table.get().fields())
-                .filter(it -> it.getName().equalsIgnoreCase(fieldName))
-                .findFirst()
-                .map(value -> value.getDataType().defaulted()) // This does not work for views.
+        return getTableObject(tableName)
+                .flatMap(value -> Arrays.stream(value.fields()).filter(it -> it.getName().equalsIgnoreCase(fieldName)).findFirst())
+                .map(it -> it.getDataType().defaulted()) // This does not work for views.
                 .orElse(false);
     }
 
@@ -142,40 +235,32 @@ public class TableReflection {
      * @return The name of a method that matches a key between the tables if exists.
      */
     public static Optional<String> searchTableForKeyMethodName(String table, String key) {
-        var source = getTableObject(table);
-
-        if (source.isEmpty()) {
-            return Optional.empty();
-        }
-
-        return source
-                .get()
+        return getTableObject(table).flatMap(value -> value
                 .getReferences()
                 .stream()
                 .map(it -> matchName(key, it))
-                .filter(it -> !it.isEmpty())
-                .findFirst();
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .findFirst()
+        );
     }
 
-    private static String matchName(String key, ForeignKey<?, ?> referenceKey) {
-        var unquoted = referenceKey.getQualifiedName().unquotedName().toString();
-        var split = unquoted.split("\\.");
-        var replace = unquoted.replace(".", "__");
-        if (replace.equalsIgnoreCase(key)) {
-            return uncapitalize(Arrays.stream(referenceKey.getName().split("_")).map(StringUtils::capitalize).collect(Collectors.joining()));
+    private static Optional<String> matchName(String key, ForeignKey<?, ?> referenceKey) {
+        if (!getFixedKeyName(referenceKey).equalsIgnoreCase(key)) {
+            return Optional.empty();
         }
 
-        if (split[split.length - 1].equalsIgnoreCase(key)) {
-            var splitDouble = Arrays
-                    .stream(referenceKey.getName().split("__"))
-                    .map(String::toLowerCase)
-                    .map(it -> Arrays.stream(it.split("_")).map(StringUtils::capitalize).collect(Collectors.joining()))
-                    .map(StringUtils::capitalize)
-                    .collect(Collectors.joining("_"));
-            return uncapitalize(splitDouble);
+        if (!isFSKeyFormat()) { // TODO: Remove this hack.
+            return Optional.of(uncapitalize(Arrays.stream(referenceKey.getName().split("_")).map(StringUtils::capitalize).collect(Collectors.joining())));
         }
 
-        return "";
+        var splitDouble = Arrays
+                .stream(referenceKey.getName().split("__"))
+                .map(String::toLowerCase)
+                .map(it -> Arrays.stream(it.split("_")).map(StringUtils::capitalize).collect(Collectors.joining()))
+                .map(StringUtils::capitalize)
+                .collect(Collectors.joining("_"));
+        return Optional.of(uncapitalize(splitDouble));
     }
 
     private static Optional<Table<?>> getTableObject(String table) {
@@ -191,20 +276,28 @@ public class TableReflection {
         }
     }
 
-    /**
-     * Find the table this foreign key points to.
-     * @param keyName The name of the key to check.
-     * @return The table this key points to if it exists.
-     */
-    public static Optional<String> getJoinTableByKey(String keyName) {
+    private static Table<?> getTableObjectOrException(String table) {
+        var field = getTablesField(table);
+        if (field.isEmpty()) {
+            throw new IllegalArgumentException("Table " + table + " does not exist.");
+        }
+
         try {
-            return Optional.of(
-                    ((ForeignKey<?, ?>) GeneratorConfig.getGeneratedJooqKeysClass().getField(keyName).get(null))
-                            .getKey()
-                            .getTable()
-                            .getName()
-            );
-        } catch (Exception e) {
+            return (Table<?>) field.get().get(null);
+        } catch (IllegalAccessException e) {
+            throw new IllegalArgumentException("Table " + table + " does not exist.");
+        }
+    }
+
+    private static Optional<ForeignKey<?, ?>> getKeyObject(String key) {
+        var field = getKeysField(key);
+        if (field.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(((ForeignKey<?, ?>) field.get().get(null)));
+        } catch (IllegalAccessException e) {
             return Optional.empty();
         }
     }
@@ -227,5 +320,26 @@ public class TableReflection {
         }
 
         return Optional.of(POSSIBLE_TABLE_FIELDS.get(tableName));
+    }
+
+    /**
+     * @return Find this key as a field in jOOQs Keys class through reflection.
+     */
+    public static Optional<Field> getKeysField(String keyName) {
+        if (!keyExists(keyName)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(POSSIBLE_KEY_FIELDS.get(keyName));
+    }
+
+    private static String getFixedKeyName(ForeignKey<?, ?> key) { // TODO: Remove this hack.
+        var unquoted = key.getQualifiedName().unquotedName().toString();
+        if (!isFSKeyFormat()) {
+            return unquoted.replace(".", "__");
+        }
+
+        var split = unquoted.split("\\.");
+        return split[split.length - 1];
     }
 }

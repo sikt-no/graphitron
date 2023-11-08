@@ -21,7 +21,8 @@ public class GraphQLGeneratorQueryReferenceTest extends TestCommon {
             "Given Condition Via Tables Should Create Join Via Tables Then Condition,referenceGivenConditionViaTables",
             "Via Table With Condition Should Create Join Via Table With Condition,referenceViaTableWithCondition",
             "Given Key Via Tables Should Create Join Via Tables Then Key,referenceGivenKeyViaTables",
-            "Given Key Via Table With Condition And Table With Key Should Create Join Via Tables Then Key,referenceGivenKeyViaTableWithConditionAndTableWithKey"
+            "Given Key Via Table With Condition And Table With Key Should Create Join Via Tables Then Key,referenceGivenKeyViaTableWithConditionAndTableWithKey",
+            "Given Key With Following Join Should Create Key Join Then Implicit Join,referenceGivenKeyWithExtraJoin"
     );
 
     private final List<ExternalClassReference> references = List.of(

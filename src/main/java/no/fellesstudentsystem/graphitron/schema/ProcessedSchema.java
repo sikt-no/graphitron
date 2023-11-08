@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -94,7 +93,9 @@ public class ProcessedSchema {
                 .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
 
         // queryType may be null in certain tests.
-        objectWithPreviousTable = queryType != null ? buildPreviousTableMap(queryType) : Map.of();
+        objectWithPreviousTable = new HashMap<>();
+        var nodes = objects.values().stream().filter(it -> it.implementsInterface(NODE_TYPE.getName()));
+        (queryType != null ? Stream.concat(nodes, Stream.of(queryType)) : nodes).forEach(this::buildPreviousTableMap);
     }
 
     /**
@@ -454,21 +455,19 @@ public class ProcessedSchema {
     /**
      * Create a map of which objects should be related to which tables. Note that this enforces that each type is only connected to one table.
      */
-    private Map<String, ObjectDefinition> buildPreviousTableMap(ObjectDefinition object) {
-        return buildPreviousTableMap(object, null, new HashSet<>(), 0);
+    private void buildPreviousTableMap(ObjectDefinition object) {
+        buildPreviousTableMap(object, null, new HashSet<>(), 0);
     }
 
-    private Map<String, ObjectDefinition> buildPreviousTableMap(ObjectDefinition object, ObjectDefinition lastObject, HashSet<String> seenObjects, int recursion) {
+    private void buildPreviousTableMap(ObjectDefinition object, ObjectDefinition lastObject, HashSet<String> seenObjects, int recursion) {
         recursionCheck(recursion);
-        if (seenObjects.contains(object.getName())) {
-            return Map.of();
+        if (!seenObjects.add(object.getName())) {
+            return;
         }
-        seenObjects.add(object.getName());
 
-        var previousTableMap = new HashMap<String, ObjectDefinition>();
         var tableObject = object.hasTable() ? object : lastObject;
         if (tableObject != null) {
-            previousTableMap.put(object.getName(), tableObject);
+            objectWithPreviousTable.put(object.getName(), tableObject);
         }
 
         object
@@ -477,11 +476,7 @@ public class ProcessedSchema {
                 .filter(this::isObject)
                 .map(this::getObjectOrConnectionNode)
                 .filter(Objects::nonNull)
-                .filter(it -> !previousTableMap.containsKey(it.getName()))
-                .forEach(it ->
-                        previousTableMap.putAll(buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1))
-                );
-
-        return previousTableMap;
+                .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
+                .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
     }
 }

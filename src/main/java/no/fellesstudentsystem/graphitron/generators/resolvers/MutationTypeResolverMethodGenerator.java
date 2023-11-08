@@ -96,7 +96,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
         String argumentName, variableName;
         if (responseObject.hasTable()) {
-            var matchingRecord = findMatchingInputRecord(responseObject.getTable().getName());
+            var matchingRecord = findMatchingInputRecord(responseObject.getTable().getMappingName());
             argumentName = asListedRecordNameIf(matchingRecord.getName(), matchingRecord.isIterableWrapped());
             variableName = asRecordName(matchingRecord.getName());
         } else {
@@ -200,7 +200,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     private InputField findUsableRecord(ObjectField target) {
         var responseObject = processedSchema.getObject(target);
         return responseObject.hasTable()
-                ? findMatchingInputRecord(responseObject.getTable().getName())
+                ? findMatchingInputRecord(responseObject.getTable().getMappingName())
                 : findFirstRecord();
     }
 
@@ -224,7 +224,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             return mapToObjectSetCall(field, previousField);
         }
 
-        if (!context.mutationReturnsNodes() && field.getFieldType().isID()) {
+        if (!context.mutationReturnsNodes() && field.isID()) {
             return CodeBlock
                     .builder()
                     .add("$N", previousTypeNameLower)
@@ -239,7 +239,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         var inputSource = localField
                 .getInputFields()
                 .stream()
-                .filter(it -> it.getFieldType().isID())
+                .filter(InputField::isID)
                 .findFirst();
 
         boolean isIterable = field.isIterableWrapped(), shouldMap;
@@ -254,7 +254,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                     .getRecordInputs()
                     .entrySet()
                     .stream()
-                    .filter(it -> processedSchema.getInputType(it.getValue()).getFields().stream().anyMatch(f -> f.getFieldType().isID()))
+                    .filter(it -> processedSchema.getInputType(it.getValue()).getFields().stream().anyMatch(InputField::isID))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("Could not find a suitable ID to return for '" + containerField.getName() + "'."));
             shouldMap = true;
@@ -286,7 +286,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
         var inputSource = !fieldObject.hasTable()
                 ? field.getTypeName()
-                : asGetMethodVariableName(asRecordName(findMatchingInputRecord(fieldObject.getTable().getName()).getName()), field.getName());
+                : asGetMethodVariableName(asRecordName(findMatchingInputRecord(fieldObject.getTable().getMappingName()).getName()), field.getName());
 
         CodeBlock iterableMapCode;
         if (recordIterable == field.isIterableWrapped()) {

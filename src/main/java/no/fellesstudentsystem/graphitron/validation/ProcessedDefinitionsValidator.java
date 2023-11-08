@@ -21,9 +21,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableFieldHasDefaultValue;
-
 /**
  * Class for producing warnings related to potential issues in the defined schema.
  * This is only used before running generation, but generally does not prohibit further execution.
@@ -65,13 +62,20 @@ public class ProcessedDefinitionsValidator {
         tableMethodsRequired
                 .keySet()
                 .stream()
-                .filter(it -> !TableReflection.tableExists(it))
-                .forEach(it -> LOGGER.warn("No table with name '{}' found in {}", it, GeneratorConfig.getGeneratedJooqTablesClass().getName()));
+                .filter(it -> !TableReflection.tableOrKeyExists(it))
+                .forEach(it ->
+                        LOGGER.warn(
+                                "No table or key with name '{}' found in {} or {}",
+                                it,
+                                GeneratorConfig.getGeneratedJooqTablesClass().getName(),
+                                GeneratorConfig.getGeneratedJooqKeysClass().getName()
+                        )
+                );
 
         tableMethodsRequired
                 .entrySet()
                 .stream()
-                .filter(it -> TableReflection.tableExists(it.getKey()))
+                .filter(it -> TableReflection.tableOrKeyExists(it.getKey()))
                 .forEach(entry -> {
                     var tableName = entry.getKey();
                     var allFieldNames = TableReflection.getFieldNamesForTable(tableName);
@@ -91,11 +95,11 @@ public class ProcessedDefinitionsValidator {
     private HashMap<String, HashSet<String>> getUsedTablesWithRequiredMethods() {
         var tableMethodsRequired = new HashMap<String, HashSet<String>>();
         schema.getObjects().values().stream().filter(it -> it.hasTable() || it.isRoot()).forEach(object -> {
-            var flattenedFields = flattenObjectFields(object.isRoot() ? null : object.getTable().getName(), object.getFields());
+            var flattenedFields = flattenObjectFields(object.isRoot() ? null : object.getTable().getMappingName(), object.getFields());
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
         schema.getInputTypes().values().stream().filter(AbstractTableObjectDefinition::hasTable).forEach(input -> {
-            var flattenedFields = flattenInputFields(input.getTable().getName(), input.getFields(), false);
+            var flattenedFields = flattenInputFields(input.getTable().getMappingName(), input.getFields(), false);
 
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
@@ -109,7 +113,7 @@ public class ProcessedDefinitionsValidator {
             if (schema.isObject(field) && !schema.isInterface(field)) {
                 var table = lastTableIsNonNull
                         ? lastTable
-                        : (schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getName() : null);
+                        : (schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : null);
                 var object = schema.getObjectOrConnectionNode(field);
                 if (!object.hasTable()) {
                     flattenObjectFields(table, object.getFields()).forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
@@ -118,7 +122,7 @@ public class ProcessedDefinitionsValidator {
 
             var hasCondition = field.hasOverridingCondition();
             if (field.hasNonReservedInputFields() && field.isGenerated()) {
-                var targetTable = schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getName() : lastTable;
+                var targetTable = schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
                 flattenInputFields(targetTable, field.getNonReservedInputFields(), field.hasOverridingCondition())
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
             }
@@ -146,7 +150,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private HashMap<String, HashSet<String>> unpackReferences(Map<String, ArrayList<FieldWithOverrideStatus>> flattenedFields) {
-        var tableMethodsRequired = new HashMap<String, HashSet<String>>();
+        var requiredJOOQTypesAndMethods = new HashMap<String, HashSet<String>>();
         for (var fieldEntry : flattenedFields.entrySet()) {
             var table = fieldEntry.getKey();
             var fields = fieldEntry.getValue();
@@ -155,34 +159,15 @@ public class ProcessedDefinitionsValidator {
                 var fieldIsTableObject = schema.isTableObject(field);
                 var lastTable = table;
                 if (field.hasFieldReferences()) {
-                    for (var reference : field.getFieldReferences()) {
-                        if (reference.hasTableKey() && lastTable != null) {
-                            var key = reference.getTableKey();
-                            var nextTable = reference.hasTable()
-                                    ? reference.getTable().getName()
-                                    : (fieldIsTableObject ? schema.getObjectOrConnectionNode(field).getTable().getName() : lastTable);
-                            var reverseKeyFound = TableReflection.searchTableForMethodWithName(nextTable, key).isPresent(); // In joins the key can also be used in reverse.
-                            tableMethodsRequired
-                                    .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
-                                    .add(key);
-                        } else if (reference.hasTable() && lastTable != null) {
-                            tableMethodsRequired
-                                    .computeIfAbsent(lastTable, (k) -> new HashSet<>())
-                                    .add(reference.getTable().getCodeName());
-                        }
-
-                        if (reference.hasTable()) {
-                            lastTable = reference.getTable().getName();
-                        }
-                    }
-                } else if (fieldIsTableObject && !(field instanceof TopLevelObjectField) && !field.isResolver()) {
-                    tableMethodsRequired
+                    lastTable = findForReferences(field, lastTable, requiredJOOQTypesAndMethods);
+                } else if (fieldIsTableObject && !(field.isRootField()) && !field.isResolver()) {
+                    requiredJOOQTypesAndMethods
                             .computeIfAbsent(lastTable, (k) -> new HashSet<>())
                             .add(schema.getObjectOrConnectionNode(field).getTable().getCodeName());
                 }
 
                 if (fieldIsTableObject) {
-                    lastTable = schema.getObjectOrConnectionNode(field).getTable().getName();
+                    lastTable = schema.getObjectOrConnectionNode(field).getTable().getMappingName();
                 }
 
                 var fieldIsDBMapped = !schema.isObject(field) // TODO: If it has a condition on the reference and no other path, it should also be excluded.
@@ -193,14 +178,41 @@ public class ProcessedDefinitionsValidator {
                         && !fieldWithConditionStatus.hasOverrideCondition;
                 if (lastTable != null && fieldIsDBMapped) {
                     // New set is added anyway to be able to check tables only.
-                    var listToAddTo = tableMethodsRequired.computeIfAbsent(lastTable, (k) -> new HashSet<>());
-                    if (!field.getFieldType().isID()) {
+                    var listToAddTo = requiredJOOQTypesAndMethods.computeIfAbsent(lastTable, (k) -> new HashSet<>());
+                    if (!field.isID()) {
                         listToAddTo.add(field.getUpperCaseName());
                     }
                 }
             }
         }
-        return tableMethodsRequired;
+        return requiredJOOQTypesAndMethods;
+    }
+
+    private String findForReferences(AbstractField field, String lastTable, HashMap<String, HashSet<String>> requiredJOOQTypesAndMethods) {
+        for (var reference : field.getFieldReferences()) {
+            if (reference.hasKey() && lastTable != null) {
+                var key = reference.getKey();
+                if (!TableReflection.keyExists(key.getMappingName())) {
+                    requiredJOOQTypesAndMethods.put(key.getMappingName(), new HashSet<>());
+                }
+                var nextTable = reference.hasTable()
+                        ? reference.getTable().getMappingName()
+                        : (schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
+                var reverseKeyFound = TableReflection.searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
+                requiredJOOQTypesAndMethods
+                        .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
+                        .add(key.getMappingName());
+            } else if (reference.hasTable() && lastTable != null) {
+                requiredJOOQTypesAndMethods
+                        .computeIfAbsent(lastTable, (k) -> new HashSet<>())
+                        .add(reference.getTable().getCodeName());
+            }
+
+            if (reference.hasTable()) {
+                lastTable = reference.getTable().getMappingName();
+            }
+        }
+        return lastTable;
     }
 
     private void validateExternalMappingReferences() {
@@ -260,9 +272,9 @@ public class ProcessedDefinitionsValidator {
                 Validate.isTrue(
                         !field.isIterableWrapped(),
                         "Generating fields returning collections/lists of interfaces is not supported. " +
-                                "'%s' must return only one %s", field.getName(), field.getFieldType().getName()
+                                "'%s' must return only one %s", field.getName(), field.getTypeName()
                 );
-                if (!(field instanceof TopLevelObjectField)) {
+                if (!(field.isRootField())) {
                     LOGGER.warn("interface ({}) returned in non root object. This is not fully supported. Use with care", name);
                 }
             }
@@ -278,7 +290,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(schema::isInputType)
                 .collect(Collectors.toList());
         for (var field : oneLayerFlattenedFields) {
-            var messageStart = String.format("Argument '%s' is of collection of InputFields ('%s') type.", field.getName(), field.getFieldType().getName());
+            var messageStart = String.format("Argument '%s' is of collection of InputFields ('%s') type.", field.getName(), field.getTypeName());
 
             var inputDefinitionFields = schema.getInputType(field).getFields();
             inputDefinitionFields.stream().filter(AbstractField::isIterableWrapped).findFirst().ifPresent(it -> {
@@ -293,7 +305,7 @@ public class ProcessedDefinitionsValidator {
 
             var optionalFields = inputDefinitionFields
                     .stream()
-                    .filter(it -> it.getFieldType().isNullable())
+                    .filter(AbstractField::isNullable)
                     .map(AbstractField::getName)
                     .collect(Collectors.toList());
             if (!optionalFields.isEmpty()) {
@@ -348,12 +360,12 @@ public class ProcessedDefinitionsValidator {
 
     protected void checkRequiredFields(InputField recordInput) {
         var inputObject = schema.getInputType(recordInput);
-        var tableName = inputObject.getTable().getName();
+        var tableName = inputObject.getTable().getMappingName();
 
-        var requiredDBFields = getRequiredFields(tableName)
+        var requiredDBFields = TableReflection.getRequiredFields(tableName)
                 .stream()
                 .map(String::toUpperCase)
-                .filter(it -> !tableFieldHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
+                .filter(it -> !TableReflection.tableFieldHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
                 .collect(Collectors.toList());
         var recordFieldNames =
                 inputObject.getFields()
@@ -365,7 +377,7 @@ public class ProcessedDefinitionsValidator {
         var requiredRecordFieldNames =
                 inputObject.getFields()
                         .stream()
-                        .filter(it -> it.getFieldType().isNonNullable())
+                        .filter(AbstractField::isNonNullable)
                         .map(InputField::getUpperCaseName)
                         .collect(Collectors.toSet());
         checkRequiredFieldsExist(requiredRecordFieldNames, requiredDBFields, recordInput, ERROR_MISSING_NON_NULLABLE);
@@ -378,7 +390,7 @@ public class ProcessedDefinitionsValidator {
                     String.format(
                             message,
                             recordInput.getTypeName(),
-                            schema.getInputType(recordInput).getTable().getName(),
+                            schema.getInputType(recordInput).getTable().getMappingName(),
                             missingFields
                     )
             );

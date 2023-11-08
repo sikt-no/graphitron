@@ -159,6 +159,13 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps this method name in a method call format.
+     */
+    public static CodeBlock asMethodCall(String method) {
+        return CodeBlock.of("." + method + "()");
+    }
+
+    /**
      * @return CodeBlock that wraps the supplied CodeBlock in a Map.
      */
     @NotNull

@@ -21,37 +21,43 @@ import org.jooq.impl.DSL;
 public class FilmDBQueries {
     public Map<String, List<FilmCategory>> categoriesForFilm(DSLContext ctx, Set<String> filmIds,
                                                              OriginalCategoryInput categoryIn, SelectionSet select) {
+        var film_filmcategoryfilmidfkey_film_category = FILM_CATEGORY.as("film_1019826507");
         return ctx
                 .select(
-                        FILM_CATEGORY.getFilmId(),
+                        FILM.getId(),
                         DSL.row(
-                                FILM_CATEGORY.getId().as("id"),
-                                select.optional("name", FILM_CATEGORY.category().NAME).as("name")
+                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categories")
                 )
-                .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIds))
-                .and(FILM_CATEGORY.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
-                .and(FILM_CATEGORY.category().NAME.eq(categoryIn.getName()))
+                .from(FILM)
+                .join(film_filmcategoryfilmidfkey_film_category)
+                .onKey(FILM_CATEGORY__FILM_CATEGORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
+                .and(film_filmcategoryfilmidfkey_film_category.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
+                .and(film_filmcategoryfilmidfkey_film_category.category().NAME.eq(categoryIn.getName()))
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
     public Map<String, List<FilmCategory>> categoriesForInputListForFilm(DSLContext ctx,
                                                                          Set<String> filmIds, List<OriginalCategoryInput> categoryInList, SelectionSet select) {
+        var film_filmcategoryfilmidfkey_film_category = FILM_CATEGORY.as("film_1019826507");
         return ctx
                 .select(
-                        FILM_CATEGORY.getFilmId(),
+                        FILM.getId(),
                         DSL.row(
-                                FILM_CATEGORY.getId().as("id"),
-                                select.optional("name", FILM_CATEGORY.category().NAME).as("name")
+                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputList")
                 )
-                .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIds))
+                .from(FILM)
+                .join(film_filmcategoryfilmidfkey_film_category)
+                .onKey(FILM_CATEGORY__FILM_CATEGORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
                 .and(categoryInList != null && categoryInList.size() > 0 ?
                         DSL.row(
-                                FILM_CATEGORY.LAST_UPDATED,
-                                FILM_CATEGORY.category().NAME
+                                film_filmcategoryfilmidfkey_film_category.LAST_UPDATED,
+                                film_filmcategoryfilmidfkey_film_category.category().NAME
                         ).in(categoryInList.stream().map(input -> DSL.row(
                                 input.getLastUpdated(),
                                 input.getName())
@@ -63,22 +69,25 @@ public class FilmDBQueries {
     public Map<String, List<FilmCategory>> categoriesForMixOfListAndSingleInputForFilm(
             DSLContext ctx, Set<String> filmIds, OriginalCategoryInput categoryIn,
             List<OriginalCategoryInput> categoryInList, SelectionSet select) {
+        var film_filmcategoryfilmidfkey_film_category = FILM_CATEGORY.as("film_1019826507");
         return ctx
                 .select(
-                        FILM_CATEGORY.getFilmId(),
+                        FILM.getId(),
                         DSL.row(
-                                FILM_CATEGORY.getId().as("id"),
-                                select.optional("name", FILM_CATEGORY.category().NAME).as("name")
+                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForMixOfListAndSingleInput")
                 )
-                .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIds))
-                .and(FILM_CATEGORY.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
-                .and(FILM_CATEGORY.category().NAME.eq(categoryIn.getName()))
+                .from(FILM)
+                .join(film_filmcategoryfilmidfkey_film_category)
+                .onKey(FILM_CATEGORY__FILM_CATEGORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
+                .and(film_filmcategoryfilmidfkey_film_category.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
+                .and(film_filmcategoryfilmidfkey_film_category.category().NAME.eq(categoryIn.getName()))
                 .and(categoryInList != null && categoryInList.size() > 0 ?
                         DSL.row(
-                                FILM_CATEGORY.LAST_UPDATED,
-                                FILM_CATEGORY.category().NAME
+                                film_filmcategoryfilmidfkey_film_category.LAST_UPDATED,
+                                film_filmcategoryfilmidfkey_film_category.category().NAME
                         ).in(categoryInList.stream().map(input -> DSL.row(
                                 input.getLastUpdated(),
                                 input.getName())
@@ -90,19 +99,22 @@ public class FilmDBQueries {
     public Map<String, List<FilmCategory>> categoriesForInputWithOneFieldListForFilm(DSLContext ctx,
                                                                                      Set<String> filmIds, List<OriginalCategoryInputWithOneField> categoryInListOneField,
                                                                                      SelectionSet select) {
+        var film_filmcategoryfilmidfkey_film_category = FILM_CATEGORY.as("film_1019826507");
         return ctx
                 .select(
-                        FILM_CATEGORY.getFilmId(),
+                        FILM.getId(),
                         DSL.row(
-                                FILM_CATEGORY.getId().as("id"),
-                                select.optional("name", FILM_CATEGORY.category().NAME).as("name")
+                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithOneFieldList")
                 )
-                .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIds))
+                .from(FILM)
+                .join(film_filmcategoryfilmidfkey_film_category)
+                .onKey(FILM_CATEGORY__FILM_CATEGORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
                 .and(categoryInListOneField != null && categoryInListOneField.size() > 0 ?
                         DSL.row(
-                                FILM_CATEGORY.LAST_UPDATED
+                                film_filmcategoryfilmidfkey_film_category.LAST_UPDATED
                         ).in(categoryInListOneField.stream().map(input -> DSL.row(
                                 input.getLastUpdated())
                         ).collect(Collectors.toList())) :
@@ -113,20 +125,23 @@ public class FilmDBQueries {
     public Map<String, List<FilmCategory>> categoriesForInputWithNestedFieldListForFilm(
             DSLContext ctx, Set<String> filmIds,
             List<OriginalCategoryInputNested> categoryInListNestedField, SelectionSet select) {
+        var film_filmcategoryfilmidfkey_film_category = FILM_CATEGORY.as("film_1019826507");
         return ctx
                 .select(
-                        FILM_CATEGORY.getFilmId(),
+                        FILM.getId(),
                         DSL.row(
-                                FILM_CATEGORY.getId().as("id"),
-                                select.optional("name", FILM_CATEGORY.category().NAME).as("name")
+                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
                         ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithNestedFieldList")
                 )
-                .from(FILM_CATEGORY)
-                .where(FILM_CATEGORY.hasFilmIds(filmIds))
+                .from(FILM)
+                .join(film_filmcategoryfilmidfkey_film_category)
+                .onKey(FILM_CATEGORY__FILM_CATEGORY_FILM_ID_FKEY)
+                .where(FILM.hasIds(filmIds))
                 .and(categoryInListNestedField != null && categoryInListNestedField.size() > 0 ?
                         DSL.row(
-                                FILM_CATEGORY.LAST_UPDATED,
-                                FILM_CATEGORY.category().NAME
+                                film_filmcategoryfilmidfkey_film_category.LAST_UPDATED,
+                                film_filmcategoryfilmidfkey_film_category.category().NAME
                         ).in(categoryInListNestedField.stream().map(input -> DSL.row(
                                 input.getOriginalCategoryField().getLastUpdated(),
                                 input.getName())

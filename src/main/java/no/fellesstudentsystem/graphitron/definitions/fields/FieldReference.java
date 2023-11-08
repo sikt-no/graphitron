@@ -2,65 +2,70 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.*;
+import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 
 import java.util.List;
-import java.util.zip.CRC32;
 
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.REFERENCE;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
 
 public class FieldReference {
-    private final JOOQTableMapping table;
-    private final String tableKey;
+    private final JOOQMapping table;
+    private final JOOQMapping key;
     private final SQLCondition tableCondition;
 
     public <T extends NamedNode<T> & DirectivesContainer<T>> FieldReference(T field) {
-        var relatedTable = "";
-        var relatedTableKey = "";
+        JOOQMapping relatedTable = null;
+        JOOQMapping relatedTableKey = null;
         SQLCondition relatedTableCondition = null;
         if (field.hasDirective(REFERENCE.getName())) {
-            relatedTable = getOptionalDirectiveArgumentString(field, REFERENCE, TABLE).orElse("");
-            relatedTableKey = getOptionalDirectiveArgumentString(field, REFERENCE, KEY).orElse("");
+            relatedTable = getOptionalDirectiveArgumentString(field, REFERENCE, TABLE).map(JOOQMapping::fromTable).orElse(null);
+            relatedTableKey = getOptionalDirectiveArgumentString(field, REFERENCE, KEY).map(JOOQMapping::fromKey).orElse(null);
 
-            var referenceFields = getOptionalDirectiveArgumentObjectFields(field, REFERENCE, CONDITION);
-            if (referenceFields.isPresent()) {
-                var fields = referenceFields.get();
-                var classReference = stringValueOf(getObjectFieldByName(fields, NAME));
-                var methodName = getOptionalObjectFieldByName(fields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(field.getName());
+            var condition = getOptionalDirectiveArgumentObjectFields(field, REFERENCE, CONDITION);
+            if (condition.isPresent()) {
+                var objectFields = condition.get();
+                var classReference = stringValueOf(getObjectFieldByName(objectFields, NAME));
+                var methodName = getOptionalObjectFieldByName(objectFields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(field.getName());
                 relatedTableCondition = new SQLCondition(new CodeReference(classReference, methodName));
             }
         }
 
-        table = new JOOQTableMapping(relatedTable);
-        tableKey = relatedTableKey;
+        table = relatedTable;
+        key = relatedTableKey;
         tableCondition = relatedTableCondition;
     }
 
-    public FieldReference(JOOQTableMapping table, String tableKey, SQLCondition tableCondition) {
+    public FieldReference(JOOQMapping table, JOOQMapping key, SQLCondition tableCondition) {
         this.table = table;
-        this.tableKey = tableKey;
+        this.key = key;
         this.tableCondition = tableCondition;
     }
 
-    public boolean hasTable() {
-        return !table.getName().isEmpty();
+    public FieldReference(JOOQMapping table) {
+        this(table, null, null);
     }
 
-    public JOOQTableMapping getTable() {
+    public boolean hasTable() {
+        return table != null && !table.getMappingName().isEmpty();
+    }
+
+    public JOOQMapping getTable() {
         return table;
     }
 
-    public String getTableKey() {
-        return tableKey;
+    public JOOQMapping getKey() {
+        return key;
     }
 
-    public boolean hasTableKey() {
-        return !tableKey.isEmpty();
+    public boolean hasKey() {
+        return key != null && !key.getMappingName().isEmpty();
     }
 
     public SQLCondition getTableCondition() {
@@ -72,35 +77,34 @@ public class FieldReference {
     }
 
     private SQLJoinStatement createJoinFor(
-            String referencePath,
-            String tableNameBackup,
-            String previousJoinTable,
-            String pastJoinSequence,
+            String joinName,
+            JoinListSequence joinSequence,
+            JOOQMapping tableNameBackup,
             SQLJoinField joinField,
             boolean isNullable
     ) {
-        var tableName = !table.getName().isEmpty() ? table.getName() : tableNameBackup;
-        var adjustedReference = pastJoinSequence.equals(tableName) ? tableName.toLowerCase() : referencePath;
+        var targetTable = hasTable() ? getTable() : tableNameBackup;
+        var secondLast = joinSequence.getSecondLast();
+        var adjustedReference = joinSequence.getLast().equals(targetTable)
+                ? secondLast != null ? secondLast.getCodeName() : targetTable.getCodeName()
+                : joinSequence + (joinName.isEmpty() ? "" : "_" + joinName);
         return new SQLJoinStatement(
-                !pastJoinSequence.isEmpty() ? pastJoinSequence : previousJoinTable,
-                tableName,
-                createAliasName(previousJoinTable, adjustedReference),
-                createShortAliasName(previousJoinTable, adjustedReference),
+                joinSequence,
+                targetTable,
+                new Alias(adjustedReference, targetTable, isNullable),
                 List.of(joinField),
-                isNullable ? SQLJoinType.JOIN : SQLJoinType.LEFT
+                isNullable
         );
     }
 
     /**
      * @return A join statement based on a condition.
      */
-    public SQLJoinStatement createConditionJoinFor(String referencePath, String previousJoinTable, String pastJoinSequence, String tableNameBackup, boolean isNullable) {
-        var conditionName = tableCondition.getConditionReference().getMethodName().toLowerCase();
+    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
         return createJoinFor(
-                referencePath + "_" + (conditionName.isEmpty() ? tableNameBackup : conditionName),
+                tableCondition.getConditionReference().getMethodName().toLowerCase(),
+                joinSequence,
                 tableNameBackup,
-                previousJoinTable,
-                pastJoinSequence,
                 new SQLJoinOnCondition(tableCondition),
                 isNullable
         );
@@ -109,29 +113,26 @@ public class FieldReference {
     /**
      * @return A join statement based on a key reference.
      */
-    public SQLJoinStatement createJoinOnKeyFor(String referencePath, String previousJoinTable, String pastJoinSequence, String tableNameBackup, boolean isNullable) {
-        var keyName = tableKey.toLowerCase();
+    public SQLJoinStatement createJoinOnKeyFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
         return createJoinFor(
-                referencePath + "_" + (keyName.isEmpty() ? tableNameBackup : keyName),
+                !joinSequence.isEmpty() && joinSequence.getLast().equals(key) ? "" : key.getCodeName(),
+                joinSequence,
                 tableNameBackup,
-                previousJoinTable,
-                pastJoinSequence,
-                new SQLJoinOnKey(tableKey),
+                new SQLJoinOnKey(key),
                 isNullable
         );
     }
 
-    public String createAliasName(String previous, String referencePath) {
-        return (previous + "_" + referencePath).toLowerCase();
-    }
-
     /**
-     * Short name for Alias due to character limit on Oracle Alias values (JIRA reference: <a href="https://unit.atlassian.net/browse/ROK-685">ROK-685</a>).
+     * @return A join statement based on a key reference.
      */
-    public String createShortAliasName(String from, String to) {
-        var crc32 = new CRC32();
-        crc32.reset();
-        crc32.update(to.getBytes());
-        return from + "_" + crc32.getValue();
+    public SQLJoinStatement createJoinOnKeyFor(JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
+        return createJoinFor(
+                !joinSequence.isEmpty() && joinSequence.getLast().equals(keyOverride) ? "" : keyOverride.getCodeName(),
+                joinSequence,
+                tableNameBackup,
+                new SQLJoinOnKey(keyOverride),
+                isNullable
+        );
     }
 }

@@ -64,4 +64,4 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
 input ExternalCodeReference { name: String!, method: String }
 
-input ReferenceElement { table: String!, key: String, condition: ExternalCodeReference }
+input ReferenceElement { table: String, key: String, condition: ExternalCodeReference }

@@ -69,27 +69,6 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     }
 
     @Test
-    void generate_whenIncorrectImplicitJoin_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/implicitJoinFailure"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Can not automatically infer join of 'ADDRESS' and 'FILM'.");
-    }
-
-    @Test
-    void generate_whenImplicitJoinViaNonExistentPath_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/implicitJoinViaNonExistentPath"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Can not automatically infer join of 'ADDRESS' and 'FILM'.");
-    }
-
-    @Test
-    void generate_whenimplicitJoinViaExistentThenNonExistentPath_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/implicitJoinViaExistentThenNonExistentPath"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Can not automatically infer join of 'COUNTRY' and 'FILM'.");
-    }
-
-    @Test
     void generate_whenSpecifiedSchemaRootDirectory_shouldInfoLogAllExpectedSchemaFiles() {
         var testDirectory = getSourceTestPath() + "testReadingSchemasInDirectory";
         GeneratorConfig.setSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
@@ -120,7 +99,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownNodeTable_shouldLogWarning() {
         getProcessedSchema("warning/unknownNodeTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata.Tables"
+                "No table or key with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys"
         );
     }
 
@@ -128,7 +107,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenUnknownResourceTable_shouldLogWarning() {
         getProcessedSchema("warning/unknownResourceTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata.Tables"
+                "No table or key with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys"
         );
     }
 
@@ -208,7 +187,9 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenKeyMissing_shouldLogWarning() {
         getProcessedSchema("warning/referenceKeysMissing");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "No table or key with name 'FAKE_KEY' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys",
                 "No field(s) or method(s) with name(s) 'FAKE_KEY' found in table 'CUSTOMER'",
+                "No table or key with name 'NOT_A_KEY' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys",
                 "No field(s) or method(s) with name(s) 'NOT_A_KEY' found in table 'ADDRESS'"
         );
     }

@@ -6,7 +6,9 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Global
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
 
+import java.io.File;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,6 +28,8 @@ public class GeneratorConfig {
             DEFAULT_MODEL_SUFFIX = ".model";
 
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
+
+    private static boolean isFSKeyFormat; // TODO: Remove this with FSP-328. Needed this hack because the key format isn't the same.
 
     /**
      * Set the generator properties from code. Intended for tests.
@@ -57,6 +61,7 @@ public class GeneratorConfig {
         GeneratorConfig.globalTransforms = globalTransforms;
         GeneratorConfig.shouldGenerateRecordValidation = false;
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
+        isFSKeyFormat = false;
     }
 
     /**
@@ -89,7 +94,8 @@ public class GeneratorConfig {
 
         GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
         GeneratorConfig.shouldGenerateRecordValidation = mojo.shouldGenerateRecordValidation();
-        extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions());
+        extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
+        isFSKeyFormat = true;
     }
 
     /**
@@ -211,12 +217,8 @@ public class GeneratorConfig {
         GeneratorConfig.shouldGenerateRecordValidation = shouldGenerateRecordValidation;
     }
 
-    public static void setSchemaFiles(String file) {
-        schemaFiles = Set.of(file);
-    }
-
     public static void setSchemaFiles(String... files) {
-        schemaFiles = Set.of(files);
+        schemaFiles = Arrays.stream(files).filter(it -> new File(it).exists()).collect(Collectors.toSet());
     }
 
     public static void setSchemaFiles(Set<String> files) {
@@ -229,5 +231,9 @@ public class GeneratorConfig {
 
     public static ExtendedFunctionality getExtendedFunctionality() {
         return extendedFunctionality;
+    }
+
+    public static boolean isFSKeyFormat() { // TODO: Remove this hack.
+        return isFSKeyFormat;
     }
 }

@@ -13,17 +13,17 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Inventory> inventoryForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var film_film_actor_mainactor = FILM_ACTOR.as("FILM_809568702");
+        var inventory_film_film_filmactor_film_actor = FILM_ACTOR.as("inventory_2747546302");
         return ctx
                 .select(
                         DSL.row(
                                 INVENTORY.getId().as("id"),
-                                select.optional("mainActorLastNames", film_film_actor_mainactor.actor().LAST_NAME).as("mainActorLastNames")
+                                select.optional("mainActorLastNames", inventory_film_film_filmactor_film_actor.actor().LAST_NAME).as("mainActorLastNames")
                         ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventory")
                 )
                 .from(INVENTORY)
-                .leftJoin(film_film_actor_mainactor)
-                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.mainActor(INVENTORY.film(), film_film_actor_mainactor))
+                .join(inventory_film_film_filmactor_film_actor)
+                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(INVENTORY.film(), inventory_film_film_filmactor_film_actor))
                 .where(INVENTORY.ID.eq(id))
                 .orderBy(INVENTORY.getIdFields())
                 .fetch(0, Inventory.class);

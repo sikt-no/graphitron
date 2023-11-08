@@ -5,7 +5,11 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.Store;
 import org.jooq.Condition;
 
 public class StoreTestConditions {
-    public static Condition mostValuableCustomer(Store store, Customer customer) {
+    public static Condition storeCustomer(Store store, Customer customer) {
+        return null;
+    }
+
+    public static Condition customerStore(Customer customer, Store store) {
         return null;
     }
 }

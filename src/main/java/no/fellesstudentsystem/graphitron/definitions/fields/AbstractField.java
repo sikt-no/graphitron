@@ -3,7 +3,7 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 import graphql.language.ObjectField;
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQTableMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
@@ -53,8 +53,6 @@ public abstract class AbstractField {
                     .map(Argument::getName)
                     .anyMatch(it -> it.equals(TABLE.getName()) || it.equals(CONDITION.getName()) || it.equals(KEY.getName()))) {
                 fieldReferences.add(new FieldReference(field));
-            } else if (fieldType != null && !fieldReferencesContainsReferredFieldType(fieldType)) {
-                fieldReferences.add(new FieldReference(new JOOQTableMapping(fieldType.getName()), "", null));
             }
         }
 
@@ -82,7 +80,7 @@ public abstract class AbstractField {
                 .filter(value -> value instanceof ObjectValue)
                 .forEach(value -> {
                     var objectFields = ((ObjectValue) value).getObjectFields();
-                    var table = getObjectFieldByName(objectFields, TABLE);
+                    var table = getOptionalObjectFieldByName(objectFields, TABLE);
                     var key = getOptionalObjectFieldByName(objectFields, KEY);
                     var referencedCondition = getOptionalObjectFieldByName(objectFields, CONDITION)
                             .map(ObjectField::getValue)
@@ -99,8 +97,8 @@ public abstract class AbstractField {
 
                     fieldReferences.add(
                             new FieldReference(
-                                    new JOOQTableMapping(stringValueOf(table)),
-                                    key.map(DirectiveHelpers::stringValueOf).orElse(""),
+                                    table.map(DirectiveHelpers::stringValueOf).map(JOOQMapping::fromTable).orElse(null),
+                                    key.map(DirectiveHelpers::stringValueOf).map(JOOQMapping::fromKey).orElse(null),
                                     referencedCondition
                             )
                     );
@@ -127,6 +125,13 @@ public abstract class AbstractField {
     }
 
     /**
+     * @return Is this field an ID?
+     */
+    public boolean isID() {
+        return fieldType.isID();
+    }
+
+    /**
      * @return Is this field wrapped in a list?
      */
     public boolean isIterableWrapped() {
@@ -134,10 +139,24 @@ public abstract class AbstractField {
     }
 
     /**
-     * @return The FieldType object containing information about the underlying data type and its nullability and wrapping configuration.
+     * @return Is this field optional/nullable?
      */
-    public FieldType getFieldType() {
-        return fieldType;
+    public boolean isNullable() {
+        return fieldType.isIterableWrapped() ? fieldType.isIterableNullable() : fieldType.isNullable();
+    }
+
+    /**
+     * @return Is this field required/non-nullable?
+     */
+    public boolean isNonNullable() {
+        return fieldType.isIterableWrapped() ? !fieldType.isIterableNullable() : !fieldType.isNullable();
+    }
+
+    /**
+     * @return {@link com.squareup.javapoet.TypeName} for this field's type.
+     */
+    public com.squareup.javapoet.TypeName getTypeClass() {
+        return fieldType.getTypeClass();
     }
 
     public String getName() {
@@ -200,10 +219,10 @@ public abstract class AbstractField {
         return false;
     }
 
-    private boolean fieldReferencesContainsReferredFieldType(FieldType referringFieldType) {
-        return fieldReferences.stream()
-                .map(FieldReference::getTable)
-                .map(JOOQTableMapping::getName)
-                .anyMatch(tableName -> tableName.equalsIgnoreCase(referringFieldType.getName()));
+    /**
+     * @return Is this object field a Query or Mutation root field?
+     */
+    public boolean isRootField() {
+        return false;
     }
 }

@@ -5,7 +5,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
 import org.jooq.Condition;
 
 public class CustomerTestConditions {
-    public static Condition customerAddressJoin(Customer customer, Address address) {
+    public static Condition customerAddress(Customer customer, Address address) {
         return null;
     }
 }

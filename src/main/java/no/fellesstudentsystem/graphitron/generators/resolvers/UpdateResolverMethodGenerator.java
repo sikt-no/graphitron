@@ -334,7 +334,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 .getRecordInputs()
                 .values()
                 .stream()
-                .filter(it -> processedSchema.getInputType(it).getTable().getName().equals(responseFieldTableName))
+                .filter(it -> processedSchema.getInputType(it).getTable().getMappingName().equals(responseFieldTableName))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table reference '" + responseFieldTableName + "' to."));
     }
@@ -372,7 +372,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
 
         TypeName methodParameter;
         if (previousTypeClass == null) {
-            var matchingRecordField = findMatchingInputRecord(processedSchema.getObject(target).getTable().getName());
+            var matchingRecordField = findMatchingInputRecord(processedSchema.getObject(target).getTable().getMappingName());
             methodParameter = wrapListIf(processedSchema.getInputType(matchingRecordField).getRecordClassName(), previousIsIterable);
         } else {
             methodParameter = getServiceReturnClassName(previousTypeClass.getName(), previousIsIterable);
@@ -481,7 +481,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             var service = context.getService();
             return previous.isIterableWrapped() || previous == localField && !service.isReturnTypeInService() && service.returnIsIterable();
         } else {
-            return findMatchingInputRecord(processedSchema.getObject(target).getTable().getName()).isIterableWrapped();
+            return findMatchingInputRecord(processedSchema.getObject(target).getTable().getMappingName()).isIterableWrapped();
         }
     }
 

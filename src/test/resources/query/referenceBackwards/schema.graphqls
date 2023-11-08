@@ -6,7 +6,7 @@ type City @table {
   id: ID!
   store: Store! @reference(
     via: [{table: "ADDRESS", key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}, {table: "CUSTOMER", key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}],
-    condition: {name: "TEST_STORE_CUSTOMER", method: "mostValuableCustomer"}
+    condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}
   )
 }
 

@@ -32,14 +32,12 @@ public class InputCondition {
 
     private void inferAdditionalChecks(InputField input) {
         var name = getNameWithPath();
-        var fieldType = input.getFieldType();
-        if (fieldType.isIterableWrapped()) {
-            if (!fieldType.isIterableNonNullable()) {
-                this.nullChecks.add(name + " != null");
-            }
-            this.nullChecks.add(name + ".size() > 0");
-        } else if (!fieldType.isNonNullable()) {
+        if (input.isNullable()) {
             this.nullChecks.add(name + " != null");
+        }
+
+        if (input.isIterableWrapped()) {
+            this.nullChecks.add(name + ".size() > 0");
         }
     }
 

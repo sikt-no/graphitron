@@ -23,7 +23,7 @@ public class QueryDBQueries {
                 .from(CUSTOMER)
                 .where(CUSTOMER.ID.eq(id))
                 .and(address != null ? CUSTOMER.address().ADDRESS.eq(address) : DSL.noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddressJoin(CUSTOMER, ADDRESS))
+                .and(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, CUSTOMER.address()))
                 .orderBy(CUSTOMER.getIdFields())
                 .fetch(0, Customer.class);
     }

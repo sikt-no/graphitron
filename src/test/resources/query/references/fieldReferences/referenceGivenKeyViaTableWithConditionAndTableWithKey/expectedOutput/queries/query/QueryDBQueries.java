@@ -13,18 +13,19 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public List<Store> storeForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var store_customer_mostvaluablecustomer = CUSTOMER.as("STORE_3066483439");
+        var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx
                 .select(
                         DSL.row(
                                 STORE.getId().as("id"),
-                                select.optional("cityNameOfMostValuableCustomer", store_customer_mostvaluablecustomer.address().city().NAME).as("cityNameOfMostValuableCustomer")
+                                select.optional("cityNameOfMostValuableCustomer", store_customerstoreidfkey_customer.address().city().NAME).as("cityNameOfMostValuableCustomer")
                         ).mapping(Functions.nullOnAllNull(Store::new)).as("store")
                 )
                 .from(STORE)
-                .leftJoin(store_customer_mostvaluablecustomer)
-                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.mostValuableCustomer(STORE, store_customer_mostvaluablecustomer))
+                .join(store_customerstoreidfkey_customer)
+                .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.ID.eq(id))
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
                 .orderBy(STORE.getIdFields())
                 .fetch(0, Store.class);
     }

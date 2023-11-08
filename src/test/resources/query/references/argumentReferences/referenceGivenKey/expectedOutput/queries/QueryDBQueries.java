@@ -14,7 +14,7 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public List<Address> addressForQuery(DSLContext ctx, String cityID, String lastName,
                                          SelectionSet select) {
-        var address_customer_customer__customer_address_id_fkey = CUSTOMER.as("ADDRESS_1017013635");
+        var address_customeraddressidfkey_customer_left = CUSTOMER.as("address_2097104879");
         return ctx
                 .select(
                         DSL.row(
@@ -22,10 +22,10 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Address::new)).as("address")
                 )
                 .from(ADDRESS)
-                .join(address_customer_customer__customer_address_id_fkey)
+                .leftJoin(address_customeraddressidfkey_customer_left)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.CITY_ID.eq(cityID))
-                .and(lastName != null ? address_customer_customer__customer_address_id_fkey.LAST_NAME.eq(lastName) : DSL.noCondition())
+                .and(lastName != null ? address_customeraddressidfkey_customer_left.LAST_NAME.eq(lastName) : DSL.noCondition())
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(0, Address.class);
     }

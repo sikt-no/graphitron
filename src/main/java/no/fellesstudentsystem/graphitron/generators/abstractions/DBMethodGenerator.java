@@ -10,12 +10,9 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.sql.SQLAlias;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.mappings.ReferenceHelpers;
-import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -25,6 +22,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
  * Generic select query generation functionality is contained within this class.
@@ -49,18 +47,13 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
     /**
      * @param joinList  List of join statements that should have their aliases defined.
-     * @param aliasList List of all aliases created from implicit joins.
      * @return Code block which declares all the aliases that will be used in a select query.
      */
-    protected CodeBlock createSelectAliases(Set<SQLJoinStatement> joinList, Set<SQLAlias> aliasList) {
+    protected CodeBlock createSelectAliases(Set<SQLJoinStatement> joinList) {
         var codeBuilder = CodeBlock.builder();
         for (var join : joinList) {
-            var aliasName = join.getJoinAlias();
-            var shortAliasName = join.getJoinShortAliasName();
-            codeBuilder.addStatement("var " + aliasName + " = " + join.getJoinTargetTable() + ".as(\"" + shortAliasName + "\")");
-        }
-        for (var alias : aliasList) {
-            codeBuilder.addStatement(alias.toString());
+            var alias = join.getJoinAlias();
+            codeBuilder.addStatement("var $L = $N.as($S)", alias.getMappingName(), join.getJoinTargetTable().getMappingName(), alias.getShortName());
         }
         return codeBuilder.build();
     }
@@ -79,10 +72,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      * @param conditionList List of conditional statements that should be appended after the where-statement.
      * @return Code block which declares all the extra conditions that will be used in a select query.
      */
-    protected CodeBlock createSelectConditions(Set<String> conditionList) {
-        var builder = CodeBlock.builder();
-        conditionList.forEach(c -> builder.add(c + "\n"));
-        return builder.build();
+    protected CodeBlock createSelectConditions(Set<CodeBlock> conditionList) {
+        return CodeBlock.join(conditionList, "\n");
     }
 
     /**
@@ -132,14 +123,10 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     }
 
     private CodeBlock createMappingFunction(FetchContext context, List<ObjectField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
-        boolean hasIdField = fieldsWithoutTable.stream()
-                .map(ObjectField::getFieldType)
-                .anyMatch(FieldType::isID);
-        boolean hasNullableField = fieldsWithoutTable.stream()
-                .map(ObjectField::getFieldType)
-                .anyMatch(FieldType::isNullable);
+        boolean hasIdField = fieldsWithoutTable.stream().anyMatch(ObjectField::isID);
+        boolean hasNullableField = fieldsWithoutTable.stream().anyMatch(ObjectField::isNullable);
 
-        boolean canReturnNonNullableObjectWithAllFieldsNull = hasNullableField && context.getReferenceObjectField().getFieldType().isNonNullable() && !hasIdField;
+        boolean canReturnNonNullableObjectWithAllFieldsNull = hasNullableField && context.getReferenceObjectField().isNonNullable() && !hasIdField;
 
         var mappedObjectCodeBlock = CodeBlock.of(maxTypeSafeFieldSizeIsExeeded ? "new $T(\n" : "$T::new", context.getReferenceObject().getGraphClassName());
 
@@ -172,7 +159,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             }
         }
 
-        return CodeBlock.of("($L) -> new $L($L)", codeBlockArguments.build(), context.getReferenceObjectField().getFieldType().getName(), codeBlockConstructor.build());
+        return CodeBlock.of("($L) -> new $L($L)", codeBlockArguments.build(), context.getReferenceObjectField().getTypeName(), codeBlockConstructor.build());
     }
 
     private CodeBlock unionFieldArguments(String typeName, int fieldIndex, boolean isLastField) {
@@ -295,16 +282,14 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
             if (processedSchema.isObject(field)) {
                 codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i);
-            } else if (field.getFieldType().isID()) {
+            } else if (field.isID()) {
                 codeBlockBuilder.add("($T) r[$L]", STRING.className, i);
             } else if (processedSchema.isEnum(field)) {
                 var enumDefinition = processedSchema.getEnum(field);
                 codeBlockBuilder.add("($T) r[$L]", enumDefinition.getGraphClassName(), i);
             } else {
-                var fieldSource = field.hasFieldReferences()
-                        ? context.iterateSourceMultipleSequences(field.getFieldReferences())
-                        : context.getCurrentJoinSequence();
-                codeBlockBuilder.add("$L.$N.getDataType().convert(r[$L])", fieldSource, field.getUpperCaseName(), i);
+                var fieldSource = context.iterateJoinSequenceFor(field);
+                codeBlockBuilder.add("$L.$N.getDataType().convert(r[$L])", fieldSource.render(), field.getUpperCaseName(), i);
             }
             if (i < fieldsWithoutTable.size() - 1) {
                 codeBlockBuilder.add(",\n");
@@ -318,24 +303,11 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      * Generate a single argument in the row method call.
      */
     private CodeBlock generateForScalarField(ObjectField field, FetchContext context) {
-        var fieldType = field.getTypeName();
-
-        var joinedFieldSource = field.hasFieldReferences()
-                ? context.iterateSourceMultipleSequences(field.getFieldReferences())
-                : context.getCurrentJoinSequence();
-
-        if (field.getFieldType().isID()) {
-            var hasKeyReference = !context.hasJoinedAlreadyOrWillJoin()
-                    && context.hasKeyReference()
-                    && ReferenceHelpers.usesReverseReference(context.getPreviousTableObject(), context.getReferenceTable());
-            var qualifiedId = "Id";
-            if (hasKeyReference) {
-                qualifiedId = TableReflection.getQualifiedId(context.getPreviousTableObject().getName(), context.getReferenceTable().getName());
-            }
-
-            return CodeBlock.of("$L.get$L()", joinedFieldSource, qualifiedId);
+        var renderedSource = context.iterateJoinSequenceFor(field).render();
+        if (field.isID()) {
+            return CodeBlock.of("$L.get$L()", renderedSource, capitalize(field.getMappingFromColumn().getName()));
         }
-        var content = CodeBlock.of("$L.$N$L", joinedFieldSource, field.getUpperCaseName(), toJOOQEnumConverter(fieldType));
+        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName()));
         return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", SELECTION_NAME, context.getGraphPath() + field.getName(), content)) : content;
     }
 

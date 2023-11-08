@@ -7,6 +7,8 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
+import no.fellesstudentsystem.graphitron.definitions.objects.AbstractTableObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
@@ -14,6 +16,7 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -40,6 +43,17 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
         return localObject;
     }
 
+    protected JOOQMapping getLocalTable() {
+        var localObject = getLocalObject();
+        if (localObject.hasTable()) {
+            return localObject.getTable();
+        }
+        return Optional
+                .ofNullable(processedSchema.getPreviousTableObjectForObject(localObject))
+                .map(AbstractTableObjectDefinition::getTable)
+                .orElse(null);
+    }
+
     /**
      * @return Set of dependencies found during generation up to this point.
      */
@@ -53,7 +67,7 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
      */
     protected TypeName inputIterableWrap(InputField field) {
         var typeName = field.getTypeName();
-        var typeClass = processedSchema.isInputType(typeName) ? processedSchema.getInputType(typeName).getGraphClassName() : field.getFieldType().getTypeClass();
+        var typeClass = processedSchema.isInputType(typeName) ? processedSchema.getInputType(typeName).getGraphClassName() : field.getTypeClass();
         if (typeClass == null && processedSchema.isEnum(typeName)) {
             typeClass = processedSchema.getEnum(typeName).getGraphClassName();
         }
@@ -65,7 +79,7 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
      */
     protected TypeName objectIterableWrap(ObjectField field) {
         var typeName = field.getTypeName();
-        var typeClass = processedSchema.isObject(typeName) ? processedSchema.getObject(typeName).getGraphClassName() : field.getFieldType().getTypeClass();
+        var typeClass = processedSchema.isObject(typeName) ? processedSchema.getObject(typeName).getGraphClassName() : field.getTypeClass();
         if (typeClass == null && processedSchema.isEnum(typeName)) {
             typeClass = processedSchema.getEnum(typeName).getGraphClassName();
         }

@@ -33,21 +33,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class TestCommon {
     public static final String
-            DIRECTIVES_NAME = "default.graphqls",
+            COMMON_SCHEMA_NAME = "default.graphqls",
             DEFAULT_OUTPUT_PACKAGE = "fake.code.generated",
             DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.jooq.generated.testdata",
             SRC_ROOT = "src/test/resources",
-            SRC_DIRECTIVES = SRC_ROOT + "/" + DIRECTIVES_NAME,
+            SRC_COMMON_SCHEMA = SRC_ROOT + "/" + COMMON_SCHEMA_NAME,
+            SRC_DIRECTIVES = "src/main/resources/schema/directives.graphqls",
             EXPECTED_OUTPUT_NAME = "expectedOutput";
 
     @TempDir
     protected Path tempOutputDirectory;
 
-    private final String sourceTestPath, subpathDirectives;
+    private final String sourceTestPath, subpathSchema;
     protected ListAppender<ILoggingEvent> logWatcher;
 
     public TestCommon(String testSubpath) {
-        subpathDirectives = SRC_ROOT + "/" + testSubpath + "/" + DIRECTIVES_NAME;
+        subpathSchema = SRC_ROOT + "/" + testSubpath + "/" + COMMON_SCHEMA_NAME;
         sourceTestPath = SRC_ROOT + "/" + testSubpath + "/";
     }
 
@@ -126,7 +127,7 @@ public abstract class TestCommon {
 
     @NotNull
     protected ProcessedSchema getProcessedSchema(String schemaParentFolder) {
-        GeneratorConfig.setSchemaFiles(SRC_DIRECTIVES, subpathDirectives, sourceTestPath + schemaParentFolder + "/schema.graphqls");
+        GeneratorConfig.setSchemaFiles(SRC_COMMON_SCHEMA, SRC_DIRECTIVES, subpathSchema, sourceTestPath + schemaParentFolder + "/schema.graphqls");
 
         var processedSchema = GraphQLGenerator.getProcessedSchema();
         processedSchema.validate();
