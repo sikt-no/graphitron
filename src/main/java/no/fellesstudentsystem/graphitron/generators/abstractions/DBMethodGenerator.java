@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
+import graphql.language.FieldDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -106,7 +107,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             var field = fieldsWithoutSplitting.get(i);
             var innerRowCode = processedSchema.isObject(field)
                     ? generateSelectRow(context.nextContext(field))
-                    : generateForScalarField(field, context);
+                    : (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
             rowContentCode
                     .add("$L.as($S)", innerRowCode, field.getName())
                     .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
@@ -144,38 +145,125 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         if (canReturnNonNullableObjectWithAllFieldsNull) {
             context.setParentContextShouldUseEnhancedNullOnAllNullCheck();
-            return mappedObjectCodeBlock;
+        } else if(fieldsWithoutTable.stream().anyMatch(objectField -> processedSchema.isUnion(objectField.getTypeName()))) {
+            return createMappingWithUnion(context, fieldsWithoutTable);
         } else {
             return maxTypeSafeFieldSizeIsExeeded
                     ? CodeBlock.of("$T.stream(r).allMatch($T::isNull) ? null : $L", ARRAYS.className, OBJECTS.className, mappedObjectCodeBlock)
                     : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
+            }
+        return mappedObjectCodeBlock;
+    }
+
+    private CodeBlock createMappingWithUnion(FetchContext context, List<ObjectField> fieldsWithoutTable) {
+        var codeBlockArguments = CodeBlock.builder();
+        var codeBlockConstructor = CodeBlock.builder();
+        for(var mappingIndex = 0; mappingIndex < fieldsWithoutTable.size(); mappingIndex++) {
+            var field = fieldsWithoutTable.get(mappingIndex);
+            var typeName = field.getTypeName();
+            var isLastField = (mappingIndex == fieldsWithoutTable.size()-1);
+            if(processedSchema.isUnion(typeName)) {
+                codeBlockArguments.add(unionFieldArguments(typeName, mappingIndex, isLastField));
+                codeBlockConstructor.add(unionFieldConstructor(typeName, mappingIndex, isLastField));
+            } else {
+                var currentAlias = String.format("a%s%s", mappingIndex, (isLastField ? "" : ", "));
+                codeBlockArguments.add(currentAlias);
+                codeBlockConstructor.add(currentAlias);
+            }
         }
+
+        return CodeBlock.of("($L) -> new $L($L)", codeBlockArguments.build(), context.getReferenceObjectField().getFieldType().getName(), codeBlockConstructor.build());
+    }
+
+    private CodeBlock unionFieldArguments(String typeName, int fieldIndex, boolean isLastField) {
+        var codeBlockArguments = CodeBlock.builder();
+        var unionFieldTypeNames = processedSchema.getUnion(typeName).getFieldTypeNames();
+        for(var i = 0; i < unionFieldTypeNames.size(); i++) {
+            var currentAlias = String.format("a%d_%s", fieldIndex, i);
+            codeBlockArguments.add(currentAlias);
+            if(i + 1 < unionFieldTypeNames.size()) {
+                codeBlockArguments.add(", ");
+            }
+        }
+        if(!isLastField) {
+            codeBlockArguments.add(", ");
+        }
+        return codeBlockArguments.build();
+    }
+
+    private CodeBlock unionFieldConstructor(String typeName, int fieldIndex, boolean isLastField) {
+        var codeBlockConstructor = CodeBlock.builder();
+        var unionFieldTypeNames = processedSchema.getUnion(typeName).getFieldTypeNames();
+        for(var i = 0; i < unionFieldTypeNames.size(); i++) {
+            var currentAlias = String.format("a%d_%s", fieldIndex, i);
+            if(i + 1 < unionFieldTypeNames.size()) {
+                codeBlockConstructor.add("$L != null ? $L : ", currentAlias, currentAlias);
+            } else {
+                codeBlockConstructor.add("$L", currentAlias);
+            }
+        }
+        if(!isLastField) {
+            codeBlockConstructor.add(", ");
+        }
+        return codeBlockConstructor.build();
+    }
+
+    private CodeBlock unionFieldCondition(String typeName, int fieldIndex, boolean isLastField) {
+        var codeBlockConditions = CodeBlock.builder();
+        var unionFieldTypeNames = processedSchema.getUnion(typeName).getFieldTypeNames();
+        for(var i = 0; i < unionFieldTypeNames.size(); i++) {
+            var currentAlias = String.format("a%d_%s", fieldIndex, i);
+            codeBlockConditions.add("$L != null", currentAlias);
+            if(i + 1 < unionFieldTypeNames.size()) {
+                codeBlockConditions.add(" && ");
+            }
+        }
+        if(!isLastField) {
+            codeBlockConditions.add(" && ");
+        }
+        return codeBlockConditions.build();
     }
 
     private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<ObjectField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExeeded) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
+        var codeBlockConstructor = CodeBlock.builder();
+
+        var useMemberConstructor = false;
 
         codeBlockArguments.add("(");
+        codeBlockConstructor.add("(");
 
         for (int i = 0; i < fieldsWithoutTable.size(); i++) {
             String argumentName;
+            ObjectField field = fieldsWithoutTable.get(i);
+            var isLastField = (i == fieldsWithoutTable.size()-1);
+
+            if (processedSchema.isUnion(field.getTypeName())) {
+                useMemberConstructor = true;
+                codeBlockArguments.add(unionFieldArguments(field.getTypeName(), i, isLastField));
+                codeBlockConstructor.add(unionFieldConstructor(field.getTypeName(), i, isLastField));
+                codeBlockConditions.add(unionFieldCondition(field.getTypeName(), i, isLastField));
+                continue;
+            }
 
             if (maxTypeSafeFieldSizeIsExeeded) {
                 argumentName = "r[" + i + "]";
             } else {
                 argumentName = "a" + i;
                 codeBlockArguments.add(argumentName);
-                codeBlockArguments.add(i == fieldsWithoutTable.size()-1 ? ")" : ", ");
+                codeBlockArguments.add(isLastField ? ")" : ", ");
             }
-            ObjectField field = fieldsWithoutTable.get(i);
+
+            codeBlockConstructor.add(argumentName);
+            codeBlockConstructor.add(isLastField ? ")" : ", ");
 
             if (processedSchema.isObject(field))  {
                 codeBlockConditions.add("($L == null || new $T().equals($L))", argumentName, processedSchema.getObject(field).getGraphClassName(), argumentName);
             } else {
                 codeBlockConditions.add("$L == null", argumentName);
             }
-            codeBlockConditions.add(i == fieldsWithoutTable.size()-1 ? "" : " && ");
+            codeBlockConditions.add(isLastField ? "" : " && ");
         }
 
         if (maxTypeSafeFieldSizeIsExeeded) {
@@ -187,7 +275,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                 .add(" -> ")
                 .add(codeBlockConditions.build())
                 .add(" ? null : new $T", graphClassName)
-                .add(codeBlockArguments.build())
+                .add((useMemberConstructor) ? codeBlockConstructor.build() : codeBlockArguments.build())
                 .build();
     }
 
@@ -247,15 +335,28 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
             return CodeBlock.of("$L.get$L()", joinedFieldSource, qualifiedId);
         }
+        var content = CodeBlock.of("$L.$N$L", joinedFieldSource, field.getUpperCaseName(), toJOOQEnumConverter(fieldType));
+        return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", SELECTION_NAME, context.getGraphPath() + field.getName(), content)) : content;
+    }
 
-        return CodeBlock.of(
-                "$N.optional($S, $L.$N$L)",
-                SELECTION_NAME,
-                context.getGraphPath() + field.getName(),
-                joinedFieldSource,
-                field.getUpperCaseName(),
-                toJOOQEnumConverter(fieldType)
-        );
+    /**
+     * Generate select row for each object within the union field
+     */
+    private CodeBlock generateForUnionField(ObjectField field, FetchContext context) {
+        var codeBlock = CodeBlock.builder();
+        var unionField = processedSchema.getUnion(field.getTypeName());
+
+        var counter = 0;
+        for(var fieldObject : unionField.getFieldTypeNames()) {
+            var object = processedSchema.getObject(fieldObject).getName();
+            var objectField = new ObjectField(new FieldDefinition(object, new graphql.language.TypeName(object)));
+            codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
+            if(counter + 1 < unionField.getFieldTypeNames().size()) {
+                codeBlock.add(".as($S),\n", field.getName());
+            }
+            counter++;
+        }
+        return codeBlock.build();
     }
 
     @NotNull

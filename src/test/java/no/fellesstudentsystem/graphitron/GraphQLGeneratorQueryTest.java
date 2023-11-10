@@ -122,6 +122,12 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
+    void generate_queryWithUnion_shouldCreateQueryAndQueryResolverWithUnionSupport() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithUnion");
+    }
+
+
+    @Test
     void generate_queryThatReturnsInterface_shouldCreateResolver() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();

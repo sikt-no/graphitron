@@ -34,6 +34,7 @@ public class FetchContext {
     private final String graphPath, snakeCasedGraphPath;
     private final int recCounter;
     private final boolean hasJoinedAlready;
+    private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
 
     private boolean hasKeyReference = false;
@@ -58,7 +59,8 @@ public class FetchContext {
             LinkedHashSet<String> conditionSet,
             String pastGraphPath,
             int recCounter,
-            FetchContext previousContext
+            FetchContext previousContext,
+            boolean shouldUseOptional
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
             throw new RuntimeException("Recursion depth has reached the integer max value.");
@@ -94,6 +96,7 @@ public class FetchContext {
 
         this.currentJoinSequence = iterateSourceMultipleSequences(pastJoinSequence);
         this.previousContext = previousContext;
+        this.shouldUseOptional = shouldUseOptional;
     }
 
     private boolean allFieldReferencesUseIDReferences(ObjectDefinition localObject, List<FieldReference> fieldReferences) {
@@ -136,7 +139,8 @@ public class FetchContext {
                 new LinkedHashSet<>(),
                 "",
                 0,
-                null
+                null,
+                true
         );
     }
 
@@ -225,6 +229,15 @@ public class FetchContext {
         return referenceObjectField;
     }
 
+    public boolean getShouldUseOptional() {
+        return shouldUseOptional;
+    }
+
+    public FetchContext withShouldUseOptional(boolean shouldUseOptional) {
+        this.shouldUseOptional = shouldUseOptional;
+        return this;
+    }
+
     /**
      * @return Should this layer apply an expanded null check?
      */
@@ -254,7 +267,8 @@ public class FetchContext {
                 conditionSet,
                 graphPath + referenceObjectField.getName(),
                 recCounter + 1,
-                this
+                this,
+                shouldUseOptional
         );
     }
 

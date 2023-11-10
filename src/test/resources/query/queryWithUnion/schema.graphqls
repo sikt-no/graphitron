@@ -1,0 +1,77 @@
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Film implements Node @table {
+  id: ID!
+  title: String!
+  filmDetailsA: FilmDetailsA
+}
+
+type Film2 implements Node @table(name: "film") {
+  id: ID!
+  filmDetailsA: FilmDetailsA
+  filmDetailsB: FilmDetailsB
+  extra: Extra!
+}
+
+type Extra {
+  title: String!
+  description: String @field(name: "description")
+  length: Int @field(name: "length")
+}
+
+type Inventory @table {
+  id: ID!
+  films: [Film2!]! @splitQuery @reference(key: "inventory_film_id_fkey")
+}
+
+type FilmDataA {
+  description: String @field(name: "description")
+}
+
+type FilmDataB {
+  length: Int @field(name: "length")
+}
+
+type FilmDataC {
+  releaseYear: Int @field(name: "release_year")
+}
+
+type FilmDataD {
+  rating: String @field(name: "rating")
+}
+
+union FilmDetailsA = FilmDataA | FilmDataB | FilmDataC
+
+union FilmDetailsB = FilmDataC | FilmDataD
+
+type FilmConnection {
+  edges: [FilmConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Film!]!
+}
+
+type FilmConnectionEdge {
+  cursor: String
+  node: Film
+}
+
+type InventoryConnection {
+  edges: [InventoryConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Inventory!]!
+}
+
+type InventoryConnectionEdge {
+  cursor: String
+  node: Inventory
+}
+
+type Query {
+  films(first: Int = 100, after: String): FilmConnection
+  inventory(first: Int = 100, after: String): InventoryConnection
+}
