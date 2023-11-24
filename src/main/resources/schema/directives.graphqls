@@ -1,18 +1,16 @@
-"""Avslutter gjeldende spørringskontekst og oppretter en ny. Kodegeneratoren oppretter dermed en ny SQL-spørring fra dette punktet."""
+"""Create a new resolver and a separate query for fetching of the annotated field."""
 directive @splitQuery on FIELD_DEFINITION
 
-"""Definerer at generatoren skal unnlate å generere en metode for dette feltet."""
+"""Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented."""
 directive @notGenerated on FIELD_DEFINITION
 
-"""
-Knytter en objekt- eller inputobjekt-type til en tabell i KjerneAPI.
-"""
-directive @table(
-  """Tabellnavn i KjerneAPI. Antas å være samme som objektnavn hvis ikke oppgitt."""
-  name: String
-) on OBJECT | INPUT_OBJECT
+"""Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
+directive @table(name: String) on OBJECT | INPUT_OBJECT
 
-"""Overrides the jOOQ field this schema field should correspond to in the generated code."""
+"""
+The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ column in the related jOOQ table (set by @table).
+This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the table.
+"""
 directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
@@ -32,7 +30,11 @@ Available values are set in the plugin configuration.
 """
 directive @error(error: ExternalCodeReference!) on OBJECT
 
-"""Helps create connections between tables where a simple implicit join would be insufficient."""
+"""
+Helps create connections between tables where a simple implicit join would be insufficient.
+In addition, this directive permits fields to be mapped to different tables than their surrounding object.
+If neither table or key are provided and none can be automatically inferred, the condition is assumed to be sufficient to complete the join.
+"""
 directive @reference(
   """The jOOQ table to connect to."""
   table: String
@@ -40,10 +42,10 @@ directive @reference(
   """The key to use to create this reference."""
   key: String,
 
-  """Adjust the condition for this reference. Available values are set in the plugin configuration."""
+  """Extra condition for this reference. Available values are set in the plugin configuration."""
   condition: ExternalCodeReference,
 
-  """Extra reference steps that must be taken to complete the reference."""
+  """Extra reference steps that must be taken to complete the mapping."""
   via: [ReferenceElement!]
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
