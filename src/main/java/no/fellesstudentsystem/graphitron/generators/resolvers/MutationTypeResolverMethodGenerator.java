@@ -154,9 +154,11 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         code.add(declareVariable(targetTypeNameLower, responseClassName));
 
         for (var field : responseObject.getFields()) {
-            code
-                    .add(generateResponses(field, target, recursion + 1))
-                    .add(mapToSetCall(field, target));
+            if (!field.getMappingFromFieldName().getName().equalsIgnoreCase("Errors")) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
+                code
+                        .add(generateResponses(field, target, recursion + 1))
+                        .add(mapToSetCall(field, target));
+            }
         }
 
         if (surroundWithFor) {

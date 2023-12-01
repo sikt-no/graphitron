@@ -8,6 +8,7 @@ type EditResponse {
   id: ID!
   firstName: String @field(name : "FIRST_NAME")
   email: String @field(name : "emailField")
+  errors: [String!]
 }
 
 type EditResponseWithCustomer {

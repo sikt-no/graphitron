@@ -105,6 +105,9 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
             var errorListName = asListedName(context.getErrorTypeDefinition(errorField.getTypeName()).getName());
             for (var exc : context.getExceptionDefinitions(errorField.getTypeName())) {
                 var reference = exc.getExceptionReference();
+
+                if (reference == null) break; //TODO tmp solution to skip exceptions handled by "MutationExceptionStrategy"
+
                 var exception = externalReferences.getClassFrom(reference);
                 code
                         .nextControlFlow("catch ($T $L)", ClassName.get(exception), VARIABLE_EXCEPTION)
