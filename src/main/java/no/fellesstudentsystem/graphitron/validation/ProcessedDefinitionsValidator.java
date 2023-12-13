@@ -333,12 +333,40 @@ public class ProcessedDefinitionsValidator {
     private void validateMutationRequiredFields() {
         var mutation = schema.getMutationType();
         if (mutation != null) {
+
             mutation
                     .getFields()
                     .stream()
                     .filter(ObjectField::isGenerated)
                     .filter(ObjectField::hasMutationType)
-                    .forEach(this::validateRecordRequiredFields);
+                    .forEach(target -> {
+                        validateRecordRequiredFields(target);
+                        new UpdateContext(target, schema).getRecordInputs().values().forEach(inputField -> checkMutationIOFields(inputField, target));
+                    });
+        }
+    }
+
+    //Check input and payload("output") fields
+    private void checkMutationIOFields(InputField inputField, ObjectField objectField) {
+        if(!schema.isObject(objectField))
+            return;
+
+        var objectFieldErrors = new UpdateContext(objectField, schema).getAllErrors();
+        var payloadContainsIterableField = objectField.isIterableWrapped() ||
+                schema.getObject(objectField)
+                        .getFields()
+                        .stream()
+                        .filter(field -> !objectFieldErrors.contains(field))
+                        .anyMatch(AbstractField::isIterableWrapped);
+
+        if (!inputField.isIterableWrapped() && payloadContainsIterableField) {
+            LOGGER.warn(
+                    String.format("Mutation %s with Input %s is not defined as a list while Payload type %s contains a list",
+                            objectField.getName(), inputField.getTypeName(), objectField.getTypeName()));
+        } else if (inputField.isIterableWrapped() && !payloadContainsIterableField) {
+            LOGGER.warn(
+                    String.format("Mutation %s with Input %s is defined as a list while Payload type %s does not contain a list",
+                            objectField.getName(), inputField.getTypeName(), objectField.getTypeName()));
         }
     }
 

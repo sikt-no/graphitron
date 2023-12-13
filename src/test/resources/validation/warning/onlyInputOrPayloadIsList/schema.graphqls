@@ -1,0 +1,56 @@
+input EditInput @table(name : "CUSTOMER") {
+    firstName: String! @field(name: "FIRST_NAME")
+}
+
+type EditResponseNoListField {
+    id: ID! @field(name: "ID")
+}
+
+type EditResponseListField {
+    test: [String!]! @field(name: "Test")
+}
+
+type EditResponseOneListField {
+    id: ID! @field(name: "ID")
+    test: [String!]! @field(name: "Test")
+}
+
+type EditResponseWithErrors  {
+    id: ID! @field(name: "ID")
+    errors: [SomeError!]!
+}
+
+
+type SomeError implements Error {
+    path: [String!]!
+    message: String!
+}
+
+interface Error {
+    path: [String!]!
+    message: String!
+}
+
+
+type Mutation {
+    #warning (only payload is list)
+    editCustomerWarn1(in: EditInput): [EditResponseNoListField!]! @mutation(typeName: UPDATE)
+    #warning (only payload contains list)
+    editCustomerWarn2(in: EditInput): EditResponseListField! @mutation(typeName: UPDATE)
+    #warning (only payload contains list)
+    editCustomerWarn3(in: EditInput): EditResponseOneListField! @mutation(typeName: UPDATE)
+    #warning (only input is list)
+    editCustomerWarn4(in: [EditInput!]!): EditResponseNoListField! @mutation(typeName: UPDATE)
+    #warning (only input is list, error is excluded from validation)
+    editCustomerWarn5(in: [EditInput!]!): EditResponseWithErrors! @mutation(typeName: UPDATE)
+    #no warning (neither are list)
+    editCustomer1(in:  EditInput): EditResponseNoListField! @mutation(typeName: UPDATE)
+    #no warning (both are list)
+    editCustomer2(in: [EditInput!]!): [EditResponseNoListField!]! @mutation(typeName: UPDATE)
+    #no warning (both are list)
+    editCustomer3(in: [EditInput!]!): EditResponseListField! @mutation(typeName: UPDATE)
+    #no warning (both are list)
+    editCustomer4(in: [EditInput!]!): EditResponseOneListField! @mutation(typeName: UPDATE)
+    #no warning (neither are list, error is excluded from validation)
+    editCustomer5(in: EditInput): EditResponseWithErrors! @mutation(typeName: UPDATE)
+}

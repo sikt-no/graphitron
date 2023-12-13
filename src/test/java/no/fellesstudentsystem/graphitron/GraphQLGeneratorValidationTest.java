@@ -208,6 +208,18 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
         );
     }
 
+    @Test
+    void generate_whenOnlyInputOrPayloadFieldIsIterable_shouldLogWarning() {
+        getProcessedSchema("warning/onlyInputOrPayloadIsList");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "Mutation editCustomerWarn1 with Input EditInput is not defined as a list while Payload type EditResponseNoListField contains a list",
+                "Mutation editCustomerWarn2 with Input EditInput is not defined as a list while Payload type EditResponseListField contains a list",
+                "Mutation editCustomerWarn3 with Input EditInput is not defined as a list while Payload type EditResponseOneListField contains a list",
+                "Mutation editCustomerWarn4 with Input EditInput is defined as a list while Payload type EditResponseNoListField does not contain a list",
+                "Mutation editCustomerWarn5 with Input EditInput is defined as a list while Payload type EditResponseWithErrors does not contain a list"
+        );
+    }
+
     private Set<String> getLogMessagesWithLevelWarn() {
         return getLogMessagesWithLevel(Level.WARN);
     }
