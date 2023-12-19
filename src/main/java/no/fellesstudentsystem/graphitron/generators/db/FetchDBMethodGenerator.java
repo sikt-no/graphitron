@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -82,8 +83,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        for (var conditionTuple : inputConditions.getConditionTuples().entrySet()) {
-            codeBlockBuilder.add(createTupleCondition(context, hasWhere, conditionTuple.getKey().getName(), conditionTuple.getValue()));
+        for (var conditionTuple : inputConditions.getConditionTuples()) {
+            codeBlockBuilder.add(createTupleCondition(context, hasWhere, conditionTuple.getPath(), conditionTuple.getConditions()));
             hasWhere = true;
         }
 
@@ -132,7 +133,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(".in($N.stream().map(input -> $T.row(\n", argumentInputFieldName, DSL.className)
                 .indent().indent()
                 .add(conditions.stream()
-                        .map(it -> "input" + it.getNameWithPath().replaceFirst(argumentInputFieldName, ""))
+                        .map(it -> "input" + it.getNameWithPath().replaceFirst(Pattern.quote(argumentInputFieldName), ""))
                         .collect(Collectors.joining(",\n")))
                 .unindent().unindent()
                 .add(")\n)")

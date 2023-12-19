@@ -1,0 +1,19 @@
+type Customer implements Node @table {
+  id: ID!
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+}
+
+type Query {
+  customer(filter: CustomerFilter!, storeId: ID @field(name: "STORE_ID")): [Customer]
+}
+
+input CustomerFilter {
+  name: [CustomerNameInput!]!
+  activebool: Boolean!
+}
+
+input CustomerNameInput {
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+}  

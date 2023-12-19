@@ -4,7 +4,6 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import graphql.language.FieldDefinition;
-import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
@@ -18,7 +17,6 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
@@ -138,7 +136,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             return maxTypeSafeFieldSizeIsExeeded
                     ? CodeBlock.of("$T.stream(r).allMatch($T::isNull) ? null : $L", ARRAYS.className, OBJECTS.className, mappedObjectCodeBlock)
                     : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
-            }
+        }
         return mappedObjectCodeBlock;
     }
 
@@ -333,44 +331,48 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
     @NotNull
     protected InputConditions getInputConditions(List<InputField> inputFields) {
+        var iterableInputFieldNamePaths = new ArrayList<String>();
         var flatInputs = new ArrayList<InputCondition>();
         var inputBuffer = inputFields
                 .stream()
                 .map(InputCondition::new)
                 .collect(Collectors.toCollection(LinkedList::new));
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
-            var inputData = inputBuffer.poll();
-            var input = inputData.getInput();
-            if (processedSchema.isInputType(input)) {
+            var inputCondition = inputBuffer.poll();
+            var inputField = inputCondition.getInput();
+
+            if (inputField.isIterableWrapped() && processedSchema.isInputType(inputField)) {
+                iterableInputFieldNamePaths.add(inputCondition.getNameWithPath());
+            }
+
+            if (processedSchema.isInputType(inputField)) {
                 inputBuffer.addAll(
                         0,
                         processedSchema
-                                .getInputType(input)
+                                .getInputType(inputField)
                                 .getFields()
                                 .stream()
-                                .map(inputData::iterate)
+                                .map(inputCondition::iterate)
                                 .collect(Collectors.toList())
                 );
             } else {
-                flatInputs.add(inputData.applyTo(input));
+                flatInputs.add(inputCondition.applyTo(inputField));
             }
         }
 
-        var conditionTuples = getConditionTuples(inputFields, flatInputs);
-        conditionTuples.values().forEach(flatInputs::removeAll);
+        var conditionTuples = getConditionTuples(iterableInputFieldNamePaths, flatInputs);
+        conditionTuples.stream()
+                .map(InputConditions.ConditionTuple::getConditions)
+                .forEach(flatInputs::removeAll);
 
         return new InputConditions(flatInputs, conditionTuples);
     }
 
-    private Map<InputField, List<InputCondition>> getConditionTuples(List<InputField> inputFields, ArrayList<InputCondition> flatInputs) {
-        return inputFields.stream()
-                .filter(inputField -> inputField.isIterableWrapped() &&
-                        processedSchema.isInputType(inputField))
-                .collect(Collectors.toMap(
-                        Function.identity(),
-                        inputField -> flatInputs.stream()
-                                .filter(condition -> condition.getNamePath().startsWith(inputField.getName()))
-                                .collect(Collectors.toList())
-                ));
+    private List<InputConditions.ConditionTuple> getConditionTuples(List<String> iterableInputFieldNamePaths, ArrayList<InputCondition> flatInputs) {
+        return iterableInputFieldNamePaths.stream()
+                .map(s -> new InputConditions.ConditionTuple(s, flatInputs.stream()
+                        .filter(condition -> condition.getNamePath().startsWith(s))
+                        .collect(Collectors.toList())
+                )).collect(Collectors.toList());
     }
 }

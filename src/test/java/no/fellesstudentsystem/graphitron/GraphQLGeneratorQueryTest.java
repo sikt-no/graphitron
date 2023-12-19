@@ -90,6 +90,11 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
+    void generate_queryWithInputWithListInput_shouldCreateQueryResolverThatHandlesInputWithListOfInputTypes() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithInputWithListInput");
+    }
+
+    @Test
     void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithConditions");
     }

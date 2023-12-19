@@ -1,15 +1,12 @@
 package no.fellesstudentsystem.graphitron.definitions.helpers;
 
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-
 import java.util.List;
-import java.util.Map;
 
 public class InputConditions {
     private final List<InputCondition> independentConditions;
-    private final Map<InputField, List<InputCondition>> conditionTuples;
+    private final List<ConditionTuple> conditionTuples;
 
-    public InputConditions(List<InputCondition> independentConditions, Map<InputField, List<InputCondition>> conditionTuples) {
+    public InputConditions(List<InputCondition> independentConditions, List<ConditionTuple> conditionTuples) {
         this.independentConditions = independentConditions;
         this.conditionTuples = conditionTuples;
     }
@@ -18,7 +15,25 @@ public class InputConditions {
         return independentConditions;
     }
 
-    public Map<InputField, List<InputCondition>> getConditionTuples() {
+    public List<ConditionTuple> getConditionTuples() {
         return conditionTuples;
+    }
+
+    public static class ConditionTuple {
+        private final String path;
+        private final List<InputCondition> conditions;
+
+        public ConditionTuple(String path, List<InputCondition> conditions) {
+            this.path = path;
+            this.conditions = conditions;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public List<InputCondition> getConditions() {
+            return conditions;
+        }
     }
 }
