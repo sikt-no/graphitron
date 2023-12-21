@@ -4,7 +4,6 @@ import fake.graphql.example.package.api.EditCustomerNestedMutationResolver;
 import fake.graphql.example.package.model.EditCustomerResponse;
 import fake.graphql.example.package.model.EditInputLevel1;
 import graphql.GraphQLError;
-import graphql.execution.AbortExecutionException;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -16,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
+import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
@@ -110,7 +110,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
         }
 
         if (!validationErrors.isEmpty()) {
-            throw new AbortExecutionException(validationErrors);
+            throw new ValidationViolationGraphQLException(validationErrors);
         }
         var editCustomerNestedResult = testCustomerService.editCustomerNested(inputRecord, editA1Record, editA2Record, editBRecord, edit3RecordList, edit4RecordList);
 

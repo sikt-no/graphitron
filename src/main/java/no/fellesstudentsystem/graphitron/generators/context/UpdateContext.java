@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
@@ -29,6 +30,7 @@ public class UpdateContext {
     private final List<ObjectField> allErrors;
     private final ProcessedSchema processedSchema;
     private final boolean mutationReturnsNodes;
+    private final ExceptionDefinition validationErrorException;
 
     public UpdateContext(ObjectField target, ProcessedSchema processedSchema) {
         this.processedSchema = processedSchema;
@@ -55,6 +57,14 @@ public class UpdateContext {
         } else {
             allErrors = List.of();
         }
+
+        validationErrorException = getRecordValidation().getSchemaErrorType().flatMap(errorTypeName ->
+                allErrors.stream()
+                        .map(it -> getExceptionDefinitions(it.getTypeName()))
+                        .flatMap(Collection::stream)
+                        .filter(it -> errorTypeName.equals(it.getName()))
+                        .findFirst()
+        ).orElse(null);
     }
 
     /**
@@ -259,5 +269,12 @@ public class UpdateContext {
      */
     public boolean hasErrors() {
         return !allErrors.isEmpty();
+    }
+
+    /*
+     * @return ExceptionDefinition used for validation errors. If it's configured and present in the schema as a returnable error for this mutation.
+     */
+    public Optional<ExceptionDefinition> getValidationErrorException() {
+        return  Optional.ofNullable(validationErrorException);
     }
 }

@@ -55,6 +55,14 @@ public class NameFormat {
     }
 
     /**
+     * @return Inputs formatted as a get call.
+     */
+    @NotNull
+    public static String asGetMethodName(String field) {
+        return VARIABLE_GET_PREFIX + capitalize(field);
+    }
+
+    /**
      * @return Field type formatted as a query method call.
      */
     @NotNull

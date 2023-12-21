@@ -1,10 +1,12 @@
 package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +35,8 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         var processedSchema = getProcessedSchema(schemaParentFolder);
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new UpdateResolverClassGenerator(processedSchema),
-                new UpdateDBClassGenerator(processedSchema)
+                new UpdateDBClassGenerator(processedSchema),
+                new MutationExceptionStrategyConfigurationGenerator(processedSchema)
         );
 
         return generateFiles(generators);
@@ -89,13 +92,13 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
 
     @Test
     void generate_mutation_shouldGenerateResolversWithValidationErrorHandling() throws IOException {
-        GeneratorConfig.setShouldGenerateRecordValidation(true);
+        GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("validationErrorHandling");
     }
 
     @Test
     void generate_serviceMutation_shouldGenerateResolversWithValidationErrorHandling() throws IOException {
-        GeneratorConfig.setShouldGenerateRecordValidation(true);
+        GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceValidationErrorHandling");
     }
 

@@ -25,7 +25,13 @@ The options are the same for both goals.
 * _schemaFiles_ - Set of schema files which should be used for the generation process.
 * _generatedSchemaCodePackage_ - The location of the graphql-codegen generated classes.
 * _jooqGeneratedPackage_ - The location of the jOOQ generated code.
-* _shouldGenerateRecordValidation_ - boolean (default _true_) that controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
+* _recordValidation_ - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
+  * _enabled_ - Flag indicating if Graphitron should generate record validation code
+  * _schemaErrorType_ - Name of the schema error to be returned in case of validation violations.
+    If null while _enabled_ is true all validation violations will instead cause
+    'AbortExecutionExceptions' to be thrown, leading to top-level GraphQL errors.
+    Also, if the given error is not present in the schema as a returnable error for a specific mutation,
+    validation violations on this mutation will cause top-level GraphQL errors.
 
 #### Code references
 * _externalReferences_ - List of references to classes that can be applied through certain directives.

@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.mojo;
 
 import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import org.apache.maven.plugin.AbstractMojo;
@@ -73,17 +74,12 @@ public class GenerateMojo extends AbstractMojo {
     @SuppressWarnings("unused")
     private List<GlobalTransform> globalRecordTransforms;
 
-    /**
-     * Indicates whether generated mutations should include validation of JOOQ records
-     * through the Jakarta Bean Validation specification.
-     */
-    @Parameter(property = "generate.shouldGenerateRecordValidation", defaultValue="true")
-    @SuppressWarnings("unused")
-    private boolean shouldGenerateRecordValidation;
-
     @Parameter(property = "generate.extensions")
     @SuppressWarnings("unused")
     private List<Extension> extensions;
+
+    @Parameter(property = "generate.recordValidation")
+    private RecordValidation recordValidation;
 
     @Override
     public void execute() throws MojoExecutionException {
@@ -113,8 +109,8 @@ public class GenerateMojo extends AbstractMojo {
         return jooqGeneratedPackage;
     }
 
-    public boolean shouldGenerateRecordValidation() {
-        return shouldGenerateRecordValidation;
+    public RecordValidation getRecordValidation() {
+        return recordValidation;
     }
 
     public void setOutputPath(String outputPath) {
@@ -136,7 +132,6 @@ public class GenerateMojo extends AbstractMojo {
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
     }
-
 
     public List<Extension> getExtensions() {
         return extensions;

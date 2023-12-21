@@ -5,7 +5,6 @@ import fake.graphql.example.package.api.EditCustomerMutationResolver;
 import fake.graphql.example.package.model.EditInput;
 import fake.graphql.example.package.model.EditResponse;
 import graphql.GraphQLError;
-import graphql.execution.AbortExecutionException;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -15,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
+import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
@@ -57,7 +57,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
         }
 
         if (!validationErrors.isEmpty()) {
-            throw new AbortExecutionException(validationErrors);
+            throw new ValidationViolationGraphQLException(validationErrors);
         }
         var rowsUpdated = editCustomerDBQueries.editCustomer(ctx, id, inRecord);
 

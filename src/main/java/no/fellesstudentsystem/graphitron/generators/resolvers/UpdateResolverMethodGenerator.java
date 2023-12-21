@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.shouldGenerateRecordValidation;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.extractType;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.getServiceReturnClassName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -73,7 +73,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         if (!context.getRecordInputs().isEmpty()) {
             code
                     .addStatement("var $L = $T.flattenArgumentKeys($N.getArguments())", VARIABLE_FLAT_ARGS, ARGUMENTS.className, ENV_NAME)
-                    .add(shouldGenerateRecordValidation()
+                    .add(getRecordValidation().isEnabled()
                             ? CodeBlock.of("var $L = new $T<$T>();", VARIABLE_VALIDATION_ERRORS, HASH_SET.className, GRAPHQL_ERROR.className)
                             : empty())
                     .add("\n");
@@ -81,7 +81,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
 
         code
                 .add(declareRecords(specInputs))
-                .add(shouldGenerateRecordValidation() ? generateValidationErrorHandling() : empty())
+                .add(getRecordValidation().isEnabled() ? generateValidationErrorHandling() : empty())
                 .add(generateUpdateMethodCall(target))
                 .add(generateResponsesAndGetCalls(target));
 
@@ -95,7 +95,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     private CodeBlock generateValidationErrorHandling() {
         return CodeBlock.builder()
                 .beginControlFlow("if (!$N.isEmpty())", VARIABLE_VALIDATION_ERRORS)
-                .addStatement("throw new $T($N)", ABORT_EXECUTION_EXCEPTION.className, VARIABLE_VALIDATION_ERRORS)
+                .addStatement("throw new $T($N)", VALIDATION_VIOLATION_EXCEPTION.className, VARIABLE_VALIDATION_ERRORS)
                 .endControlFlow()
                 .build();
     }
@@ -179,7 +179,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         var recordName = asRecordName(name);
 
         var code = CodeBlock.builder();
-        var propertiesToValidateDeclaration = shouldGenerateRecordValidation() && recursion == 0
+        var propertiesToValidateDeclaration = getRecordValidation().isEnabled() && recursion == 0
                 ? CodeBlock.builder().addStatement("var $L = new $T<$T, $T<$T>>()", VARIABLE_PATHS_FOR_PROPERTIES, HASH_MAP.className, STRING.className, LIST.className, STRING.className).build()
                 : empty();
         var isIterable = target.isIterableWrapped();
@@ -219,7 +219,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
                 } else {
                     code.addStatement(setCall, getCall);
                 }
-                if (shouldGenerateRecordValidation()) {
+                if (getRecordValidation().isEnabled()) {
                     code.addStatement("$N.put($S, $T.of((\"$L\").split(\"/\")))",
                             VARIABLE_PATHS_FOR_PROPERTIES, uncapitalize(in.getRecordMappingName()), LIST.className, nextPath);
                 }
@@ -227,7 +227,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             }
         }
 
-        var addViolationsBlock = shouldGenerateRecordValidation() && recursion == 0
+        var addViolationsBlock = getRecordValidation().isEnabled() && recursion == 0
                 ? CodeBlock.builder().addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VARIABLE_VALIDATION_ERRORS, RECORD_VALIDATOR.className, recordName, VARIABLE_PATHS_FOR_PROPERTIES, ENV_NAME).build()
                 : empty();
 

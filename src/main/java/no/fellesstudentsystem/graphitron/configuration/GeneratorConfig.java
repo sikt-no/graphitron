@@ -59,7 +59,7 @@ public class GeneratorConfig {
         externalReferences = new ExternalReferences(references);
 
         GeneratorConfig.globalTransforms = globalTransforms;
-        GeneratorConfig.shouldGenerateRecordValidation = false;
+        recordValidation = new RecordValidation();
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
         isFSKeyFormat = false;
     }
@@ -92,8 +92,8 @@ public class GeneratorConfig {
         setJOOQClasses();
         externalReferences = new ExternalReferences(mojo.getExternalReferences());
 
-        GeneratorConfig.globalTransforms = mojo.getGlobalTransforms();
-        GeneratorConfig.shouldGenerateRecordValidation = mojo.shouldGenerateRecordValidation();
+        globalTransforms = mojo.getGlobalTransforms();
+        recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
         isFSKeyFormat = true;
     }
@@ -131,6 +131,7 @@ public class GeneratorConfig {
         globalTransforms = List.of();
         TABLES_CLASS = null;
         KEYS_CLASS = null;
+        recordValidation = new RecordValidation();
     }
 
     private static Set<String> schemaFiles;
@@ -145,14 +146,14 @@ public class GeneratorConfig {
             generatedJooqKeysPackage,
             generatedJooqRecordsPackage;
 
-    private static boolean shouldGenerateRecordValidation;
-
     public static Class<?> TABLES_CLASS, KEYS_CLASS;
 
     private static ExternalReferences externalReferences;
     private static List<GlobalTransform> globalTransforms;
 
     private static ExtendedFunctionality extendedFunctionality;
+
+    private static RecordValidation recordValidation;
 
     public static Set<String> schemaFiles() {
         return schemaFiles;
@@ -209,12 +210,12 @@ public class GeneratorConfig {
                 .collect(Collectors.toList());
     }
 
-    public static boolean shouldGenerateRecordValidation() {
-        return shouldGenerateRecordValidation;
+    public static RecordValidation getRecordValidation() {
+        return recordValidation;
     }
 
-    public static void setShouldGenerateRecordValidation(boolean shouldGenerateRecordValidation) {
-        GeneratorConfig.shouldGenerateRecordValidation = shouldGenerateRecordValidation;
+    public static void setRecordValidation(RecordValidation recordValidation) {
+        GeneratorConfig.recordValidation = recordValidation;
     }
 
     public static void setSchemaFiles(String... files) {
