@@ -179,7 +179,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenImplicitJoinDoesNotExist_shouldLogWarning() {
         getProcessedSchema("warning/implicitJoinDoesNotExist");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No field(s) or method(s) with name(s) 'customer, payment' found in table 'STORE'"
+                "No field(s) or method(s) with name(s) 'payment' found in table 'STORE'"
         );
     }
 
