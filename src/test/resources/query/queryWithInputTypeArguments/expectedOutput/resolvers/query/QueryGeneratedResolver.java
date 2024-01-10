@@ -47,7 +47,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<Integer> storeIds, CustomerInput pin, Integer first, String after,
             DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        int pageSize = Optional.ofNullable(first).orElse(100);
+        int pageSize = Optional.ofNullable(first).map(it -> Math.min(1000, it)).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin) : null;
@@ -76,7 +76,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Film>> films(String releaseYear, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        int pageSize = Optional.ofNullable(first).orElse(100);
+        int pageSize = Optional.ofNullable(first).map(it -> Math.min(1000, it)).orElse(100);
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet);
         var totalCount = selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null;

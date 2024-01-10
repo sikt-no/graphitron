@@ -53,6 +53,7 @@ public class GeneratorConfig {
         generatedJooqTablesPackage = generatedJooqPackage + "." + CLASS_TABLES;
         generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
         generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
+        maxAllowedPageSize = 1000;
 
         setJOOQClasses();
 
@@ -88,6 +89,7 @@ public class GeneratorConfig {
         generatedJooqTablesPackage = generatedJooqPackage + "." + CLASS_TABLES;
         generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
         generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
+        maxAllowedPageSize = mojo.getMaxAllowedPageSize();
 
         setJOOQClasses();
         externalReferences = new ExternalReferences(mojo.getExternalReferences());
@@ -145,6 +147,8 @@ public class GeneratorConfig {
             generatedJooqTablesPackage,
             generatedJooqKeysPackage,
             generatedJooqRecordsPackage;
+
+    private static int maxAllowedPageSize;
 
     public static Class<?> TABLES_CLASS, KEYS_CLASS;
 
@@ -236,5 +240,9 @@ public class GeneratorConfig {
 
     public static boolean isFSKeyFormat() { // TODO: Remove this hack.
         return isFSKeyFormat;
+    }
+
+    public static int getMaxAllowedPageSize() {
+        return maxAllowedPageSize;
     }
 }

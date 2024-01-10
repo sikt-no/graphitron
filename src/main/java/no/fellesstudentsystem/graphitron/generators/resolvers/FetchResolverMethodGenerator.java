@@ -4,6 +4,7 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
@@ -130,9 +131,11 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             spec
                     .addParameter(INTEGER.className, GraphQLReservedName.PAGINATION_FIRST.getName())
                     .addStatement(
-                            "int " + PAGE_SIZE_NAME + " = $T.ofNullable($N).orElse(" + referenceField.getFirstDefault() + ")",
+                            "int " + PAGE_SIZE_NAME + " = $T.ofNullable($N).map(it -> $T.min($L, it)).orElse(" + referenceField.getFirstDefault() + ")",
                             OPTIONAL.className,
-                            GraphQLReservedName.PAGINATION_FIRST.getName()
+                            GraphQLReservedName.PAGINATION_FIRST.getName(),
+                            MATH.className,
+                            GeneratorConfig.getMaxAllowedPageSize()
                     );
             allQueryInputs.add(PAGE_SIZE_NAME);
             spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());

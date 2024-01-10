@@ -40,7 +40,7 @@ public class FilmGeneratedResolver implements FilmResolver {
     public CompletableFuture<ExtendedConnection<Inventory>> inventory(Film film, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
         var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        int pageSize = Optional.ofNullable(first).orElse(10);
+        int pageSize = Optional.ofNullable(first).map(it -> Math.min(1000, it)).orElse(10);
         DataLoader<String, ExtendedConnection<Inventory>> loader = env.getDataLoaderRegistry().computeIfAbsent("inventoryForFilm", name -> {
             var batchLoader = (MappedBatchLoaderWithContext<String, ExtendedConnection<Inventory>>) (keys, batchEnvLoader) -> {
                 var keyToId = keys.stream().collect(

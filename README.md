@@ -25,6 +25,7 @@ The options are the same for both goals.
 * _schemaFiles_ - Set of schema files which should be used for the generation process.
 * _generatedSchemaCodePackage_ - The location of the graphql-codegen generated classes.
 * _jooqGeneratedPackage_ - The location of the jOOQ generated code.
+* _maxAllowedPageSize_ - The maximum number of items that can be returned from "Cursor Connections Specification" based resolvers. And thus also the database query limit. 
 * _recordValidation_ - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
   * _enabled_ - Flag indicating if Graphitron should generate record validation code
   * _schemaErrorType_ - Name of the schema error to be returned in case of validation violations.

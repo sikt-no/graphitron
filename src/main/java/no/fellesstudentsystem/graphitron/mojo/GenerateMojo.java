@@ -81,6 +81,9 @@ public class GenerateMojo extends AbstractMojo {
     @Parameter(property = "generate.recordValidation")
     private RecordValidation recordValidation;
 
+    @Parameter(property = "generate.maxAllowedPageSize", defaultValue = "1000")
+    private int maxAllowedPageSize;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -111,6 +114,10 @@ public class GenerateMojo extends AbstractMojo {
 
     public RecordValidation getRecordValidation() {
         return recordValidation;
+    }
+
+    public int getMaxAllowedPageSize() {
+        return maxAllowedPageSize;
     }
 
     public void setOutputPath(String outputPath) {
