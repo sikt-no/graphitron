@@ -4,6 +4,7 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import graphql.language.FieldDefinition;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
@@ -14,13 +15,15 @@ import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Record1;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeyFields;
+import static org.apache.commons.lang3.StringUtils.*;
 
 /**
  * Generic select query generation functionality is contained within this class.
@@ -57,21 +60,69 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     }
 
     /**
-     * @param joinList List of join statements that should be applied to a select query.
+     * @param context Contains the list of join statements that should be applied to a select query.
      * @return Code block containing all the join statements and their conditions.
      */
-    protected CodeBlock createSelectJoins(Set<SQLJoinStatement> joinList) {
+    protected CodeBlock createSelectJoins(FetchContext context) {
         var codeBuilder = CodeBlock.builder();
-        joinList.forEach(join -> codeBuilder.add(join.toJoinString()));
+        var joinList = new LinkedHashSet<>(context.getJoinSet());
+
+        var currentJoinList = new LinkedHashSet<SQLJoinStatement>();
+        if(!joinList.isEmpty() && !context.getMultisetObjectFields().isEmpty()) {
+            var listOfMultisetObjectTables = context.getMultisetObjectFields().stream().map(it -> context.nextContext(it).getReferenceTable().getMappingName()).collect(Collectors.toList());
+            for(var currentJoin : joinList) {
+                var joinElement = currentJoin.getJoinSequence().stream().reduce((first, second) -> second);
+                if(joinElement.isPresent() && !listOfMultisetObjectTables.contains(joinElement.get().getTable().getMappingName())) {
+                    currentJoinList.add(currentJoin);
+                }
+            }
+        } else {
+            currentJoinList = joinList;
+        }
+
+        currentJoinList.forEach(join -> codeBuilder.add(join.toJoinString()));
+        return codeBuilder.build();
+    }
+
+    protected CodeBlock createJoinsForMultisetWhere(FetchContext context) {
+        var codeBuilder = CodeBlock.builder();
+        var joinList = context.getJoinSet();
+        var currentReferenceTable = context.getReferenceTable().getMappingName();
+
+        for(var currentJoin : joinList) {
+            var joinElement = currentJoin.getJoinSequence().stream().reduce((first, second) -> second);
+            if(joinElement.isPresent() && currentReferenceTable.equals(joinElement.get().getTable().getMappingName())) {
+                codeBuilder.add(currentJoin.toJoinString());
+            }
+        }
         return codeBuilder.build();
     }
 
     /**
-     * @param conditionList List of conditional statements that should be appended after the where-statement.
+     * @param context contains a map of conditional statements that should be appended after the where-statement.
      * @return Code block which declares all the extra conditions that will be used in a select query.
      */
-    protected CodeBlock createSelectConditions(Set<CodeBlock> conditionList) {
-        return CodeBlock.join(conditionList, "\n");
+    protected CodeBlock createSelectConditions(FetchContext context) {
+        var codeBuilder = CodeBlock.builder();
+        var conditionMap = context.getConditionSet();
+
+        if(conditionMap.isEmpty()) {
+            return codeBuilder.build();
+        }
+
+        for(var conditionMultisetContext : conditionMap.keySet()) {
+            var currentConditionList = conditionMap.get(conditionMultisetContext);
+            if(currentConditionList.isEmpty()) {
+                break;
+            }
+            for(var currentCondition : currentConditionList) {
+                if(conditionMultisetContext == null || Objects.equals(conditionMultisetContext.getGraphPath(), context.getGraphPath())) {
+                    codeBuilder.add(".and($L)\n", currentCondition);
+                }
+            }
+        }
+
+        return codeBuilder.build();
     }
 
     /**
@@ -86,38 +137,137 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                 .stream()
                 .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
                 .collect(Collectors.toList());
+
         var fieldsWithoutSplittingSize = fieldsWithoutSplitting.size();
-        // if (fieldsWithoutSplittingSize == 0) {
-        //     return empty(); // $T.noField($T.inline(($T) null)) // Need to figure out how to handle empty rows.
-        // }
+        var fieldsOfTypeListWithoutSplitting = fieldsWithoutSplitting
+                .stream()
+                .filter(processedSchema::isObject)
+                .filter(AbstractField::isIterableWrapped)
+                .collect(Collectors.toList());
+
+        context.setMultisetObjectFields(fieldsOfTypeListWithoutSplitting);
 
         var rowContentCode = CodeBlock.builder().indent().indent();
+
         for (int i = 0; i < fieldsWithoutSplittingSize; i++) {
             var field = fieldsWithoutSplitting.get(i);
+            if(field.isIterableWrapped() && processedSchema.isObject(field)) {
+                var multisetContext = context.nextContext(field);
+                var multisetContent = generateMultisetSelectRow(multisetContext);
+                rowContentCode.add(multisetContent)
+                .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
+                continue;
+            }
             var innerRowCode = processedSchema.isObject(field)
                     ? generateSelectRow(context.nextContext(field))
                     : (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
-            rowContentCode
-                    .add("$L.as($S)", innerRowCode, field.getName())
-                    .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
+            if(context.requiresAlias()) {
+                rowContentCode.add("$L.as($S)", innerRowCode, field.getName());
+            } else {
+                rowContentCode.add("$L", innerRowCode);
+            }
+            rowContentCode.add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
         }
 
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
-        CodeBlock mappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
+        CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
+
+        var useSpecialMapping = !fieldsOfTypeListWithoutSplitting.isEmpty();
 
         rowContentCode
                 .unindent()
                 .unindent()
                 .add(").mapping(")
-                .add(maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(mappingFunction, context, fieldsWithoutSplitting) : mappingFunction);
+                .add(useSpecialMapping ? generateMultisetMapping(context, fieldsWithoutSplitting) : maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting) : regularMappingFunction);
 
         return CodeBlock
                 .builder()
                 .add("$T.row(\n$L)", DSL.className, rowContentCode.build())
                 .build();
+    }
+
+    public CodeBlock generateMultisetMapping(FetchContext context, List<ObjectField> fieldsWithoutSplitting) {
+        var mappingFrom = CodeBlock.builder().add("(");
+        var mappingTo = CodeBlock.builder().add(" -> new $T(", context.getReferenceObject().getGraphClassName());
+        var mappingIndex = 0;
+        for(var field : fieldsWithoutSplitting){
+            if(field.isIterableWrapped()) {
+                mappingTo.add(createListMapping(mappingIndex));
+            } else {
+                mappingTo.add(("a" + mappingIndex));
+            }
+            mappingFrom.add("a" + mappingIndex);
+            mappingIndex++;
+            if(mappingIndex >= fieldsWithoutSplitting.size()) {
+                mappingFrom.add(")");
+                mappingTo.add(")");
+            } else {
+                mappingFrom.add(", ");
+                mappingTo.add((", "));
+            }
+
+        }
+
+        return mappingFrom.add(mappingTo.build()).build();
+    }
+
+    public CodeBlock generateMultisetSelectRow(FetchContext context) {
+        var multisetFrom = context.getReferenceTable() != null ? context.getReferenceTable().getMappingName() : null;
+        var multisetRowContent = generateSelectRow(context.toMultisetContext());
+        var multisetJoin = createJoinsForMultisetWhere(context);
+        var multisetWhere = getMultisetSelectWhereStatement(context);
+        return CodeBlock.builder()
+                .add("$T.multiset(\n", DSL.className)
+                .indent().add("$T.select(\n", DSL.className)
+                .indent().add(multisetRowContent)
+                .unindent().add("\n)\n")
+                .add(".from($L)\n", multisetFrom)
+                .add(multisetJoin)
+                .add(multisetWhere)
+                .add(createSelectConditions(context))
+                .unindent().add(")").build();
+    }
+
+    public CodeBlock getMultisetSelectWhereStatement(FetchContext context) {
+        var keyFields = getKeyFields(context.getKeyForMapping());
+
+        if(keyFields.isEmpty()) {
+            throw new IllegalArgumentException("The multiset context in " + context.getPreviousTable().getMappingName() + " is set to generate a where statement but cannot find a path between " + context.getPreviousTable().getMappingName() + " and " + context.getReferenceObject().getName().toUpperCase());
+        }
+
+        var multisetJoinAlias = context.generateMultisetAliasFromJoinSequence(context.getCurrentJoinSequence());
+
+        var stringMap = keyFields.get().entrySet().stream()
+                .collect(Collectors.toMap(
+                        e -> e.getKey().getQualifiedName().toString().toUpperCase().replace("\"", ""),
+                        e -> (multisetJoinAlias.map(
+                                codeBlock -> codeBlock + "." + e.getValue().getName().toUpperCase().replace("\"", ""))
+                                .orElseGet(() -> e.getValue().getQualifiedName().toString().toUpperCase().replace("\"", ""))
+                        )
+                ));
+
+        var conditionFields = context.getReferenceObjectField().getFieldReferences().stream().filter(it -> it.getTableCondition() != null).collect(Collectors.toList());
+
+        if(conditionFields.size() > 0) {
+            throw new IllegalArgumentException(String.format("List of type %s requires the @SplitQuery directive to be able to contain @condition in a @reference within a list", context.getReferenceObject().getTypeDefinition().getName()));
+        }
+
+        var whereContent = CodeBlock.builder();
+        var fromTable = context.getPreviousTable();
+        var joinAlias = context.getJoinSet().stream().filter(it -> fromTable.equals(it.getJoinTargetTable())).map(SQLJoinStatement::getJoinAlias).findFirst();
+        var i = 0;
+        for(var field : stringMap.entrySet()) {
+            whereContent.add(".$L($L.eq($L))\n", (i == 0) ? "where" : "and", field.getKey(), joinAlias.map(alias -> alias.getMappingName() + "." + Arrays.stream(field.getValue().split("[.]")).reduce((first, second) -> second).orElseGet(field::getValue)).orElseGet(field::getValue));
+            i++;
+        }
+        if (context.getReferenceObjectField().hasNonReservedInputFields()) {
+            throw new IllegalArgumentException("Input arguments is not supported for multiset lists in " + context.getPreviousTable().getMappingName() + "");
+        }
+
+        return whereContent.build();
     }
 
     private CodeBlock createMappingFunction(FetchContext context, List<ObjectField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
@@ -138,6 +288,13 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                     : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
         }
         return mappedObjectCodeBlock;
+    }
+
+    protected CodeBlock createListMapping(int mappingIndex) {
+        var codeBlock = CodeBlock.builder();
+        codeBlock.add("a$L.map", mappingIndex);
+        codeBlock.add("($T::value1)", Record1.class);
+        return codeBlock.build();
     }
 
     private CodeBlock createMappingWithUnion(FetchContext context, List<ObjectField> fieldsWithoutTable) {

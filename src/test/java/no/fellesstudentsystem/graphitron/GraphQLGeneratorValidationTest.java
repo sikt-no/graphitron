@@ -19,9 +19,9 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     private final List<ExternalClassReference> references = List.of(
             new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
             new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
-            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions")
+            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions")
     );
-
     public GraphQLGeneratorValidationTest() {
         super(SRC_TEST_RESOURCES_PATH);
     }
@@ -85,6 +85,27 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
         assertThatThrownBy(() -> getProcessedSchema("error/listOfInputWithNestedList"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'ids' are not supported on such types (used for generating condition tuples)");
+    }
+
+    @Test
+    void generate_whenMultisetRequireReferenceConditionOnItself_shouldThrowException() {
+        assertThatThrownBy(() ->  generateFiles("error/multisetReferenceConditionNotSupported"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("List of type Address requires the @SplitQuery directive to be able to contain @condition in a @reference within a list");
+    }
+
+    @Test
+    void generate_whenMultisetRequireFieldInputArgumentOnItself_shouldThrowException() {
+        assertThatThrownBy(() ->  generateFiles("error/multisetFieldInputArgumentNotSupported"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Input arguments is not supported for multiset lists in INVENTORY");
+    }
+
+    @Test
+    void generate_whenMultisetFailsToGenerateWhereBetweenTwoUnconnectedTables_shouldThrowException() {
+        assertThatThrownBy(() ->  generateFiles("error/multisetIncorrectWhereConstruction"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The multiset context in FILM is set to generate a where statement but cannot find a path between FILM and RENTAL");
     }
 
     @Test

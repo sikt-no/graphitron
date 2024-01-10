@@ -39,7 +39,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField target) {
         var localObject = getLocalObject();
         var context = new FetchContext(processedSchema, target, localObject);
-
         // Note that this must happen before alias declaration.
         var selectCode = generateSelectRow(context);
         var where = formatWhereContents(context);
@@ -53,16 +52,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .add(")\n")
                 .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
-                .add(createSelectJoins(context.getJoinSet()))
+                .add(createSelectJoins(context))
                 .add(where)
-                .add(createSelectConditions(context.getConditionSet()))
+                .add(createSelectConditions(context))
                 .add(setPaginationAndFetch(target, context.getReferenceTable().getMappingName()));
 
         return getSpecBuilder(target, context.getReferenceObject().getGraphClassName())
                 .addCode(code.build())
                 .build();
     }
-
     private CodeBlock declareAliasesAndSetInitialCode(FetchContext context) {
         var code = CodeBlock
                 .builder()

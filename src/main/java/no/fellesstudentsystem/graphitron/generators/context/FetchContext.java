@@ -10,10 +10,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
@@ -28,11 +25,16 @@ public class FetchContext {
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
-    private final LinkedHashSet<CodeBlock> conditionSet;
-
+    private final LinkedHashMap<FetchContext, List<CodeBlock>> conditionSet;
     private final String graphPath;
     private final int recCounter;
+    private JOOQMapping keyForMapping;
     private boolean shouldUseOptional;
+
+    private boolean requireAlias;
+    private List<ObjectField> multisetObjectFields;
+    private boolean fromMultiset = false;
+    private FetchContext currentMultisetContext = null;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
 
     private final ProcessedSchema processedSchema;
@@ -52,11 +54,14 @@ public class FetchContext {
             JoinListSequence pastJoinSequence,
             ObjectDefinition previousObject,
             LinkedHashSet<SQLJoinStatement> joinSet,
-            LinkedHashSet<CodeBlock> conditionSet,
+            LinkedHashMap<FetchContext, List<CodeBlock>> conditionSet,
             String pastGraphPath,
             int recCounter,
             FetchContext previousContext,
-            boolean shouldUseOptional
+            boolean shouldUseOptional,
+            boolean requireAlias,
+            List<ObjectField> multisetObjectFields,
+            FetchContext currentMultisetContext
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
             throw new RuntimeException("Recursion depth has reached the integer max value.");
@@ -73,6 +78,9 @@ public class FetchContext {
 
         this.previousContext = previousContext;
         this.shouldUseOptional = shouldUseOptional;
+        this.requireAlias = requireAlias;
+        this.multisetObjectFields = multisetObjectFields;
+        this.currentMultisetContext = currentMultisetContext;
         currentJoinSequence = iterateJoinSequence(pastJoinSequence);
     }
 
@@ -91,11 +99,14 @@ public class FetchContext {
                 new JoinListSequence(),
                 previousObject,
                 new LinkedHashSet<>(),
-                new LinkedHashSet<>(),
+                new LinkedHashMap<>(),
                 "",
                 0,
                 null,
-                true
+                true,
+                true,
+                new ArrayList<>(),
+                null
         );
     }
 
@@ -130,7 +141,7 @@ public class FetchContext {
     /**
      * @return Set of all conditions created up to this point by this context or any contexts created from it.
      */
-    public Set<CodeBlock> getConditionSet() {
+    public LinkedHashMap<FetchContext, List<CodeBlock>> getConditionSet() {
         return conditionSet;
     }
 
@@ -138,7 +149,7 @@ public class FetchContext {
      * @return The reference table the reference field points to.
      */
     public JOOQMapping getReferenceTable() {
-        return referenceObject.getTable();
+        return referenceObject != null ? referenceObject.getTable() : null;
     }
 
     /**
@@ -152,7 +163,7 @@ public class FetchContext {
      * @return The reference table which fields on this layer are taken from.
      */
     public JOOQMapping getReferenceOrPreviousTable() {
-        return referenceObject.hasTable() ? referenceObject.getTable() : previousTableObject.getTable();
+        return (referenceObject != null && referenceObject.hasTable()) ? referenceObject.getTable() : previousTableObject != null ? previousTableObject.getTable() : null;
     }
 
     /**
@@ -162,12 +173,40 @@ public class FetchContext {
         return referenceObjectField;
     }
 
+    public JOOQMapping getKeyForMapping() {
+        return keyForMapping;
+    }
+
+    public List<ObjectField> getMultisetObjectFields() {
+        return multisetObjectFields;
+    }
+
+    public void setMultisetObjectFields(List<ObjectField> multisetObjectFields) {
+        this.multisetObjectFields = multisetObjectFields;
+    }
+
+    public boolean isFromMultiset() {
+        return fromMultiset;
+    }
+
     public boolean getShouldUseOptional() {
         return shouldUseOptional;
     }
 
     public FetchContext withShouldUseOptional(boolean shouldUseOptional) {
         this.shouldUseOptional = shouldUseOptional;
+        return this;
+    }
+
+    public boolean requiresAlias() {
+        return requireAlias;
+    }
+
+    public FetchContext toMultisetContext() {
+        this.shouldUseOptional = false;
+        this.fromMultiset = true;
+        this.requireAlias = false;
+        this.currentMultisetContext = this;
         return this;
     }
 
@@ -189,17 +228,22 @@ public class FetchContext {
      * @return The next iteration of this context based on the provided reference field.
      */
     public FetchContext nextContext(ObjectField referenceObjectField) {
+        var newJoinListSequence = new JoinListSequence();
+        newJoinListSequence.add(getReferenceTable());
         return new FetchContext(
                 processedSchema,
                 referenceObjectField,
-                currentJoinSequence.clone(),
+                fromMultiset ? newJoinListSequence : currentJoinSequence.clone(),
                 referenceObject,
                 joinSet,
                 conditionSet,
                 graphPath + referenceObjectField.getName(),
                 recCounter + 1,
                 this,
-                shouldUseOptional
+                shouldUseOptional,
+                requireAlias,
+                new ArrayList<>(),
+                currentMultisetContext
         );
     }
 
@@ -211,6 +255,11 @@ public class FetchContext {
     public JoinListSequence iterateJoinSequenceFor(AbstractField field) {
         var currentSequence = getCurrentJoinSequence();
         if (!field.hasFieldReferences()) {
+            if(fromMultiset) {
+                var newSequence = new JoinListSequence();
+                newSequence.add(getReferenceTable());
+                return newSequence;
+            }
             return currentSequence;
         }
 
@@ -272,9 +321,18 @@ public class FetchContext {
         return joinSequence;
     }
 
+    private boolean isMultisetContext() {
+        return (getReferenceObjectField().isIterableWrapped()
+                && !getReferenceObjectField().isResolver()
+                && !getReferenceObjectField().hasInputFields()
+                && getPreviousTable() != null
+                && processedSchema.isObject(getReferenceObjectField())
+        );
+    }
+
     private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
         var previous = relation.getFrom();
-
+        var multisetSkipJoin = isMultisetContext();
         var target = relation.getToTable();
         if (previous == null) {
             return JoinListSequence.of(target);
@@ -286,16 +344,16 @@ public class FetchContext {
         var keyToUse = fRef.hasKey()
                 ? fRef.getKey()
                 : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
-
+        keyForMapping = keyToUse;
         // If we lack this table from a previous join or there is no key, we can not make a key join with implicit steps.
         var lastIsJoin = !joinSequence.isEmpty() && joinSequence.getLast().clearsPreviousSequence();
-        if (fRef.hasTableCondition() && (keyToUse == null || !lastIsJoin && joinSequence.size() > 1)) {
+        if (!multisetSkipJoin && fRef.hasTableCondition() && (keyToUse == null || !lastIsJoin && joinSequence.size() > 1)) {
             var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
             joinSet.add(join);
             return newSequence.cloneAdd(join.getJoinAlias());
         }
 
-        if (relation.isReverse() && keyToUse != null) { // Tried to make it (relation.isReverse() || requiresLeftJoin), but that didn't work out. Theoretically, including it should be the most correct.
+        if (!multisetSkipJoin && relation.isReverse() && keyToUse != null) { // Tried to make it (relation.isReverse() || requiresLeftJoin), but that didn't work out. Theoretically, including it should be the most correct.
             var join = fRef.createJoinOnKeyFor(keyToUse, newSequence, targetOrPrevious, requiresLeftJoin);
             joinSet.add(join);
             var alias = join.getJoinAlias();
@@ -306,10 +364,28 @@ public class FetchContext {
         }
 
         if (fRef.hasTableCondition() && relation.hasRelation()) {
-            this.conditionSet.add(CodeBlock.of(".and($L)\n", fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()))));
+            var conditionString = fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()));
+            var listOfConditions = this.conditionSet.get(currentMultisetContext);
+            if(listOfConditions == null) {
+                listOfConditions = new ArrayList<>();
+            }
+            listOfConditions.add(conditionString);
+            this.conditionSet.put(currentMultisetContext, listOfConditions);
         }
 
         return newSequence;
+    }
+
+    public Optional<CodeBlock> generateMultisetAliasFromJoinSequence(JoinListSequence joinSequence) {
+        var codeBlock = CodeBlock.builder();
+        if(joinSequence.size() <= 1) {
+            return Optional.empty();
+        }
+        codeBlock.add(joinSequence.get(0).getMappingName());
+        for(var i = 1; i < joinSequence.size(); i++) {
+            codeBlock.add(".$L()", joinSequence.get(i).getTable().getCodeName());
+        }
+        return Optional.of(codeBlock.build());
     }
 
     public CodeBlock renderQuerySource(JOOQMapping localTable) {

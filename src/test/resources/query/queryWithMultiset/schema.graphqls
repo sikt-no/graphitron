@@ -1,0 +1,18 @@
+type Film implements Node @table {
+  id: ID!
+  title: String!
+  filmActors: [FilmActor!]!
+}
+
+type FilmActor implements Node @table(name: "FILM_ACTOR") {
+  id: ID!
+}
+
+type Inventory implements Node @table {
+  id: ID!
+  films: [Film!]!
+}
+
+type Query {
+  inventory: [Inventory!]!
+}

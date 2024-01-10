@@ -1,11 +1,14 @@
 package no.fellesstudentsystem.graphitron.mappings;
 
+import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
 import org.apache.commons.lang3.StringUtils;
 import org.jooq.ForeignKey;
+import org.jooq.Key;
 import org.jooq.Table;
+import org.jooq.TableField;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.Field;
@@ -13,6 +16,7 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.isFSKeyFormat;
@@ -142,6 +146,28 @@ public class TableReflection {
      */
     public static Optional<String> getKeySourceTable(String keyName) {
         return getKeyObject(keyName).map(it -> it.getTable().getName().toUpperCase());
+    }
+
+    public static Optional<Map<TableField<?, ?>, TableField<?, ?>>> getKeyFields(JOOQMapping key) {
+        if(key == null || key.getMappingName() == null) {
+            return Optional.empty();
+        }
+
+        var keyName = key.getMappingName();
+        var fromColumns = getKeyObject(keyName).map(Key::getFields);
+        var toColumns = getKeyObject(keyName).map(ForeignKey::getKeyFields);
+
+        if(fromColumns.isEmpty() || toColumns.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if(fromColumns.get().size() != toColumns.get().size()) {
+            return Optional.empty();
+        }
+        Map<TableField<?, ?>, TableField<?, ?>> map = IntStream.range(0, fromColumns.get().size())
+                .boxed()
+                .collect(Collectors.toMap(fromColumns.get()::get, toColumns.get()::get));
+        return Optional.of(map);
     }
 
     /**
@@ -294,7 +320,6 @@ public class TableReflection {
         if (field.isEmpty()) {
             return Optional.empty();
         }
-
         try {
             return Optional.of(((ForeignKey<?, ?>) field.get().get(null)));
         } catch (IllegalAccessException e) {

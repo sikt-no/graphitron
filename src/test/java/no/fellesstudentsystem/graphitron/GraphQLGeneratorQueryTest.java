@@ -80,6 +80,16 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
+    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultiset");
+    }
+
+    @Test
+    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultisetWhichContainsFieldWithCondition() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultisetContainingFieldWithCondition");
+    }
+
+    @Test
     void generate_queryWithArguments_shouldUseCorrectPathForWhere() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("correctWhereConditionPathUsage");
     }

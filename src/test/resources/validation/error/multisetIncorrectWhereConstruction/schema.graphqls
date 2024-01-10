@@ -1,0 +1,18 @@
+type Film implements Node @table {
+  id: ID!
+  title: String!
+  rentals: [Rental!]!
+}
+
+type Rental implements Node @table {
+  id: ID!
+}
+
+type Inventory implements Node @table {
+  id: ID!
+  films: [Film!]!
+}
+
+type Query {
+  inventory: [Inventory!]!
+}

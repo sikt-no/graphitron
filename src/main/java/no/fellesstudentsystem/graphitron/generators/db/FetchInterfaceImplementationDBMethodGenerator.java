@@ -71,13 +71,13 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .unindent()
                 .add(")\n")
                 .add(".from($L)\n", querySource)
-                .add(createSelectJoins(context.getJoinSet()))
+                .add(createSelectJoins(context))
                 .add(".where($L.has$N($N))\n",
                         querySource,
                         StringUtils.capitalize(argumentName),
                         argumentName
                 )
-                .add(createSelectConditions(context.getConditionSet()))
+                .add(createSelectConditions(context))
                 .addStatement(".$L($T::value1, $T::value2)",
                         (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),
                         RECORD2.className,
