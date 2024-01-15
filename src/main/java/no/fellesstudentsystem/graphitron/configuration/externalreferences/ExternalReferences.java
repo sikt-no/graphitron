@@ -13,7 +13,7 @@ public class ExternalReferences {
         if (references != null) {
             classes = references
                     .stream()
-                    .collect(Collectors.toMap(ExternalClassReference::getName, it -> getClassFromPath(it.getClassPath())));
+                    .collect(Collectors.toMap(ExternalClassReference::getName, it -> getClassFromPath(it.getFullyQualifiedClassName())));
         } else {
             classes = Map.of();
         }

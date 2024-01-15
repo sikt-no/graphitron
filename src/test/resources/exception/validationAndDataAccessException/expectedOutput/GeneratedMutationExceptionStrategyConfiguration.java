@@ -1,9 +1,11 @@
 package fake.code.generated.exception;
 
 import fake.graphql.example.package.model.EditCustomerWithMultipleErrorPayloads;
+import fake.graphql.example.package.model.EditCustomerWithOtherErrorPayload;
 import fake.graphql.example.package.model.EditCustomerWithUnionErrorPayload;
 import fake.graphql.example.package.model.EditCustomerWithValidationErrorPayload;
 import fake.graphql.example.package.model.MyValidationError;
+import fake.graphql.example.package.model.OtherError;
 import fake.graphql.example.package.model.UnionOfErrors;
 import java.lang.Class;
 import java.lang.Override;
@@ -16,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import no.fellesstudentsystem.graphql.exception.MutationExceptionStrategyConfiguration;
 import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
+import org.jooq.exception.DataAccessException;
 
 public class GeneratedMutationExceptionStrategyConfiguration implements MutationExceptionStrategyConfiguration {
     private final Map<Class<? extends Throwable>, Set<String>> mutationsForException;
@@ -34,7 +37,15 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
             return payload;
         } );
 
+        mutationsForException.computeIfAbsent(DataAccessException.class, k -> new HashSet<>()).add("editCustomerWithOtherError");
+        payloadForMutation.put("editCustomerWithOtherError", errors -> {
+            var payload = new EditCustomerWithOtherErrorPayload();
+            payload.setErrors((List<OtherError>) errors);
+            return payload;
+        });
+
         mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerWithUnionError");
+        mutationsForException.get(DataAccessException.class).add("editCustomerWithUnionError");
         payloadForMutation.put("editCustomerWithUnionError", errors -> {
             var payload = new EditCustomerWithUnionErrorPayload();
             payload.setErrors((List<UnionOfErrors>) errors);

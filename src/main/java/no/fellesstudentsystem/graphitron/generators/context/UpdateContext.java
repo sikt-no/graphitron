@@ -3,20 +3,15 @@ package no.fellesstudentsystem.graphitron.generators.context;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 
 /**
@@ -44,8 +39,8 @@ public class UpdateContext {
 
         mutationType = target.hasMutationType() ? target.getMutationType() : null;
 
-        mutationReturnsNodes = containsNodeField(target);
-        mutationInputs = parseInputs(target.getInputFields());
+        mutationReturnsNodes = processedSchema.containsNodeField(target);
+        mutationInputs = processedSchema.parseInputs(target.getInputFields());
         recordInputs = mutationInputs
                 .entrySet()
                 .stream()
@@ -53,33 +48,18 @@ public class UpdateContext {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         serviceInputString = String.join(", ", mutationInputs.keySet());
         if (processedSchema.isObject(target) && processedSchema.isInterface(ERROR_TYPE.getName())) {
-            allErrors = getAllErrors(target.getTypeName());
+            allErrors = processedSchema.getAllErrors(target.getTypeName());
         } else {
             allErrors = List.of();
         }
 
         validationErrorException = getRecordValidation().getSchemaErrorType().flatMap(errorTypeName ->
                 allErrors.stream()
-                        .map(it -> getExceptionDefinitions(it.getTypeName()))
+                        .map(it -> processedSchema.getExceptionDefinitions(it.getTypeName()))
                         .flatMap(Collection::stream)
                         .filter(it -> errorTypeName.equals(it.getName()))
                         .findFirst()
         ).orElse(null);
-    }
-
-    /**
-     * @return Does this field point to a type that contains a node field?
-     */
-    private boolean containsNodeField(ObjectField target) {
-        if (!processedSchema.isObject(target)) {
-            return false;
-        }
-
-        if (processedSchema.isTableObject(target)) {
-            return true;
-        }
-
-        return processedSchema.getObject(target).getFields().stream().anyMatch(this::containsNodeField);
     }
 
     /**
@@ -99,106 +79,6 @@ public class UpdateContext {
             }
         }
         return numFields;
-    }
-
-    /**
-     * @return Map of variable names and types for the declared and fully set records.
-     */
-    @NotNull
-    private Map<String, InputField> parseInputs(List<InputField> specInputs) {
-        var serviceInputs = new LinkedHashMap<String, InputField>();
-
-        for (var in : specInputs) {
-            if (processedSchema.isTableInputType(in)) {
-                serviceInputs.putAll(parseInputs(in, 0));
-            } else {
-                serviceInputs.put(in.getName(), in);
-            }
-        }
-        return serviceInputs;
-    }
-
-    /**
-     * @return Map of variable names and types for the declared records.
-     */
-    @NotNull
-    private Map<String, InputField> parseInputs(InputField target, int recursion) {
-        recursionCheck(recursion);
-
-        var serviceInputs = new LinkedHashMap<String, InputField>();
-        serviceInputs.put(asListedRecordNameIf(target.getName(), target.isIterableWrapped()), target);
-        processedSchema
-                .getInputType(target)
-                .getFields()
-                .stream()
-                .filter(processedSchema::isTableInputType)
-                .flatMap(in -> parseInputs(in, recursion + 1).entrySet().stream())
-                .forEach(it -> serviceInputs.put(it.getKey(), it.getValue()));
-        return serviceInputs;
-    }
-
-    /**
-     * @return List of all error types this type contains.
-     */
-    @NotNull
-    private List<ObjectField> getAllErrors(String typeName) {
-        return processedSchema
-                .getObject(typeName)
-                .getFields()
-                .stream()
-                .filter(it -> processedSchema.isExceptionOrExceptionUnion(it.getTypeName()))
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * @return The error type or union of error types with this name if it exists.
-     */
-    @NotNull
-    public AbstractObjectDefinition<?, ?> getErrorTypeDefinition(String name) {
-        return processedSchema.isUnion(name) ? processedSchema.getUnion(name) : processedSchema.getException(name);
-    }
-
-    /**
-     * @return List of exception definitions that exists for this type name. If it is not a union, the list will only have one element.
-     */
-    @NotNull
-    public List<ExceptionDefinition> getExceptionDefinitions(String name) {
-        if (!processedSchema.isUnion(name)) {
-            return List.of(processedSchema.getException(name));
-        }
-
-        return processedSchema
-                .getUnion(name)
-                .getFieldTypeNames()
-                .stream()
-                .map(processedSchema::getException)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * @return Comma separated list of field names with paths that may be the cause of an error for the inputs of this field.
-     */
-    @NotNull
-    public String getFieldErrorNameSets(ObjectField target) {
-        return getAllNestedInputFieldMappingsWithPaths(target.getInputFields(), "")
-                .entrySet()
-                .stream()
-                .flatMap(it -> Stream.of(it.getKey(), it.getValue()))
-                .collect(Collectors.joining("\", \"", "\"", "\""));
-    }
-
-    private Map<String, String> getAllNestedInputFieldMappingsWithPaths(List<InputField> targets, String path) {
-        var fields = new HashMap<String, String>();
-        var pathIteration = path.isEmpty() ? path : path + ".";
-        for (var field : targets) {
-            if (!processedSchema.isInputType(field)) {
-                fields.put(field.getUpperCaseName(), pathIteration + field.getName());
-            } else {
-                var inputType = processedSchema.getInputType(field);
-                fields.putAll(getAllNestedInputFieldMappingsWithPaths(inputType.getFields(), pathIteration + inputType.getName()));
-            }
-        }
-        return fields;
     }
 
     /**
@@ -276,5 +156,9 @@ public class UpdateContext {
      */
     public Optional<ExceptionDefinition> getValidationErrorException() {
         return  Optional.ofNullable(validationErrorException);
+    }
+
+    public ProcessedSchema getProcessedSchema() {
+        return processedSchema;
     }
 }

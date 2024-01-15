@@ -20,19 +20,26 @@ In order to find the schema files and any custom methods, Graphitron also provid
 The options are the same for both goals.
 
 #### General settings
-* _outputPath_ - The location where the code will be generated.
-* _outputPackage_ - The package path of the generated code.
-* _schemaFiles_ - Set of schema files which should be used for the generation process.
-* _generatedSchemaCodePackage_ - The location of the graphql-codegen generated classes.
-* _jooqGeneratedPackage_ - The location of the jOOQ generated code.
-* _maxAllowedPageSize_ - The maximum number of items that can be returned from "Cursor Connections Specification" based resolvers. And thus also the database query limit. 
-* _recordValidation_ - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
-  * _enabled_ - Flag indicating if Graphitron should generate record validation code
-  * _schemaErrorType_ - Name of the schema error to be returned in case of validation violations.
-    If null while _enabled_ is true all validation violations will instead cause
-    'AbortExecutionExceptions' to be thrown, leading to top-level GraphQL errors.
+* `outputPath` - The location where the code will be generated.
+* `outputPackage` - The package path of the generated code.
+* `schemaFiles` - Set of schema files which should be used for the generation process.
+* `generatedSchemaCodePackage` - The location of the graphql-codegen generated classes.
+* `jooqGeneratedPackage` - The location of the jOOQ generated code.
+* `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based resolvers. And thus also the database query limit.
+* `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
+  * `enabled` - Flag indicating if Graphitron should generate record validation code
+  * `schemaErrorType` - Name of the schema error to be returned in case of validation violations.
+    If null while `enabled` is true all validation violations will instead cause
+    _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations on this mutation will cause top-level GraphQL errors.
+* `exceptionToErrorMappings` List of mappings that define how specific java exceptions are converted to GraphQL errors. 
+  * `mutationName` - The name of the mutation.
+  * `errorTypeName` - The name of the error type in the GraphQL schema.
+  * `databaseErrorCode` - The database error code associated with the exception.
+  * `sqlStateClassCode` - OPTIONAL. The SQL state class code associated with the database error. Defaults to _SQLSateClass.OTHER_
+  * `exceptionMessageContains` - OPTIONAL. A string that the exception message must contain. 
+  * `errorDescription` - OPTIONAL. A description of the error to be returned to the user.
 
 #### Code references
 * _externalReferences_ - List of references to classes that can be applied through certain directives.

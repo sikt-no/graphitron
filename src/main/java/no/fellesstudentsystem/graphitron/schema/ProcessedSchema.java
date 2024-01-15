@@ -5,11 +5,15 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
+import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
+import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.function.Function;
@@ -17,6 +21,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
+import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
 
 /**
@@ -478,5 +483,117 @@ public class ProcessedSchema {
                 .filter(Objects::nonNull)
                 .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
                 .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
+    }
+
+    /**
+     * @return Does this field point to a type that contains a node field?
+     */
+    public boolean containsNodeField(ObjectField target) {
+        if (!isObject(target)) {
+            return false;
+        }
+
+        if (isTableObject(target)) {
+            return true;
+        }
+
+        return getObject(target).getFields().stream().anyMatch(this::containsNodeField);
+    }
+
+    /**
+     * @return List of all error types this type contains.
+     */
+    @NotNull
+    public List<ObjectField> getAllErrors(String typeName) {
+        return getObject(typeName)
+                .getFields()
+                .stream()
+                .filter(it -> isExceptionOrExceptionUnion(it.getTypeName()))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * @return The error type or union of error types with this name if it exists.
+     */
+    @NotNull
+    public AbstractObjectDefinition<?, ?> getErrorTypeDefinition(String name) {
+        return isUnion(name) ? getUnion(name) : getException(name);
+    }
+
+    /**
+     * @return List of exception definitions that exists for this type name. If it is not a union, the list will only have one element.
+     */
+    @NotNull
+    public List<ExceptionDefinition> getExceptionDefinitions(String name) {
+        if (!isUnion(name)) {
+            return List.of(getException(name));
+        }
+
+        return getUnion(name)
+                .getFieldTypeNames()
+                .stream()
+                .map(this::getException)
+                .collect(Collectors.toList());
+    }
+
+    public Map<String, String> getAllNestedInputFieldMappingsWithPaths(List<InputField> targets, String path) {
+        var fields = new HashMap<String, String>();
+        var pathIteration = path.isEmpty() ? path : path + ".";
+        for (var field : targets) {
+            if (!isInputType(field)) {
+                fields.put(field.getUpperCaseName(), pathIteration + field.getName());
+            } else {
+                var inputType = getInputType(field);
+                fields.putAll(getAllNestedInputFieldMappingsWithPaths(inputType.getFields(), pathIteration + inputType.getName()));
+            }
+        }
+        return fields;
+    }
+
+    /**
+     * @return Comma separated list of field names with paths that may be the cause of an error for the inputs of this field.
+     */
+    @NotNull
+    public String getFieldErrorNameSets(ObjectField target) {
+        return getAllNestedInputFieldMappingsWithPaths(target.getInputFields(), "")
+                .entrySet()
+                .stream()
+                .flatMap(it -> Stream.of(it.getKey(), it.getValue()))
+                .collect(Collectors.joining("\", \"", "\"", "\""));
+    }
+
+    /**
+     * @return Map of variable names and types for the declared records.
+     */
+    @NotNull
+    public Map<String, InputField> parseInputs(InputField target, int recursion) {
+        recursionCheck(recursion);
+
+        var serviceInputs = new LinkedHashMap<String, InputField>();
+        serviceInputs.put(asListedRecordNameIf(target.getName(), target.isIterableWrapped()), target);
+        getInputType(target)
+                .getFields()
+                .stream()
+                .filter(this::isTableInputType)
+                .flatMap(in -> parseInputs(in, recursion + 1).entrySet().stream())
+                .forEach(it -> serviceInputs.put(it.getKey(), it.getValue()));
+        return serviceInputs;
+    }
+
+    /**
+     * @return Map of variable names and types for the declared and fully set records.
+     */
+    @NotNull
+    public Map<String, InputField> parseInputs(List<InputField> specInputs) {
+        var serviceInputs = new LinkedHashMap<String, InputField>();
+
+        for (var in : specInputs) {
+            if (isTableInputType(in)) {
+                serviceInputs.putAll(parseInputs(in, 0));
+            } else {
+                serviceInputs.put(in.getName(), in);
+            }
+        }
+        return serviceInputs;
     }
 }

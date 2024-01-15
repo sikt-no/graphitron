@@ -1,7 +1,10 @@
 package no.fellesstudentsystem.graphitron.generators.exception;
 
 import com.squareup.javapoet.*;
+import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
@@ -11,9 +14,9 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getExceptionToErrorMappings;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapSet;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMap;
@@ -28,9 +31,11 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
                     WildcardTypeName.subtypeOf(THROWABLE.className)), wrapSet(STRING.className));
     private static final TypeName PAYLOAD_FOR_MUTATIONS_TYPE = wrapStringMap(PAYLOAD_CREATOR.className);
     private final ProcessedSchema processedSchema;
+    private final Map<ClassName, Set<String>> seenMutationsForException;
 
     public MutationExceptionStrategyConfigurationGenerator(ProcessedSchema processedSchema) {
         this.processedSchema = processedSchema;
+        seenMutationsForException = new HashMap<>();
     }
 
     @Override
@@ -53,32 +58,67 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
 
     private CodeBlock createConstructorContentForMutations(ObjectDefinition mutationTypeDefinition) {
         var codeBuilder = CodeBlock.builder();
+        var errorMappingsForMutationName = GeneratorConfig.getErrorMappingsForMutationName();
 
-        mutationTypeDefinition.getFields().forEach(mutation -> {
-            var ctx = new UpdateContext(mutation, processedSchema);
-            if (ctx.getValidationErrorException().isPresent()) {
-                String mutationName = mutation.getName();
-                codeBuilder.addStatement("$N.computeIfAbsent($T.class, k -> new $T<>()).add($S)",
-                                MUTATIONS_FOR_EXCEPTION_FIELD, VALIDATION_VIOLATION_EXCEPTION.className, HASH_SET.className, mutationName)
-                        .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutationName)
-                        .beginControlFlow("errors ->")
-                        .addStatement("var payload = new $T()", processedSchema.getObject(mutation.getTypeName()).getGraphClassName());
+        mutationTypeDefinition.getFields().stream()
+                .sorted(Comparator.comparing(ObjectField::getName))
+                .forEach(mutation -> {
+                    var ctx = new UpdateContext(mutation, processedSchema);
+                    var shouldCreatePayLoadForMutation = false;
 
-                ctx.getAllErrors().forEach(errorField -> codeBuilder.addStatement(
-                        "payload" + errorField.getMappingFromFieldName().asSetCall("($T<$T>) errors"),
-                        LIST.className, ctx.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName()));
-
-                codeBuilder.addStatement("return payload")
-                        .endControlFlow(")");
-            }
-        });
+                    if (ctx.getValidationErrorException().isPresent()) {
+                        codeBuilder.add(createMutationsForExceptionBlock(mutation, VALIDATION_VIOLATION_EXCEPTION.className));
+                        shouldCreatePayLoadForMutation = true;
+                    }
+                    for (ExceptionToErrorMapping ignored : errorMappingsForMutationName.getOrDefault(mutation.getName(), List.of())) {
+                        codeBuilder.add(createMutationsForExceptionBlock(mutation, DATA_ACCESS_EXCEPTION.className));
+                        shouldCreatePayLoadForMutation = true;
+                    }
+                    if (shouldCreatePayLoadForMutation) {
+                        codeBuilder.add(createPayloadForMutationBlock(mutation, ctx));
+                        codeBuilder.add("\n");
+                    }
+                });
         return codeBuilder.build();
+    }
+
+    private CodeBlock createMutationsForExceptionBlock(ObjectField mutation, ClassName exceptionClassName) {
+        CodeBlock.Builder codeBlock = CodeBlock.builder();
+
+        if (seenMutationsForException.containsKey(exceptionClassName)) {
+            if (!seenMutationsForException.get(exceptionClassName).contains(mutation.getName())) {
+                seenMutationsForException.get(exceptionClassName).add(mutation.getName());
+                codeBlock.addStatement("$N.get($T.class).add($S)", MUTATIONS_FOR_EXCEPTION_FIELD, exceptionClassName, mutation.getName());
+            }
+        } else {
+            HashSet<String> seenMutations = new HashSet<>();
+            seenMutations.add(mutation.getName());
+            seenMutationsForException.put(exceptionClassName, seenMutations);
+            codeBlock.addStatement("$N.computeIfAbsent($T.class, k -> new $T<>()).add($S)", MUTATIONS_FOR_EXCEPTION_FIELD, exceptionClassName, HashSet.class, mutation.getName());
+        }
+
+        return codeBlock.build();
+    }
+
+    private CodeBlock createPayloadForMutationBlock(ObjectField mutation, UpdateContext ctx) {
+        var codeBuilder = CodeBlock.builder();
+        codeBuilder.add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
+                .beginControlFlow("errors ->")
+                .addStatement("var payload = new $T()", processedSchema.getObject(mutation.getTypeName()).getGraphClassName());
+
+        ctx.getAllErrors().forEach(errorField -> codeBuilder.addStatement(
+                "payload" + errorField.getMappingFromFieldName().asSetCall("($T<$T>) errors"),
+                LIST.className, processedSchema.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName()));
+
+        return codeBuilder.addStatement("return payload")
+                .endControlFlow(")")
+                .build();
     }
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
 
-        if (getRecordValidation().getSchemaErrorType().isPresent()) {
+        if (getRecordValidation().getSchemaErrorType().isPresent() || !getExceptionToErrorMappings().isEmpty()) {
             Optional.ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
                     .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));

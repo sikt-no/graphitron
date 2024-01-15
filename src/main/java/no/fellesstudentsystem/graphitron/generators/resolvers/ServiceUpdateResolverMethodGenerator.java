@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron.generators.resolvers;
 import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
-import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
@@ -88,7 +87,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
     private CodeBlock defineErrorLists() {
         var code = CodeBlock.builder();
         for (var errorField : context.getAllErrors()) {
-            var definition = context.getErrorTypeDefinition(errorField.getTypeName());
+            var definition = context.getProcessedSchema().getErrorTypeDefinition(errorField.getTypeName());
             code.add(declareArrayList(definition.getName(), definition.getGraphClassName()));
         }
         return code.build();
@@ -102,8 +101,8 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
         var code = CodeBlock.builder();
         for (var errorField : context.getAllErrors()) {
-            var errorListName = asListedName(context.getErrorTypeDefinition(errorField.getTypeName()).getName());
-            for (var exc : context.getExceptionDefinitions(errorField.getTypeName())) {
+            var errorListName = asListedName(context.getProcessedSchema().getErrorTypeDefinition(errorField.getTypeName()).getName());
+            for (var exc : context.getProcessedSchema().getExceptionDefinitions(errorField.getTypeName())) {
                 var reference = exc.getExceptionReference();
 
                 if (reference == null) break; //TODO tmp solution to skip exceptions handled by "MutationExceptionStrategy"
@@ -145,7 +144,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                 .addStatement(
                         "var $L = $L.getOrDefault($N != null ? $N : \"\", $S)",
                         VARIABLE_CAUSE_NAME,
-                        mapOf(CodeBlock.of(context.getFieldErrorNameSets(target))),
+                        mapOf(CodeBlock.of(context.getProcessedSchema().getFieldErrorNameSets(target))),
                         VARIABLE_CAUSE,
                         VARIABLE_CAUSE,
                         VALUE_UNDEFINED
@@ -180,7 +179,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                     .add("$N", resolverResultName)
                     .addStatement(
                             error.getMappingFromFieldName().asSetCall("$N"),
-                            asListedName(context.getErrorTypeDefinition(error.getTypeName()).getName())
+                            asListedName(context.getProcessedSchema().getErrorTypeDefinition(error.getTypeName()).getName())
                     );
         }
 
@@ -373,7 +372,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                 .addStatement(
                         "$N" + field.getMappingFromFieldName().asSetCall("$N"),
                         previousTypeNameLower,
-                        asListedName(context.getErrorTypeDefinition(field.getTypeName()).getName())
+                        asListedName(context.getProcessedSchema().getErrorTypeDefinition(field.getTypeName()).getName())
                 )
                 .build();
     }

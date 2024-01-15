@@ -5,13 +5,11 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.net.URL;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -63,6 +61,7 @@ public class GeneratorConfig {
         recordValidation = new RecordValidation();
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
         isFSKeyFormat = false;
+        exceptionToErrorMappings = new ArrayList<>();
     }
 
     /**
@@ -96,6 +95,7 @@ public class GeneratorConfig {
 
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
+        exceptionToErrorMappings = mojo.getExceptionToErrorMappings();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
         isFSKeyFormat = true;
     }
@@ -159,6 +159,8 @@ public class GeneratorConfig {
 
     private static RecordValidation recordValidation;
 
+    private static List<ExceptionToErrorMapping> exceptionToErrorMappings;
+
     public static Set<String> schemaFiles() {
         return schemaFiles;
     }
@@ -218,8 +220,24 @@ public class GeneratorConfig {
         return recordValidation;
     }
 
+    public static List<ExceptionToErrorMapping> getExceptionToErrorMappings() {
+
+        if (exceptionToErrorMappings == null) {
+            exceptionToErrorMappings = List.of();
+        }
+        return exceptionToErrorMappings;
+    }
+
+    public static Map<String, List<ExceptionToErrorMapping>> getErrorMappingsForMutationName() {
+        return getExceptionToErrorMappings().stream().collect(Collectors.groupingBy(ExceptionToErrorMapping::getMutationName));
+    }
+
     public static void setRecordValidation(RecordValidation recordValidation) {
         GeneratorConfig.recordValidation = recordValidation;
+    }
+
+    public static void setExceptionToErrorMappings(List<ExceptionToErrorMapping> exceptionToErrorMappings) {
+        GeneratorConfig.exceptionToErrorMappings = exceptionToErrorMappings;
     }
 
     public static void setSchemaFiles(String... files) {

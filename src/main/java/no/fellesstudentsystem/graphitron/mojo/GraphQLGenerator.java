@@ -5,6 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.exception.DataAccessExceptionToErrorMappingProviderGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
@@ -41,7 +42,8 @@ public class GraphQLGenerator {
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
-                new MutationExceptionStrategyConfigurationGenerator(processedSchema)
+                new MutationExceptionStrategyConfigurationGenerator(processedSchema),
+                new DataAccessExceptionToErrorMappingProviderGenerator(processedSchema)
         );
 
         generate(generators);

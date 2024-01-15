@@ -15,7 +15,7 @@ public class ExternalClassReference {
         return name;
     }
 
-    public String getClassPath() {
+    public String getFullyQualifiedClassName() {
         return fullyQualifiedClassName;
     }
 }

@@ -1,22 +1,24 @@
 package no.fellesstudentsystem.graphql.exception;
 
+import org.jooq.exception.DataAccessException;
+
 import java.util.List;
 
 public class DataAccessExceptionContentToErrorMapping {
-    final private DataAccessExceptionMappingContent fsDataAccessExceptionMapping;
+    final private DataAccessExceptionMappingContent dataAccessExceptionMapping;
     final private ErrorHandler errorHandler;
 
-    public DataAccessExceptionContentToErrorMapping(DataAccessExceptionMappingContent fsDataAccessExceptionMapping, ErrorHandler errorHandler) {
-        this.fsDataAccessExceptionMapping = fsDataAccessExceptionMapping;
+    public DataAccessExceptionContentToErrorMapping(DataAccessExceptionMappingContent dataAccessExceptionMapping, ErrorHandler errorHandler) {
+        this.dataAccessExceptionMapping = dataAccessExceptionMapping;
         this.errorHandler = errorHandler;
     }
 
-    public DataAccessExceptionMappingContent getFsDataAccessExceptionMapping() {
-        return fsDataAccessExceptionMapping;
+    public boolean matches(DataAccessException exception) {
+        return dataAccessExceptionMapping.matches(exception);
     }
 
-    public ErrorHandler getErrorHandler() {
-        return errorHandler;
+    public Object handleError(List<String> path) {
+        return errorHandler.handleError(path);
     }
 
     @FunctionalInterface
