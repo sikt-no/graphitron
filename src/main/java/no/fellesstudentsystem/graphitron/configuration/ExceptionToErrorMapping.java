@@ -10,17 +10,15 @@ public class ExceptionToErrorMapping {
     private String mutationName;
     private String errorTypeName;
     private String databaseErrorCode;
-    private String sqlStateClassCode;
     private String exceptionMessageContains;
     private String errorDescription;
 
     public ExceptionToErrorMapping() {}
 
-    public ExceptionToErrorMapping(String mutationName, String errorTypeName, String databaseErrorCode, @Nullable String sqlStateClassCode, @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
+    public ExceptionToErrorMapping(String mutationName, String errorTypeName, String databaseErrorCode, @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
         this.mutationName = mutationName;
         this.errorTypeName = errorTypeName;
         this.databaseErrorCode = databaseErrorCode;
-        this.sqlStateClassCode = sqlStateClassCode;
         this.exceptionMessageContains = exceptionMessageContains;
         this.errorDescription = errorDescription;
     }
@@ -41,10 +39,6 @@ public class ExceptionToErrorMapping {
 
     public String getExceptionMessageContains() {
         return exceptionMessageContains;
-    }
-
-    public Optional<String> getSqlStateClassCode() {
-        return Optional.ofNullable(sqlStateClassCode);
     }
 
     public String getDatabaseErrorCode() {

@@ -15,7 +15,6 @@ import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.jooq.exception.DataAccessException;
-import org.jooq.exception.SQLStateClass;
 
 /**
  * Enum of all the classnames in use in the generator, which helps keep track of dependencies.
@@ -70,7 +69,6 @@ public enum JavaPoetClassName {
     SET(ClassName.get(java.util.Set.class)),
     SIMPLE_ENTRY(ClassName.get(java.util.AbstractMap.SimpleEntry.class)),
     STRING(ClassName.get(java.lang.String.class)),
-    SQL_STATE_CLASS(ClassName.get(SQLStateClass.class)),
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqTablesClass())),
     THROWABLE(ClassName.get(Throwable.class)),
     VALIDATION_VIOLATION_EXCEPTION(ClassName.get(ValidationViolationGraphQLException.class));

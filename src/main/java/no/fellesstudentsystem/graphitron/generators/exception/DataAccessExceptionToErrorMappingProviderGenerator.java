@@ -79,11 +79,8 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
                                         .indent()
                                         .add("new $T(\n", DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className)
                                         .indent()
-                                        .add("new $T($L, $S, $S),\n",
+                                        .add("new $T($S, $S),\n",
                                                 DATA_ACCESS_EXCEPTION_MAPPING_CONTENT.className,
-                                                exceptionToErrorMapping.getSqlStateClassCode()
-                                                        .map(stateCode -> CodeBlock.of("$T.fromCode($S)", SQL_STATE_CLASS.className, stateCode))
-                                                        .orElse(CodeBlock.of("$T.OTHER", SQL_STATE_CLASS.className)),
                                                 exceptionToErrorMapping.getDatabaseErrorCode(),
                                                 exceptionToErrorMapping.getExceptionMessageContains())
                                         .add("path -> new $T(path, $L)))",

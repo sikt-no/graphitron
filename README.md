@@ -37,7 +37,6 @@ The options are the same for both goals.
   * `mutationName` - The name of the mutation.
   * `errorTypeName` - The name of the error type in the GraphQL schema.
   * `databaseErrorCode` - The database error code associated with the exception.
-  * `sqlStateClassCode` - OPTIONAL. The SQL state class code associated with the database error. Defaults to _SQLSateClass.OTHER_
   * `exceptionMessageContains` - OPTIONAL. A string that the exception message must contain. 
   * `errorDescription` - OPTIONAL. A description of the error to be returned to the user.
 

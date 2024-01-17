@@ -10,7 +10,7 @@ import java.util.Map;
 import no.fellesstudentsystem.graphql.exception.DataAccessExceptionContentToErrorMapping;
 import no.fellesstudentsystem.graphql.exception.DataAccessExceptionMappingContent;
 import no.fellesstudentsystem.graphql.exception.DataAccessExceptionToErrorMappingProvider;
-import org.jooq.exception.SQLStateClass;
+
 public class GeneratedDataAccessExceptionToErrorMappingProvider implements DataAccessExceptionToErrorMappingProvider {
     private final Map<String, List<DataAccessExceptionContentToErrorMapping>> mappingsForMutation;
 
@@ -20,18 +20,18 @@ public class GeneratedDataAccessExceptionToErrorMappingProvider implements DataA
         var editCustomerWithOtherErrorList = new ArrayList<DataAccessExceptionContentToErrorMapping>();
         editCustomerWithOtherErrorList.add(
                 new DataAccessExceptionContentToErrorMapping(
-                        new DataAccessExceptionMappingContent(SQLStateClass.OTHER, "20997", null),
+                        new DataAccessExceptionMappingContent("20997", null),
                         path -> new OtherError(path, "This is an error")));
         editCustomerWithOtherErrorList.add(
                 new DataAccessExceptionContentToErrorMapping(
-                        new DataAccessExceptionMappingContent(SQLStateClass.OTHER, "20998", "bad word detected"),
+                        new DataAccessExceptionMappingContent("20998", "bad word detected"),
                         path -> new OtherError(path, null)));
         mappingsForMutation.put("editCustomerWithOtherError", editCustomerWithOtherErrorList);
 
         var editCustomerWithUnionErrorList = new ArrayList<DataAccessExceptionContentToErrorMapping>();
         editCustomerWithUnionErrorList.add(
                 new DataAccessExceptionContentToErrorMapping(
-                        new DataAccessExceptionMappingContent(SQLStateClass.fromCode("22"), "1337", "data error"),
+                        new DataAccessExceptionMappingContent("1337", "data error"),
                         path -> new OtherError(path, "This is an error for the union type")));
         mappingsForMutation.put("editCustomerWithUnionError", editCustomerWithUnionErrorList);
     }

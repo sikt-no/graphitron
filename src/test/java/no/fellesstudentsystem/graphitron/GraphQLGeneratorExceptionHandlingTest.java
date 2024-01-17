@@ -23,17 +23,17 @@ public class GraphQLGeneratorExceptionHandlingTest extends TestCommon {
             new ExceptionToErrorMapping(
                     "editCustomerWithOtherError",
                     "OtherError",
-                    "20997", null, null, "This is an error"
+                    "20997", null, "This is an error"
             ),
             new ExceptionToErrorMapping(
                     "editCustomerWithOtherError",
                     "OtherError",
-                    "20998", null, "bad word detected", null
+                    "20998", "bad word detected", null
             ),
             new ExceptionToErrorMapping(
                     "editCustomerWithUnionError",
                     "OtherError",
-                    "1337", "22", "data error", "This is an error for the union type"
+                    "1337", "data error", "This is an error for the union type"
             )
     );
 
@@ -88,7 +88,7 @@ public class GraphQLGeneratorExceptionHandlingTest extends TestCommon {
                 new ExceptionToErrorMapping(
                         "nonExistentMutation",
                         "OtherError",
-                        "20997", null, "some specific error", "This is an error"
+                        "20997", "some specific error", "This is an error"
                 ));
 
         GeneratorConfig.setExceptionToErrorMappings(exceptionToErrorMappings);
@@ -103,7 +103,7 @@ public class GraphQLGeneratorExceptionHandlingTest extends TestCommon {
                 new ExceptionToErrorMapping(
                         "editCustomerWithOtherError",
                         "NonExistentErrorType",
-                        "20997", null, "some specific error", "This is an error"
+                        "20997", "some specific error", "This is an error"
                 ));
 
         GeneratorConfig.setExceptionToErrorMappings(exceptionToErrorMappings);
