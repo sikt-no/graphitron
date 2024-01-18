@@ -1,0 +1,15 @@
+type Query {
+  customer(id: ID!): Customer
+}
+
+type Customer @table {
+  id: ID!
+  store: Store! @reference(
+    via: [{table: "ADDRESS"}, {table: "CUSTOMER"}],
+    condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}
+  )
+}
+
+type Store @table {
+  id: ID!
+}

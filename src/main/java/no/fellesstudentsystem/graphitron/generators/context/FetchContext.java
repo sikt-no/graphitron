@@ -139,7 +139,7 @@ public class FetchContext {
     }
 
     /**
-     * @return Set of all conditions created up to this point by this context or any contexts created from it.
+     * @return Map of all conditions created up to this point by this context or any contexts created from it.
      */
     public LinkedHashMap<FetchContext, List<CodeBlock>> getConditionSet() {
         return conditionSet;
@@ -221,7 +221,9 @@ public class FetchContext {
      * Override the previous layer's use of an expanded null check.
      */
     public void setParentContextShouldUseEnhancedNullOnAllNullCheck() {
-        previousContext.shouldUseEnhancedNullOnAllNullCheck = true;
+        if (previousContext != null) {
+            previousContext.shouldUseEnhancedNullOnAllNullCheck = true;
+        }
     }
 
     /**
@@ -267,7 +269,8 @@ public class FetchContext {
                 getCurrentJoinSequence(),
                 getReferenceTable(),
                 field.getFieldReferences(),
-                field.isNullable() && !fieldIsNullable(getReferenceOrPreviousTable().getMappingName(), field.getUpperCaseName()).orElse(true)
+                field.isNullable() && !fieldIsNullable(getReferenceOrPreviousTable().getMappingName(), field.getUpperCaseName()).orElse(true),
+                false
         );
         return !newJoinSequence.isEmpty() ? newJoinSequence : currentSequence;
     }
@@ -285,7 +288,7 @@ public class FetchContext {
 
         var referencesFromField = referenceObjectField.getFieldReferences();
         var nullable = referenceObjectField.isNullable();
-        var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, nullable);
+        var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, nullable, true);
         var updatedSequence = !newJoinSequence.isEmpty() ? newJoinSequence : previousSequence;
 
         if (refTable == null) {
@@ -301,7 +304,8 @@ public class FetchContext {
                 new FieldReference(refTable),
                 new TableRelation(lastTable, refTable),
                 updatedSequence,
-                nullable
+                nullable,
+                false
         ); // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
         return !finalSequence.isEmpty() ? finalSequence : JoinListSequence.of(refTable);
     }
@@ -310,12 +314,46 @@ public class FetchContext {
      * Iterate through the provided references and create a new join sequence.
      * @return The new join sequence, with the provided join sequence extended by all the references provided.
      */
-    private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin) {
+    private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin, boolean checkLastRef) {
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
+
+        var relations = new ArrayList<TableRelation>();
         for (var fRef : references) {
             var table = inferNextTable(fRef.getTable(), fRef.getKey(), previousTable, refTable);
-            joinSequence = resolveNextSequence(fRef, new TableRelation(previousTable, table, fRef.getKey()), joinSequence, requiresLeftJoin);
+            relations.add(new TableRelation(previousTable, table, fRef.getKey()));
             previousTable = table;
+        }
+
+        if (previousTable == null) {
+            previousTable = getPreviousTable();
+        }
+
+        var referencesWithLast = new ArrayList<>(references);
+        if (checkLastRef && !Objects.equals(previousTable, refTable)) {
+            relations.add(new TableRelation(previousTable, refTable));
+            referencesWithLast.add(new FieldReference(refTable));
+        }
+
+        var refSize = referencesWithLast.size();
+        boolean hasFutureJoin = false, checkedJoins = false;
+        // These complicated checks may become redundant with https://www.jooq.org/doc/latest/manual/sql-building/sql-statements/select-statement/explicit-path-join/ and should be removed if the feature is applied.
+        for (int i = 0; i < references.size(); i++) {
+            if (!checkedJoins) {
+                var futureRelations = relations.subList(i, refSize);
+                var futureReferences = referencesWithLast.subList(i, refSize);
+                for (int j = 0; j < futureRelations.size() && !hasFutureJoin; j++) {
+                    hasFutureJoin = hasExplicitJoin(futureReferences.get(j), futureRelations.get(j));
+                }
+
+                checkedJoins = true;
+            }
+
+            joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, requiresLeftJoin, hasFutureJoin);
+
+            if (!joinSequence.isEmpty() && joinSequence.getLast().clearsPreviousSequence()) {
+                checkedJoins = false;
+                hasFutureJoin = false;
+            }
         }
 
         return joinSequence;
@@ -330,7 +368,7 @@ public class FetchContext {
         );
     }
 
-    private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
+    private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin, boolean hasFutureJoin) {
         var previous = relation.getFrom();
         var multisetSkipJoin = isMultisetContext();
         var target = relation.getToTable();
@@ -346,14 +384,14 @@ public class FetchContext {
                 : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
         keyForMapping = keyToUse;
         // If we lack this table from a previous join or there is no key, we can not make a key join with implicit steps.
-        var lastIsJoin = !joinSequence.isEmpty() && joinSequence.getLast().clearsPreviousSequence();
-        if (!multisetSkipJoin && fRef.hasTableCondition() && (keyToUse == null || !lastIsJoin && joinSequence.size() > 1)) {
+        var lastIsNotJoin = joinSequence.size() > 1 && !joinSequence.getLast().clearsPreviousSequence();
+        if (!multisetSkipJoin && fRef.hasTableCondition() && (keyToUse == null || lastIsNotJoin)) {
             var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
             joinSet.add(join);
             return newSequence.cloneAdd(join.getJoinAlias());
         }
 
-        if (!multisetSkipJoin && relation.isReverse() && keyToUse != null) { // Tried to make it (relation.isReverse() || requiresLeftJoin), but that didn't work out. Theoretically, including it should be the most correct.
+        if (!multisetSkipJoin && (relation.isReverse() || hasFutureJoin) && keyToUse != null) { // Tried to make it (relation.isReverse() || requiresLeftJoin), but that didn't work out. Theoretically, including it should be the most correct.
             var join = fRef.createJoinOnKeyFor(keyToUse, newSequence, targetOrPrevious, requiresLeftJoin);
             joinSet.add(join);
             var alias = join.getJoinAlias();
@@ -386,6 +424,18 @@ public class FetchContext {
             codeBlock.add(".$L()", joinSequence.get(i).getTable().getCodeName());
         }
         return Optional.of(codeBlock.build());
+    }
+
+    private boolean hasExplicitJoin(FieldReference fRef, TableRelation relation) {
+        var previous = relation.getFrom();
+        var target = relation.getToTable();
+
+        if (previous == null || fRef.hasTableCondition()) { // TODO: Does not account for conditions that do not result in joins.
+            return false;
+        }
+
+        var hasKey = fRef.hasKey() || findImplicitKey(previous.getMappingName(), (target != null ? target : previous).getMappingName()).isPresent();
+        return relation.isReverse() && hasKey;
     }
 
     public CodeBlock renderQuerySource(JOOQMapping localTable) {

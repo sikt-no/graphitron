@@ -135,6 +135,11 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
+    void generate_joinWhenFutureHasExplicitJoin_shouldCreateAppropriateJoinType() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceWithFutureExplicitJoin");
+    }
+
+    @Test
     void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("multipleAliasesForSameType");
     }
