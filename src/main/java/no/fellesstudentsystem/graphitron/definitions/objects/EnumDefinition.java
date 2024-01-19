@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumValueDefinition;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.EnumField;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
@@ -9,21 +10,23 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ENUM;
-import static no.fellesstudentsystem.graphitron.definitions.fields.EnumField.from;
 
 /**
  * Representation of a GraphQL enum type.
  */
-public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumField> {
+public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumValueDefinition, EnumField> {
     private final CodeReference enumReference;
-    private final List<EnumField> enumFields;
 
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {
         super(enumTypeDefinition);
         this.enumReference = enumTypeDefinition.hasDirective(ENUM.getName())
                 ? new CodeReference(enumTypeDefinition, ENUM, GenerationDirectiveParam.ENUM)
                 : null;
-        this.enumFields = from(enumTypeDefinition);
+    }
+
+    @Override
+    protected List<EnumField> createFields(EnumTypeDefinition objectDefinition) {
+        return EnumField.from(objectDefinition);
     }
 
     /**
@@ -38,10 +41,6 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition,
      */
     public boolean hasJavaEnumMapping() {
         return enumReference != null;
-    }
-
-    public List<EnumField> getFields() {
-        return enumFields;
     }
 
     /**

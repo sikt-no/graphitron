@@ -18,9 +18,9 @@ import java.util.*;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getExceptionToErrorMappings;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapSet;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMap;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asGetMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 public class MutationExceptionStrategyConfigurationGenerator implements ClassGenerator<ObjectDefinition> {
@@ -149,7 +149,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators) {
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(MUTATION_EXCEPTION_STRATEGY_CONFIGURATION.className)
                 .addModifiers(Modifier.PUBLIC)

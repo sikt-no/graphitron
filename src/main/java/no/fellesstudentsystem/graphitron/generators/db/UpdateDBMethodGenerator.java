@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**

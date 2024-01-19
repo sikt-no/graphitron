@@ -10,7 +10,7 @@ import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareContextVariable;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapFuture;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapFuture;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**

@@ -252,7 +252,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         var conditionFields = context.getReferenceObjectField().getFieldReferences().stream().filter(it -> it.getTableCondition() != null).collect(Collectors.toList());
 
         if(conditionFields.size() > 0) {
-            throw new IllegalArgumentException(String.format("List of type %s requires the @SplitQuery directive to be able to contain @condition in a @reference within a list", context.getReferenceObject().getTypeDefinition().getName()));
+            throw new IllegalArgumentException(String.format("List of type %s requires the @SplitQuery directive to be able to contain @condition in a @reference within a list", context.getReferenceObject().getName()));
         }
 
         var whereContent = CodeBlock.builder();

@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
+import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 
@@ -9,15 +10,17 @@ import java.util.List;
  * Object that corresponds to a GraphQL type whose name ends with the "Connection" suffix.
  * The behaviour of this class should always reflect the <a href="https://relay.dev/graphql/connections.htm">connections specification</a>.
  */
-public class ConnectionObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
+public class ConnectionObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> {
     private final EdgeObjectDefinition edgeObject;
-    private final List<ObjectField> objectFields;
 
     public ConnectionObjectDefinition(ObjectTypeDefinition objectDefinition, EdgeObjectDefinition edgeObject) {
         super(objectDefinition);
         this.edgeObject = edgeObject;
+    }
 
-        objectFields = ObjectField.from(objectDefinition.getFieldDefinitions());
+    @Override
+    protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
+        return ObjectField.from(objectDefinition.getFieldDefinitions());
     }
 
     /**
@@ -32,9 +35,5 @@ public class ConnectionObjectDefinition extends AbstractObjectDefinition<ObjectT
      */
     public EdgeObjectDefinition getEdgeObject() {
         return edgeObject;
-    }
-
-    public List<ObjectField> getFields() {
-        return objectFields;
     }
 }

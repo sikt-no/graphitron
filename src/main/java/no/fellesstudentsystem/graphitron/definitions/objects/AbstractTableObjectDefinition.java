@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
+import graphql.language.DirectivesContainer;
+import graphql.language.NamedNode;
 import graphql.language.TypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
@@ -12,7 +14,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam
 /**
  * A generalized implementation of {@link ObjectSpecification} for types that can be linked to tables.
  */
-public abstract class AbstractTableObjectDefinition<T extends TypeDefinition<T>, U extends AbstractField> extends AbstractObjectDefinition<T, U> {
+public abstract class AbstractTableObjectDefinition<T extends TypeDefinition<T>, F extends NamedNode<F> & DirectivesContainer<F>, U extends AbstractField<F>> extends AbstractObjectDefinition<T, F, U> {
     private final JOOQMapping table;
     private final boolean hasTable;
 

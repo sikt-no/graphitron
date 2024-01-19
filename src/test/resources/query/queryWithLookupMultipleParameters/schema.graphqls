@@ -1,0 +1,64 @@
+type Query {
+  films(
+    titles: [String!]! @field(name: "TITLE") @lookupKey
+    releaseYears: [String!]! @field(name: "RELEASE_YEAR") @lookupKey
+    durations: [Int!]! @field(name: "LENGTH") @lookupKey # To test the concat.
+    filmId: [ID!]! @field(name: "FILM_ID") @lookupKey
+  ): [Film]!
+
+  filmsInputKeys(in: FilmWithListKeys): [Film]!
+  filmsListedInput(in: [FilmWithoutKeys!]! @lookupKey): [Film]!
+  filmsInput(in: FilmFields @lookupKey): [Film]!
+  filmsNestedInputs(in: FilmNestedNoKey @lookupKey): [Film]!
+  filmsNestedInputsAndKeys(in: FilmNested): [Film]!
+  filmsNestedList(in: FilmNestedList): [Film]!
+  filmsNestedListWithKeys(in: FilmNestedWithKeyList): [Film]!
+}
+
+input FilmFields {
+  titles: [String!]! @field(name: "TITLE")
+  releaseYears: [String!]! @field(name: "RELEASE_YEAR")
+  durations: [Int!]! @field(name: "LENGTH") @lookupKey
+}
+
+input FilmWithKeys {
+  title: String! @field(name: "TITLE") @lookupKey
+  releaseYear: String! @field(name: "RELEASE_YEAR") @lookupKey
+  duration: Int! @field(name: "LENGTH") @lookupKey
+}
+
+input FilmWithListKeys {
+  titles: [String!]! @field(name: "TITLE") @lookupKey
+  releaseYears: [String!]! @field(name: "RELEASE_YEAR") @lookupKey
+  durations: [Int!]! @field(name: "LENGTH") @lookupKey
+}
+
+input FilmWithoutKeys {
+  title: String! @field(name: "TITLE")
+  releaseYear: String! @field(name: "RELEASE_YEAR")
+  duration: Int! @field(name: "LENGTH")
+}
+
+input FilmNested {
+  fields: FilmWithListKeys
+  filmIds: [ID!]! @field(name: "FILM_ID") @lookupKey
+}
+
+input FilmNestedNoKey {
+  fields: FilmFields
+  filmIds: [ID!]! @field(name: "FILM_ID")
+}
+
+input FilmNestedList {
+  fields: [FilmWithKeys!]!
+  filmIds: [ID!]! @field(name: "FILM_ID") @lookupKey
+}
+
+input FilmNestedWithKeyList {
+  fields: [FilmWithoutKeys!]! @lookupKey
+  filmIds: [ID!]! @field(name: "FILM_ID") @lookupKey
+}
+
+type Film implements Node @table {
+  id: ID!
+}

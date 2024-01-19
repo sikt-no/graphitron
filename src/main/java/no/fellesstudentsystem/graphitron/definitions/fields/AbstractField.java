@@ -22,7 +22,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam
 /**
  * This class represents the general functionality associated with GraphQLs object fields.
  */
-public abstract class AbstractField {
+public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer<T>> {
     private final FieldType fieldType;
     private final String name, upperCaseName, unprocessedNameInput;
     private final boolean isGenerated;
@@ -30,7 +30,11 @@ public abstract class AbstractField {
     private final SQLCondition condition;
     private final MethodMapping mappingFromFieldName, mappingFromColumn;
 
-    private <T extends NamedNode<T> & DirectivesContainer<T>> AbstractField(T field, FieldType fieldType) {
+    public AbstractField(T field) {
+        this(field ,null);
+    }
+
+    public AbstractField(T field, FieldType fieldType) {
         name = field.getName();
         if (field.hasDirective(FIELD.getName())) {
             var columnValue = getDirectiveArgumentString(field, FIELD, NAME);
@@ -103,18 +107,6 @@ public abstract class AbstractField {
                             )
                     );
                 });
-    }
-
-    public AbstractField(FieldDefinition field) {
-        this(field, new FieldType(field.getType()));
-    }
-
-    public AbstractField(EnumValueDefinition field) {
-        this(field, null);
-    }
-
-    public AbstractField(InputValueDefinition field) {
-        this(field, new FieldType(field.getType()));
     }
 
     /**

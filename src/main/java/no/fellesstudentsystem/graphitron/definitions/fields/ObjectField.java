@@ -7,6 +7,7 @@ import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
@@ -15,14 +16,16 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
 /**
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.
  */
-public class ObjectField extends AbstractField implements GenerationTarget {
+public class ObjectField extends AbstractField<FieldDefinition> implements GenerationTarget {
     private int firstDefault = 100;
     private int lastDefault = 100;
     private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
-    private final List<ArgumentField> inputFields, nonReservedFields, lookupKeys;
+    private final List<ArgumentField> arguments, nonReservedArguments;
+    private final LinkedHashMap<String, ArgumentField> argumentsByName;
+    private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
     private final boolean isGenerated, isResolver, hasLookupKey;
-    public final static Set<String> RESERVED_PAGINATION_NAMES = Set.of(
+    public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
             GraphQLReservedName.PAGINATION_LAST.getName(),
@@ -32,10 +35,10 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     private final CodeReference serviceReference;
 
     public ObjectField(FieldDefinition field) {
-        super(field);
+        super(field, new FieldType(field.getType()));
         isResolver = field.hasDirective(SPLIT_QUERY.getName());
-        inputFields = setInputAndPagination(field, isRootField());
-        nonReservedFields = inputFields.stream().filter(inputField ->
+        arguments = setInputAndPagination(field, isRootField());
+        nonReservedArguments = arguments.stream().filter(inputField ->
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName()))
         ).collect(Collectors.toList());
         isGenerated = isResolver && !field.hasDirective(NOT_GENERATED.getName());
@@ -44,8 +47,9 @@ public class ObjectField extends AbstractField implements GenerationTarget {
         mutationType = field.hasDirective(MUTATION.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
                 : null;
-        lookupKeys = nonReservedFields.stream().filter(ArgumentField::isLookupKey).collect(Collectors.toList());
+        lookupKeys = nonReservedArguments.stream().filter(ArgumentField::isLookupKey).map(AbstractField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         hasLookupKey = !lookupKeys.isEmpty();
+        argumentsByName = arguments.stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
     }
 
     private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
@@ -148,7 +152,21 @@ public class ObjectField extends AbstractField implements GenerationTarget {
      * @return List of all input arguments for this field.
      */
     public List<ArgumentField> getArguments() {
-        return inputFields;
+        return arguments;
+    }
+
+    /**
+     * @return Argument with this name if it exists.
+     */
+    public ArgumentField getArgumentByName(String name) {
+        return argumentsByName.get(name);
+    }
+
+    /**
+     * @return Does this field contain this argument?
+     */
+    public boolean hasArgument(String name) {
+        return argumentsByName.containsKey(name);
     }
 
     /**
@@ -169,21 +187,21 @@ public class ObjectField extends AbstractField implements GenerationTarget {
      * @return List of all input non-reserved arguments for this field.
      */
     public List<ArgumentField> getNonReservedArguments() {
-        return nonReservedFields;
+        return nonReservedArguments;
     }
 
     /**
      * @return Does this field have any input fields defined?
      */
     public boolean hasInputFields() {
-        return !inputFields.isEmpty();
+        return !arguments.isEmpty();
     }
 
     /**
      * @return Does this field have any input fields defined that are not reserved?
      */
     public boolean hasNonReservedInputFields() {
-        return !nonReservedFields.isEmpty();
+        return !nonReservedArguments.isEmpty();
     }
 
     /**
@@ -208,20 +226,9 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     }
 
     /**
-     * @return List of fields that are configured to be used as lookup keys.
+     * @return Set of fields that are configured to be used as lookup keys.
      */
-    public List<ArgumentField> getLookupKeys() {
+    public LinkedHashSet<String> getLookupKeys() {
         return lookupKeys;
-    }
-
-    /**
-     * @return Field that is configured to be used as a lookup key.
-     */
-    public ArgumentField getLookupKey() {
-        var lookupKeys = getLookupKeys();
-        if (lookupKeys.size() > 1) {
-            throw new IllegalArgumentException("Field " + getName() + " has more than one lookup key.");
-        }
-        return lookupKeys.stream().findFirst().get();
     }
 }

@@ -20,7 +20,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 
 /**
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.

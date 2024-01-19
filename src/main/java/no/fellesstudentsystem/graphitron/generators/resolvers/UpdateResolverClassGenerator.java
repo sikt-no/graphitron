@@ -42,7 +42,7 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
         }
     }
 
-    protected void setDependencies(List<MethodGenerator<? extends AbstractField>> generators, TypeSpec.Builder spec) {
+    protected void setDependencies(List<MethodGenerator<? extends AbstractField<?>>> generators, TypeSpec.Builder spec) {
         generators
                 .stream()
                 .flatMap(gen -> gen.getDependencySet().stream())

@@ -9,8 +9,8 @@ import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asListedName;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asRecordName;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;

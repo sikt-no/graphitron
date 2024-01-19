@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
+import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -13,23 +14,21 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
 /**
  * Represents the default GraphQL object, parsed as an exception type.
  */
-public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
+public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> {
     private final boolean isGenerated;
-    private final List<ObjectField> objectFields;
     private final CodeReference exceptionReference;
 
     public ExceptionDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
-
-        objectFields = ObjectField.from(objectDefinition.getFieldDefinitions());
 
         isGenerated = getFields().stream().anyMatch(ObjectField::isGenerated);
 
         exceptionReference = objectDefinition.hasDirective(ERROR.getName()) ? new CodeReference(objectDefinition, ERROR, GenerationDirectiveParam.ERROR, objectDefinition.getName()) : null;
     }
 
-    public List<ObjectField> getFields() {
-        return objectFields;
+    @Override
+    protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
+        return ObjectField.from(objectDefinition.getFieldDefinitions());
     }
 
     public boolean isGenerated() {

@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
@@ -16,8 +17,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -74,9 +75,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent();
 
         var ref = context.getReferenceObjectField();
-        if (!isRoot || ref.hasLookupKey()) {
-            var key = ref.hasLookupKey() ? ref.getLookupKey().getUpperCaseName() : "getId()";
-            code.add("$L.$L,\n", context.renderQuerySource(getLocalTable()), key);
+        var table = context.renderQuerySource(getLocalTable());
+        if (LookupHelpers.lookupExists(ref, processedSchema)) {
+            code.add("$T.concat($L),\n", DSL.className, LookupHelpers.getLookUpKeysAsColumnList(ref, table, processedSchema));
+        } else if (!isRoot) {
+            code.add("$L.getId(),\n", table);
         }
         return code.build();
     }
@@ -106,11 +109,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @NotNull
     private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
-        if (isRoot && !referenceField.hasLookupKey()) {
+        var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
+        if (isRoot && !lookupExists) {
             return wrapList(refClassName);
         } else {
-            var key = referenceField.hasLookupKey() ? referenceField.getLookupKey().getTypeClass() : STRING.className;
-            return wrapMap(key, wrapListIf(refClassName, referenceField.isIterableWrapped() && !referenceField.hasLookupKey() || referenceField.hasForwardPagination()));
+            return wrapMap(STRING.className, wrapListIf(refClassName, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
         }
     }
 
@@ -118,7 +121,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         var refTable = refObject.getTable().getMappingName();
         var code = CodeBlock.builder();
-        if (!referenceField.hasLookupKey() && isRoot || referenceField.hasForwardPagination()) {
+        var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
+        if (!lookupExists && isRoot || referenceField.hasForwardPagination()) {
             code.add(".orderBy($N.getIdFields())\n", actualRefTable);
         }
 
@@ -127,13 +131,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
         }
 
-        if (isRoot && !referenceField.hasLookupKey()) {
+        if (isRoot && !lookupExists) {
             code.addStatement(".fetch(0, $T.class)", refObject.getGraphClassName());
         } else {
             code
                     .add(".")
                     .add(
-                            referenceField.isIterableWrapped() && !referenceField.hasLookupKey() || referenceField.hasForwardPagination()
+                            referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()
                                     ? "fetchGroups"
                                     : "fetchMap"
                     )

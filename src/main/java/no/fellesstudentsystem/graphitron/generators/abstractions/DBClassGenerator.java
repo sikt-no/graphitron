@@ -32,7 +32,7 @@ abstract public class DBClassGenerator<T extends GenerationTarget> implements Cl
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators) {
         var spec = TypeSpec
                 .classBuilder(className)
                 .addModifiers(Modifier.PUBLIC)

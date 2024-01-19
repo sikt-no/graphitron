@@ -51,5 +51,5 @@ public interface ClassGenerator<T extends GenerationTarget> {
      * @param generators List of method generators that this class should use to generate its methods.
      * @return A completed {@link TypeSpec.Builder} for this class, where all methods have already been added.
      */
-    TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField>> generators);
+    TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators);
 }

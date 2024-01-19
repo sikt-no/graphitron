@@ -193,7 +193,7 @@ public class ProcessedDefinitionsValidator {
         return requiredJOOQTypesAndMethods;
     }
 
-    private String findForReferences(AbstractField field, String lastTable, HashMap<String, HashSet<String>> requiredJOOQTypesAndMethods) {
+    private String findForReferences(AbstractField<?> field, String lastTable, HashMap<String, HashSet<String>> requiredJOOQTypesAndMethods) {
         for (var reference : field.getFieldReferences()) {
             if (reference.hasKey() && lastTable != null) {
                 var key = reference.getKey();
@@ -469,10 +469,10 @@ public class ProcessedDefinitionsValidator {
     }
 
     private final static class FieldWithOverrideStatus {
-        AbstractField field;
+        AbstractField<?> field;
         boolean hasOverrideCondition;
 
-        public FieldWithOverrideStatus(AbstractField field, boolean hasOverrideCondition) {
+        public FieldWithOverrideStatus(AbstractField<?> field, boolean hasOverrideCondition) {
             this.field = field;
             this.hasOverrideCondition = hasOverrideCondition;
         }

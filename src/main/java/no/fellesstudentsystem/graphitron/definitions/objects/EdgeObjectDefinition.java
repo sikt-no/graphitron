@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
+import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -10,17 +11,20 @@ import java.util.List;
  * Object that corresponds to a GraphQL type which is referred to by a connection's "edges" field.
  * The behaviour of this class should always reflect the <a href="https://relay.dev/graphql/connections.htm">connections specification</a>.
  */
-public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
+public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> {
     private final String nodeType;
     private final ObjectField cursor;
-    private final List<ObjectField> objectFields;
 
     public EdgeObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
         var fields = ObjectField.from(objectDefinition.getFieldDefinitions());
         nodeType = getObjectForField(GraphQLReservedName.CONNECTION_NODE_FIELD.getName(), fields).getTypeName();
         cursor = getObjectForField(GraphQLReservedName.CONNECTION_CURSOR_FIELD.getName(), fields);
-        objectFields = ObjectField.from(objectDefinition.getFieldDefinitions());
+    }
+
+    @Override
+    protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
+        return ObjectField.from(objectDefinition.getFieldDefinitions());
     }
 
     private ObjectField getObjectForField(String name, List<ObjectField> fields) {
@@ -43,9 +47,5 @@ public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDef
      */
     public ObjectField getCursor() {
         return cursor;
-    }
-
-    public List<ObjectField> getFields() {
-        return objectFields;
     }
 }

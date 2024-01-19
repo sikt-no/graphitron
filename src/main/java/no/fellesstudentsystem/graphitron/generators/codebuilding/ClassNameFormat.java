@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.generators.context;
+package no.fellesstudentsystem.graphitron.generators.codebuilding;
 
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;

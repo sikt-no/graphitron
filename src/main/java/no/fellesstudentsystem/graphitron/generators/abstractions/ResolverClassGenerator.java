@@ -35,7 +35,7 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> impleme
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators) {
         var spec = TypeSpec.classBuilder(className + FILE_NAME_SUFFIX);
         if (generators.stream().anyMatch(g -> !g.generatesAll())) {
             spec.addModifiers(Modifier.ABSTRACT);
@@ -60,7 +60,7 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> impleme
      * Add all the dependency fields for this class.
      * @param generators Generators to extract dependencies from.
      */
-    protected void setDependencies(List<MethodGenerator<? extends AbstractField>> generators, TypeSpec.Builder spec) {
+    protected void setDependencies(List<MethodGenerator<? extends AbstractField<?>>> generators, TypeSpec.Builder spec) {
         generators
                 .stream()
                 .flatMap(gen -> gen.getDependencySet().stream())

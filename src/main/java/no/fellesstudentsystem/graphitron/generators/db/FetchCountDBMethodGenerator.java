@@ -13,8 +13,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.getStringSetTypeName;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asCountMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**

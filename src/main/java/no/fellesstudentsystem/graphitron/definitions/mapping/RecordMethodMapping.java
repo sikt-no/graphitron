@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.mapping;
 
 import org.apache.commons.lang3.StringUtils;
 
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.toCamelCase;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 
 /**
  * Stores operations related to rendering record method calls.

@@ -6,7 +6,9 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.DSLContext;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class ResolverHelpers {
     public static int getPageSize(Integer first, int max, int defaultMax) {
@@ -20,5 +22,9 @@ public class ResolverHelpers {
     @NotNull
     public static SelectionSet getSelectionSet(DataFetchingEnvironment env) {
         return new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+    }
+
+    public static List<String> formatString(List<?> l) {
+        return l.stream().map(it -> it != null ? it.toString() : "null").collect(Collectors.toList());
     }
 }

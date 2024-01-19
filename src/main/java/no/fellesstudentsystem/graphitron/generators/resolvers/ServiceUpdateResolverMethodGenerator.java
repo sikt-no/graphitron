@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.context.UpdateContext.countParams;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;

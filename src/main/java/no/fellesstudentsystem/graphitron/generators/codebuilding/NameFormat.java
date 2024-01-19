@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.generators.context;
+package no.fellesstudentsystem.graphitron.generators.codebuilding;
 
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import org.apache.commons.lang3.StringUtils;

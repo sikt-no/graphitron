@@ -13,7 +13,7 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 
 /**
  * Class that contains extended information about a mutation service.

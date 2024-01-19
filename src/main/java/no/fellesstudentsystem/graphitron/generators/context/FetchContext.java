@@ -254,7 +254,7 @@ public class FetchContext {
      * @return The new join sequence, with the provided join sequence extended by all references in this layer's reference field,
      * or other appropriate start points for a sequence.
      */
-    public JoinListSequence iterateJoinSequenceFor(AbstractField field) {
+    public JoinListSequence iterateJoinSequenceFor(AbstractField<?> field) {
         var currentSequence = getCurrentJoinSequence();
         if (!field.hasFieldReferences()) {
             if(fromMultiset) {

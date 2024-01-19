@@ -1,11 +1,13 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
+import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.TopLevelObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -19,29 +21,31 @@ import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_R
  * Objects which do not fall within a different object category will become instances of this class.
  * This is typically the only object type used in table referencing and joining operations.
  */
-public class ObjectDefinition extends AbstractTableObjectDefinition<ObjectTypeDefinition, ObjectField> implements GenerationTarget {
+public class ObjectDefinition extends AbstractTableObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> implements GenerationTarget {
     private final boolean isGenerated, isRoot;
-    private final List<ObjectField> objectFields;
-    private final Set<String> implementsInterfaces;
+    private final LinkedHashSet<String> implementsInterfaces;
+    private final ObjectTypeDefinition objectTypeDefinition;
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
 
-        isRoot = getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_QUERY.getName())
-                || getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_MUTATION.getName());
-
-        var definitions = objectDefinition.getFieldDefinitions();
-        objectFields = isRoot ? TopLevelObjectField.from(definitions) : ObjectField.from(definitions);
-
+        isRoot = isRootType(objectDefinition);
         isGenerated = getFields().stream().anyMatch(ObjectField::isGenerated);
-
         implementsInterfaces = objectDefinition.getImplements().stream()
                 .map(it -> ((TypeName) it).getName())
-                .collect(Collectors.toSet());
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        objectTypeDefinition = objectDefinition;
     }
 
-    public List<ObjectField> getFields() {
-        return objectFields;
+    @Override
+    protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
+        var definitions = objectDefinition.getFieldDefinitions();
+        return isRootType(objectDefinition) ? TopLevelObjectField.from(definitions) : ObjectField.from(definitions);
+    }
+
+    private boolean isRootType(ObjectTypeDefinition objectDefinition) {
+        return objectDefinition.getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_QUERY.getName())
+                || objectDefinition.getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_MUTATION.getName());
     }
 
     public boolean isGenerated() {
@@ -53,6 +57,13 @@ public class ObjectDefinition extends AbstractTableObjectDefinition<ObjectTypeDe
      */
     public boolean isRoot() {
         return isRoot;
+    }
+
+    /**
+     * @return The original interpretation of this object as provided by GraphQL.
+     */
+    public ObjectTypeDefinition getTypeDefinition() {
+        return objectTypeDefinition;
     }
 
     /**

@@ -26,13 +26,15 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Customer>> customers(List<String> storeIds,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        return DataLoaders.loadDataAsLookup(env, storeIds, (ids, selectionSet) -> queryDBQueries.customersForQuery(ctx, storeIds, selectionSet));
+        var keys = List.of(storeIds);
+        return DataLoaders.loadDataAsLookup(env, keys, (ids, selectionSet) -> queryDBQueries.customersForQuery(ctx, storeIds, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Country>> countries(List<String> countryNames,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        return DataLoaders.loadDataAsLookup(env, countryNames, (ids, selectionSet) -> queryDBQueries.countriesForQuery(ctx, countryNames, selectionSet));
+        var keys = List.of(countryNames);
+        return DataLoaders.loadDataAsLookup(env, keys, (ids, selectionSet) -> queryDBQueries.countriesForQuery(ctx, countryNames, selectionSet));
     }
 }

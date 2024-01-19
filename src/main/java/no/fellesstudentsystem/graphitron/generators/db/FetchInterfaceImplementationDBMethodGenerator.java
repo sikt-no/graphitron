@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.getStringSetTypeName;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMap;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
 

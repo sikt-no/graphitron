@@ -18,9 +18,9 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareArrayList;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapList;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asGetMethodName;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asListedName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 public class DataAccessExceptionToErrorMappingProviderGenerator implements ClassGenerator<ObjectDefinition> {
@@ -131,7 +131,7 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators) {
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(DATA_ACCESS_EXCEPTION_TO_ERROR_MAPPING_PROVIDER.className)
                 .addModifiers(Modifier.PUBLIC)

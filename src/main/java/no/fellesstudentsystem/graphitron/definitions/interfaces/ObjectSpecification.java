@@ -1,12 +1,11 @@
 package no.fellesstudentsystem.graphitron.definitions.interfaces;
 
 import com.squareup.javapoet.TypeName;
-import graphql.language.TypeDefinition;
 
 /**
  * Specifies that this Java object represents a GraphQL object.
  */
-public interface ObjectSpecification<T extends TypeDefinition<T>> {
+public interface ObjectSpecification {
     /**
      * @return The name of the object as specified in the schema.
      */
@@ -16,9 +15,4 @@ public interface ObjectSpecification<T extends TypeDefinition<T>> {
      * @return The javapoet {@link TypeName} for the imported generated GraphQL object.
      */
     TypeName getGraphClassName();
-
-    /**
-     * @return The original interpretation of this object as provided by GraphQL.
-     */
-    T getTypeDefinition();
 }

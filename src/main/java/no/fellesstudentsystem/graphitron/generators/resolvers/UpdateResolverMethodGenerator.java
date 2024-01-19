@@ -25,9 +25,9 @@ import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.ge
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.extractType;
 import static no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper.getServiceReturnClassName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapStringMapIf;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMapIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
@@ -201,7 +201,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             code.add(propertiesToValidateDeclaration);
         }
 
-        for (var in : input.getInputsSortedByRequired()) {
+        for (var in : input.getInputsSortedByNullability()) {
             var indexedPartOfPath = "/\" + " + iterableIndexName + " + \"/";
             var nextPath = path + (isIterable ? indexedPartOfPath : "/") + in.getName();
             if (processedSchema.isInputType(in)) {

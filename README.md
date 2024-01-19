@@ -417,6 +417,71 @@ enum SomeEnum @enum(enumReference: {name: "THE_ENUM_REFERENCE"}) {
 }
 ```
 
+### Other directives for queries
+#### lookupKey directive
+Lookup is a special case of fetching data, which can be generated using the **lookupKey**-directive.
+For each element that is requested, one object will be returned or null, and they will be the same order as in the request.
+In order to determine which inputs identify such an element, keys have to be set explicitly in the schema.
+This is where the **lookupKey**-directive comes in. If at least one key is set with this directive, the query will
+automatically become a lookup. Only arguments for a Query-level field can be keys, or input types referenced from one.
+There are some constraints that must be respected when using this directive:
+
+* All keys must be 1D listed types. It does not make sense to invoke this logic for fetching single objects.
+* More than one key may be used at once, but each key must always have the same number of values.
+  In addition, each value in a key must be correlated with the values of any other keys at the same indices.
+  This can be enforced by wrapping the keys in input types.
+
+The keys can be wrapped with input types and can be set on input type references, but they must always end up being a 1-dimensional list.
+In other words, a list of input types which itself contains a list of keys will not work, and the key values themselves can never be lists.
+See examples below.
+
+```graphql
+type Query {
+  # These are OK.
+  goodQuery0(argument0: [String] @lookupKey, argument1: String): SomeType # Fields without key set will still be used in the query as usual.
+  goodQuery1(argument: [In] @lookupKey): SomeType # In these cases key is applied to all fields in input type.
+  goodQuery2(argument: [InKey]): SomeType
+  goodQuery3(argument: [InKey] @lookupKey): SomeType # Double key does not matter.
+  goodQuery4(argument: InList @lookupKey): SomeType
+  goodQuery5(argument: InKeyList): SomeType
+  goodQuery6(argument: InKeyList @lookupKey): SomeType # Double key does not matter
+
+  goodQuery7(argument0: [String] @lookupKey, argument1: [Int] @lookupKey): SomeType # Can have as many keys as you want.
+  goodQuery8(argument: [InNested] @lookupKey): SomeType # Input can be nested. Every field in there will be a key.
+  goodQuery9(argument: [InNestedKey]): SomeType
+
+  # These are not OK.
+  badQuery0(argument: [InList] @lookupKey): SomeType # Two layers of lists.
+  badQuery1(argument: [InKeyList]): SomeType # Two layers of lists.
+}
+
+input In {
+  field0: String
+  field1: Int
+  field2: ID
+}
+
+input InList {
+  field: [String]
+}
+
+input InKey {
+  field: String @lookupKey
+}
+
+input InKeyList {
+  field: [String] @lookupKey
+}
+
+input InNested {
+  field: In
+}
+
+input InNestedKey {
+  field: In @lookupKey # Every field in the input type becomes a key.
+}
+```
+
 ### Mutation generation
 While fetching data can cover many cases, mutations have more limitations when generated through Graphitron,
 as mutations can take many inputs which should be saved to multiple tables. Automatic generation of the entire resolver

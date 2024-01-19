@@ -11,6 +11,7 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodG
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
@@ -21,8 +22,8 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
-import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
-import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
@@ -32,7 +33,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * This class generates the resolvers for default fetch queries with potential arguments or pagination.
  */
 public class FetchResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
-    private static final String QUERY_RESULT_NAME = "dbResult";
+    private static final String QUERY_RESULT_NAME = "dbResult", LOOKUP_KEYS_NAME = "keys";
 
     public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -95,7 +96,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         var queryLocation = localObject.getName() + FILE_NAME_SUFFIX;
         dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
         var isRoot = localObject.isRoot();
-        var hasLookup = referenceField.hasLookupKey();
+        var hasLookup = LookupHelpers.lookupExists(referenceField, processedSchema);
         var hasPagination = referenceField.hasRequiredPaginationFields();
 
         var inputString = String.join(", ", allQueryInputs);
@@ -105,13 +106,10 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
         var queryMethodName = asQueryMethodName(referenceField.getName(), localObject.getName());
         var dataBlock = CodeBlock.builder();
-        if (hasLookup) { // Key must be an argument. Allowing input types with it would require recursion.
-            dataBlock.add(
-                    "return $T.loadDataAsLookup($N, $N, ",
-                    DATA_LOADERS.className,
-                    ENV_NAME,
-                    referenceField.getLookupKey().getName()
-            );
+        if (hasLookup) { // Assume all keys are correlated.
+            dataBlock
+                    .addStatement("var $L = $L", LOOKUP_KEYS_NAME, LookupHelpers.getLookupKeysAsList(referenceField, processedSchema))
+                    .add("return $T.loadDataAsLookup($N, $N, ", DATA_LOADERS.className, ENV_NAME, LOOKUP_KEYS_NAME);
         } else if (!isRoot) {
             dataBlock.add(
                     "$T<$T, $T> $L = $T.getDataLoader($N, $S, ",
