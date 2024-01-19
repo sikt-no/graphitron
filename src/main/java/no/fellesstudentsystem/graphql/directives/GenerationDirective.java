@@ -14,6 +14,7 @@ public enum GenerationDirective {
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE)),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.ERROR)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
+    LOOKUP_KEY("lookupKey"),
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.VIA)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE));
