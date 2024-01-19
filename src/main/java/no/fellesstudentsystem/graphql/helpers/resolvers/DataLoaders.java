@@ -6,6 +6,10 @@ import graphql.relay.DefaultPageInfo;
 import graphql.relay.Edge;
 import graphql.schema.DataFetchingEnvironment;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.functions.DBCount;
+import no.fellesstudentsystem.graphql.helpers.functions.DBQuery;
+import no.fellesstudentsystem.graphql.helpers.functions.DBQueryIterable;
+import no.fellesstudentsystem.graphql.helpers.functions.DBQueryRoot;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
@@ -21,7 +25,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class DataLoaders {
-    public static <T> DataLoader<String, ExtendedConnection<T>> getDataLoader(DataFetchingEnvironment env, String resolveName, int pageSize, int maxNodes, DBQueryIterable<T> dbFunction, DBCount countFunction, Function<T, String> idFunction) {
+    public static <T> DataLoader<String, ExtendedConnection<T>> getDataLoader(DataFetchingEnvironment env, String resolveName, int pageSize, int maxNodes, DBQueryIterable<String, T> dbFunction, DBCount<String> countFunction, Function<T, String> idFunction) {
         return env.getDataLoaderRegistry().computeIfAbsent(resolveName, name ->
                 DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ExtendedConnection<T>>) (keys, batchEnvLoader) ->
                         getMappedDataLoader(keys, new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)), maxNodes, pageSize, dbFunction, countFunction, idFunction)
@@ -30,7 +34,7 @@ public class DataLoaders {
     }
 
     @NotNull
-    public static <T> DataLoader<String, T> getDataLoader(DataFetchingEnvironment env, String resolveName, DBQuery<T> dbFunction) {
+    public static <T> DataLoader<String, T> getDataLoader(DataFetchingEnvironment env, String resolveName, DBQuery<String, T> dbFunction) {
         return env.getDataLoaderRegistry().computeIfAbsent(resolveName, name ->
                 DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, T>) (keys, batchEnvLoader) ->
                         getMappedDataLoader(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)), dbFunction)
@@ -39,11 +43,19 @@ public class DataLoaders {
     }
 
     @NotNull
-    public static <T> CompletableFuture<ExtendedConnection<T>> loadData(DataFetchingEnvironment env, int pageSize, int maxNodes, DBQueryRoot<T> dbFunction, DBCount countFunction, Function<T, String> idFunction) {
+    public static <T> CompletableFuture<ExtendedConnection<T>> loadData(DataFetchingEnvironment env, int pageSize, int maxNodes, DBQueryRoot<T> dbFunction, DBCount<String> countFunction, Function<T, String> idFunction) {
         var selectionSet = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = dbFunction.callDBMethod(selectionSet);
         var totalCount = countFunction.callDBMethod(Set.of(), selectionSet);
         return getPaginatedConnection(dbResult, pageSize, totalCount, maxNodes, idFunction);
+    }
+
+    @NotNull
+    public static <K, V> CompletableFuture<List<V>> loadDataAsLookup(DataFetchingEnvironment env, List<K> keys, DBQuery<K, V> dbFunction) {
+        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var dbResult = dbFunction.callDBMethod(new HashSet<>(keys), selectionSet);
+        var orderedResult = keys.stream().map(dbResult::get).collect(Collectors.toList());
+        return CompletableFuture.completedFuture(orderedResult);
     }
 
     public static <T> CompletableFuture<T> load(DataLoader<String, T> loader, String id, DataFetchingEnvironment env) {
@@ -54,7 +66,7 @@ public class DataLoaders {
         return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + id, env).thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
     }
 
-    public static <T, U extends T> CompletableFuture<T> loadInterfaceData(DataFetchingEnvironment env, String table, String keyToLoad, DBQuery<U> dbFunction) {
+    public static <T, U extends T> CompletableFuture<T> loadInterfaceData(DataFetchingEnvironment env, String table, String keyToLoad, DBQuery<String, U> dbFunction) {
         return env
                 .getDataLoaderRegistry()
                 .<String, T>computeIfAbsent(table, name ->
@@ -66,7 +78,7 @@ public class DataLoaders {
     }
 
     @NotNull
-    private static <T> CompletableFuture<Map<String, ExtendedConnection<T>>> getMappedDataLoader(Set<String> keys, SelectionSet selectionSet, int maxNodes, int pageSize, DBQueryIterable<T> dbFunction, DBCount countFunction, Function<T, String> idFunction) {
+    private static <T> CompletableFuture<Map<String, ExtendedConnection<T>>> getMappedDataLoader(Set<String> keys, SelectionSet selectionSet, int maxNodes, int pageSize, DBQueryIterable<String, T> dbFunction, DBCount<String> countFunction, Function<T, String> idFunction) {
         var keyToId = getKeyToId(keys);
         var idSet = new HashSet<>(keyToId.values());
         var mapResult = resultAsMap(keyToId, dbFunction.callDBMethod(idSet, selectionSet));
@@ -75,7 +87,7 @@ public class DataLoaders {
     }
 
     @NotNull
-    private static <T> CompletableFuture<Map<String, T>> getMappedDataLoader(Set<String> keys, SelectionSet selectionSet, DBQuery<T> dbFunction) {
+    private static <T> CompletableFuture<Map<String, T>> getMappedDataLoader(Set<String> keys, SelectionSet selectionSet, DBQuery<String, T> dbFunction) {
         var keyToId = getKeyToId(keys);
         return CompletableFuture.completedFuture(resultAsMap(keyToId, dbFunction.callDBMethod(new HashSet<>(keyToId.values()), selectionSet)));
     }

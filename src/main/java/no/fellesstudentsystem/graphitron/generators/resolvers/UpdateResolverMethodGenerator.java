@@ -62,7 +62,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     public MethodSpec generate(ObjectField target) {
         var spec = getDefaultSpecBuilder(target.getName(), objectIterableWrap(target));
 
-        var specInputs = target.getInputFields();
+        var specInputs = target.getArguments();
         specInputs.forEach(input -> spec.addParameter(inputIterableWrap(input), input.getName()));
 
         context = new UpdateContext(target, processedSchema);
@@ -119,7 +119,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
      * @return List of variable names for the declared and fully set records.
      */
     @NotNull
-    protected CodeBlock declareRecords(List<InputField> specInputs) {
+    protected CodeBlock declareRecords(List<? extends InputField> specInputs) {
         if (context.getRecordInputs().isEmpty()) {
             return empty();
         }

@@ -43,7 +43,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
             spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
         }
 
-        var inputField = target.getInputFields().get(0);
+        var inputField = target.getArguments().get(0);
         String inputFieldName = inputField.getName();
         spec
                 .addParameter(inputIterableWrap(inputField), inputFieldName)

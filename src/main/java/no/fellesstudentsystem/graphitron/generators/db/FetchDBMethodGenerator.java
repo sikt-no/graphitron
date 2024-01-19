@@ -48,7 +48,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock createWhere(FetchContext context, boolean hasWhere) {
         var referenceField = context.getReferenceObjectField();
-        var inputConditions = getInputConditions(referenceField.getNonReservedInputFields());
+        var inputConditions = getInputConditions(referenceField.getNonReservedArguments());
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
 

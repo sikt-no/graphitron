@@ -70,7 +70,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         if (referenceField.hasNonReservedInputFields()) {
             referenceField
-                    .getNonReservedInputFields()
+                    .getNonReservedArguments()
                     .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
         }
         return spec;

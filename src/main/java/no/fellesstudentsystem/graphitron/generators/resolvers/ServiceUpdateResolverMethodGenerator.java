@@ -444,7 +444,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         );
 
         var ref = localField.getServiceReference();
-        var service = new ServiceWrapper(ref, countParams(target.getInputFields(), false, processedSchema));
+        var service = new ServiceWrapper(ref, countParams(target.getArguments(), false, processedSchema));
         Validate.isTrue(
                 service.getMethod() != null,
                 "Service '%s' contains no method with the name '%s' and %d parameter(s), which is required to generate the resolver.",

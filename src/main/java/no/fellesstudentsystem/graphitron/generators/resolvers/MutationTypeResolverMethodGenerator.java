@@ -37,7 +37,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      * @return List of variable names for the declared and fully set records.
      */
     @NotNull
-    protected CodeBlock declareRecords(List<InputField> specInputs) {
+    protected CodeBlock declareRecords(List<? extends InputField> specInputs) {
         if (context.getRecordInputs().isEmpty()) {
             throw new UnsupportedOperationException("Must have at least one table reference when generating resolvers with queries. Mutation '" + localField.getName() + "' has no tables attached.");
         }
@@ -239,7 +239,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     @NotNull
     private CodeBlock getIDMappingCode(ObjectField field, ObjectField containerField) {
         var inputSource = localField
-                .getInputFields()
+                .getArguments()
                 .stream()
                 .filter(InputField::isID)
                 .findFirst();

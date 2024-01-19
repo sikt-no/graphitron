@@ -61,6 +61,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(code.build())
                 .build();
     }
+
     private CodeBlock declareAliasesAndSetInitialCode(FetchContext context) {
         var code = CodeBlock
                 .builder()
@@ -71,8 +72,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".select(\n")
                 .indent()
                 .indent();
-        if (!isRoot) {
-            code.add("$L.getId(),\n", context.renderQuerySource(getLocalTable()));
+
+        var ref = context.getReferenceObjectField();
+        if (!isRoot || ref.hasLookupKey()) {
+            var key = ref.hasLookupKey() ? ref.getLookupKey().getUpperCaseName() : "getId()";
+            code.add("$L.$L,\n", context.renderQuerySource(getLocalTable()), key);
         }
         return code.build();
     }
@@ -89,7 +93,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         if (referenceField.hasNonReservedInputFields()) {
             referenceField
-                    .getNonReservedInputFields()
+                    .getNonReservedArguments()
                     .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
         }
 
@@ -102,12 +106,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @NotNull
     private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
-        if (isRoot) {
+        if (isRoot && !referenceField.hasLookupKey()) {
             return wrapList(refClassName);
         } else {
-            return wrapStringMap(
-                    wrapListIf(refClassName, referenceField.isIterableWrapped() || referenceField.hasForwardPagination())
-            );
+            var key = referenceField.hasLookupKey() ? referenceField.getLookupKey().getTypeClass() : STRING.className;
+            return wrapMap(key, wrapListIf(refClassName, referenceField.isIterableWrapped() && !referenceField.hasLookupKey() || referenceField.hasForwardPagination()));
         }
     }
 
@@ -115,7 +118,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         var refTable = refObject.getTable().getMappingName();
         var code = CodeBlock.builder();
-        if (isRoot || referenceField.hasForwardPagination()) {
+        if (!referenceField.hasLookupKey() && isRoot || referenceField.hasForwardPagination()) {
             code.add(".orderBy($N.getIdFields())\n", actualRefTable);
         }
 
@@ -124,13 +127,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
         }
 
-        if (isRoot) {
+        if (isRoot && !referenceField.hasLookupKey()) {
             code.addStatement(".fetch(0, $T.class)", refObject.getGraphClassName());
         } else {
             code
                     .add(".")
                     .add(
-                            referenceField.isIterableWrapped() || referenceField.hasForwardPagination()
+                            referenceField.isIterableWrapped() && !referenceField.hasLookupKey() || referenceField.hasForwardPagination()
                                     ? "fetchGroups"
                                     : "fetchMap"
                     )

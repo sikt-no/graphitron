@@ -9,7 +9,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -536,7 +535,7 @@ public class ProcessedSchema {
                 .collect(Collectors.toList());
     }
 
-    public Map<String, String> getAllNestedInputFieldMappingsWithPaths(List<InputField> targets, String path) {
+    public Map<String, String> getAllNestedInputFieldMappingsWithPaths(List<? extends InputField> targets, String path) {
         var fields = new HashMap<String, String>();
         var pathIteration = path.isEmpty() ? path : path + ".";
         for (var field : targets) {
@@ -555,7 +554,7 @@ public class ProcessedSchema {
      */
     @NotNull
     public String getFieldErrorNameSets(ObjectField target) {
-        return getAllNestedInputFieldMappingsWithPaths(target.getInputFields(), "")
+        return getAllNestedInputFieldMappingsWithPaths(target.getArguments(), "")
                 .entrySet()
                 .stream()
                 .flatMap(it -> Stream.of(it.getKey(), it.getValue()))
@@ -584,7 +583,7 @@ public class ProcessedSchema {
      * @return Map of variable names and types for the declared and fully set records.
      */
     @NotNull
-    public Map<String, InputField> parseInputs(List<InputField> specInputs) {
+    public Map<String, InputField> parseInputs(List<? extends InputField> specInputs) {
         var serviceInputs = new LinkedHashMap<String, InputField>();
 
         for (var in : specInputs) {

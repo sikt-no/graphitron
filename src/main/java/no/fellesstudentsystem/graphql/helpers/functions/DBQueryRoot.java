@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphql.helpers.resolvers;
+package no.fellesstudentsystem.graphql.helpers.functions;
 
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 

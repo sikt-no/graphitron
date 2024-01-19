@@ -7,7 +7,7 @@ import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.FIELD;
 
 /**
- * An argument for a {@link ObjectField}.
+ * A field for a {@link no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition}.
  */
 public class InputField extends AbstractField {
     private final String defaultValue;

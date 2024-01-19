@@ -487,7 +487,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     }
 
     @NotNull
-    protected InputConditions getInputConditions(List<InputField> inputFields) {
+    protected InputConditions getInputConditions(List<? extends InputField> inputFields) {
         var iterableInputFieldNamePaths = new ArrayList<String>();
         var flatInputs = new ArrayList<InputCondition>();
         var inputBuffer = inputFields

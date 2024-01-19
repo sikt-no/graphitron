@@ -61,6 +61,13 @@ public class ClassNameFormat {
     }
 
     /**
+     * @return The type wrapped in a Map ParameterizedTypeName with key.
+     */
+    public static TypeName wrapMap(TypeName key, TypeName type) {
+        return ParameterizedTypeName.get(MAP.className, key, type);
+    }
+
+    /**
      * @return The ParameterizedTypeName for a Set of Strings.
      */
     public static TypeName getStringSetTypeName() {

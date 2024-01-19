@@ -248,15 +248,15 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryDBFunction(String queryLocation, String queryMethodName, String inputList, boolean isRoot) {
+    public static CodeBlock queryDBFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds) {
         return CodeBlock.of(
                 "($L$L) -> $N.$L($N$L$L, $N)",
-                isRoot ? "" : IDS_NAME + ", ",
+                hasIds ? IDS_NAME + ", " : "",
                 SELECTION_SET_NAME,
                 uncapitalize(queryLocation),
                 queryMethodName,
                 Dependency.CONTEXT_NAME,
-                isRoot ? "" : ", " + IDS_NAME,
+                usesIds ? ", " + IDS_NAME : "",
                 inputList.isEmpty() ? "" : ", " + inputList,
                 SELECTION_SET_NAME
         );

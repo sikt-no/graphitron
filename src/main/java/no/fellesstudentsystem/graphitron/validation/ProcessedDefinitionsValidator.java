@@ -128,7 +128,7 @@ public class ProcessedDefinitionsValidator {
             var hasCondition = field.hasOverridingCondition();
             if (field.hasNonReservedInputFields() && field.isGenerated()) {
                 var targetTable = schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
-                flattenInputFields(targetTable, field.getNonReservedInputFields(), field.hasOverridingCondition())
+                flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition())
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
             }
 
@@ -137,7 +137,7 @@ public class ProcessedDefinitionsValidator {
         return flatFields;
     }
 
-    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenInputFields(String lastTable, Collection<InputField> fields, boolean hasOverridingCondition) {
+    private Map<String, ArrayList<FieldWithOverrideStatus>> flattenInputFields(String lastTable, Collection<? extends InputField> fields, boolean hasOverridingCondition) {
         var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
         for (var field : fields) {
             var hasCondition = hasOverridingCondition || field.hasOverridingCondition();
@@ -270,9 +270,9 @@ public class ProcessedDefinitionsValidator {
 
             if (schema.isInterface(name)) {
                 Validate.isTrue(
-                        field.getInputFields().size() == 1,
+                        field.getArguments().size() == 1,
                         "Only exactly one input field is currently supported for fields returning interfaces. " +
-                                "'%s' has %s input fields", field.getName(), field.getInputFields().size()
+                                "'%s' has %s input fields", field.getName(), field.getArguments().size()
                 );
                 Validate.isTrue(
                         !field.isIterableWrapped(),
@@ -290,7 +290,7 @@ public class ProcessedDefinitionsValidator {
         var oneLayerFlattenedFields = allFields
                 .stream()
                 .filter(schema::isTableObject)
-                .flatMap(it -> it.getNonReservedInputFields().stream())
+                .flatMap(it -> it.getNonReservedArguments().stream())
                 .filter(AbstractField::isIterableWrapped)
                 .filter(schema::isInputType)
                 .collect(Collectors.toList());

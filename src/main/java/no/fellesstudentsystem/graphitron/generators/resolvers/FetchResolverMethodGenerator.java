@@ -59,7 +59,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     @NotNull
     private ArrayList<String> getQueryInputs(MethodSpec.Builder spec, ObjectField referenceField) {
         var allQueryInputs = new ArrayList<String>();
-        for (var input : referenceField.getNonReservedInputFields()) {
+        for (var input : referenceField.getNonReservedArguments()) {
             var name = input.getName();
             spec.addParameter(inputIterableWrap(input), name);
             allQueryInputs.add(name);
@@ -94,15 +94,25 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         var localObject = getLocalObject();
         var queryLocation = localObject.getName() + FILE_NAME_SUFFIX;
         dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
+        var isRoot = localObject.isRoot();
+        var hasLookup = referenceField.hasLookupKey();
+        var hasPagination = referenceField.hasRequiredPaginationFields();
 
         var inputString = String.join(", ", allQueryInputs);
-        if (getLocalObject().isRoot() && !referenceField.hasRequiredPaginationFields()) {
+        if (isRoot && !hasPagination && !hasLookup) {
             return getSimpleRootDBCall(referenceField.getName(), queryLocation, inputString);
         }
 
         var queryMethodName = asQueryMethodName(referenceField.getName(), localObject.getName());
         var dataBlock = CodeBlock.builder();
-        if (!localObject.isRoot()) {
+        if (hasLookup) { // Key must be an argument. Allowing input types with it would require recursion.
+            dataBlock.add(
+                    "return $T.loadDataAsLookup($N, $N, ",
+                    DATA_LOADERS.className,
+                    ENV_NAME,
+                    referenceField.getLookupKey().getName()
+            );
+        } else if (!isRoot) {
             dataBlock.add(
                     "$T<$T, $T> $L = $T.getDataLoader($N, $S, ",
                     DATA_LOADER.className,
@@ -117,13 +127,13 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             dataBlock.add("return $T.loadData($N, ", DATA_LOADERS.className, ENV_NAME);
         }
 
-        var queryFunction = queryDBFunction(queryLocation, queryMethodName, inputString, localObject.isRoot());
-        if (referenceField.hasRequiredPaginationFields()) {
+        var queryFunction = queryDBFunction(queryLocation, queryMethodName, inputString, !isRoot || hasLookup, !isRoot && !hasLookup);
+        if (hasPagination && !hasLookup) {
             var filteredInputs = allQueryInputs
                     .stream()
                     .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(PAGINATION_AFTER.getName()) && !it.equals(SELECTION_SET_NAME))
                     .collect(Collectors.joining(", "));
-            var inputsWithId = localObject.isRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
+            var inputsWithId = isRoot ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
             var countFunction = countDBFunction(queryLocation, queryMethodName, inputsWithId);
             return dataBlock.addStatement("$N, $L,\n$L,\n$L,\n$L)", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction()).build();
         }

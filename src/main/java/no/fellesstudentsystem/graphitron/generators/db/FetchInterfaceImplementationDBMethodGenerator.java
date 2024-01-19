@@ -53,7 +53,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         var context = new FetchContext(processedSchema, implementationReference, implementation);
         var selectCode = generateSelectRow(context);
 
-        String argumentName = target.getInputFields().get(0).getName() + "s";
+        String argumentName = target.getArguments().get(0).getName() + "s";
         var querySource = context.renderQuerySource(implementationTableObject);
 
         var code = CodeBlock.builder()

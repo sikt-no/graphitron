@@ -154,6 +154,11 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithUnion");
     }
 
+    @Test
+    void generate_queryWithLookup_shouldGenerateLookupResolverAndQuery() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithLookup");
+    }
+
 
     @Test
     void generate_queryThatReturnsInterface_shouldCreateResolver() throws IOException {

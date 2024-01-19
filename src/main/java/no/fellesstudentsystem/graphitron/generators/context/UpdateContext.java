@@ -32,7 +32,7 @@ public class UpdateContext {
 
         if (target.hasServiceReference()) {
             var reference = target.getServiceReference();
-            service = new ServiceWrapper(reference, countParams(target.getInputFields(), false, processedSchema));
+            service = new ServiceWrapper(reference, countParams(target.getArguments(), false, processedSchema));
         } else {
             service = null;
         }
@@ -40,7 +40,7 @@ public class UpdateContext {
         mutationType = target.hasMutationType() ? target.getMutationType() : null;
 
         mutationReturnsNodes = processedSchema.containsNodeField(target);
-        mutationInputs = processedSchema.parseInputs(target.getInputFields());
+        mutationInputs = processedSchema.parseInputs(target.getArguments());
         recordInputs = mutationInputs
                 .entrySet()
                 .stream()
@@ -65,7 +65,7 @@ public class UpdateContext {
     /**
      * @return Count the number of parameters this mutation will have to use for its service call.
      */
-    public static int countParams(List<InputField> fields, boolean inRecord, ProcessedSchema processedSchema) {
+    public static int countParams(List<? extends InputField> fields, boolean inRecord, ProcessedSchema processedSchema) {
         var numFields = 0;
         for (var input : fields) {
             if (processedSchema.isInputType(input)) {

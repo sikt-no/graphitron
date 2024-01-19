@@ -19,11 +19,9 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     private int firstDefault = 100;
     private int lastDefault = 100;
     private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
-    private final List<InputField> inputFields;
-    private final List<InputField> nonReservedFields;
+    private final List<ArgumentField> inputFields, nonReservedFields, lookupKeys;
     private final MutationType mutationType;
-    private final boolean isGenerated;
-    private final boolean isResolver;
+    private final boolean isGenerated, isResolver, hasLookupKey;
     public final static Set<String> RESERVED_PAGINATION_NAMES = Set.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -46,14 +44,16 @@ public class ObjectField extends AbstractField implements GenerationTarget {
         mutationType = field.hasDirective(MUTATION.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
                 : null;
+        lookupKeys = nonReservedFields.stream().filter(ArgumentField::isLookupKey).collect(Collectors.toList());
+        hasLookupKey = !lookupKeys.isEmpty();
     }
 
-    private List<InputField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
+    private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
         var inputs = field.getInputValueDefinitions();
-        var inputFields = new ArrayList<InputField>();
+        var inputFields = new ArrayList<ArgumentField>();
 
         if (!isResolver && !isTopLevel) {
-            return inputs.stream().map(InputField::new).collect(Collectors.toList());
+            return inputs.stream().map(ArgumentField::new).collect(Collectors.toList());
         }
 
         boolean hasFirst = false, hasAfter = false, hasLast = false, hasBefore = false;
@@ -75,7 +75,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
             } else if (name.equals(GraphQLReservedName.PAGINATION_BEFORE.getName())) {
                 hasBefore = true;
             }
-            inputFields.add(new InputField(in));
+            inputFields.add(new ArgumentField(in));
         }
 
         var hasConnection = getTypeName().endsWith(GraphQLReservedName.SCHEMA_CONNECTION_SUFFIX.getName());
@@ -147,7 +147,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     /**
      * @return List of all input arguments for this field.
      */
-    public List<InputField> getInputFields() {
+    public List<ArgumentField> getArguments() {
         return inputFields;
     }
 
@@ -168,7 +168,7 @@ public class ObjectField extends AbstractField implements GenerationTarget {
     /**
      * @return List of all input non-reserved arguments for this field.
      */
-    public List<InputField> getNonReservedInputFields() {
+    public List<ArgumentField> getNonReservedArguments() {
         return nonReservedFields;
     }
 
@@ -198,5 +198,30 @@ public class ObjectField extends AbstractField implements GenerationTarget {
      */
     public static List<ObjectField> from(List<FieldDefinition> fields) {
         return fields.stream().map(ObjectField::new).collect(Collectors.toList());
+    }
+
+    /**
+     * @return Does this field contain an argument set as a key for a lookup operation?
+     */
+    public boolean hasLookupKey() {
+        return hasLookupKey;
+    }
+
+    /**
+     * @return List of fields that are configured to be used as lookup keys.
+     */
+    public List<ArgumentField> getLookupKeys() {
+        return lookupKeys;
+    }
+
+    /**
+     * @return Field that is configured to be used as a lookup key.
+     */
+    public ArgumentField getLookupKey() {
+        var lookupKeys = getLookupKeys();
+        if (lookupKeys.size() > 1) {
+            throw new IllegalArgumentException("Field " + getName() + " has more than one lookup key.");
+        }
+        return lookupKeys.stream().findFirst().get();
     }
 }
