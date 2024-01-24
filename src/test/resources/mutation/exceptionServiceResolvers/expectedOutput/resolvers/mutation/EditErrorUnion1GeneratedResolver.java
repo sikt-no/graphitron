@@ -22,6 +22,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.exceptions.TestException;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1MutationResolver {
@@ -34,7 +35,7 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
     @Override
     public CompletableFuture<EditCustomerResponseUnion1> editErrorUnion1(String name,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
         no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse editErrorUnion1Result = null;

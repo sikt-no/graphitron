@@ -10,6 +10,7 @@ import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -23,7 +24,7 @@ public class EditCustomerInputAndResponseGeneratedResolver implements EditCustom
     @Override
     public CompletableFuture<EditResponse> editCustomerInputAndResponse(EditInput input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inputRecord = new CustomerRecord();

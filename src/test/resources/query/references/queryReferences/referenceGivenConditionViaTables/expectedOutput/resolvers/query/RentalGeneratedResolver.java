@@ -8,16 +8,11 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.dataloader.DataLoader;
-import org.dataloader.DataLoaderFactory;
-import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
 
 public class RentalGeneratedResolver implements RentalResolver {
@@ -30,21 +25,8 @@ public class RentalGeneratedResolver implements RentalResolver {
     @Override
     public CompletableFuture<FilmActor> mainActor(Rental rental, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        DataLoader<String, FilmActor> loader = env.getDataLoaderRegistry().computeIfAbsent("mainActorForRental", name -> {
-            var batchLoader = (MappedBatchLoaderWithContext<String, FilmActor>) (keys, batchEnvLoader) -> {
-                var keyToId = keys.stream().collect(
-                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
-                var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = rentalDBQueries.mainActorForRental(ctx, idSet, selectionSet);
-                var mapResult = keyToId.entrySet().stream()
-                        .filter(it -> dbResult.get(it.getValue()) != null)
-                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
-                return CompletableFuture.completedFuture(mapResult);
-            } ;
-            return DataLoaderFactory.newMappedDataLoader(batchLoader);
-        } );
-        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + rental.getId(), env);
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
+        DataLoader<String, FilmActor> loader = DataLoaders.getDataLoader(env, "mainActorForRental", (ids, selectionSet) -> rentalDBQueries.mainActorForRental(ctx, ids, selectionSet));
+        return DataLoaders.load(loader, rental.getId(), env);
     }
 }

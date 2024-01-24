@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -27,7 +28,7 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
     @Override
     public CompletableFuture<EditResponse1> editCustomer1(List<String> id, List<EditInput> in,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         List<CustomerRecord> inRecordList = new ArrayList<CustomerRecord>();

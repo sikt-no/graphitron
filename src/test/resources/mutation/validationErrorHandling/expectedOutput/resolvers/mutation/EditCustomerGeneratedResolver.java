@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
@@ -30,7 +31,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     @Override
     public CompletableFuture<EditResponse> editCustomer(String id, EditInput in,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
         var validationErrors = new HashSet<GraphQLError>();
         var inRecord = new CustomerRecord();

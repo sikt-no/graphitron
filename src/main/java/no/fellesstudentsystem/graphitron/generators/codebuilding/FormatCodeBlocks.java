@@ -2,13 +2,19 @@ package no.fellesstudentsystem.graphitron.generators.codebuilding;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asRecordName;
+import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Class containing various helper methods for constructing code with javapoet.
@@ -16,15 +22,14 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 public class FormatCodeBlocks {
     private final static CodeBlock
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
-            GET_CONTEXT_METHOD = CodeBlock.of("$N.getLocalContext()", AbstractMethodGenerator.ENV_NAME),
             DECLARE_CONTEXT_VARIABLE = CodeBlock.of(
-                    "var $N = $L == null ? this.$N : ($T) $L",
+                    "var $L = $T.selectContext($N, this.$N)",
                     Dependency.CONTEXT_NAME,
-                    GET_CONTEXT_METHOD,
-                    Dependency.CONTEXT_NAME,
-                    DSL_CONTEXT.className,
-                    GET_CONTEXT_METHOD
+                    RESOLVER_HELPERS.className,
+                    AbstractMethodGenerator.ENV_NAME,
+                    Dependency.CONTEXT_NAME
             ),
+            GET_ID_FUNCTION = CodeBlock.of("(it) -> it.getId()"),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
@@ -211,6 +216,65 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock declareContextVariable() {
         return DECLARE_CONTEXT_VARIABLE;
+    }
+
+    /**
+     * @return CodeBlock consisting of a function for a getId call.
+     */
+    @NotNull
+    public static CodeBlock getIDFunction() {
+        return GET_ID_FUNCTION; // Note: ID is FS-specific.
+    }
+
+    /**
+     * @return CodeBlock consisting of a function for a count DB call.
+     */
+    @NotNull
+    public static CodeBlock countDBFunction(String queryLocation, String queryMethodName, String inputList) {
+        return CodeBlock.of(
+                "($L, $L) -> $N.contains($S) ? $N.count$L($N$L) : null",
+                IDS_NAME,
+                SELECTION_SET_NAME,
+                SELECTION_SET_NAME,
+                TOTAL_COUNT_NAME,
+                uncapitalize(queryLocation),
+                capitalize(queryMethodName),
+                Dependency.CONTEXT_NAME,
+                inputList.isEmpty() ? "" : ", " + inputList
+        );
+    }
+
+    /**
+     * @return CodeBlock consisting of a function for a generic DB call.
+     */
+    @NotNull
+    public static CodeBlock queryDBFunction(String queryLocation, String queryMethodName, String inputList, boolean isRoot) {
+        return CodeBlock.of(
+                "($L$L) -> $N.$L($N$L$L, $N)",
+                isRoot ? "" : IDS_NAME + ", ",
+                SELECTION_SET_NAME,
+                uncapitalize(queryLocation),
+                queryMethodName,
+                Dependency.CONTEXT_NAME,
+                isRoot ? "" : ", " + IDS_NAME,
+                inputList.isEmpty() ? "" : ", " + inputList,
+                SELECTION_SET_NAME
+        );
+    }
+
+    /**
+     * @return CodeBlock consisting of a declaration of the page size variable through a method call.
+     */
+    @NotNull
+    public static CodeBlock declarePageSize(int defaultFirst) {
+        return CodeBlock.builder().addStatement(
+                "int $L = $T.getPageSize($N, $L, $L)",
+                PAGE_SIZE_NAME,
+                RESOLVER_HELPERS.className,
+                GraphQLReservedName.PAGINATION_FIRST.getName(),
+                GeneratorConfig.getMaxAllowedPageSize(),
+                defaultFirst
+        ).build();
     }
 
     /**

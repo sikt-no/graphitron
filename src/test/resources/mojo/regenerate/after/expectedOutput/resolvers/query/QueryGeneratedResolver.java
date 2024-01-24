@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.generated.queries.query.QueryDBQueries;
 import org.jooq.DSLContext;
@@ -24,8 +25,8 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Film>> film(Integer releaseYear, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
+        var selectionSet = ResolverHelpers.getSelectionSet(env);
         var dbResult = queryDBQueries.filmForQuery(ctx, releaseYear, selectionSet);
         return CompletableFuture.completedFuture(dbResult);
     }

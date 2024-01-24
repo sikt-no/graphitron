@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
@@ -23,7 +24,6 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
  * Generator that creates the default data fetching methods
  */
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
-    private static final String PAGE_SIZE_NAME = "pageSize";
 
     public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);

@@ -24,7 +24,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Customer>> customer(String id, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
         var dbResult = queryDBQueries.customerForQuery(ctx, id, selectionSet);
         return CompletableFuture.completedFuture(dbResult);

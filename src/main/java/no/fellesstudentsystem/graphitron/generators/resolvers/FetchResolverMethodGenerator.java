@@ -5,7 +5,6 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
@@ -17,38 +16,23 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
-import static java.util.Map.entry;
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.context.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.context.NameFormat.asQueryMethodName;
-import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class generates the resolvers for default fetch queries with potential arguments or pagination.
  */
 public class FetchResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
-    private static final String
-            EXECUTION_STEP_PATH_ID_DELIMITER = "||",
-            BATCHED_ENV_NAME = "batchEnvLoader",
-            PAGE_SIZE_NAME = "pageSize",
-            AFTER_NAME = "after",
-            MAP_RESULT_NAME = "mapResult",
-            QUERY_RESULT_NAME = "dbResult",
-            PAGINATION_RESULT_NAME = "pagedResult",
-            RESULT_ENTRY_NAME = "resultEntry",
-            RESULT_VALUE_NAME = "resultValue",
-            PAGINATION_RESULT_ENTRY_NAME = "pagedResultEntry",
-            SELECTION_SET_NAME = "selectionSet";
-    private static final int MAX_NUMBER_OF_NODES_TO_DISPLAY = 1000;
+    private static final String QUERY_RESULT_NAME = "dbResult";
 
     public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -56,65 +40,18 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var localObject = getLocalObject();
-        var isRootLevel = localObject.isRoot();
-
         var returnClassName = getReturnTypeName(target);
         var spec = getDefaultSpecBuilder(target.getName(), returnClassName);
 
-        if (!isRootLevel) {
+        var localObject = getLocalObject();
+        if (!localObject.isRoot()) {
             spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
         }
 
         var allQueryInputs = getQueryInputs(spec, target);
-        spec.addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME);
-
-        spec.addCode(queryMethodCalls(target, returnClassName, allQueryInputs));
-
-        var currentResultName = (isRootLevel) ? QUERY_RESULT_NAME : MAP_RESULT_NAME;
-        if (target.hasForwardPagination()) {
-            if (!isRootLevel) {
-                spec
-                        .addCode("var $L = $N.entrySet().stream().map(", PAGINATION_RESULT_NAME, currentResultName)
-                        .beginControlFlow("$L ->", RESULT_ENTRY_NAME)
-                        .addStatement("var $L = $N.getValue()", RESULT_VALUE_NAME, RESULT_ENTRY_NAME);
-                currentResultName = RESULT_VALUE_NAME;
-            }
-            var nodeType = processedSchema.getConnectionObject(target).getNodeType();
-            var paginationInputMap = Map.ofEntries(
-                    entry("math", MATH.className),
-                    entry("dbResult", currentResultName),
-                    entry("resultName", (!isRootLevel) ? PAGINATION_RESULT_ENTRY_NAME : PAGINATION_RESULT_NAME),
-                    entry("pageSize", PAGE_SIZE_NAME),
-                    entry("connectionClass", RELAY_CONNECTION_IMPL.className),
-                    entry("connectionCursorClass", RELAY_CONNECTION_CURSOR_IMPL.className),
-                    entry("pageInfoClass", RELAY_PAGE_INFO_IMPL.className),
-                    entry("nodeType", nodeType),
-                    entry("edgeClass", RELAY_EDGE_IMPL.className),
-                    entry("collectors", COLLECTORS.className),
-                    entry("integerClass", INTEGER.className),
-                    entry("totalCount", TOTAL_COUNT_NAME),
-                    entry("maxNoOfNodes", MAX_NUMBER_OF_NODES_TO_DISPLAY)
-            );
-            spec.addNamedCode(getPaginationSegmentString(), paginationInputMap);
-            currentResultName = PAGINATION_RESULT_NAME;
-            if (!isRootLevel) {
-                spec
-                        .addStatement(
-                                "return new $T<$T, $T<$N>>($N.getKey(), $N)",
-                                SIMPLE_ENTRY.className,
-                                STRING.className,
-                                RELAY_CONNECTION.className,
-                                nodeType,
-                                RESULT_ENTRY_NAME,
-                                PAGINATION_RESULT_ENTRY_NAME
-                        )
-                        .endControlFlow(").collect($T.toMap(r -> r.getKey(), r -> r.getValue()))", COLLECTORS.className);
-            }
-        } // TODO: Backwards pagination if necessary.
-
         return spec
-                .addCode(returnCompletedFuture(currentResultName))
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
+                .addCode(queryMethodCalls(target, returnClassName, allQueryInputs))
                 .addCode(getMethodCallTail(target))
                 .build();
     }
@@ -130,16 +67,10 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         if (referenceField.hasForwardPagination()) {
             spec
                     .addParameter(INTEGER.className, GraphQLReservedName.PAGINATION_FIRST.getName())
-                    .addStatement(
-                            "int " + PAGE_SIZE_NAME + " = $T.ofNullable($N).map(it -> $T.min($L, it)).orElse(" + referenceField.getFirstDefault() + ")",
-                            OPTIONAL.className,
-                            GraphQLReservedName.PAGINATION_FIRST.getName(),
-                            MATH.className,
-                            GeneratorConfig.getMaxAllowedPageSize()
-                    );
+                    .addParameter(STRING.className, PAGINATION_AFTER.getName())
+                    .addCode(declarePageSize(referenceField.getFirstDefault()));
             allQueryInputs.add(PAGE_SIZE_NAME);
-            spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
-            allQueryInputs.add(GraphQLReservedName.PAGINATION_AFTER.getName());
+            allQueryInputs.add(PAGINATION_AFTER.getName());
         }
         return allQueryInputs;
     }
@@ -161,80 +92,56 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     @NotNull
     private CodeBlock queryMethodCalls(ObjectField referenceField, TypeName returnClassName, ArrayList<String> allQueryInputs) {
         var localObject = getLocalObject();
-
-        var queryMethodName = asQueryMethodName(referenceField.getName(), localObject.getName());
-        var dbQueryCallCodeBlock = CodeBlock.builder();
-
         var queryLocation = localObject.getName() + FILE_NAME_SUFFIX;
-
-        var selectionSetDeclaration = CodeBlock.of("var $L = new $T($T.getSelectionSetsFromEnvironment($N))",
-                SELECTION_SET_NAME,
-                referenceField.hasForwardPagination() ? CONNECTION_SELECTION_SET.className : SELECTION_SET.className,
-                ENVIRONMENT_UTILS.className,
-                localObject.isRoot() ? ENV_NAME : BATCHED_ENV_NAME);
-        dbQueryCallCodeBlock.addStatement(selectionSetDeclaration);
-
-        dbQueryCallCodeBlock.add("var $L = $N.$L(", QUERY_RESULT_NAME, uncapitalize(queryLocation), queryMethodName);
         dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
-        allQueryInputs.add(SELECTION_SET_NAME);
+        var inputString = String.join(", ", allQueryInputs);
+        if (getLocalObject().isRoot() && !referenceField.hasRequiredPaginationFields()) {
+            return getSimpleRootDBCall(referenceField.getName(), queryLocation, inputString);
+        }
 
+        var queryMethodName = asQueryMethodName(referenceField.getName(), localObject.getName());
+        var dataBlock = CodeBlock.builder();
         if (!localObject.isRoot()) {
-            allQueryInputs.add(0, "idSet");
-        }
-
-        if (!allQueryInputs.isEmpty()) {
-            dbQueryCallCodeBlock.addStatement("$N, $L)", Dependency.CONTEXT_NAME, String.join(", ", allQueryInputs));
-        }
-
-        if (referenceField.hasRequiredPaginationFields()) {
-            dbQueryCallCodeBlock.addStatement("var $L = selectionSet.contains($S) ? $N.count$L($N, $L) : null",
-                    TOTAL_COUNT_NAME,
-                    TOTAL_COUNT_NAME,
-                    uncapitalize(queryLocation),
-                    capitalize(queryMethodName),
-                    Dependency.CONTEXT_NAME,
-                    allQueryInputs.stream()
-                            .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(AFTER_NAME) && !it.equals(SELECTION_SET_NAME))
-                            .collect(Collectors.joining(", "))
+            dataBlock.add(
+                    "$T<$T, $T> $L = $T.getDataLoader($N, $S, ",
+                    DATA_LOADER.className,
+                    STRING.className,
+                    returnClassName,
+                    LOADER_NAME,
+                    DATA_LOADERS.className,
+                    ENV_NAME,
+                    queryMethodName
             );
-        }
-
-        var methodBodyBuilder = CodeBlock.builder();
-
-        if (localObject.isRoot()) {
-            methodBodyBuilder.add(dbQueryCallCodeBlock.build());
         } else {
-            methodBodyBuilder
-                    .beginControlFlow(
-                            "$T<$T, $T> loader = $N.getDataLoaderRegistry().computeIfAbsent(\""
-                                    + queryMethodName
-                                    + "\""
-                                    + ", name ->",
-                            DATA_LOADER.className,
-                            STRING.className,
-                            returnClassName,
-                            ENV_NAME
-                    )
-                    .beginControlFlow("var batchLoader = ($T<$T, $T>) (keys, " + BATCHED_ENV_NAME + ") ->",
-                            MAPPED_BATCH_LOADER_WITH_CONTEXT.className, STRING.className, returnClassName)
-                    .addStatement("var keyToId = keys.stream().collect($W$T.toMap(s -> s, s -> s.substring(s.lastIndexOf($S) + $L)))",
-                            COLLECTORS.className, EXECUTION_STEP_PATH_ID_DELIMITER, EXECUTION_STEP_PATH_ID_DELIMITER.length())
-                    .addStatement("var idSet = new $T<>(keyToId.values())", HASH_SET.className)
-                    .add(dbQueryCallCodeBlock.build())
-                    .addStatement(
-                            "var "
-                                    + MAP_RESULT_NAME
-                                    + " = keyToId.entrySet().stream()$W"
-                                    + ".filter(it -> $N.get(it.getValue()) != null)$W"
-                                    + ".collect($T.toMap($T.Entry::getKey, it -> $N.get(it.getValue())))",
-                            QUERY_RESULT_NAME,
-                            COLLECTORS.className,
-                            MAP.className,
-                            QUERY_RESULT_NAME
-                    );
+            dataBlock.add("return $T.loadData($N, ", DATA_LOADERS.className, ENV_NAME);
         }
-        return methodBodyBuilder.build();
+
+        var queryFunction = queryDBFunction(queryLocation, queryMethodName, inputString, localObject.isRoot());
+        if (referenceField.hasRequiredPaginationFields()) {
+            var filteredInputs = allQueryInputs
+                    .stream()
+                    .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(PAGINATION_AFTER.getName()) && !it.equals(SELECTION_SET_NAME))
+                    .collect(Collectors.joining(", "));
+            var inputsWithId = localObject.isRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
+            var countFunction = countDBFunction(queryLocation, queryMethodName, inputsWithId);
+            return dataBlock.addStatement("$N, $L,\n$L,\n$L,\n$L)", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction()).build();
+        }
+
+        return dataBlock.addStatement("$L)", queryFunction).build();
+    }
+
+    @NotNull
+    private CodeBlock getSimpleRootDBCall(String referenceFieldName, String queryLocation, String inputString) {
+        var queryBlock = CodeBlock.builder().addStatement("var $L = $T.getSelectionSet($N)", SELECTION_SET_NAME, RESOLVER_HELPERS.className, ENV_NAME);
+        queryBlock.add("var $L = $N.$L($N", QUERY_RESULT_NAME, uncapitalize(queryLocation), asQueryMethodName(referenceFieldName, getLocalObject().getName()), Dependency.CONTEXT_NAME);
+        if (!inputString.isEmpty()) {
+            queryBlock.add(", $L", inputString);
+        }
+        return queryBlock
+                .addStatement(", $N)", SELECTION_SET_NAME)
+                .add(returnCompletedFuture(QUERY_RESULT_NAME))
+                .build();
     }
 
     @NotNull
@@ -244,48 +151,14 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             return empty();
         }
 
-        var tailBlock = CodeBlock.builder();
-        // Should probably check for implementing Node interface, but that breaks everything now.
-        if (localObject.getFields().stream().map(AbstractField::getName).anyMatch(it -> it.equals(NODE_ID.getName()))) {
-            tailBlock.add(" + $S + $N.getId()", EXECUTION_STEP_PATH_ID_DELIMITER, uncapitalize(localObject.getName()));
-        }
-        tailBlock.add(", $N)", ENV_NAME);
-
-        if (referenceField.isIterableWrapped() && referenceField.isNonNullable()) {
-            tailBlock.add(".thenApply(data -> $T.ofNullable(data).orElse($L))", OPTIONAL.className, listOf());
-        }
-
-        return CodeBlock
-                .builder()
-                .endControlFlow("") // Has to be empty string to get that one semicolon that is required.
-                .addStatement("return $T.newMappedDataLoader(batchLoader)", DATA_LOADER_FACTORY.className)
-                .endControlFlow(")")
-                .addStatement("return loader.load($N.getExecutionStepInfo().getPath().toString()$L", ENV_NAME, tailBlock.build())
-                .build();
-    }
-
-    /**
-     * Template-style code for the large pagination section.
-     */
-    private String getPaginationSegmentString() {
-        return "var size = $math:T.min($dbResult:N.size(), $pageSize:N);\n" +
-                "var items = $dbResult:N.subList(0, size);\n" +
-                "var firstItem = items.size() == 0 ? null : new $connectionCursorClass:T(items.get(0).getId());\n" +
-                "var lastItem = items.size() == 0 ? null : new $connectionCursorClass:T(items.get(items.size() - 1).getId());\n" +
-                "var $resultName:L = $connectionClass:T\n" +
-                "        .<$nodeType:N>builder()\n" +
-                "        .setPageInfo(\n" +
-                "                new $pageInfoClass:T(firstItem, lastItem, false, $dbResult:N.size() > $pageSize:N)\n" +
-                "        )\n" +
-                "        .setNodes(items)\n" +
-                "        .setEdges(\n" +
-                "                items\n" +
-                "                        .stream()\n" +
-                "                        .map(item -> new $edgeClass:T<$nodeType:N>(item, new $connectionCursorClass:T(item.getId())))\n" +
-                "                        .collect($collectors:T.toList())\n" +
-                "        )\n" +
-                "        .setTotalCount($totalCount:N != null ? $math:T.min($maxNoOfNodes:L, $totalCount:N) : null)\n" +
-                "        .build();\n";
+        return CodeBlock.builder().addStatement(
+                "return $T.$L($N, $N.getId(), $N)",
+                DATA_LOADERS.className,
+                referenceField.isIterableWrapped() && referenceField.isNonNullable() ? "loadNonNullable" : "load",
+                LOADER_NAME,
+                uncapitalize(localObject.getName()),
+                ENV_NAME
+        ).build();
     }
 
     @Override

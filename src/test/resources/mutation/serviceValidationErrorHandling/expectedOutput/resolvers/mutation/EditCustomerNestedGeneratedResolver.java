@@ -17,6 +17,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
@@ -28,7 +29,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
     @Override
     public CompletableFuture<EditCustomerResponse> editCustomerNested(EditInputLevel1 input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
         var validationErrors = new HashSet<GraphQLError>();

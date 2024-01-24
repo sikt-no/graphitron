@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -35,7 +36,7 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
     @Override
     public CompletableFuture<ListedResponse> deleteCustomerWithCustomerIterable(
             List<EditInput> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 

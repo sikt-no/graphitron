@@ -2,7 +2,6 @@ package no.fellesstudentsystem.graphitron.generators.resolvers;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition;
@@ -15,9 +14,9 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerato
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -37,9 +36,8 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
     @Override
     public MethodSpec generate(ObjectField target) {
         InterfaceDefinition interfaceDefinition = processedSchema.getInterface(target);
-        TypeName returnClassName = interfaceDefinition.getGraphClassName();
 
-        var spec = getDefaultSpecBuilder(target.getName(), returnClassName);
+        var spec = getDefaultSpecBuilder(target.getName(), interfaceDefinition.getGraphClassName());
 
         if (!localObject.isRoot()) {
             spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
@@ -50,7 +48,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         spec
                 .addParameter(inputIterableWrap(inputField), inputFieldName)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
-                .addStatement("String tablePartOfId = $T.getTablePartOf($N)", FIELD_HELPERS.className, inputFieldName)
+                .addStatement("$T $L = $T.getTablePartOf($N)", STRING.className, TABLE_OF_ID, FIELD_HELPERS.className, inputFieldName)
                 .addCode("\n");
 
         processedSchema
@@ -59,41 +57,35 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                 .stream()
                 .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
                 .sorted(Comparator.comparing(AbstractObjectDefinition::getName))
-                .forEach(implementation -> {
-                    var queryLocation = implementation.getName() + DBClassGenerator.FILE_NAME_SUFFIX;
-                    var map = Map.ofEntries(
-                            Map.entry("env", ENV_NAME),
-                            Map.entry("string", STRING.className),
-                            Map.entry("returnType", returnClassName),
-                            Map.entry("dataloader", DATA_LOADER_FACTORY.className),
-                            Map.entry("batchLoader", MAPPED_BATCH_LOADER_WITH_CONTEXT.className),
-                            Map.entry("implementationClass", implementation.getGraphClassName()),
-                            Map.entry("future", COMPLETABLE_FUTURE.className),
-                            Map.entry("queryInstanceField", uncapitalize(queryLocation)),
-                            Map.entry("implName", implementation.getName()),
-                            Map.entry("inputFieldName", inputFieldName),
-                            Map.entry("inputFieldNameCap", capitalize(inputFieldName)),
-                            Map.entry("selectionSets", SELECTION_SET.className),
-                            Map.entry("environmentUtils", ENVIRONMENT_UTILS.className),
-                            Map.entry("referenceFieldName", capitalize(target.getName())),
-                            Map.entry("context", Dependency.CONTEXT_NAME)
-                    );
-                    dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
+                .map(implementation -> codeForImplementation(target, implementation, inputFieldName))
+                .forEach(spec::addCode);
 
-                    spec.beginControlFlow("if (tablePartOfId.equals($T.$N.getViewId().toString()))", TABLES.className, implementation.getTable().getMappingName());
-                    spec.addStatement(CodeBlock.builder().addNamed(
-                                    "return $env:N.getDataLoaderRegistry().<$string:T, $returnType:T>computeIfAbsent(tablePartOfId, name ->$W" +
-                                            "$dataloader:T.newMappedDataLoader(($batchLoader:T<$string:T, $implementationClass:T>) (keys, loaderEnvironment) ->$>$W" +
-                                            "$future:T.completedFuture($queryInstanceField:N.load$implName:NBy$inputFieldNameCap:NsAs$referenceFieldName:N" +
-                                            "($context:N, keys, new $selectionSets:T($environmentUtils:T.getSelectionSetsFromEnvironment(loaderEnvironment))))))" +
-                                            "$<$W.load($inputFieldName:N, $env:N)", map)
-                            .build());
-                    spec.endControlFlow();
-                });
+        return spec.addStatement("throw new $T(\"Could not find dataloader for $N with prefix \" + $N)", ILLEGAL_ARGUMENT_EXCEPTION.className, inputFieldName, TABLE_OF_ID).build();
+    }
 
-        spec.addStatement("throw new $T(\"could not find dataloader for $N with prefix \" + tablePartOfId)", ILLEGAL_ARGUMENT_EXCEPTION.className, inputFieldName);
+    private CodeBlock codeForImplementation(ObjectField target, ObjectDefinition implementation, String inputFieldName) {
+        var queryLocation = implementation.getName() + DBClassGenerator.FILE_NAME_SUFFIX;
+        dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
-        return spec.build();
+        var dbFunction = CodeBlock.of(
+                "($L, $L) -> $N.load$LBy$LsAs$L($N, $N, $N)",
+                IDS_NAME,
+                SELECTION_SET_NAME,
+                uncapitalize(queryLocation),
+                implementation.getName(),
+                capitalize(inputFieldName),
+                capitalize(target.getName()),
+                Dependency.CONTEXT_NAME,
+                IDS_NAME,
+                SELECTION_SET_NAME
+        );
+
+        return CodeBlock
+                .builder()
+                .beginControlFlow("if ($N.equals($T.$N.getViewId().toString()))", TABLE_OF_ID, TABLES.className, implementation.getTable().getMappingName())
+                .addStatement("return $T.loadInterfaceData($N, $N, $N, $L)", DATA_LOADERS.className, ENV_NAME, TABLE_OF_ID, inputFieldName, dbFunction)
+                .endControlFlow()
+                .build();
     }
 
     @Override

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
@@ -29,7 +30,7 @@ public class EditFilmRatingWithConverterIterableGeneratedResolver implements Edi
     @Override
     public CompletableFuture<ListedResponse> editFilmRatingWithConverterIterable(
             List<FilmInput2> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         List<FilmRecord> inputRecordList = new ArrayList<FilmRecord>();

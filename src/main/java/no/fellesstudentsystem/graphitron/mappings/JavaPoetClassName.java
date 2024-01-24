@@ -9,6 +9,8 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphql.exception.*;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
@@ -35,6 +37,7 @@ public enum JavaPoetClassName {
     DATA_ACCESS_EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ClassName.get(DataAccessExceptionToErrorMappingProvider.class)),
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
     DATA_LOADER(ClassName.get(org.dataloader.DataLoader.class)),
+    DATA_LOADERS(ClassName.get(DataLoaders.class)),
     DATA_LOADER_FACTORY(ClassName.get(org.dataloader.DataLoaderFactory.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
@@ -65,6 +68,7 @@ public enum JavaPoetClassName {
     RELAY_CONNECTION_IMPL(ClassName.get(ConnectionImpl.class)),
     RELAY_EDGE_IMPL(ClassName.get(DefaultEdge.class)),
     RELAY_PAGE_INFO_IMPL(ClassName.get(DefaultPageInfo.class)),
+    RESOLVER_HELPERS(ClassName.get(ResolverHelpers.class)),
     SELECTION_SET(ClassName.get(SelectionSet.class)),
     SET(ClassName.get(java.util.Set.class)),
     SIMPLE_ENTRY(ClassName.get(java.util.AbstractMap.SimpleEntry.class)),

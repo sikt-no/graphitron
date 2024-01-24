@@ -8,16 +8,11 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.dataloader.DataLoader;
-import org.dataloader.DataLoaderFactory;
-import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
 
 public class PaymentGeneratedResolver implements PaymentResolver {
@@ -30,21 +25,8 @@ public class PaymentGeneratedResolver implements PaymentResolver {
     @Override
     public CompletableFuture<Film> film(Payment payment, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        DataLoader<String, Film> loader = env.getDataLoaderRegistry().computeIfAbsent("filmForPayment", name -> {
-            var batchLoader = (MappedBatchLoaderWithContext<String, Film>) (keys, batchEnvLoader) -> {
-                var keyToId = keys.stream().collect(
-                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
-                var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = paymentDBQueries.filmForPayment(ctx, idSet, selectionSet);
-                var mapResult = keyToId.entrySet().stream()
-                        .filter(it -> dbResult.get(it.getValue()) != null)
-                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
-                return CompletableFuture.completedFuture(mapResult);
-            } ;
-            return DataLoaderFactory.newMappedDataLoader(batchLoader);
-        } );
-        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + payment.getId(), env);
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
+        DataLoader<String, Film> loader = DataLoaders.getDataLoader(env, "filmForPayment", (ids, selectionSet) -> paymentDBQueries.filmForPayment(ctx, ids, selectionSet));
+        return DataLoaders.load(loader, payment.getId(), env);
     }
 }

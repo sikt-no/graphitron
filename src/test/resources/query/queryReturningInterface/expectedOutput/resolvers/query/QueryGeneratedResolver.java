@@ -4,10 +4,7 @@ import fake.code.generated.queries.query.FilmDBQueries;
 import fake.code.generated.queries.query.InventoryDBQueries;
 import fake.code.generated.queries.query.RentalDBQueries;
 import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.Inventory;
 import fake.graphql.example.package.model.Node;
-import fake.graphql.example.package.model.Rental;
 import fake.graphql.example.package.model.Titled;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -16,12 +13,10 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.Tables;
-import org.dataloader.DataLoaderFactory;
-import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
 
 public abstract class QueryGeneratedResolver implements QueryResolver {
@@ -39,42 +34,30 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
 
     @Override
     public CompletableFuture<Node> node(String id, DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Film>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(filmDBQueries.loadFilmByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(id, env);
+            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> filmDBQueries.loadFilmByIdsAsNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.INVENTORY.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Inventory>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(inventoryDBQueries.loadInventoryByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(id, env);
+            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> inventoryDBQueries.loadInventoryByIdsAsNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.RENTAL.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Rental>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(rentalDBQueries.loadRentalByIdsAsNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(id, env);
+            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> rentalDBQueries.loadRentalByIdsAsNode(ctx, ids, selectionSet));
         }
-        throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);
+        throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }
 
     @Override
     public CompletableFuture<Titled> titled(String title, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         String tablePartOfId = FieldHelperHack.getTablePartOf(title);
 
         if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Titled>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Film>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(filmDBQueries.loadFilmByTitlesAsTitled(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(title, env);
+            return DataLoaders.loadInterfaceData(env, tablePartOfId, title, (ids, selectionSet) -> filmDBQueries.loadFilmByTitlesAsTitled(ctx, ids, selectionSet));
         }
-        throw new IllegalArgumentException("could not find dataloader for title with prefix " + tablePartOfId);
+        throw new IllegalArgumentException("Could not find dataloader for title with prefix " + tablePartOfId);
     }
 }

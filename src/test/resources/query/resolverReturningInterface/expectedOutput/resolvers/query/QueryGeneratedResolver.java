@@ -11,6 +11,7 @@ import fake.graphql.example.package.api.QueryResolver;
 import fake.graphql.example.package.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import fake.code.example.package.queries.query.QueryDBQueries;
 import org.jooq.DSLContext;
 
@@ -24,7 +25,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<ProgramStudierett>> programStudierett(String id,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var dbResult = queryDBQueries.programStudierettForQuery(ctx, id, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
         return CompletableFuture.completedFuture(dbResult);
     }

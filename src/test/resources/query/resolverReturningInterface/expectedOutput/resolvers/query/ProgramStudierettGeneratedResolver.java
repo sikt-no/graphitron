@@ -8,16 +8,12 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import fake.graphql.example.package.api.ProgramStudierettResolver;
-import fake.graphql.example.package.model.Kull;
 import fake.graphql.example.package.model.Node;
-import fake.graphql.example.package.model.ProgramStudierett;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import fake.code.example.package.queries.query.KullDBQueries;
 import fake.code.example.package.queries.query.ProgramStudierettDBQueries;
 import no.fellesstudentsystem.kjerneapi.Tables;
-import org.dataloader.DataLoaderFactory;
-import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
 
 public class ProgramStudierettGeneratedResolver implements ProgramStudierettResolver {
@@ -33,21 +29,15 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
     @Override
     public CompletableFuture<Node> referertNode(ProgramStudierett programStudierett, String id,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, Kull>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(kullDBQueries.loadKullByIdsAsReferertNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(id, env);
+            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> kullDBQueries.loadKullByIdsAsReferertNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
-            return env.getDataLoaderRegistry().<String, Node>computeIfAbsent(tablePartOfId, name ->
-                    DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, ProgramStudierett>) (keys, loaderEnvironment) ->
-                        CompletableFuture.completedFuture(programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))))
-                    .load(id, env);
+            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, ids, selectionSet));
         }
-        throw new IllegalArgumentException("could not find dataloader for id with prefix " + tablePartOfId);
+        throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }
 }

@@ -12,6 +12,7 @@ import fake.graphql.example.package.model.EndreInput;
 import fake.code.generated.queries.mutation.EditCustomerDBQueries;
 import no.fellesstudentsystem.graphitron.transforms.SomeTransform;
 import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -25,7 +26,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     @Override
     public CompletableFuture<String> editCustomer(EndreInput in, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
         var inRecord = new CustomerRecord();

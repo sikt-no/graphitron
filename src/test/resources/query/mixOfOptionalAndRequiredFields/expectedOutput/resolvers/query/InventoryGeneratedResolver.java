@@ -9,16 +9,11 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
 import org.dataloader.DataLoader;
-import org.dataloader.DataLoaderFactory;
-import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
 
 public class InventoryGeneratedResolver implements InventoryResolver {
@@ -31,42 +26,16 @@ public class InventoryGeneratedResolver implements InventoryResolver {
     @Override
     public CompletableFuture<Store> store(Inventory inventory, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        DataLoader<String, Store> loader = env.getDataLoaderRegistry().computeIfAbsent("storeForInventory", name -> {
-            var batchLoader = (MappedBatchLoaderWithContext<String, Store>) (keys, batchEnvLoader) -> {
-                var keyToId = keys.stream().collect(
-                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
-                var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = inventoryDBQueries.storeForInventory(ctx, idSet, selectionSet);
-                var mapResult = keyToId.entrySet().stream()
-                        .filter(it -> dbResult.get(it.getValue()) != null)
-                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
-                return CompletableFuture.completedFuture(mapResult);
-            } ;
-            return DataLoaderFactory.newMappedDataLoader(batchLoader);
-        } );
-        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + inventory.getId(), env);
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
+        DataLoader<String, Store> loader = DataLoaders.getDataLoader(env, "storeForInventory", (ids, selectionSet) -> inventoryDBQueries.storeForInventory(ctx, ids, selectionSet));
+        return DataLoaders.load(loader, inventory.getId(), env);
     }
 
     @Override
     public CompletableFuture<Film> film(Inventory inventory, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = env.getLocalContext() == null ? this.ctx : (DSLContext) env.getLocalContext();
-        DataLoader<String, Film> loader = env.getDataLoaderRegistry().computeIfAbsent("filmForInventory", name -> {
-            var batchLoader = (MappedBatchLoaderWithContext<String, Film>) (keys, batchEnvLoader) -> {
-                var keyToId = keys.stream().collect(
-                        Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
-                var idSet = new HashSet<>(keyToId.values());
-                var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader));
-                var dbResult = inventoryDBQueries.filmForInventory(ctx, idSet, selectionSet);
-                var mapResult = keyToId.entrySet().stream()
-                        .filter(it -> dbResult.get(it.getValue()) != null)
-                        .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
-                return CompletableFuture.completedFuture(mapResult);
-            } ;
-            return DataLoaderFactory.newMappedDataLoader(batchLoader);
-        } );
-        return loader.load(env.getExecutionStepInfo().getPath().toString() + "||" + inventory.getId(), env);
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
+        DataLoader<String, Film> loader = DataLoaders.getDataLoader(env, "filmForInventory", (ids, selectionSet) -> inventoryDBQueries.filmForInventory(ctx, ids, selectionSet));
+        return DataLoaders.load(loader, inventory.getId(), env);
     }
 }
