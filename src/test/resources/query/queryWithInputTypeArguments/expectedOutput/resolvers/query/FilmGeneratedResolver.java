@@ -1,12 +1,12 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.FilmDBQueries;
-import fake.graphql.example.package.api.FilmResolver;
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.FilmCategory;
-import fake.graphql.example.package.model.OriginalCategoryInput;
-import fake.graphql.example.package.model.OriginalCategoryInputNested;
-import fake.graphql.example.package.model.OriginalCategoryInputWithOneField;
+import fake.graphql.example.api.FilmResolver;
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.FilmCategory;
+import fake.graphql.example.model.OriginalCategoryInput;
+import fake.graphql.example.model.OriginalCategoryInputNested;
+import fake.graphql.example.model.OriginalCategoryInputWithOneField;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

@@ -3,12 +3,12 @@ package no.fellesstudentsystem.graphitron.generators.exception;
 import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.io.File;
@@ -131,7 +131,12 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators) {
+    public String getFileNameSuffix() {
+        return "";
+    }
+
+    @Override
+    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(DATA_ACCESS_EXCEPTION_TO_ERROR_MAPPING_PROVIDER.className)
                 .addModifiers(Modifier.PUBLIC)

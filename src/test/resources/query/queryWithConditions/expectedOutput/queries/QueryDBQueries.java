@@ -3,8 +3,8 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
-import fake.graphql.example.package.model.City;
-import fake.graphql.example.package.model.CityInput;
+import fake.graphql.example.model.City;
+import fake.graphql.example.model.CityInput;
 import java.lang.String;
 import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;

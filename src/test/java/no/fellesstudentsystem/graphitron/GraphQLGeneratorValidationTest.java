@@ -20,7 +20,9 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
             new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
             new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
             new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions")
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
+            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
+            new ExternalClassReference("TEST_CUSTOMER_INPUT_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerInputRecord")
     );
     public GraphQLGeneratorValidationTest() {
         super(SRC_TEST_RESOURCES_PATH);
@@ -238,6 +240,15 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
                 "Mutation editCustomerWarn3 with Input EditInput is not defined as a list while Payload type EditResponseOneListField contains a list",
                 "Mutation editCustomerWarn4 with Input EditInput is defined as a list while Payload type EditResponseNoListField does not contain a list",
                 "Mutation editCustomerWarn5 with Input EditInput is defined as a list while Payload type EditResponseWithErrors does not contain a list"
+        );
+    }
+
+    @Test
+    void generate_serviceMutationWithWronglyIterableRecordFields_shouldWarnOfIterable() {
+        getProcessedSchema("warning/wronglyIterableNestedRecordFields");
+        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
+                "Field edit2A with Input type EditInputLevel2A is iterable, but has no record mapping set. Iterable Input types within records without record mapping can not be mapped to a single field in the surrounding record.",
+                "Field edit2B with Input type EditInputLevel2B is iterable, but has no record mapping set. Iterable Input types within records without record mapping can not be mapped to a single field in the surrounding record."
         );
     }
 

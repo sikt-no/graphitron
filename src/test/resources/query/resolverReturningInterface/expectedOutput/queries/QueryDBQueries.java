@@ -5,8 +5,8 @@ import static no.fellesstudentsystem.kjerneapi.Tables.*;
 
 import java.lang.String;
 import java.util.List;
-import fake.graphql.example.package.model.Kull;
-import fake.graphql.example.package.model.ProgramStudierett;
+import fake.graphql.example.model.Kull;
+import fake.graphql.example.model.ProgramStudierett;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;

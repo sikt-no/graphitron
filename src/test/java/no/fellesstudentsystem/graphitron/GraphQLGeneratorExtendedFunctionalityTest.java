@@ -4,10 +4,10 @@ import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -51,7 +51,7 @@ public class GraphQLGeneratorExtendedFunctionalityTest extends TestCommon {
     }
 
     @Test
-    void generate_shouldUseExtendedValidator() throws IOException {
+    void generate_shouldUseExtendedValidator() {
         assertThatThrownBy(() -> getProcessedSchema("queryWithPagination"))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage(EXCEPTION_MSG);

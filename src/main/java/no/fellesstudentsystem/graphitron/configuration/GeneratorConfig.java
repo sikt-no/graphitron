@@ -20,7 +20,7 @@ public class GeneratorConfig {
             PACKAGE_RECORDS = "tables.records",
             CLASS_TABLES = "Tables",
             CLASS_KEYS = "Keys",
-            TEMP_GRAPHQL_GENERATED_PACKAGE = "fake.graphql.example.package", // Once codegen is fully contained in this module, this will be redundant.
+            TEMP_GRAPHQL_GENERATED_PACKAGE = "fake.graphql.example", // Once codegen is fully contained in this module, this will be redundant.
             DEFAULT_API_SUFFIX = ".api",
             DEFAULT_MODEL_SUFFIX = ".model";
 
@@ -217,6 +217,10 @@ public class GeneratorConfig {
 
     public static RecordValidation getRecordValidation() {
         return recordValidation;
+    }
+
+    public static boolean recordValidationEnabled() {
+        return recordValidation != null && recordValidation.isEnabled();
     }
 
     public static List<ExceptionToErrorMapping> getExceptionToErrorMappings() {

@@ -44,22 +44,35 @@ public class ExternalReferences {
      * @throws IllegalArgumentException If method does not exist.
      */
     public Method getMethodFrom(CodeReference reference) {
-        return getMethodFrom(reference.getSchemaClassReference(), reference.getMethodName());
+        return getMethodFrom(reference.getSchemaClassReference(), reference.getMethodName(), false);
     }
 
     /**
      * @return The method this reference points to if it exists.
      * @throws IllegalArgumentException If method does not exist.
      */
-    public Method getMethodFrom(String schemaName, String methodName) {
+    public Method getNullableMethodFrom(CodeReference reference) {
+        return getMethodFrom(reference.getSchemaClassReference(), reference.getMethodName(), true);
+    }
+
+    /**
+     * @return The method this reference points to if it exists.
+     * @throws IllegalArgumentException If method does not exist.
+     */
+    public Method getMethodFrom(String schemaName, String methodName, boolean nullable) {
         var classReference = classes.get(schemaName);
         if (classReference == null) {
             throw new IllegalArgumentException("Could not find external class with name " + schemaName);
         }
-        return Stream
+        var first = Stream
                 .of(classReference.getMethods())
                 .filter(it -> it.getName().equalsIgnoreCase(methodName))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Could not find method with name " + methodName + " in external class " + classReference.getName()));
+                .findFirst();
+
+        if (first.isEmpty() && nullable) {
+            return null;
+        }
+
+        return first.orElseThrow(() -> new IllegalArgumentException("Could not find method with name " + methodName + " in external class " + classReference.getName()));
     }
 }

@@ -34,6 +34,9 @@ public interface MethodGenerator<T extends GenerationTarget> {
      */
     MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType);
 
+    /**
+     * @return Does this method generator generate all possible methods? False if any are set to not generate.
+     */
     boolean generatesAll();
 
     /**

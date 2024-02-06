@@ -15,7 +15,8 @@ public enum GenerationDirectiveParam {
     ENUM("enumReference"),
     SERVICE("service"),
     ERROR("error"),
-    METHOD("method");
+    METHOD("method"),
+    RECORD("record");
 
     private final String name;
 

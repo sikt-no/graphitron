@@ -1,20 +1,16 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.EditFilmRatingWithConverterDBQueries;
-import fake.graphql.example.package.api.EditFilmRatingWithConverterMutationResolver;
-import fake.graphql.example.package.model.FilmInput2;
-import fake.graphql.example.package.model.Rating;
-import fake.graphql.example.package.model.Response;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.EditFilmRatingWithConverterMutationResolver;
+import fake.graphql.example.model.FilmInput2;
+import fake.graphql.example.model.Response;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphitron.enums.RatingTest;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 
 public class EditFilmRatingWithConverterGeneratedResolver implements EditFilmRatingWithConverterMutationResolver {
@@ -28,19 +24,10 @@ public class EditFilmRatingWithConverterGeneratedResolver implements EditFilmRat
     public CompletableFuture<Response> editFilmRatingWithConverter(FilmInput2 input,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecord = new FilmRecord();
-        inputRecord.attach(ctx.configuration());
+        var transform = new InputTransformer(env, ctx);
 
-        if (input != null) {
-            if (flatArguments.contains("input/rating")) {
-                inputRecord.setRating(input.getRating() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(input.getRating(), null));
-            }
-            if (flatArguments.contains("input/id")) {
-                inputRecord.setId(input.getId());
-            }
-        }
+        var inputRecord = transform.filmInput2ToJOOQRecord(input, "input");
 
         var rowsUpdated = editFilmRatingWithConverterDBQueries.editFilmRatingWithConverter(ctx, inputRecord);
 

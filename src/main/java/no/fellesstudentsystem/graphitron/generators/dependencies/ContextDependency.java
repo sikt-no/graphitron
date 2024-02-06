@@ -5,6 +5,7 @@ import com.squareup.javapoet.FieldSpec;
 import org.jetbrains.annotations.NotNull;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INJECT;
 

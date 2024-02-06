@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.InputValueDefinition;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 
@@ -14,7 +15,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ORDE
 /**
  * A field for a {@link no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition}.
  */
-public class InputField extends AbstractField<InputValueDefinition> {
+public class InputField extends AbstractField<InputValueDefinition> implements GenerationTarget {
     private final String defaultValue;
     private final RecordMethodMapping recordFromColumnMapping;
     private final MethodMapping recordFromSchemaNameMapping;

@@ -6,5 +6,12 @@ public class VariableNames {
             IDS_NAME = "ids",
             PAGE_SIZE_NAME = "pageSize",
             LOADER_NAME = "loader",
-            TABLE_OF_ID = "tablePartOfId";
+            TABLE_OF_ID = "tablePartOfId",
+            CONTEXT_NAME = "ctx",
+            VALIDATION_ERRORS_NAME = "validationErrors",
+            TRANSFORMER_NAME = "transform",
+            PATH_NAME = "path",
+            PATH_INDEX_NAME = "indexPath",
+            PATH_HERE_NAME = "pathHere",
+            VARIABLE_ARGUMENTS = "arguments";
 }

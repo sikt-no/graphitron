@@ -1,9 +1,9 @@
 package fake.code.generated.exception;
 
-import fake.graphql.example.package.model.EditCustomerWithOtherErrorPayload;
-import fake.graphql.example.package.model.EditCustomerWithUnionErrorPayload;
-import fake.graphql.example.package.model.OtherError;
-import fake.graphql.example.package.model.UnionOfErrors;
+import fake.graphql.example.model.EditCustomerWithOtherErrorPayload;
+import fake.graphql.example.model.EditCustomerWithUnionErrorPayload;
+import fake.graphql.example.model.OtherError;
+import fake.graphql.example.model.UnionOfErrors;
 import java.lang.Class;
 import java.lang.Override;
 import java.lang.String;

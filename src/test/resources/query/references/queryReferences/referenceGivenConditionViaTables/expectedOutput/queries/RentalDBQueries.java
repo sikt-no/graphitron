@@ -3,8 +3,8 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
-import fake.graphql.example.package.model.Actor;
-import fake.graphql.example.package.model.FilmActor;
+import fake.graphql.example.model.Actor;
+import fake.graphql.example.model.FilmActor;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;

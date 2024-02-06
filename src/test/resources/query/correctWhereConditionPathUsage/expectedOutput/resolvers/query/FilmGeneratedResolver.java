@@ -1,10 +1,10 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.FilmDBQueries;
-import fake.graphql.example.package.api.FilmResolver;
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.In;
-import fake.graphql.example.package.model.Language;
+import fake.graphql.example.api.FilmResolver;
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.In;
+import fake.graphql.example.model.Language;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

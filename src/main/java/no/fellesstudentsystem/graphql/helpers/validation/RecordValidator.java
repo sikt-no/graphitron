@@ -25,13 +25,13 @@ public class RecordValidator {
      * @param <T>                   The type of the record.
      * @return A set of GraphQL errors representing validation violations.
      */
-    public static <T extends Record> Set<GraphQLError> validatePropertiesAndGenerateGraphQLErrors(T record, Map<String, List<String>> pathsForProperties, DataFetchingEnvironment env) {
+    public static <T extends Record> Set<GraphQLError> validatePropertiesAndGenerateGraphQLErrors(T record, Map<String, String> pathsForProperties, DataFetchingEnvironment env) {
         var violations = validateProperties(record, pathsForProperties.keySet());
 
         if (!violations.isEmpty()) {
             return violations.stream().map(it -> {
                 List<Object> path = new ArrayList<>(env.getExecutionStepInfo().getPath().toList());
-                path.addAll(pathsForProperties.getOrDefault(it.getPropertyPath().toString(), List.of("undefined")));
+                path.addAll(List.of(pathsForProperties.getOrDefault(it.getPropertyPath().toString(), "undefined").split("/")));
                 return GraphqlErrorBuilder.newError(env)
                         .path(path)
                         .message(it.getMessage())

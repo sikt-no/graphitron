@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.graphql.example.package.api.EditCustomerListSimpleMutationResolver;
+import fake.graphql.example.api.EditCustomerListSimpleMutationResolver;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

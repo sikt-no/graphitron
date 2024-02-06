@@ -12,6 +12,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecificat
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -25,7 +26,7 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, F ex
     private final String name;
     private final TypeName graphClassName;
     private final LinkedHashMap<String, U> fieldsByName;
-    private T objectDefinition;
+    private final T objectDefinition;
 
     public AbstractObjectDefinition(T objectDefinition) {
         this.objectDefinition = objectDefinition;
@@ -67,5 +68,18 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, F ex
 
     public T getObjectDefinition() {
         return objectDefinition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof AbstractObjectDefinition)) return false;
+        AbstractObjectDefinition<?, ?, ?> that = (AbstractObjectDefinition<?, ?, ?>) o;
+        return Objects.equals(getName(), that.getName());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getName());
     }
 }

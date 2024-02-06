@@ -3,8 +3,8 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
-import fake.graphql.example.package.model.Customer;
-import fake.graphql.example.package.model.Country;
+import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.Country;
 import java.lang.String;
 import java.util.List;
 import java.util.Map;

@@ -1,10 +1,11 @@
 package no.fellesstudentsystem.graphitron.generators.dependencies;
 
 import com.squareup.javapoet.FieldSpec;
-import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
+import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 
 import javax.lang.model.element.Modifier;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**

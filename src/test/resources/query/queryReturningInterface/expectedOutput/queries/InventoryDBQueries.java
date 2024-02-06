@@ -3,9 +3,9 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.Inventory;
-import fake.graphql.example.package.model.Rental;
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.Inventory;
+import fake.graphql.example.model.Rental;
 import java.lang.String;
 import java.util.List;
 import java.util.Map;

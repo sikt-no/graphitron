@@ -1,17 +1,16 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.UpsertCustomerInputDBQueries;
-import fake.graphql.example.package.api.UpsertCustomerInputMutationResolver;
-import fake.graphql.example.package.model.UpsertInput;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.UpsertCustomerInputMutationResolver;
+import fake.graphql.example.model.UpsertInput;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class UpsertCustomerInputGeneratedResolver implements UpsertCustomerInputMutationResolver {
@@ -25,37 +24,10 @@ public class UpsertCustomerInputGeneratedResolver implements UpsertCustomerInput
     public CompletableFuture<String> upsertCustomerInput(UpsertInput input,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecord = new CustomerRecord();
-        inputRecord.attach(ctx.configuration());
+        var transform = new InputTransformer(env, ctx);
 
-        if (input != null) {
-            if (flatArguments.contains("input/id")) {
-                inputRecord.setId(input.getId());
-            }
-            if (flatArguments.contains("input/customerId")) {
-                inputRecord.setCustomerId(input.getCustomerId());
-            }
-            if (flatArguments.contains("input/firstName")) {
-                inputRecord.setFirstName(input.getFirstName());
-            }
-            if (flatArguments.contains("input/lastName")) {
-                inputRecord.setLastName(input.getLastName());
-            }
-            if (flatArguments.contains("input/storeId")) {
-                inputRecord.setStoreId(input.getStoreId());
-            }
-            if (flatArguments.contains("input/addressId")) {
-                inputRecord.setAddressId(input.getAddressId());
-            }
-            if (flatArguments.contains("input/active")) {
-                inputRecord.setActivebool(input.getActive());
-            }
-            if (flatArguments.contains("input/createdDate")) {
-                inputRecord.setCreateDate(input.getCreatedDate());
-            }
-        }
+        var inputRecord = transform.upsertInputToJOOQRecord(input, "input");
 
         var rowsUpdated = upsertCustomerInputDBQueries.upsertCustomerInput(ctx, inputRecord);
 

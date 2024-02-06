@@ -2,10 +2,10 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.query.CustomerDBQueries;
 import fake.code.generated.queries.query.PaymentDBQueries;
-import fake.graphql.example.package.api.EditCustomerWithCustomerResponseMutationResolver;
-import fake.graphql.example.package.model.Customer;
-import fake.graphql.example.package.model.EditResponseWithCustomer;
-import fake.graphql.example.package.model.Payment;
+import fake.graphql.example.api.EditCustomerWithCustomerResponseMutationResolver;
+import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.EditResponseWithCustomer;
+import fake.graphql.example.model.Payment;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -48,7 +48,7 @@ public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCu
     }
 
     private Customer getEditResponseWithCustomerCustomer(DSLContext ctx,
-            no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse idContainer,
+            TestCustomerService.EditCustomerResponse idContainer,
             SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return null;
@@ -59,7 +59,7 @@ public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCu
     }
 
     private Payment getEditResponseWithCustomerPayment(DSLContext ctx,
-            no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse idContainer,
+            TestCustomerService.EditCustomerResponse idContainer,
             SelectionSet select) {
         if (!select.contains("payment") || idContainer == null) {
             return null;

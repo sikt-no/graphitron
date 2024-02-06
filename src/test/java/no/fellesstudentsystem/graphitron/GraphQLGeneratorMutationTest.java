@@ -5,9 +5,12 @@ import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -23,7 +26,9 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
             new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
             new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
             new ExternalClassReference("EXCEPTION_TEST", "no.fellesstudentsystem.graphitron.exceptions.TestException"),
-            new ExternalClassReference("EXCEPTION_TEST_CAUSE", "no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause")
+            new ExternalClassReference("EXCEPTION_TEST_CAUSE", "no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause"),
+            new ExternalClassReference("TEST_CUSTOMER_INPUT_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerInputRecord"),
+            new ExternalClassReference("TEST_CUSTOMER_INPUT_INNER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerInnerInputRecord")
     );
 
     public GraphQLGeneratorMutationTest() {
@@ -36,7 +41,10 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
-                new MutationExceptionStrategyConfigurationGenerator(processedSchema)
+                new MutationExceptionStrategyConfigurationGenerator(processedSchema),
+                new TransformerClassGenerator(processedSchema),
+                new RecordMapperClassGenerator(processedSchema),
+                new JavaRecordMapperClassGenerator(processedSchema)
         );
 
         return generateFiles(generators);
@@ -76,8 +84,33 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     }
 
     @Test
-    void   generate_serviceMutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
+    void generate_serviceMutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedTypes");
+    }
+
+    @Test
+    void generate_serviceMutationWithRecordInputs_shouldGenerateResolversForSimpleFields() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithSimpleFields");
+    }
+
+    @Test
+    void generate_serviceMutationWithNestedRecordInputs_shouldGenerateResolversForNestedRecordStructures() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedRecordTypes");
+    }
+
+    @Test
+    void generate_serviceMutationWithNestedRecordFieldMapping_shouldGenerateResolversForNestedStructures() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedRecordFieldMapping");
+    }
+
+    @Test
+    void generate_serviceMutationWithWrongMapping_shouldSkipIncorrectMappings() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithWrongRecordMappings");
+    }
+
+    @Test
+    void generate_serviceMutationWithoutTable_shouldGenerateResolverWithJavaRecordMapping() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithJavaRecordWithoutTable");
     }
 
     @Test //TODO fjerne denne? Det er vel analogt case med det som blir generert til EditCustomerInputAndResponseGeneratedResolver. Mulig dette caset ga mer mening mot kjerneAPI
@@ -162,16 +195,6 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
         assertThatThrownBy(() -> generateFiles("error/serviceNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Could not find external class with name SERVICE_NOT_FOUND");
-    }
-
-    @Test
-    void generate_whenServiceMethodNotFound_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/serviceMethodNotFound"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage(
-                        "Could not find method with name UNKNOWN_METHOD" +
-                                " in external class no.fellesstudentsystem.graphitron.services.TestCustomerService"
-                );
     }
 
     @Test

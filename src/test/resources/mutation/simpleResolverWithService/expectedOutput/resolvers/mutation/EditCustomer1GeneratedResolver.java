@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.graphql.example.package.api.EditCustomer1MutationResolver;
-import fake.graphql.example.package.model.EditResponse1;
+import fake.graphql.example.api.EditCustomer1MutationResolver;
+import fake.graphql.example.model.EditResponse1;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -22,7 +22,7 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var editCustomer1Result = testCustomerService.editCustomer1(id);
+        var editCustomer1Result = testCustomerService.editCustomerIDList(id);
 
         var editResponse1 = new EditResponse1();
         editResponse1.setId1(editCustomer1Result);

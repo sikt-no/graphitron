@@ -1,17 +1,16 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.DeleteCustomerInputDBQueries;
-import fake.graphql.example.package.api.DeleteCustomerInputMutationResolver;
-import fake.graphql.example.package.model.DeleteInput;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.DeleteCustomerInputMutationResolver;
+import fake.graphql.example.model.DeleteInput;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class DeleteCustomerInputGeneratedResolver implements DeleteCustomerInputMutationResolver {
@@ -25,22 +24,10 @@ public class DeleteCustomerInputGeneratedResolver implements DeleteCustomerInput
     public CompletableFuture<String> deleteCustomerInput(DeleteInput input,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecord = new CustomerRecord();
-        inputRecord.attach(ctx.configuration());
+        var transform = new InputTransformer(env, ctx);
 
-        if (input != null) {
-            if (flatArguments.contains("input/email")) {
-                inputRecord.setEmail(input.getEmail());
-            }
-            if (flatArguments.contains("input/id")) {
-                inputRecord.setId(input.getId());
-            }
-            if (flatArguments.contains("input/firstName")) {
-                inputRecord.setFirstName(input.getFirstName());
-            }
-        }
+        var inputRecord = transform.deleteInputToJOOQRecord(input, "input");
 
         var rowsUpdated = deleteCustomerInputDBQueries.deleteCustomerInput(ctx, inputRecord);
 

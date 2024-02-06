@@ -9,9 +9,7 @@ import java.lang.Integer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import fake.code.generated.queries.query.QueryDBQueries;
 import org.jooq.DSLContext;
 

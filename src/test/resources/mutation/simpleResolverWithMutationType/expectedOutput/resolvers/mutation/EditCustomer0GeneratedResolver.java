@@ -1,18 +1,17 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.EditCustomer0DBQueries;
-import fake.graphql.example.package.api.EditCustomer0MutationResolver;
-import fake.graphql.example.package.model.EditInput;
-import fake.graphql.example.package.model.EditResponse0;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.EditCustomer0MutationResolver;
+import fake.graphql.example.model.EditInput;
+import fake.graphql.example.model.EditResponse0;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class EditCustomer0GeneratedResolver implements EditCustomer0MutationResolver {
@@ -26,16 +25,10 @@ public class EditCustomer0GeneratedResolver implements EditCustomer0MutationReso
     public CompletableFuture<EditResponse0> editCustomer0(String id, EditInput in,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inRecord = new CustomerRecord();
-        inRecord.attach(ctx.configuration());
+        var transform = new InputTransformer(env, ctx);
 
-        if (in != null) {
-            if (flatArguments.contains("in/firstName")) {
-                inRecord.setFirstName(in.getFirstName());
-            }
-        }
+        var inRecord = transform.editInputToJOOQRecord(in, "in");
 
         var rowsUpdated = editCustomer0DBQueries.editCustomer0(ctx, id, inRecord);
 

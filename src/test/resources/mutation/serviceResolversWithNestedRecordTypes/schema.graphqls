@@ -1,0 +1,44 @@
+input EditInputLevel1 @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INPUT_RECORD"}) {
+  edit2A: EditInputLevel2A
+  edit2ADouble: EditInputLevel2A @field(name: "editDouble") @recordField(name: "testCustomerInnerInputRecord")
+  edit2AList: [EditInputLevel2A] @recordField(name: "testCustomerInnerInputRecordList")
+  edit2B: EditInputLevel2B @recordField(name: "recordList")
+  edit2CList: [EditInputLevel2C] @recordField(name: "recordList")
+}
+
+input EditInputLevel2A @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INPUT_INNER_RECORD"}) {
+  hiddenValue: EditInputLevel3A
+  edit3: EditInputLevel3B! @recordField(name: "someRecord")
+  edit3List: [EditInputLevel3B!] @recordField(name: "someRecordList")
+}
+
+input EditInputLevel2B {
+  edit3: [EditInputLevel3B!]
+}
+
+input EditInputLevel2C @record(record: {name: "TEST_CUSTOMER_INPUT_RECORD"}) {
+  edit3: EditInputLevel3B! @recordField(name: "record")
+}
+
+input EditInputLevel3A {
+  i: Int @recordField(name: "someInt")
+}
+
+input EditInputLevel3B @table(name: "CUSTOMER") {
+  lastName: String! @field(name: "LAST_NAME")
+}
+
+type EditCustomerResponse {
+  customer: [Customer]
+}
+
+type Mutation {
+  editCustomerNested(input: EditInputLevel1!, s: String!): EditCustomerResponse! @service(service: {name: "TEST_CUSTOMER", method: "editCustomerWithRecordInputs"})
+}
+
+type Customer implements Node @table {
+  id: ID!
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+  email: String
+}

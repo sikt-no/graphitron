@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.graphql.example.package.api.EditCustomerRecord1MutationResolver;
-import fake.graphql.example.package.model.EditResponse1;
+import fake.graphql.example.api.EditCustomerRecord1MutationResolver;
+import fake.graphql.example.model.EditResponse1;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

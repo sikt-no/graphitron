@@ -1,9 +1,9 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.PaymentDBQueries;
-import fake.graphql.example.package.api.PaymentResolver;
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.Payment;
+import fake.graphql.example.api.PaymentResolver;
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.Payment;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

@@ -2,8 +2,8 @@ package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.AddressDBQueries;
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.graphql.example.package.api.CustomerResolver;
-import fake.graphql.example.package.model.Node;
+import fake.graphql.example.api.CustomerResolver;
+import fake.graphql.example.model.Node;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.IllegalArgumentException;

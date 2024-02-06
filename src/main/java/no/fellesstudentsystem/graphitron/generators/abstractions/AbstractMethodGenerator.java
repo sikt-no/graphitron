@@ -2,30 +2,33 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractTableObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
+import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 
 /**
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.
  */
-abstract public class AbstractMethodGenerator<T extends ObjectField> implements MethodGenerator<T> {
+abstract public class AbstractMethodGenerator<T extends GenerationTarget> implements MethodGenerator<T> {
     public static final String ENV_NAME = "env";
     protected final ObjectDefinition localObject;
     protected final ProcessedSchema processedSchema;
@@ -52,6 +55,14 @@ abstract public class AbstractMethodGenerator<T extends ObjectField> implements 
                 .ofNullable(processedSchema.getPreviousTableObjectForObject(localObject))
                 .map(AbstractTableObjectDefinition::getTable)
                 .orElse(null);
+    }
+
+    @Override
+    public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
+        return MethodSpec
+                .methodBuilder(methodName)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(returnType);
     }
 
     /**

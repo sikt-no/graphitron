@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.graphql.example.package.api.EditCustomerSimpleMutationResolver;
+import fake.graphql.example.api.EditCustomerSimpleMutationResolver;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -20,7 +20,7 @@ public class EditCustomerSimpleGeneratedResolver implements EditCustomerSimpleMu
             throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var editCustomerSimpleResult = testCustomerService.editCustomerSimple(id);
+        var editCustomerSimpleResult = testCustomerService.simple(id);
 
         return CompletableFuture.completedFuture(editCustomerSimpleResult);
     }

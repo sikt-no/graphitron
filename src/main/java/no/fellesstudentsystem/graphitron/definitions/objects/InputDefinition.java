@@ -5,9 +5,12 @@ import com.squareup.javapoet.TypeName;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
+import no.fellesstudentsystem.graphitron.definitions.helpers.JavaRecordReference;
 import no.fellesstudentsystem.graphitron.definitions.mapping.RecordMethodMapping;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashSet;
@@ -17,6 +20,7 @@ import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asRecordClassName;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.RECORD;
 
 /**
  * Represents a default GraphQL input type.
@@ -26,6 +30,7 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
     private final LinkedHashSet<String> requiredInputs, lookupInputs;
     private final TypeName recordClassName;
     private final boolean containsLookupKey;
+    private final JavaRecordReference recordReference;
 
     public InputDefinition(InputObjectTypeDefinition inputType) {
         super(inputType);
@@ -38,6 +43,9 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
         lookupInputs = getFields().stream().filter(InputField::isLookupKey).map(InputField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         containsLookupKey = !lookupInputs.isEmpty();
         inputsSortedByNullability = sortInputsByNullability();
+
+        var reference = inputType.hasDirective(RECORD.getName()) ? new CodeReference(inputType, RECORD, GenerationDirectiveParam.RECORD, inputType.getName()) : null;
+        recordReference = new JavaRecordReference(reference);
     }
 
     @NotNull
@@ -98,6 +106,34 @@ public class InputDefinition extends AbstractTableObjectDefinition<InputObjectTy
      */
     public boolean containsLookupKey() {
         return containsLookupKey;
+    }
+
+    /**
+     * @return The reference for a record class for this input type.
+     */
+    public Class<?> getJavaRecordReference() {
+        return recordReference.getRecordClass();
+    }
+
+    /**
+     * @return The reference name for a record class for this input type.
+     */
+    public String getJavaRecordReferenceName() {
+        return recordReference.getClassName();
+    }
+
+    /**
+     * @return The type name for a record class for this input type.
+     */
+    public TypeName getJavaRecordTypeName() {
+        return recordReference.getTypeName();
+    }
+
+    /**
+     * @return Does this input type have a record class attached?
+     */
+    public boolean hasJavaRecordReference() {
+        return recordReference.getRecordClass() != null;
     }
 
     /**

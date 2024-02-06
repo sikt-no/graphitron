@@ -2,10 +2,11 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.EditCustomerWithCustomerResponseDBQueries;
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.graphql.example.package.api.EditCustomerWithCustomerResponseMutationResolver;
-import fake.graphql.example.package.model.Customer;
-import fake.graphql.example.package.model.EditInput;
-import fake.graphql.example.package.model.EditResponseWithCustomer;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.EditCustomerWithCustomerResponseMutationResolver;
+import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.EditInput;
+import fake.graphql.example.model.EditResponseWithCustomer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -16,7 +17,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
@@ -37,29 +37,10 @@ public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCu
             List<EditInput> input, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        List<CustomerRecord> inputRecordList = new ArrayList<CustomerRecord>();
+        var transform = new InputTransformer(env, ctx);
 
-
-        if (input != null) {
-            for (int itInputIndex = 0; itInputIndex < input.size(); itInputIndex++) {
-                var itInput = input.get(itInputIndex);
-                if (itInput == null) continue;
-                var inputRecord = new CustomerRecord();
-                inputRecord.attach(ctx.configuration());
-                if (flatArguments.contains("input/email")) {
-                    inputRecord.setEmail(itInput.getEmail());
-                }
-                if (flatArguments.contains("input/id")) {
-                    inputRecord.setId(itInput.getId());
-                }
-                if (flatArguments.contains("input/firstName")) {
-                    inputRecord.setFirstName(itInput.getFirstName());
-                }
-                inputRecordList.add(inputRecord);
-            }
-        }
+        var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
         var rowsUpdated = editCustomerWithCustomerResponseDBQueries.editCustomerWithCustomerResponse(ctx, inputRecordList);
         var inputRecordCustomer = getEditResponseWithCustomerCustomer(ctx, inputRecordList, select);

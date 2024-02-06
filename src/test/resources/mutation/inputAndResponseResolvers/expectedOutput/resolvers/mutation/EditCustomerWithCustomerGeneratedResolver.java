@@ -1,8 +1,8 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.graphql.example.package.api.EditCustomerWithCustomerMutationResolver;
-import fake.graphql.example.package.model.Customer;
+import fake.graphql.example.api.EditCustomerWithCustomerMutationResolver;
+import fake.graphql.example.model.Customer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -13,6 +13,7 @@ import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class EditCustomerWithCustomerGeneratedResolver implements EditCustomerWithCustomerMutationResolver {
@@ -35,7 +36,7 @@ public class EditCustomerWithCustomerGeneratedResolver implements EditCustomerWi
     }
 
     private Customer getCustomerEditCustomerWithCustomer(DSLContext ctx,
-            no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord idContainer,
+            CustomerRecord idContainer,
             SelectionSet select) {
         if (!select.contains("editCustomerWithCustomer") || idContainer == null) {
             return null;

@@ -3,7 +3,10 @@ package no.fellesstudentsystem.graphitron.validation;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
+import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractTableObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
@@ -12,8 +15,8 @@ import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -21,6 +24,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 
 /**
  * Class for producing warnings related to potential issues in the defined schema.
@@ -56,6 +61,7 @@ public class ProcessedDefinitionsValidator {
         validateInputFields();
         validateExternalMappingReferences();
         validateMutationRequiredFields();
+        validateMutationRecursiveRecordInputs();
 
         if (!GeneratorConfig.getExceptionToErrorMappings().isEmpty() && schema.getMutationType() != null) {
             validateExceptionToErrorMappings(GeneratorConfig.getExceptionToErrorMappings());
@@ -132,7 +138,9 @@ public class ProcessedDefinitionsValidator {
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
             }
 
-            flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
+            if (lastTableIsNonNull) {
+                flatFields.computeIfAbsent(lastTable, k -> new ArrayList<>()).add(new FieldWithOverrideStatus(field, hasCondition));
+            }
         }
         return flatFields;
     }
@@ -346,9 +354,45 @@ public class ProcessedDefinitionsValidator {
                     .filter(ObjectField::hasMutationType)
                     .forEach(target -> {
                         validateRecordRequiredFields(target);
-                        new UpdateContext(target, schema).getRecordInputs().values().forEach(inputField -> checkMutationIOFields(inputField, target));
+                        new UpdateContext(target, schema).getTableInputs().values().forEach(inputField -> checkMutationIOFields(inputField, target));
                     });
         }
+    }
+
+    private void validateMutationRecursiveRecordInputs() {
+        var mutation = schema.getMutationType();
+        if (mutation != null) {
+            mutation
+                    .getFields()
+                    .stream()
+                    .filter(ObjectField::hasServiceReference)
+                    .flatMap(it -> it.getArguments().stream())
+                    .filter(schema::isInputType)
+                    .forEach(it -> validateMutationRecursiveRecordInputs(it, false, 0));
+        }
+    }
+
+    private void validateMutationRecursiveRecordInputs(InputField field, boolean wasRecord, int recursion) {
+        recursionCheck(recursion);
+
+        var input = schema.getInputType(field);
+        if (input == null) {
+            return;
+        }
+
+        var hasTableOrRecordReference = input.hasTable() || input.hasJavaRecordReference();
+
+        if (field.isIterableWrapped() && wasRecord && !hasTableOrRecordReference) {
+            LOGGER.warn(
+                    String.format(
+                            "Field %s with Input type %s is iterable, but has no record mapping set. Iterable Input types within records without record mapping can not be mapped to a single field in the surrounding record.",
+                            field.getName(),
+                            input.getName()
+                    )
+            );
+        }
+
+        input.getFields().forEach(it -> validateMutationRecursiveRecordInputs(it, wasRecord || hasTableOrRecordReference, recursion + 1));
     }
 
     //Check input and payload("output") fields
@@ -378,7 +422,7 @@ public class ProcessedDefinitionsValidator {
     private void validateRecordRequiredFields(ObjectField target) {
         var mutationType = target.getMutationType();
         if (mutationType.equals(MutationType.INSERT) || mutationType.equals(MutationType.UPSERT)) {
-            var recordInputs = new UpdateContext(target, schema).getRecordInputs().values();
+            var recordInputs = new UpdateContext(target, schema).getTableInputs().values();
             if (recordInputs.isEmpty()) {
                 throw new IllegalArgumentException(
                         "Mutation "

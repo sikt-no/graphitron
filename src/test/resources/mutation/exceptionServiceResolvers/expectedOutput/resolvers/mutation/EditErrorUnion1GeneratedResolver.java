@@ -1,13 +1,13 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.graphql.example.package.api.EditErrorUnion1MutationResolver;
-import fake.graphql.example.package.model.Customer;
-import fake.graphql.example.package.model.EditCustomerResponse2;
-import fake.graphql.example.package.model.EditCustomerResponse3;
-import fake.graphql.example.package.model.EditCustomerResponseUnion1;
-import fake.graphql.example.package.model.EditErrorsUnion1;
-import fake.graphql.example.package.model.SomeErrorA;
+import fake.graphql.example.api.EditErrorUnion1MutationResolver;
+import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.EditCustomerResponse2;
+import fake.graphql.example.model.EditCustomerResponse3;
+import fake.graphql.example.model.EditCustomerResponseUnion1;
+import fake.graphql.example.model.EditErrorsUnion1;
+import fake.graphql.example.model.SomeErrorA;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -38,7 +38,8 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
-        no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse editErrorUnion1Result = null;
+
+        TestCustomerService.EditCustomerResponse editErrorUnion1Result = null;
         var editErrorsUnion1List = new ArrayList<EditErrorsUnion1>();
         try {
             editErrorUnion1Result = testCustomerService.editErrorUnion1(name);
@@ -83,7 +84,7 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
     }
 
     private Customer getEditCustomerResponse2Customer(DSLContext ctx,
-            no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse idContainer,
+            TestCustomerService.EditCustomerResponse idContainer,
             SelectionSet select) {
         if (!select.contains("editCustomerResponse2/customer") || idContainer == null) {
             return null;
@@ -94,7 +95,7 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
     }
 
     private Map<String, Customer> getEditCustomerResponse3Customer(DSLContext ctx,
-            List<no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse> idContainer,
+            List<TestCustomerService.EditCustomerResponse> idContainer,
             SelectionSet select) {
         if (!select.contains("editCustomerResponse3/customer") || idContainer == null) {
             return Map.of();

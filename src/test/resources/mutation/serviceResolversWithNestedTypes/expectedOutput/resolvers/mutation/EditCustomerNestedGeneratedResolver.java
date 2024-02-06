@@ -2,14 +2,15 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.query.CustomerDBQueries;
 import fake.code.generated.queries.query.PaymentDBQueries;
-import fake.graphql.example.package.api.EditCustomerNestedMutationResolver;
-import fake.graphql.example.package.model.Customer;
-import fake.graphql.example.package.model.EditCustomerResponse;
-import fake.graphql.example.package.model.EditCustomerResponse2;
-import fake.graphql.example.package.model.EditCustomerResponse3;
-import fake.graphql.example.package.model.EditCustomerResponse4;
-import fake.graphql.example.package.model.EditInputLevel1;
-import fake.graphql.example.package.model.Payment;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.EditCustomerNestedMutationResolver;
+import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.EditCustomerResponse;
+import fake.graphql.example.model.EditCustomerResponse2;
+import fake.graphql.example.model.EditCustomerResponse3;
+import fake.graphql.example.model.EditCustomerResponse4;
+import fake.graphql.example.model.EditInputLevel1;
+import fake.graphql.example.model.Payment;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
@@ -22,9 +23,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -40,77 +40,43 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
 
     @Override
     public CompletableFuture<EditCustomerResponse> editCustomerNested(EditInputLevel1 input,
-            DataFetchingEnvironment env) throws Exception {
+                                                                      DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
         var select = new SelectionSet(env.getSelectionSet());
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inputRecord = new CustomerRecord();
-        inputRecord.attach(ctx.configuration());
+        var transform = new InputTransformer(env, ctx);
+
+        var inputRecord = transform.editInputLevel1ToJOOQRecord(input, "input");
         var editA1Record = new CustomerRecord();
         editA1Record.attach(ctx.configuration());
         var editA2Record = new CustomerRecord();
         editA2Record.attach(ctx.configuration());
         var editBRecord = new CustomerRecord();
         editBRecord.attach(ctx.configuration());
-        List<CustomerRecord> edit3RecordList = new ArrayList<CustomerRecord>();
-        List<CustomerRecord> edit4RecordList = new ArrayList<CustomerRecord>();
+        var edit3RecordList = new ArrayList<CustomerRecord>();
+        var edit4RecordList = new ArrayList<CustomerRecord>();
 
         if (input != null) {
             var editA1 = input.getEditA1();
-            if (editA1 != null) {
-                if (flatArguments.contains("input/editA1/firstName")) {
-                    editA1Record.setFirstName(editA1.getFirstName());
-                }
-            }
+            editA1Record = transform.editInputLevel2AToJOOQRecord(editA1, "input/editA1");
+
             var editA2 = input.getEditA2();
-            if (editA2 != null) {
-                if (flatArguments.contains("input/editA2/firstName")) {
-                    editA2Record.setFirstName(editA2.getFirstName());
-                }
-            }
+            editA2Record = transform.editInputLevel2AToJOOQRecord(editA2, "input/editA2");
+
             var editB = input.getEditB();
             if (editB != null) {
+                editBRecord = transform.editInputLevel2BToJOOQRecord(editB, "input/editB");
                 var edit3 = editB.getEdit3();
+                edit3RecordList = transform.editInputLevel3ToJOOQRecord(edit3, "input/editB/edit3");
                 if (edit3 != null) {
                     for (int itEdit3Index = 0; itEdit3Index < edit3.size(); itEdit3Index++) {
                         var itEdit3 = edit3.get(itEdit3Index);
                         if (itEdit3 == null) continue;
-                        var edit3Record = new CustomerRecord();
-                        edit3Record.attach(ctx.configuration());
-                        if (flatArguments.contains("input/editB/edit3/email")) {
-                            edit3Record.setEmail(itEdit3.getEmail());
-                        }
                         var edit4 = itEdit3.getEdit4();
-                        if (edit4 != null) {
-                            for (int itEdit4Index = 0; itEdit4Index < edit4.size(); itEdit4Index++) {
-                                var itEdit4 = edit4.get(itEdit4Index);
-                                if (itEdit4 == null) continue;
-                                var edit4Record = new CustomerRecord();
-                                edit4Record.attach(ctx.configuration());
-                                if (flatArguments.contains("input/editB/edit3/edit4/lastName")) {
-                                    edit4Record.setLastName(itEdit4.getLastName());
-                                }
-                                edit4RecordList.add(edit4Record);
-                            }
-                        }
-                        edit3RecordList.add(edit3Record);
+                        edit4RecordList.addAll(transform.editInputLevel4ToJOOQRecord(edit4, "input/editB/edit3/edit4"));
                     }
                 }
-                if (flatArguments.contains("input/editB/firstName")) {
-                    editBRecord.setFirstName(editB.getFirstName());
-                }
-            }
-            var editC1 = input.getEditC1();
-            if (editC1 != null) {
-                if (flatArguments.contains("input/editC1/lastName")) {
-                    inputRecord.setLastName(editC1.getLastName());
-                }
-            }
-            var editC2 = input.getEditC2();
-            if (flatArguments.contains("input/id")) {
-                inputRecord.setId(input.getId());
             }
         }
 
@@ -153,7 +119,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
     }
 
     private Customer getEditCustomerResponse2Customer(DSLContext ctx,
-            no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse idContainer,
+            TestCustomerService.EditCustomerResponse idContainer,
             SelectionSet select) {
         if (!select.contains("EditCustomerResponse2/customer") || idContainer == null) {
             return null;
@@ -164,7 +130,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
     }
 
     private Map<String, Customer> getEditCustomerResponse3Customer(DSLContext ctx,
-            List<no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse> idContainer,
+            List<TestCustomerService.EditCustomerResponse> idContainer,
             SelectionSet select) {
         if (!select.contains("EditCustomerResponse3/customer") || idContainer == null) {
             return Map.of();
@@ -175,7 +141,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
     }
 
     private Map<String, Payment> getEditCustomerResponse4Payment(DSLContext ctx,
-            List<no.fellesstudentsystem.graphitron.services.TestCustomerService.EditCustomerResponse> idContainer,
+            List<TestCustomerService.EditCustomerResponse> idContainer,
             SelectionSet select) {
         if (!select.contains("EditCustomerResponse3/EditCustomerResponse4/payment") || idContainer == null) {
             return Map.of();

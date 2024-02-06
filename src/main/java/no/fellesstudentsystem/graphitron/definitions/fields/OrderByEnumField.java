@@ -5,7 +5,7 @@ import graphql.language.EnumValueDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jooq.SortField;
 
 import java.util.List;

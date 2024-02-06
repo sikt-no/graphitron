@@ -1,9 +1,9 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.StoreCustomerCityDBQueries;
-import fake.graphql.example.package.api.StoreCustomerCityResolver;
-import fake.graphql.example.package.model.City;
-import fake.graphql.example.package.model.StoreCustomerCity;
+import fake.graphql.example.api.StoreCustomerCityResolver;
+import fake.graphql.example.model.City;
+import fake.graphql.example.model.StoreCustomerCity;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

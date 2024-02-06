@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.mapping;
 
+import no.fellesstudentsystem.graphitron.definitions.interfaces.JoinElement;
+
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.zip.CRC32;

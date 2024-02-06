@@ -2,22 +2,16 @@ package no.fellesstudentsystem.graphitron.mappings;
 
 import com.squareup.javapoet.ClassName;
 import graphql.GraphQLError;
-import graphql.relay.DefaultConnectionCursor;
-import graphql.relay.DefaultEdge;
-import graphql.relay.DefaultPageInfo;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.exception.*;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
-import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
-import org.jooq.SortOrder;
 import org.jooq.exception.DataAccessException;
 
 /**
@@ -68,7 +62,8 @@ public enum JavaPoetClassName {
     STRING(ClassName.get(java.lang.String.class)),
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqTablesClass())),
     THROWABLE(ClassName.get(Throwable.class)),
-    VALIDATION_VIOLATION_EXCEPTION(ClassName.get(ValidationViolationGraphQLException.class));
+    VALIDATION_VIOLATION_EXCEPTION(ClassName.get(ValidationViolationGraphQLException.class)),
+    INPUT_TRANSFORMER(ClassName.get(GeneratorConfig.outputPackage() + "." + TransformerClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, TransformerClassGenerator.FILE_NAME_SUFFIX));
 
     public final ClassName className;
 

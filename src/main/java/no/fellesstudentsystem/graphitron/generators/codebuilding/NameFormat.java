@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.generators.codebuilding;
 
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 
@@ -20,7 +22,10 @@ public class NameFormat {
             VARIABLE_RESULT_SUFFIX = "Result",
             VARIABLE_LIST_SUFFIX = "List",
             VARIABLE_ITERATE_PREFIX = "it",
-            RECORD_NAME_SUFFIX = "Record";
+            RECORD_NAME_SUFFIX = "Record",
+            RECORD_TRANSFORM_SUFFIX = "ToJOOQ" + RECORD_NAME_SUFFIX,
+            RECORD_JAVA_TRANSFORM_SUFFIX = "ToJava" + RECORD_NAME_SUFFIX,
+            VALIDATE_PREFIX = "validate";
 
     /**
      * @return Inputs formatted as a get call, but without the get element of the string.
@@ -63,11 +68,19 @@ public class NameFormat {
     }
 
     /**
-     * @return Field type formatted as a query method call.
+     * @return Name formatted as a query class name.
      */
     @NotNull
     public static String asQueryClass(String s) {
         return capitalize(s) + DBClassGenerator.FILE_NAME_SUFFIX;
+    }
+
+    /**
+     * @return Name formatted as a record mapper class name.
+     */
+    @NotNull
+    public static String asRecordMapperClass(String s, boolean isJavaRecord) {
+        return capitalize(s) + (isJavaRecord ? JavaRecordMapperClassGenerator.FILE_NAME_SUFFIX : RecordMapperClassGenerator.FILE_NAME_SUFFIX);
     }
 
     /**
@@ -116,6 +129,30 @@ public class NameFormat {
     @NotNull
     public static String asRecordClassName(String s) {
         return capitalize(s) + RECORD_NAME_SUFFIX;
+    }
+
+    /**
+     * @return Format this string as a record transform method naming pattern.
+     */
+    @NotNull
+    public static String recordTransformMethod(String s, boolean isJavaRecord) {
+        return uncapitalize(s) + (isJavaRecord ? RECORD_JAVA_TRANSFORM_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+    }
+
+    /**
+     * @return Format a record transform method naming pattern.
+     */
+    @NotNull
+    public static String recordTransformMethod(boolean isJavaRecord) {
+        return uncapitalize(isJavaRecord ? RECORD_JAVA_TRANSFORM_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+    }
+
+    /**
+     * @return Format a record validation method naming pattern.
+     */
+    @NotNull
+    public static String recordValidateMethod() {
+        return VALIDATE_PREFIX;
     }
 
     /**

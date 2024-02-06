@@ -1,9 +1,9 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.RentalDBQueries;
-import fake.graphql.example.package.api.RentalResolver;
-import fake.graphql.example.package.model.Inventory;
-import fake.graphql.example.package.model.Rental;
+import fake.graphql.example.api.RentalResolver;
+import fake.graphql.example.model.Inventory;
+import fake.graphql.example.model.Rental;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

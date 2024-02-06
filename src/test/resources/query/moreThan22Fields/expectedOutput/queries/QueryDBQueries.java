@@ -3,10 +3,10 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
-import fake.graphql.example.package.model.Duration1;
-import fake.graphql.example.package.model.Duration2;
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.Rating;
+import fake.graphql.example.model.Duration1;
+import fake.graphql.example.model.Duration2;
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.Rating;
 import java.lang.String;
 import java.util.Arrays;
 import java.util.List;

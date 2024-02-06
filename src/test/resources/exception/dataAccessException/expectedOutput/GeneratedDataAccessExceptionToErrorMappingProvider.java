@@ -1,6 +1,6 @@
 package fake.code.generated.exception;
 
-import fake.graphql.example.package.model.OtherError;
+import fake.graphql.example.model.OtherError;
 import java.lang.Override;
 import java.lang.String;
 import java.util.ArrayList;

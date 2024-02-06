@@ -1,9 +1,9 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.AddressDBQueries;
-import fake.graphql.example.package.api.AddressResolver;
-import fake.graphql.example.package.model.Address;
-import fake.graphql.example.package.model.Store;
+import fake.graphql.example.api.AddressResolver;
+import fake.graphql.example.model.Address;
+import fake.graphql.example.model.Store;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

@@ -4,14 +4,18 @@ import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.ServiceWrapper;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 
 /**
@@ -20,7 +24,7 @@ import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TY
 public class UpdateContext {
     private final ServiceWrapper service;
     private final MutationType mutationType;
-    private final Map<String, InputField> mutationInputs, recordInputs;
+    private final Map<String, InputField> mutationInputs, recordInputs, tableInputs;
     private final String serviceInputString;
     private final List<ObjectField> allErrors;
     private final ProcessedSchema processedSchema;
@@ -44,6 +48,11 @@ public class UpdateContext {
         recordInputs = mutationInputs
                 .entrySet()
                 .stream()
+                .filter(it -> processedSchema.isTableInputType(it.getValue()) || processedSchema.isJavaRecordInputType(it.getValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        tableInputs = recordInputs
+                .entrySet()
+                .stream()
                 .filter(it -> processedSchema.isTableInputType(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         serviceInputString = String.join(", ", mutationInputs.keySet());
@@ -53,7 +62,7 @@ public class UpdateContext {
             allErrors = List.of();
         }
 
-        validationErrorException = getRecordValidation().getSchemaErrorType().flatMap(errorTypeName ->
+        validationErrorException = !recordValidationEnabled() ? null : getRecordValidation().getSchemaErrorType().flatMap(errorTypeName ->
                 allErrors.stream()
                         .map(it -> processedSchema.getExceptionDefinitions(it.getTypeName()))
                         .flatMap(Collection::stream)
@@ -124,6 +133,13 @@ public class UpdateContext {
     }
 
     /**
+     * @return Map of inputs that the mutation field specifies that correspond to jOOQ records.
+     */
+    public Map<String, InputField> getTableInputs() {
+        return tableInputs;
+    }
+
+    /**
      * @return The inputs this mutation's service will require formatted as a comma separated string.
      */
     public String getServiceInputString() {
@@ -151,11 +167,11 @@ public class UpdateContext {
         return !allErrors.isEmpty();
     }
 
-    /*
+    /**
      * @return ExceptionDefinition used for validation errors. If it's configured and present in the schema as a returnable error for this mutation.
      */
     public Optional<ExceptionDefinition> getValidationErrorException() {
-        return  Optional.ofNullable(validationErrorException);
+        return Optional.ofNullable(validationErrorException);
     }
 
     public ProcessedSchema getProcessedSchema() {

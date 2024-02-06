@@ -4,14 +4,13 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asRecordName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
-import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
+import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -24,10 +23,10 @@ public class FormatCodeBlocks {
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
             DECLARE_CONTEXT_VARIABLE = CodeBlock.of(
                     "var $L = $T.selectContext($N, this.$N)",
-                    Dependency.CONTEXT_NAME,
+                    VariableNames.CONTEXT_NAME,
                     RESOLVER_HELPERS.className,
                     AbstractMethodGenerator.ENV_NAME,
-                    Dependency.CONTEXT_NAME
+                    VariableNames.CONTEXT_NAME
             ),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
@@ -58,7 +57,7 @@ public class FormatCodeBlocks {
         return CodeBlock
                 .builder()
                 .add(declareVariable(recordName, recordTypeName))
-                .addStatement("$N.attach($N.configuration())", recordName, Dependency.CONTEXT_NAME)
+                .addStatement("$N.attach($N.configuration())", recordName, VariableNames.CONTEXT_NAME)
                 .build();
     }
 
@@ -68,7 +67,16 @@ public class FormatCodeBlocks {
      * @return CodeBlock that declares a simple variable.
      */
     public static CodeBlock declareVariable(String name, TypeName typeName) {
-        return CodeBlock.builder().addStatement("var $L = new $T()", name, typeName).build();
+        return CodeBlock.builder().addStatement("var $L = new $T()", uncapitalize(name), typeName).build();
+    }
+
+    /**
+     * @param name Name of the variable.
+     * @param block The statement result to declare.
+     * @return CodeBlock that declares a simple variable.
+     */
+    public static CodeBlock declareBlock(String name, CodeBlock block) {
+        return CodeBlock.builder().addStatement("var $L = $L", uncapitalize(name), block).build();
     }
 
     /**
@@ -210,6 +218,22 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that adds something to a String if it is not empty.
+     */
+    @NotNull
+    public static CodeBlock addStringIfNotEmpty(String target, String addition) {
+        return CodeBlock.of("$N.isEmpty() ? $N : $N + $S", target, target, target, addition);
+    }
+
+    /**
+     * @return CodeBlock that checks whether a path for the selection set is in use.
+     */
+    @NotNull
+    public static CodeBlock argumentsLookup(String path) {
+        return CodeBlock.of("$N.contains($N + $S)", VARIABLE_ARGUMENTS, PATH_HERE_NAME, path);
+    }
+
+    /**
      * @return CodeBlock that declares a resolver context variable with a check for null.
      */
     @NotNull
@@ -231,7 +255,7 @@ public class FormatCodeBlocks {
                 TOTAL_COUNT_NAME,
                 uncapitalize(queryLocation),
                 capitalize(queryMethodName),
-                Dependency.CONTEXT_NAME,
+                VariableNames.CONTEXT_NAME,
                 inputList.isEmpty() ? "" : ", " + inputList
         );
     }
@@ -247,7 +271,7 @@ public class FormatCodeBlocks {
                 SELECTION_SET_NAME,
                 uncapitalize(queryLocation),
                 queryMethodName,
-                Dependency.CONTEXT_NAME,
+                VariableNames.CONTEXT_NAME,
                 usesIds ? ", " + IDS_NAME : "",
                 inputList.isEmpty() ? "" : ", " + inputList,
                 SELECTION_SET_NAME

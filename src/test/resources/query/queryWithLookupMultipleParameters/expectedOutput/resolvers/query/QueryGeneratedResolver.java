@@ -1,16 +1,16 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.QueryDBQueries;
-import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.Film;
-import fake.graphql.example.package.model.FilmFields;
-import fake.graphql.example.package.model.FilmNested;
-import fake.graphql.example.package.model.FilmNestedList;
-import fake.graphql.example.package.model.FilmNestedNoKey;
-import fake.graphql.example.package.model.FilmNestedWithKeyList;
-import fake.graphql.example.package.model.FilmWithListKeys;
-import fake.graphql.example.package.model.FilmWithoutKeys;
-import fake.graphql.example.package.model.FilmNullableNestedList;
+import fake.graphql.example.api.QueryResolver;
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.FilmFields;
+import fake.graphql.example.model.FilmNested;
+import fake.graphql.example.model.FilmNestedList;
+import fake.graphql.example.model.FilmNestedNoKey;
+import fake.graphql.example.model.FilmNestedWithKeyList;
+import fake.graphql.example.model.FilmWithListKeys;
+import fake.graphql.example.model.FilmWithoutKeys;
+import fake.graphql.example.model.FilmNullableNestedList;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Integer;

@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.services;
 
+import no.fellesstudentsystem.graphitron.records.TestCustomerInputRecord;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.PaymentRecord;
 import org.jooq.DSLContext;
@@ -169,5 +170,13 @@ public class TestCustomerService {
         public PaymentRecord getPayment4() {
             return new PaymentRecord();
         }
+    }
+
+    public CustomerRecord editCustomerWithRecordInputs(TestCustomerInputRecord record) {
+        return null;
+    }
+
+    public CustomerRecord editCustomerWithRecordInputs(TestCustomerInputRecord record, String s) {
+        return null;
     }
 }

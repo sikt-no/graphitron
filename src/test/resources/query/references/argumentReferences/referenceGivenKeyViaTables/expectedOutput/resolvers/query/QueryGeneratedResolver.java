@@ -1,8 +1,8 @@
 package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.QueryDBQueries;
-import fake.graphql.example.package.api.QueryResolver;
-import fake.graphql.example.package.model.Payment;
+import fake.graphql.example.api.QueryResolver;
+import fake.graphql.example.model.Payment;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;

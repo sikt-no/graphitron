@@ -6,7 +6,7 @@ import static no.fellesstudentsystem.kjerneapi.Tables.*;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;
-import fake.graphql.example.package.model.Kull;
+import fake.graphql.example.model.Kull;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Record2;

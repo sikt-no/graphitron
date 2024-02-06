@@ -25,10 +25,10 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam
 public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer<T>> {
     private final FieldType fieldType;
     private final String name, upperCaseName, unprocessedNameInput;
-    private final boolean isGenerated;
+    private final boolean isGenerated, hasRecordFieldName;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
-    private final MethodMapping mappingFromFieldName, mappingFromColumn;
+    private final MethodMapping mappingFromFieldName, mappingFromColumn, mappingForJavaRecord;
 
     public AbstractField(T field) {
         this(field ,null);
@@ -44,6 +44,9 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
             unprocessedNameInput = name;
             upperCaseName = name.toUpperCase();
         }
+
+        hasRecordFieldName = field.hasDirective(RECORD_FIELD.getName());
+        var javaRecordMappingName = hasRecordFieldName ? getDirectiveArgumentString(field, RECORD_FIELD, NAME) : name;
 
         fieldReferences = new ArrayList<>();
         if (field.hasDirective(REFERENCE.getName())) {
@@ -71,6 +74,7 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         this.fieldType = fieldType;
         mappingFromFieldName = new MethodMapping(name);
         mappingFromColumn = new MethodMapping(unprocessedNameInput);
+        mappingForJavaRecord = new MethodMapping(javaRecordMappingName);
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
     }
 
@@ -166,6 +170,10 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         return unprocessedNameInput;
     }
 
+    public boolean hasRecordFieldName() {
+        return hasRecordFieldName;
+    }
+
     /**
      * @return Schema-side method name mappings based on the GraphQL equivalent of this field.
      */
@@ -174,10 +182,17 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
     }
 
     /**
-     * @return Schema-side method name mappings based on the GraphQL equivalent of this field.
+     * @return DB-side method name mappings based on the database equivalent of this field.
      */
     public MethodMapping getMappingFromColumn() {
         return mappingFromColumn;
+    }
+
+    /**
+     * @return Record-side method name mappings based on the java record equivalent of this field.
+     */
+    public MethodMapping getMappingForJavaRecord() {
+        return mappingForJavaRecord;
     }
 
     public List<FieldReference> getFieldReferences() {

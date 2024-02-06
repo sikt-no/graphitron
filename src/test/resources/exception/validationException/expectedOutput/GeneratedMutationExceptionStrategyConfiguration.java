@@ -1,10 +1,10 @@
 package fake.code.generated.exception;
 
-import fake.graphql.example.package.model.EditCustomerWithMultipleErrorPayloads;
-import fake.graphql.example.package.model.EditCustomerWithUnionErrorPayload;
-import fake.graphql.example.package.model.EditCustomerWithValidationErrorPayload;
-import fake.graphql.example.package.model.MyValidationError;
-import fake.graphql.example.package.model.UnionOfErrors;
+import fake.graphql.example.model.EditCustomerWithMultipleErrorPayloads;
+import fake.graphql.example.model.EditCustomerWithUnionErrorPayload;
+import fake.graphql.example.model.EditCustomerWithValidationErrorPayload;
+import fake.graphql.example.model.MyValidationError;
+import fake.graphql.example.model.UnionOfErrors;
 import java.lang.Class;
 import java.lang.Override;
 import java.lang.String;

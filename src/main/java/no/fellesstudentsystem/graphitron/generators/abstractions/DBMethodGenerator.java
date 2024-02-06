@@ -11,19 +11,18 @@ import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
+import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
-import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Record1;
 
-import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeyFields;
-import static org.apache.commons.lang3.StringUtils.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
  * Generic select query generation functionality is contained within this class.
@@ -39,11 +38,9 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
     @Override
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
-        return MethodSpec
-                .methodBuilder(methodName)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(returnType)
-                .addParameter(DSL_CONTEXT.className, Dependency.CONTEXT_NAME);
+        return super
+                .getDefaultSpecBuilder(methodName, returnType)
+                .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME);
     }
 
     /**

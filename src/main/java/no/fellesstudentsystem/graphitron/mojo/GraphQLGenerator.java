@@ -3,19 +3,22 @@ package no.fellesstudentsystem.graphitron.mojo;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.UpdateDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.DataAccessExceptionToErrorMappingProviderGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.FetchResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
-import static no.fellesstudentsystem.graphitron.schema.SchemaReader.getTypeDefinitionRegistry;
+import static no.fellesstudentsystem.graphql.schema.SchemaReader.getTypeDefinitionRegistry;
 
 /**
  * Class for executing the code generation. Defines which generators should run by default.
@@ -42,6 +45,9 @@ public class GraphQLGenerator {
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
+                new TransformerClassGenerator(processedSchema),
+                new RecordMapperClassGenerator(processedSchema),
+                new JavaRecordMapperClassGenerator(processedSchema),
                 new MutationExceptionStrategyConfigurationGenerator(processedSchema),
                 new DataAccessExceptionToErrorMappingProviderGenerator(processedSchema)
         );

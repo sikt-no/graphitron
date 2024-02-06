@@ -7,8 +7,6 @@ import com.squareup.javapoet.FieldSpec;
  * General interface for dependency handling in generated classes.
  */
 public interface Dependency {
-    String CONTEXT_NAME = "ctx";
-
     /**
      * @return Javapoet FieldSpec for a dependency of this type.
      */

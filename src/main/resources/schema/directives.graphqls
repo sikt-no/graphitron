@@ -1,8 +1,11 @@
 """Create a new resolver and a separate query for fetching of the annotated field."""
 directive @splitQuery on FIELD_DEFINITION
 
-"""Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented."""
-directive @notGenerated on FIELD_DEFINITION
+"""
+Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented.
+Can be set on an input field to prevent generation of record mappers.
+"""
+directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
 directive @table(name: String) on OBJECT | INPUT_OBJECT
@@ -65,6 +68,12 @@ directive @orderBy on ARGUMENT_DEFINITION
 
 """Connect this enum value to an index with the given name"""
 directive @index(name: String) on ENUM_VALUE
+
+"""Wrap input in given record."""
+directive @record(record: ExternalCodeReference) on INPUT_OBJECT
+
+"""Map input to a record field."""
+directive @recordField(name: String) on INPUT_FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 

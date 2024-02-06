@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
 import com.squareup.javapoet.CodeBlock;
-import no.fellesstudentsystem.graphitron.definitions.mapping.JoinElement;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.JoinElement;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks;
 
 import java.util.Arrays;

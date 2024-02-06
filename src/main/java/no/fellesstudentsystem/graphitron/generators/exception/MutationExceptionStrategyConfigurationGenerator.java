@@ -3,21 +3,20 @@ package no.fellesstudentsystem.graphitron.generators.exception;
 import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
-import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getExceptionToErrorMappings;
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
@@ -117,8 +116,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-
-        if (getRecordValidation().getSchemaErrorType().isPresent() || !getExceptionToErrorMappings().isEmpty()) {
+        if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || !getExceptionToErrorMappings().isEmpty()) {
             Optional.ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
                     .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
@@ -149,7 +147,12 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends AbstractField<?>>> generators) {
+    public String getFileNameSuffix() {
+        return "";
+    }
+
+    @Override
+    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(MUTATION_EXCEPTION_STRATEGY_CONFIGURATION.className)
                 .addModifiers(Modifier.PUBLIC)

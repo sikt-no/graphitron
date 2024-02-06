@@ -1,17 +1,16 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.graphql.example.package.api.EditCustomerAddressMutationResolver;
-import fake.graphql.example.package.model.EditAddressInput;
-import fake.graphql.example.package.model.EditAddressResponse;
+import fake.code.generated.transform.InputTransformer;
+import fake.graphql.example.api.EditCustomerAddressMutationResolver;
+import fake.graphql.example.model.EditAddressInput;
+import fake.graphql.example.model.EditAddressResponse;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class EditCustomerAddressGeneratedResolver implements EditCustomerAddressMutationResolver {
@@ -23,19 +22,10 @@ public class EditCustomerAddressGeneratedResolver implements EditCustomerAddress
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var flatArguments = Arguments.flattenArgumentKeys(env.getArguments());
 
-        var inRecord = new CustomerRecord();
-        inRecord.attach(ctx.configuration());
+        var transform = new InputTransformer(env, ctx);
 
-        if (in != null) {
-            if (flatArguments.contains("in/id")) {
-                inRecord.setId(in.getId());
-            }
-            if (flatArguments.contains("in/addressId")) {
-                inRecord.setAddressId(in.getAddressId());
-            }
-        }
+        var inRecord = transform.editAddressInputToJOOQRecord(in, "in");
 
         var editCustomerAddressResult = testCustomerService.editCustomerAddress(inRecord);
 
