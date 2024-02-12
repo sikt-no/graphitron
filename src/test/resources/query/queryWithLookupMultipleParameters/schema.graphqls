@@ -13,6 +13,7 @@ type Query {
   filmsNestedInputsAndKeys(in: FilmNested): [Film]!
   filmsNestedList(in: FilmNestedList): [Film]!
   filmsNestedListWithKeys(in: FilmNestedWithKeyList): [Film]!
+  filmsNullableNestedList(in: FilmNullableNestedList): [Film]!
 }
 
 input FilmFields {
@@ -52,6 +53,10 @@ input FilmNestedNoKey {
 input FilmNestedList {
   fields: [FilmWithKeys!]!
   filmIds: [ID!]! @field(name: "FILM_ID") @lookupKey
+}
+
+input FilmNullableNestedList {
+  fields: [FilmWithKeys!]
 }
 
 input FilmNestedWithKeyList {

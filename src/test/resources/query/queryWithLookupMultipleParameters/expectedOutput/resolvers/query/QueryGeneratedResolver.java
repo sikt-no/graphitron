@@ -10,6 +10,7 @@ import fake.graphql.example.package.model.FilmNestedNoKey;
 import fake.graphql.example.package.model.FilmNestedWithKeyList;
 import fake.graphql.example.package.model.FilmWithListKeys;
 import fake.graphql.example.package.model.FilmWithoutKeys;
+import fake.graphql.example.package.model.FilmNullableNestedList;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Integer;
@@ -93,5 +94,13 @@ public class QueryGeneratedResolver implements QueryResolver {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var keys = List.of(in.getFilmIds(), in.getFields().stream().map(itFields -> itFields != null ? itFields.getTitle() : null).collect(Collectors.toList()), in.getFields().stream().map(itFields -> itFields != null ? itFields.getReleaseYear() : null).collect(Collectors.toList()), ResolverHelpers.formatString(in.getFields().stream().map(itFields -> itFields != null ? itFields.getDuration() : null).collect(Collectors.toList())));
         return DataLoaders.loadDataAsLookup(env, keys, (ids, selectionSet) -> queryDBQueries.filmsNestedListWithKeysForQuery(ctx, in, selectionSet));
+    }
+
+    @Override
+    public CompletableFuture<List<Film>> filmsNullableNestedList(FilmNullableNestedList in,
+                                                                 DataFetchingEnvironment env) throws Exception {
+        var ctx = ResolverHelpers.selectContext(env, this.ctx);
+        var keys = List.of(in.getFields().stream().map(itFields -> itFields != null ? itFields.getTitle() : null).collect(Collectors.toList()), in.getFields().stream().map(itFields -> itFields != null ? itFields.getReleaseYear() : null).collect(Collectors.toList()), ResolverHelpers.formatString(in.getFields().stream().map(itFields -> itFields != null ? itFields.getDuration() : null).collect(Collectors.toList())));
+        return DataLoaders.loadDataAsLookup(env, keys, (ids, selectionSet) -> queryDBQueries.filmsNullableNestedListForQuery(ctx, in, selectionSet));
     }
 }

@@ -111,9 +111,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock createTupleCondition(FetchContext context, boolean hasWhere, String argumentInputFieldName, List<InputCondition> conditions) {
         var codeBlockBuilder = CodeBlock.builder();
 
+        var checks = String.join(" && ", conditions.stream().map(InputCondition::getChecksAsSequence).collect(Collectors.toSet()));
+
         codeBlockBuilder
                 .add(hasWhere ? ".and(" : "")
-                .add("$N != null && $N.size() > 0 ?\n", argumentInputFieldName, argumentInputFieldName)
+                .add(checks.isEmpty() ? "" : "$L ?\n", checks)
                 .indent().indent()
                 .add("$T.row(\n", DSL.className)
                 .indent().indent();

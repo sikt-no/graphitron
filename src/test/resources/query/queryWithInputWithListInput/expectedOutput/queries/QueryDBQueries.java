@@ -28,7 +28,7 @@ public class QueryDBQueries {
                 .from(CUSTOMER)
                 .where(CUSTOMER.ACTIVEBOOL.eq(filter.getActivebool()))
                 .and(storeId != null ? CUSTOMER.STORE_ID.eq(storeId) : DSL.noCondition())
-                .and(filter.getName() != null && filter.getName().size() > 0 ?
+                .and(filter.getName().size() > 0 ?
                         DSL.row(
                                 CUSTOMER.FIRST_NAME,
                                 CUSTOMER.LAST_NAME

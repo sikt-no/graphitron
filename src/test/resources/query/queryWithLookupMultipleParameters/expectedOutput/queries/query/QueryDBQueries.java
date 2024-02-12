@@ -11,6 +11,7 @@ import fake.graphql.example.package.model.FilmNestedNoKey;
 import fake.graphql.example.package.model.FilmNestedWithKeyList;
 import fake.graphql.example.package.model.FilmWithListKeys;
 import fake.graphql.example.package.model.FilmWithoutKeys;
+import fake.graphql.example.package.model.FilmNullableNestedList;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
@@ -67,7 +68,7 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsListedInput")
                 )
                 .from(FILM)
-                .where(in != null && in.size() > 0 ?
+                .where(in.size() > 0 ?
                         DSL.row(
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
@@ -142,7 +143,7 @@ public class QueryDBQueries {
                 )
                 .from(FILM)
                 .where(in != null && in.getFilmIds().size() > 0 ? FILM.FILM_ID.in(in.getFilmIds()) : DSL.noCondition())
-                .and(in.getFields() != null && in.getFields().size() > 0 ?
+                .and(in != null && in.getFields().size() > 0 ?
                         DSL.row(
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
@@ -167,7 +168,31 @@ public class QueryDBQueries {
                 )
                 .from(FILM)
                 .where(in != null && in.getFilmIds().size() > 0 ? FILM.FILM_ID.in(in.getFilmIds()) : DSL.noCondition())
-                .and(in.getFields() != null && in.getFields().size() > 0 ?
+                .and(in != null && in.getFields().size() > 0 ?
+                        DSL.row(
+                                FILM.TITLE,
+                                FILM.RELEASE_YEAR,
+                                FILM.LENGTH
+                        ).in(in.getFields().stream().map(input -> DSL.row(
+                                input.getTitle(),
+                                input.getReleaseYear(),
+                                input.getDuration())
+                        ).collect(Collectors.toList())) :
+                        DSL.noCondition())
+                .fetchMap(Record2::value1, Record2::value2);
+    }
+
+    public Map<String, Film> filmsNullableNestedListForQuery(DSLContext ctx,
+                                                             FilmNullableNestedList in, SelectionSet select) {
+        return ctx
+                .select(
+                        DSL.concat(FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.row(
+                                FILM.getId().as("id")
+                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNullableNestedList")
+                )
+                .from(FILM)
+                .where(in != null && in.getFields() != null && in.getFields().size() > 0 ?
                         DSL.row(
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
