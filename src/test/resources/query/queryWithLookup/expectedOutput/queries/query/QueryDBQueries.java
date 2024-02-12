@@ -19,7 +19,7 @@ public class QueryDBQueries {
                                                    SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(CUSTOMER.STORE_ID),
+                        CUSTOMER.STORE_ID,
                         DSL.row(
                                 CUSTOMER.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Customer::new)).as("customers")
@@ -33,7 +33,7 @@ public class QueryDBQueries {
                                                    SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(COUNTRY.COUNTRY),
+                        COUNTRY.COUNTRY,
                         DSL.row(
                                 COUNTRY.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Country::new)).as("countries")

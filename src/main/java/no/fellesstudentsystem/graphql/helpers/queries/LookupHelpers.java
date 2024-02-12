@@ -12,7 +12,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -130,13 +129,23 @@ public class LookupHelpers {
                 .map(it -> CodeBlock.of("$L.$L", table, it))
                 .collect(Collectors.toList());
 
-        var blocksWithSeparators = keyBlocks
+        List<CodeBlock> keysWithInline;
+        if (keyBlocks.size() > 1) {
+            keysWithInline = keyBlocks
+                    .stream()
+                    .map(it -> CodeBlock.of("$T.inlined($L)", DSL.className, it))
+                    .collect(Collectors.toList());
+        } else {
+            keysWithInline = keyBlocks;
+        }
+
+        var blocksWithSeparators = keysWithInline
                 .stream()
-                .limit(keyBlocks.size() - 1)
+                .limit(keysWithInline.size() - 1)
                 .map(it -> CodeBlock.of("$L, $T.inline($S)", it, DSL.className, ","));
 
         return Stream
-                .concat(blocksWithSeparators, Stream.of(keyBlocks.get(keyBlocks.size() - 1)))
+                .concat(blocksWithSeparators, Stream.of(keysWithInline.get(keysWithInline.size() - 1)))
                 .collect(CodeBlock.joining(", "));
     }
 

@@ -29,7 +29,7 @@ public class QueryDBQueries {
                                            SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH, DSL.inline(","), FILM.FILM_ID),
+                        DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH), DSL.inline(","), DSL.inlined(FILM.FILM_ID)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
@@ -46,7 +46,7 @@ public class QueryDBQueries {
                                                     SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsInputKeys")
@@ -62,7 +62,7 @@ public class QueryDBQueries {
                                                       SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsListedInput")
@@ -86,7 +86,7 @@ public class QueryDBQueries {
                                                 SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsInput")
@@ -102,7 +102,7 @@ public class QueryDBQueries {
                                                        SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.FILM_ID, DSL.inline(","), FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedInputs")
@@ -119,7 +119,7 @@ public class QueryDBQueries {
                                                               SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.FILM_ID, DSL.inline(","), FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedInputsAndKeys")
@@ -136,7 +136,7 @@ public class QueryDBQueries {
                                                      SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.FILM_ID, DSL.inline(","), FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedList")
@@ -161,7 +161,7 @@ public class QueryDBQueries {
                                                              FilmNestedWithKeyList in, SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.FILM_ID, DSL.inline(","), FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedListWithKeys")
@@ -186,7 +186,7 @@ public class QueryDBQueries {
                                                              FilmNullableNestedList in, SelectionSet select) {
         return ctx
                 .select(
-                        DSL.concat(FILM.TITLE, DSL.inline(","), FILM.RELEASE_YEAR, DSL.inline(","), FILM.LENGTH),
+                        DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
                                 FILM.getId().as("id")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNullableNestedList")
