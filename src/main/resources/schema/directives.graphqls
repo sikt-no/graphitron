@@ -60,9 +60,15 @@ directive @condition(
 directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
 
+"""Handle this input argument as orderBy functionality"""
+directive @orderBy on ARGUMENT_DEFINITION
+
+"""Connect this enum value to an index with the given name"""
+directive @index(name: String) on ENUM_VALUE
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
 input ExternalCodeReference { name: String!, method: String }
 
 input ReferenceElement { table: String, key: String, condition: ExternalCodeReference }
+

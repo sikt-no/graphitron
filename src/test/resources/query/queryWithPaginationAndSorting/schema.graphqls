@@ -1,0 +1,69 @@
+type Query {
+  films(releaseYear: String! @field(name : "RELEASE_YEAR"), orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection
+  inventories(orderBy: InventoryOrder @orderBy, first: Int = 100, after: String): InventoryConnection
+}
+
+type Film implements Node @table {
+  id: ID!
+  title: String!
+  description: String!
+  nested: Nested!
+}
+
+type Nested {
+  languageId: String! @field(name : "LANGUAGE_ID")
+}
+
+type FilmConnection {
+  edges: [FilmConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Film!]!
+}
+
+type FilmConnectionEdge {
+  cursor: String
+  node: Film
+}
+
+input FilmOrder {
+  direction: OrderDirection!
+  orderByField: FilmOrderByField!
+}
+
+enum FilmOrderByField {
+  LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
+  TITLE @index(name : "IDX_TITLE")
+}
+
+type Inventory implements Node @table {
+  id: ID!
+  storeId: String! @field(name: "STORE_ID")
+  filmId: String! @field(name: "FILM_ID")
+}
+
+type InventoryConnection {
+  edges: [InventoryConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Inventory!]!
+}
+
+type InventoryConnectionEdge {
+  cursor: String
+  node: Inventory
+}
+
+input InventoryOrder {
+  direction: OrderDirection!
+  orderByField: InventoryOrderByField!
+}
+
+enum InventoryOrderByField {
+  STORE_ID_FILM_ID @index(name : "IDX_STORE_ID_FILM_ID")
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}

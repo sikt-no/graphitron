@@ -1,16 +1,18 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
-import graphql.language.*;
-import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import graphql.language.FieldDefinition;
+import graphql.language.IntValue;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
+import org.apache.commons.lang3.Validate;
 
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentEnum;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
 
 /**
@@ -21,6 +23,7 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
     private int lastDefault = 100;
     private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
     private final List<ArgumentField> arguments, nonReservedArguments;
+    private final ArgumentField orderField;
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
@@ -38,8 +41,9 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
         super(field, new FieldType(field.getType()));
         isResolver = field.hasDirective(SPLIT_QUERY.getName());
         arguments = setInputAndPagination(field, isRootField());
+        orderField = arguments.stream().filter(InputField::isOrderField).findFirst().orElse(null);
         nonReservedArguments = arguments.stream().filter(inputField ->
-                RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName()))
+                RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName())) && !inputField.equals(orderField)
         ).collect(Collectors.toList());
         isGenerated = isResolver && !field.hasDirective(NOT_GENERATED.getName());
 
@@ -50,6 +54,8 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
         lookupKeys = nonReservedArguments.stream().filter(ArgumentField::isLookupKey).map(AbstractField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         hasLookupKey = !lookupKeys.isEmpty();
         argumentsByName = arguments.stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
+        Validate.isTrue(!hasLookupKey || getOrderField().isEmpty(),
+                "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
     }
 
     private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
@@ -191,6 +197,18 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
     }
 
     /**
+     * @return List of all non-reserved and orderBy arguments for this field
+     */
+    public List<ArgumentField> getNonReservedArgumentsWithOrderField() {
+        List<ArgumentField> result = new ArrayList<>(nonReservedArguments);
+
+        if (orderField != null) {
+            result.add(orderField);
+        }
+        return result;
+    }
+
+    /**
      * @return Does this field have any input fields defined?
      */
     public boolean hasInputFields() {
@@ -230,5 +248,9 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
      */
     public LinkedHashSet<String> getLookupKeys() {
         return lookupKeys;
+    }
+
+    public Optional<ArgumentField> getOrderField() {
+        return Optional.ofNullable(orderField);
     }
 }

@@ -251,7 +251,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         var conditionFields = context.getReferenceObjectField().getFieldReferences().stream().filter(it -> it.getTableCondition() != null).collect(Collectors.toList());
 
-        if(conditionFields.size() > 0) {
+        if(!conditionFields.isEmpty()) {
             throw new IllegalArgumentException(String.format("List of type %s requires the @SplitQuery directive to be able to contain @condition in a @reference within a list", context.getReferenceObject().getName()));
         }
 
@@ -264,7 +264,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             i++;
         }
         if (context.getReferenceObjectField().hasNonReservedInputFields()) {
-            throw new IllegalArgumentException("Input arguments is not supported for multiset lists in " + context.getPreviousTable().getMappingName() + "");
+            throw new IllegalArgumentException("Input arguments is not supported for multiset lists in " + context.getPreviousTable().getMappingName());
         }
 
         return whereContent.build();

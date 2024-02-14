@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.FIELD;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.LOOKUP_KEY;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ORDER_BY;
 
 /**
  * A field for a {@link no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition}.
@@ -17,7 +18,7 @@ public class InputField extends AbstractField<InputValueDefinition> {
     private final String defaultValue;
     private final RecordMethodMapping recordFromColumnMapping;
     private final MethodMapping recordFromSchemaNameMapping;
-    private final boolean hasFieldNameOverride, isLookupKey;
+    private final boolean hasFieldNameOverride, isLookupKey, isOrderField;
 
     public InputField(InputValueDefinition field) {
         super(field, new FieldType(field.getType()));
@@ -31,8 +32,8 @@ public class InputField extends AbstractField<InputValueDefinition> {
             recordFromColumnMapping = null;
             recordFromSchemaNameMapping = new MethodMapping(getUnprocessedNameInput());
         }
-
         isLookupKey = field.hasDirective(LOOKUP_KEY.getName());
+        isOrderField = field.hasDirective(ORDER_BY.getName());
     }
 
     /**
@@ -75,5 +76,9 @@ public class InputField extends AbstractField<InputValueDefinition> {
      */
     public static List<InputField> from(List<InputValueDefinition> fields) {
         return fields.stream().map(InputField::new).collect(Collectors.toList());
+    }
+
+    public boolean isOrderField() {
+        return isOrderField;
     }
 }

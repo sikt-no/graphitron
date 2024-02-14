@@ -25,8 +25,10 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, F ex
     private final String name;
     private final TypeName graphClassName;
     private final LinkedHashMap<String, U> fieldsByName;
+    private T objectDefinition;
 
     public AbstractObjectDefinition(T objectDefinition) {
+        this.objectDefinition = objectDefinition;
         name = objectDefinition.getName();
         graphClassName = ClassName.get(GeneratorConfig.generatedModelsPackage(), capitalize(name));
         fieldsByName = createFields(objectDefinition).stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
@@ -61,5 +63,9 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, F ex
      */
     public boolean hasField(String name) {
         return fieldsByName.containsKey(name);
+    }
+
+    public T getObjectDefinition() {
+        return objectDefinition;
     }
 }

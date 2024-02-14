@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphql.exception.*;
 import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
+import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
@@ -16,6 +17,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
+import org.jooq.SortOrder;
 import org.jooq.exception.DataAccessException;
 
 /**
@@ -29,21 +31,18 @@ public enum JavaPoetClassName {
     CLASS(ClassName.get(java.lang.Class.class)),
     COLLECTORS(ClassName.get(java.util.stream.Collectors.class)),
     COMPLETABLE_FUTURE(ClassName.get(java.util.concurrent.CompletableFuture.class)),
-    CONNECTION_SELECTION_SET(ClassName.get(ConnectionSelectionSet.class)),
     DATA_ACCESS_EXCEPTION(ClassName.get(DataAccessException.class)),
     DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING(ClassName.get(DataAccessExceptionContentToErrorMapping.class)),
     DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(ClassName.get(DataAccessExceptionMappingContent.class)),
-
     DATA_ACCESS_EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ClassName.get(DataAccessExceptionToErrorMappingProvider.class)),
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
     DATA_LOADER(ClassName.get(org.dataloader.DataLoader.class)),
     DATA_LOADERS(ClassName.get(DataLoaders.class)),
-    DATA_LOADER_FACTORY(ClassName.get(org.dataloader.DataLoaderFactory.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
-    ENVIRONMENT_UTILS(ClassName.get(EnvironmentUtils.class)),
     EXCEPTION(ClassName.get(java.lang.Exception.class)),
     FIELD_HELPERS(ClassName.get(FieldHelperHack.class)),
+    FUNCTION(ClassName.get(java.util.function.Function.class)),
     FUNCTIONS(ClassName.get(org.jooq.Functions.class)),
     GRAPHQL_ERROR(ClassName.get(GraphQLError.class)),
     HASH_MAP(ClassName.get(java.util.HashMap.class)),
@@ -53,25 +52,19 @@ public enum JavaPoetClassName {
     INTEGER(ClassName.get(java.lang.Integer.class)),
     KEYS(ClassName.get(GeneratorConfig.getGeneratedJooqKeysClass())),
     LIST(ClassName.get(java.util.List.class)),
-    MAPPED_BATCH_LOADER_WITH_CONTEXT(ClassName.get(org.dataloader.MappedBatchLoaderWithContext.class)),
     MAP(ClassName.get(java.util.Map.class)),
-    MATH(ClassName.get(java.lang.Math.class)),
     MUTATION_EXCEPTION_STRATEGY_CONFIGURATION(ClassName.get(MutationExceptionStrategyConfiguration.class)),
+    OBJECT(ClassName.get(Object.class)),
     OBJECTS(ClassName.get(java.util.Objects.class)),
-    OPTIONAL(ClassName.get(java.util.Optional.class)),
     OVERRIDE(ClassName.get(java.lang.Override.class)),
     PAYLOAD_CREATOR(ClassName.get(MutationExceptionStrategyConfiguration.PayloadCreator.class)),
+    QUERY_HELPER(ClassName.get(QueryHelper.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
     RECORD_VALIDATOR(ClassName.get(RecordValidator.class)),
     RELAY_CONNECTION(ClassName.get(ExtendedConnection.class)),
-    RELAY_CONNECTION_CURSOR_IMPL(ClassName.get(DefaultConnectionCursor.class)),
-    RELAY_CONNECTION_IMPL(ClassName.get(ConnectionImpl.class)),
-    RELAY_EDGE_IMPL(ClassName.get(DefaultEdge.class)),
-    RELAY_PAGE_INFO_IMPL(ClassName.get(DefaultPageInfo.class)),
     RESOLVER_HELPERS(ClassName.get(ResolverHelpers.class)),
     SELECTION_SET(ClassName.get(SelectionSet.class)),
     SET(ClassName.get(java.util.Set.class)),
-    SIMPLE_ENTRY(ClassName.get(java.util.AbstractMap.SimpleEntry.class)),
     STRING(ClassName.get(java.lang.String.class)),
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqTablesClass())),
     THROWABLE(ClassName.get(Throwable.class)),

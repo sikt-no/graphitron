@@ -8,9 +8,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * An enum value within a {@link EnumDefinition}.
+ * An enum value within an {@link EnumDefinition}.
  */
 public class EnumField extends AbstractField<EnumValueDefinition> {
+
     public EnumField(EnumValueDefinition field) {
         super(field);
     }

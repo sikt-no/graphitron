@@ -70,6 +70,44 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
+    void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPaginationAndSorting");
+    }
+
+    @Test
+    void generate_queryWithSorting_shouldCreateQueryResolverWithSortingSupport() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithSorting");
+    }
+
+    @Test
+    void generate_whenOrderByNonIndexedColumn_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/queryWithOrderByNonIndexedColumn"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Table 'FILM' has no index 'NON_EXISTANT_INDEX' necessary for sorting by 'RELEASE_YEAR'");
+    }
+
+    @Test
+    void generate_queryWithPaginationAndOrderBy_whenIndexOnFieldThatIsInaccessibleFromSchemaType_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/queryWithOrderByIndexOnFieldThatIsInaccessibleFromSchemaType"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("OrderByField 'LANGUAGE' refers to index 'IDX_FK_LANGUAGE_ID' on field 'language_id' but this field is not accessible from the schema type 'Film'");
+    }
+
+    @Test
+    void generate_queryWithPaginationAndOrderBy_whenMissingIndexDirective_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/queryWithOrderByWithMissingIndexReference"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Expected enum field 'TITLE' of 'FilmOrderByField' to have an '@index(name : ...)' directive, but no such directive was found");
+    }
+
+    @Test
+    void generate_queryWithSortingCombinedWithLookupKey_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/queryWithOrderByAndLookUp"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("'films' has both @orderBy and @lookupKey defined. These directives can not be used together");
+    }
+
+    @Test
     void generate_queryWithResolverPagination_shouldCreateResolverWithPaginationOnResolver() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithResolverPagination");
     }

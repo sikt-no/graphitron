@@ -1,0 +1,18 @@
+type Query {
+  inventories(order: InventoryOrder @orderBy): [Inventory!]!
+}
+
+type Inventory implements Node @table {
+  id: ID!
+  storeId: String! @field(name: "STORE_ID")
+  filmId: String! @field(name: "FILM_ID")
+}
+
+input InventoryOrder {
+  direction: OrderDirection!
+  orderByField: InventoryOrderByField!
+}
+
+enum InventoryOrderByField {
+  STORE_ID_FILM_ID @index(name : "idx_store_id_film_id")
+}

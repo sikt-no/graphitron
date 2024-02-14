@@ -5,7 +5,9 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.OrderByEnumField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
@@ -20,20 +22,21 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator.FILE_NAME_SUFFIX;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class generates the resolvers for default fetch queries with potential arguments or pagination.
  */
 public class FetchResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
-    private static final String QUERY_RESULT_NAME = "dbResult", LOOKUP_KEYS_NAME = "keys";
+    private static final String QUERY_RESULT_NAME = "dbResult", LOOKUP_KEYS_NAME = "keys", TYPE_NAME = "type";
 
     public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -60,11 +63,15 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     @NotNull
     private ArrayList<String> getQueryInputs(MethodSpec.Builder spec, ObjectField referenceField) {
         var allQueryInputs = new ArrayList<String>();
-        for (var input : referenceField.getNonReservedArguments()) {
-            var name = input.getName();
-            spec.addParameter(inputIterableWrap(input), name);
-            allQueryInputs.add(name);
-        }
+
+        referenceField
+                .getNonReservedArgumentsWithOrderField()
+                .forEach(it -> {
+                    var name = it.getName();
+                    spec.addParameter(inputIterableWrap(it), name);
+                    allQueryInputs.add(name);
+                });
+
         if (referenceField.hasForwardPagination()) {
             spec
                     .addParameter(INTEGER.className, GraphQLReservedName.PAGINATION_FIRST.getName())
@@ -129,14 +136,65 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         if (hasPagination && !hasLookup) {
             var filteredInputs = allQueryInputs
                     .stream()
-                    .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(PAGINATION_AFTER.getName()) && !it.equals(SELECTION_SET_NAME))
+                    .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(PAGINATION_AFTER.getName()) && !it.equals(SELECTION_SET_NAME) &&
+                            referenceField.getOrderField().map(AbstractField::getName).map(orderByField -> !orderByField.equals(it)).orElse(true))
                     .collect(Collectors.joining(", "));
             var inputsWithId = isRoot ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
             var countFunction = countDBFunction(queryLocation, queryMethodName, inputsWithId);
-            return dataBlock.addStatement("$N, $L,\n$L,\n$L,\n$L)", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction()).build();
+            return dataBlock.addStatement("$N, $L,\n$L,\n$L,\n$L)", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction(referenceField)).build();
         }
 
         return dataBlock.addStatement("$L)", queryFunction).build();
+    }
+
+    /**
+     * @return CodeBlock consisting of a function for a getId call.
+     */
+    @NotNull
+    public CodeBlock getIDFunction(ObjectField referenceField) {
+
+        return referenceField
+                .getOrderField()
+                .map(orderInputField -> {
+                    var objectNode = processedSchema.getObjectOrConnectionNode(referenceField);
+
+                    var orderByFieldMapEntries = processedSchema.getOrderByFieldEnum(orderInputField)
+                            .getFields()
+                            .stream()
+                            .map(orderByField -> CodeBlock.of("$S, $L -> $L",
+                                    orderByField.getName(), TYPE_NAME, createJoinedGetFieldAsStringCallBlock(orderByField, objectNode)))
+                            .collect(CodeBlock.joining(",\n"));
+
+                    return CodeBlock.builder()
+                            .add("(it) -> $N == null ? it.getId() :\n", orderInputField.getName())
+                            .indent()
+                            .add("$T.<$T, $T<$T, $T>>of(\n",
+                                    MAP.className, STRING.className, FUNCTION.className, objectNode.getGraphClassName(), STRING.className)
+                            .indent()
+                            .add("$L\n", orderByFieldMapEntries)
+                            .unindent()
+                            .add(").get($L.get$L().toString()).apply(it)", orderInputField.getName(), capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()))
+                            .build();
+                })
+                .orElseGet(() -> CodeBlock.of("(it) -> it.getId()")); //Note: getID is FS-specific.
+    }
+
+    private CodeBlock createJoinedGetFieldAsStringCallBlock(OrderByEnumField orderByField, ObjectDefinition objectNode) {
+        return orderByField.getSchemaFields(processedSchema, objectNode)
+                .stream()
+                .map(this::createNullSafeGetFieldAsStringCall)
+                .collect(CodeBlock.joining(" + \",\" + "));
+    }
+
+    private CodeBlock createNullSafeGetFieldAsStringCall(ObjectField field) {
+        var getFieldCall = field.getMappingFromFieldName().asGetCall();
+        var fullCallBlock = CodeBlock.of("$L$L", TYPE_NAME, getFieldCall);
+
+        if (field.getTypeClass() != null &&
+                (field.getTypeClass().isPrimitive() || field.getTypeClass().equals(STRING.className))) {
+            return fullCallBlock;
+        }
+        return CodeBlock.of("$L == null ? null : $L.toString()", fullCallBlock, fullCallBlock);
     }
 
     @NotNull

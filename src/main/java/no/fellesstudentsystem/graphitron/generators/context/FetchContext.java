@@ -103,7 +103,7 @@ public class FetchContext {
                 "",
                 0,
                 null,
-                true,
+                referenceObjectField.getOrderField().isEmpty(), //do not use optional in combination with orderBy
                 true,
                 new ArrayList<>(),
                 null

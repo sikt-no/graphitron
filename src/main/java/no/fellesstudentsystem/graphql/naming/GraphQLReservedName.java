@@ -16,6 +16,8 @@ public enum GraphQLReservedName {
     CONNECTION_EDGE_FIELD("edges"),
     CONNECTION_PAGE_INFO_NODE("PageInfo"),
 
+    ORDER_BY_FIELD("orderByField"),
+
     NODE_TYPE("Node"),
     NODE_ID("id"),
     ERROR_TYPE("Error"),

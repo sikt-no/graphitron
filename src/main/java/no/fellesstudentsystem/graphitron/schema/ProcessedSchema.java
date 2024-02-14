@@ -3,9 +3,7 @@ package no.fellesstudentsystem.graphitron.schema;
 import graphql.language.*;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
-import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
+import no.fellesstudentsystem.graphitron.definitions.fields.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
@@ -450,10 +448,58 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return The enum definition representing the OrderByField of the given orderInputField
+     */
+    public OrderByEnumDefinition getOrderByFieldEnum(InputField orderInputField) {
+        return Optional.ofNullable(getInputType(orderInputField))
+                .orElseThrow(() -> new IllegalArgumentException(String.format("Input type '%s' not found in schema", orderInputField.getTypeName())))
+                .getFields().stream()
+                .filter(it -> it.getName().equals(GraphQLReservedName.ORDER_BY_FIELD.getName()))
+                .map(this::getEnum)
+                .map(OrderByEnumDefinition::from)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(String.format("Expected field '%s' on type %s, but no such field was found", GraphQLReservedName.ORDER_BY_FIELD, orderInputField.getTypeName())));
+    }
+
+    /**
      * @return The closest table on or above this object. Assumes only one table can be associated with the object.
      */
     public ObjectDefinition getPreviousTableObjectForObject(ObjectDefinition object) {
         return objectWithPreviousTable.get(object.getName());
+    }
+
+    /**
+     * Retrieves a field that may be available on a table corresponding to the given object name.
+     * This method checks both the object with the provided object name and any objects
+     * that have the provided object name as their closest table object.
+     *
+     * @param objectName The name of the object on which to find the field.
+     * @param fieldName The name of the field to find.
+     * @return an Optional that contains an ObjectField if a field with the provided fieldName exists.
+     * If no such field exists, the returned Optional will be empty.
+     */
+    public Optional<ObjectField> getFieldAvailableOnTable(String objectName, String fieldName) {
+        return getAllObjectsClosestTo(objectName)
+                .stream()
+                .map(AbstractObjectDefinition::getFields)
+                .flatMap(Collection::stream)
+                .filter(it -> it.getUpperCaseName().equalsIgnoreCase(fieldName))
+                .findFirst();
+    }
+
+    /**
+     * Retrieves all objects that have the given name as their closest table object.
+     * This includes the object with the given name itself and any objects that are associated with it.
+     *
+     * @param name The name of the object to find associated objects for.
+     * @return a List<ObjectDefinition> of all objects that have the provided name as their closest table object.
+     */
+    public List<ObjectDefinition> getAllObjectsClosestTo(String name) {
+        return objectWithPreviousTable.entrySet()
+                .stream()
+                .filter(it -> it.getValue().getName().equals(name))
+                .map(it -> getObject(it.getKey()))
+                .collect(Collectors.toList());
     }
 
     /**

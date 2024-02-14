@@ -5,7 +5,6 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.net.URL;

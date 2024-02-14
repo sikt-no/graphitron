@@ -6,3 +6,8 @@ scalar BigDecimal
 interface Node {
   id: ID!
 }
+
+enum OrderDirection {
+  ASC
+  DESC
+}

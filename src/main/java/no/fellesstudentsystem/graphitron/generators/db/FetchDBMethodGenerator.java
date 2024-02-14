@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.db;
 
 import com.squareup.javapoet.CodeBlock;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;

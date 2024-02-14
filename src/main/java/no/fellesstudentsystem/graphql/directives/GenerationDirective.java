@@ -11,13 +11,15 @@ public enum GenerationDirective {
     NOT_GENERATED("notGenerated"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
     FIELD("field", EnumSet.of(GenerationDirectiveParam.NAME)),
+    INDEX("index", EnumSet.of(GenerationDirectiveParam.NAME)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE)),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.ERROR)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
     LOOKUP_KEY("lookupKey"),
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.TABLE, GenerationDirectiveParam.KEY, GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.VIA)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
-    CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE));
+    CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE)),
+    ORDER_BY("orderBy");
 
     private final String name;
 

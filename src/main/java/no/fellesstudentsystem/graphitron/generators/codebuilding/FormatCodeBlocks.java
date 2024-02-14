@@ -8,9 +8,9 @@ import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.jetbrains.annotations.NotNull;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asRecordName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.db.FetchCountDBMethodGenerator.TOTAL_COUNT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -29,7 +29,6 @@ public class FormatCodeBlocks {
                     AbstractMethodGenerator.ENV_NAME,
                     Dependency.CONTEXT_NAME
             ),
-            GET_ID_FUNCTION = CodeBlock.of("(it) -> it.getId()"),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
@@ -218,13 +217,6 @@ public class FormatCodeBlocks {
         return DECLARE_CONTEXT_VARIABLE;
     }
 
-    /**
-     * @return CodeBlock consisting of a function for a getId call.
-     */
-    @NotNull
-    public static CodeBlock getIDFunction() {
-        return GET_ID_FUNCTION; // Note: ID is FS-specific.
-    }
 
     /**
      * @return CodeBlock consisting of a function for a count DB call.

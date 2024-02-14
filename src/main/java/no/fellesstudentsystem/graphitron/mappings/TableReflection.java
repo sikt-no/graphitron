@@ -1,14 +1,10 @@
 package no.fellesstudentsystem.graphitron.mappings;
 
-import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
 import org.apache.commons.lang3.StringUtils;
-import org.jooq.ForeignKey;
-import org.jooq.Key;
-import org.jooq.Table;
-import org.jooq.TableField;
+import org.jooq.*;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.Field;
@@ -228,6 +224,29 @@ public class TableReflection {
         return getTablesField(tableName)
                 .map(value -> Stream.of(value.getType().getMethods()).map(Method::getName).anyMatch(m -> m.equals(methodName)))
                 .orElse(false);
+    }
+
+    /**
+     * Checks if a table has an index with the specified name.
+     *
+     * @param tableName The name of the table to check for the index.
+     * @param indexName The name of the index
+     * @return Returns true if the table has an index with the same name as provided, false otherwise.
+     */
+    public static boolean tableHasIndex(String tableName, String indexName) {
+        return getIndex(tableName, indexName).isPresent();
+    }
+
+    public static Optional<Index> getIndex(String tableName, String indexName) {
+        return getTablesField(tableName)
+                .map(tableField -> {
+                    try {
+                        return ((TableImpl<?>) tableField.get(null)).getIndexes().stream()
+                                .filter(index -> index.getName().equalsIgnoreCase(indexName))
+                                .findFirst();
+                    } catch (IllegalAccessException e) {
+                        throw new RuntimeException(e);
+                    }}).orElse(Optional.empty());
     }
 
     /**

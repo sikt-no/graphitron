@@ -482,6 +482,66 @@ input InNestedKey {
 }
 ```
 
+#### orderBy directive
+Incorporating the `orderBy` functionality in your GraphQL schema allows API users to sort query results based on specific fields.
+
+##### Step 1: Define Order Input Types
+
+Firstly, define an input type for `orderBy`. This input type must include a `direction` field and a `orderByField` field:
+
+```graphql
+input FilmOrder {
+    direction: OrderDirection!
+    orderByField: FilmOrderByField!
+}
+```
+
+The `OrderDirection` enum specifies the sort order:
+
+```graphql
+enum OrderDirection {
+    ASC
+    DESC
+}
+```
+
+##### Step 2: Define Order By fields
+
+Next, define the `OrderByField` enum. This should include all the fields on which sorting should be allowed. 
+Each of these fields must be backed by a database index to optimize the query performance.
+The `@index` directive indicates the corresponding database index:
+
+```graphql
+enum FilmOrderByField {
+    LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
+    TITLE @index(name : "IDX_TITLE")
+}
+```
+
+Note: A single OrderByField can involve more than one field in the database, e.g.: `STORE_ID_FILM_ID @index(name : "idx_store_id_film_id")`
+
+To expose these indexes to Graphitron through JOOQ, ensure index code generation is enabled in JOOQ's generator config:
+
+```xml
+<database>
+    <includeIndexes>true</includeIndexes>
+    ...
+</database>
+```
+
+Graphitron will look for the indexes by their names as specified by the `@index` directive. 
+Exceptions will be thrown if no matching index is found for the corresponding database table.
+
+##### Step 3: Add orderBy argument to Query
+
+Add the `orderBy` argument to your query. Use the `@orderBy` directive to indicate that input should be handled as _orderBy_-functionality:
+
+```graphql
+type Query {
+    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection
+}
+```
+
 ### Mutation generation
 While fetching data can cover many cases, mutations have more limitations when generated through Graphitron,
 as mutations can take many inputs which should be saved to multiple tables. Automatic generation of the entire resolver

@@ -3,23 +3,28 @@ package no.fellesstudentsystem.graphitron.generators.db;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
+import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
  * Generator that creates the default data fetching methods
@@ -99,11 +104,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
-        if (referenceField.hasNonReservedInputFields()) {
-            referenceField
-                    .getNonReservedArguments()
-                    .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
-        }
+        referenceField
+                .getNonReservedArgumentsWithOrderField()
+                .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
 
         if (referenceField.hasForwardPagination()) {
             spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
@@ -127,13 +130,27 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var refTable = refObject.getTable().getMappingName();
         var code = CodeBlock.builder();
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
-        if (!lookupExists && isRoot || referenceField.hasForwardPagination()) {
-            code.add(".orderBy($N.getIdFields())\n", actualRefTable);
-        }
 
-        if (referenceField.hasForwardPagination()) {
-            code.add(".seek($N.getIdValues($N))\n", refTable, GraphQLReservedName.PAGINATION_AFTER.getName());
-            code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
+        if (!lookupExists && isRoot || referenceField.hasForwardPagination()) {
+
+            var orderByField = referenceField.getOrderField();
+            orderByField.ifPresentOrElse(
+                    it -> code.add(createCustomOrderBy(it, actualRefTable)),
+                    () -> code.add(".orderBy($N.getIdFields())\n", actualRefTable));
+
+            if (referenceField.hasForwardPagination()) {
+                orderByField.ifPresentOrElse(
+                        it -> code.add(".seek(\n")
+                                .indent()
+                                .add("$N == null\n", it.getName())
+                                .indent()
+                                .add("? $N.getIdValues($N)\n", refTable, GraphQLReservedName.PAGINATION_AFTER.getName())
+                                .add(": $N == null ? new $T[]{} : $N.split($S))\n",
+                                        GraphQLReservedName.PAGINATION_AFTER.getName(), OBJECT.className, GraphQLReservedName.PAGINATION_AFTER.getName(), ",")
+                                .unindent().unindent(),
+                        () -> code.add(".seek($N.getIdValues($N))\n", refTable, GraphQLReservedName.PAGINATION_AFTER.getName()));
+                code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
+            }
         }
 
         if (isRoot && !lookupExists) {
@@ -149,6 +166,41 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
         }
         return code.unindent().unindent().build();
+    }
+
+    @NotNull
+    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable) {
+        var orderByFieldEnum = processedSchema.getOrderByFieldEnum(orderInputField);
+        var orderByFieldToDBIndexName = orderByFieldEnum
+                .getFields()
+                .stream()
+                .collect(Collectors.toMap(AbstractField::getName, enumField -> enumField.getIndexName().orElseThrow()));
+
+        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(actualRefTable, indexName),
+                "Table '%S' has no index '%S' necessary for sorting by '%s'", actualRefTable, indexName, orderByField));
+
+        var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()
+                .stream()
+                .map(it -> CodeBlock.of("Map.entry($S, $S)", it.getKey(), it.getValue()))
+                .collect(CodeBlock.joining(",\n"));
+        var sortFieldsMapBlock = CodeBlock.builder().add("$T.ofEntries(\n", MAP.className)
+                .indent()
+                .add("$L)", sortFieldMapEntries)
+                .add("\n")
+                .unindent()
+                .build();
+
+        var orderInputFieldName = orderInputField.getName();
+        return CodeBlock.builder()
+                .add(".orderBy(\n")
+                .indent()
+                .add("$N == null\n", orderInputFieldName)
+                .indent().indent()
+                .add("? $N.getIdFields()\n", actualRefTable)
+                .add(": $T.getSortFields($N.getIndexes(), $L.get($N.get$L().toString()), $N.getDirection().toString()))\n",
+                        QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
+                .unindent().unindent().unindent()
+                .build();
     }
 
     @Override
