@@ -12,6 +12,6 @@ import org.jooq.DSLContext;
 public class UpsertCustomer2ParamsDBQueries {
     public int upsertCustomer2Params(DSLContext ctx, List<CustomerRecord> inputRecordList,
             String lastName) {
-        return Arrays.stream(ctx.batchStore(inputRecordList).execute()).sum();
+        return Arrays.stream(ctx.batchMerge(inputRecordList).execute()).sum();
     }
 }

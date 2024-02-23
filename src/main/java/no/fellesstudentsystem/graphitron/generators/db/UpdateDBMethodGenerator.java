@@ -28,7 +28,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             MutationType.UPDATE, "batchUpdate",
             MutationType.DELETE, "batchDelete",
             MutationType.INSERT, "batchInsert",
-            MutationType.UPSERT, "batchStore"
+            MutationType.UPSERT, "batchMerge"
     );
 
     private static final String VARIABLE_RECORD_LIST = "recordList";

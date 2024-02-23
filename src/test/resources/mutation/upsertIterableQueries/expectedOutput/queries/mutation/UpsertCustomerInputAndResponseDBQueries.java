@@ -11,6 +11,6 @@ import org.jooq.DSLContext;
 public class UpsertCustomerInputAndResponseDBQueries {
     public int upsertCustomerInputAndResponse(DSLContext ctx,
             List<CustomerRecord> inputRecordList) {
-        return Arrays.stream(ctx.batchStore(inputRecordList).execute()).sum();
+        return Arrays.stream(ctx.batchMerge(inputRecordList).execute()).sum();
     }
 }
