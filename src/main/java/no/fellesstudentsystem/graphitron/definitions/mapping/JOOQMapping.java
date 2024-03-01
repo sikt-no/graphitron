@@ -7,22 +7,25 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeySourceTable;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForKeyMethodName;
 
 /**
  * Stores operations related to rendering jOOQ key and table mappings.
  */
-public class JOOQMapping implements JoinElement {
+public class JOOQMapping extends MethodMapping implements JoinElement {
     private final String name, codeName;
     private JOOQMapping underlyingTable;
 
     private JOOQMapping(String name, String codeName) {
+        super(name);
         this.name = name;
         this.codeName = codeName;
         underlyingTable = this;
     }
 
     private JOOQMapping(String name, String codeName, JOOQMapping underlyingTable) {
+        super(name);
         this.name = name;
         this.codeName = codeName;
         this.underlyingTable = underlyingTable;

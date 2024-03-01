@@ -1,33 +1,33 @@
 package fake.code.generated.mappers;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.model.EditInputLevel1;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import no.fellesstudentsystem.graphitron.records.TestCustomerInputRecord;
+import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
 
 public class EditInputLevel1JavaMapper {
-    public static List<TestCustomerInputRecord> toJavaRecord(List<EditInputLevel1> editInputLevel1,
-                                                       String path, Set<String> arguments, InputTransformer transform) {
+    public static List<TestCustomerRecord> toJavaRecord(List<EditInputLevel1> editInputLevel1,
+                                                       String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var testCustomerInputRecordList = new ArrayList<TestCustomerInputRecord>();
+        var arguments = transform.getArguments();
+        var testCustomerRecordList = new ArrayList<TestCustomerRecord>();
 
         if (editInputLevel1 != null) {
             for (var itEditInputLevel1 : editInputLevel1) {
                 if (itEditInputLevel1 == null) continue;
-                var testCustomerInputRecord = new TestCustomerInputRecord();
+                var testCustomerRecord = new TestCustomerRecord();
                 var edit2 = itEditInputLevel1.getEdit2();
                 if (edit2 != null && arguments.contains(pathHere + "edit2")) {
-                    testCustomerInputRecord.setRecord(transform.editInputLevel2ToJOOQRecord(edit2, pathHere + "edit2"));
+                    testCustomerRecord.setRecord(transform.editInputLevel2ToJOOQRecord(edit2, pathHere + "edit2"));
                 }
 
-                testCustomerInputRecordList.add(testCustomerInputRecord);
+                testCustomerRecordList.add(testCustomerRecord);
             }
         }
 
-        return testCustomerInputRecordList;
+        return testCustomerRecordList;
     }
 }
 

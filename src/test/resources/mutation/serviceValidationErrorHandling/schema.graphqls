@@ -29,7 +29,7 @@ input EditInputLevel4 @table(name : "CUSTOMER") {
   lastName: String! @field(name: "LAST_NAME")
 }
 
-type EditCustomerResponse {
+type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
 }
 

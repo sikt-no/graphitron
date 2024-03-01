@@ -1,63 +1,43 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers.mapping;
 
 import com.squareup.javapoet.TypeSpec;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
-public class RecordMapperClassGenerator extends AbstractClassGenerator<InputField> {
-    public static final String
-        DEFAULT_SAVE_DIRECTORY_NAME = "mappers",
-        FILE_NAME_SUFFIX = "Mapper";
+public class RecordMapperClassGenerator extends AbstractMapperClassGenerator<GenerationField> {
+    public static final String FILE_NAME_TO_SUFFIX = "JOOQMapper", FILE_NAME_FROM_SUFFIX = "TypeMapper";
 
-    public RecordMapperClassGenerator(ProcessedSchema processedSchema) {
-        super(processedSchema);
+    public RecordMapperClassGenerator(ProcessedSchema processedSchema, boolean toRecord) {
+        super(processedSchema, toRecord);
     }
 
     @Override
-    public TypeSpec generate(InputField target) {
-        return getSpec(
-                target.getTypeName(),
-                List.of(
-                        new RecordMapperMethodGenerator(target, processedSchema),
-                        new RecordValidatorMethodGenerator(target, processedSchema)
-                )
-        ).build();
+    public TypeSpec generate(GenerationField target) {
+        var recordMapper = new RecordMapperMethodGenerator(target, processedSchema, isToRecord());
+        List<MethodGenerator<? extends GenerationTarget>> generators = isToRecord()
+                ? List.of(recordMapper, new RecordValidatorMethodGenerator(target, processedSchema))
+                : List.of(recordMapper);
+        return getSpec(target.getTypeName(), generators).build();
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        var mutation = processedSchema.getMutationType();
-        if (mutation != null && mutation.isGenerated()) {
-            mutation
-                    .getFields()
-                    .stream()
-                    .flatMap(field -> processedSchema.findTableOrRecordFields(field).stream())
-                    .filter(this::filterHasTableAndRecordProperties)
-                    .collect(Collectors.toMap(processedSchema::getInputType, Function.identity(), (it1, it2) -> it1)) // Filter duplicates if multiple fields use the same input type.
-                    .values()
-                    .stream()
-                    .map(this::generate)
-                    .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath));
+    protected boolean filterHasTableAndRecordProperties(GenerationField field) {
+        var in = processedSchema.getTableType(field);
+        if (in == null || !in.hasTable() || in.hasJavaRecordReference()) {
+            return false;
         }
-    }
 
-    protected boolean filterHasTableAndRecordProperties(InputField field) {
-        var in = processedSchema.getInputType(field);
-        return in.hasTable() && !in.hasJavaRecordReference();
-    }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return DEFAULT_SAVE_DIRECTORY_NAME;
+        return isToRecord() ? processedSchema.isInputType(field) : processedSchema.isObject((AbstractField<?>) field);
     }
 
     @Override
     public String getFileNameSuffix() {
-        return FILE_NAME_SUFFIX;
+        return isToRecord() ? FILE_NAME_TO_SUFFIX : FILE_NAME_FROM_SUFFIX;
     }
 }

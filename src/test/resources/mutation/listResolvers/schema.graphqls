@@ -12,7 +12,7 @@ input EditInput @table(name: "CUSTOMER") {
   email: String
 }
 
-type EditResponse {
+type EditResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
   firstName: [String!]
   email: String @field(name: "secretEmail")

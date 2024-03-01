@@ -1,12 +1,12 @@
-input EditInput @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INPUT_RECORD"}) {
-  id: ID! @recordField(name: "someID")
-  idList: [ID]! @recordField(name: "someListID")
+input EditInput @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_RECORD"}) {
+  id: ID! @field(name: "someID")
+  idList: [ID]! @field(name: "someListID")
   hiddenValue1: Hidden1
-  hiddenValue2: Hidden2 @recordField(name: "someID")
+  hiddenValue2: Hidden2 @field(name: "someID")
 }
 
 input Hidden1 {
-  id: ID! @recordField(name: "someID")
+  id: ID! @field(name: "someID")
 }
 
 input Hidden2 {

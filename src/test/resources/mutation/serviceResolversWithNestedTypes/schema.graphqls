@@ -29,26 +29,27 @@ input EditInputLevel4 @table(name : "CUSTOMER") {
   lastName: String! @field(name: "LAST_NAME")
 }
 
-type EditCustomerResponse {
+type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
-  EditCustomerResponse2: EditCustomerResponse2
-  EditCustomerResponse3: [EditCustomerResponse3!]
+  EditCustomerResponse2: EditCustomerResponse2 @field(name: "editResponse2")
+  EditCustomerResponse3: [EditCustomerResponse3!] @field(name: "EditResponse3")
 }
 
-type EditCustomerResponse2 {
+type EditCustomerResponse2 @record(record: {name: "TEST_CUSTOMER_RESPONSE2"}) {
   id: ID! @field(name : "id2")
-  customer: Customer
+  customer: Customer @fetchByID
+  customerList: [Customer] @fetchByID
 }
 
-type EditCustomerResponse3 {
+type EditCustomerResponse3 @record(record: {name: "TEST_CUSTOMER_RESPONSE3"}) {
   id: ID! @field(name : "id3")
-  customer: Customer @field(name : "customer3")
+  customer: Customer @field(name : "customer3") @fetchByID
   EditCustomerResponse4: [EditCustomerResponse4!] @field(name : "edit4")
 }
 
-type EditCustomerResponse4 {
+type EditCustomerResponse4 @record(record: {name: "TEST_CUSTOMER_RESPONSE4"}) {
   id: ID! @field(name : "id4")
-  payment: Payment @field(name : "payment4")
+  payment: Payment @field(name : "payment4") @fetchByID
 }
 
 type Mutation {

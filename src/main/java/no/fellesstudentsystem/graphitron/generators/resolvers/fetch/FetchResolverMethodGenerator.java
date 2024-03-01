@@ -55,7 +55,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
         var allQueryInputs = getQueryInputs(spec, target);
         return spec
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
                 .addCode(queryMethodCalls(target, returnClassName, allQueryInputs))
                 .addCode(getMethodCallTail(target))
                 .build();
@@ -116,8 +116,8 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         var dataBlock = CodeBlock.builder();
         if (hasLookup) { // Assume all keys are correlated.
             dataBlock
-                    .add(declareBlock(LOOKUP_KEYS_NAME, LookupHelpers.getLookupKeysAsList(referenceField, processedSchema)))
-                    .add("return $T.loadDataAsLookup($N, $N, ", DATA_LOADERS.className, ENV_NAME, LOOKUP_KEYS_NAME);
+                    .add(declare(LOOKUP_KEYS_NAME, LookupHelpers.getLookupKeysAsList(referenceField, processedSchema)))
+                    .add("return $T.loadDataAsLookup($N, $N, ", DATA_LOADERS.className, VARIABLE_ENV, LOOKUP_KEYS_NAME);
         } else if (!isRoot) {
             dataBlock.add(
                     "$T<$T, $T> $L = $T.getDataLoader($N, $S, ",
@@ -126,11 +126,11 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                     returnClassName,
                     LOADER_NAME,
                     DATA_LOADERS.className,
-                    ENV_NAME,
+                    VARIABLE_ENV,
                     queryMethodName
             );
         } else {
-            dataBlock.add("return $T.loadData($N, ", DATA_LOADERS.className, ENV_NAME);
+            dataBlock.add("return $T.loadData($N, ", DATA_LOADERS.className, VARIABLE_ENV);
         }
 
         var queryFunction = queryDBFunction(queryLocation, queryMethodName, inputString, !isRoot || hasLookup, !isRoot && !hasLookup);
@@ -189,8 +189,8 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     }
 
     private CodeBlock createNullSafeGetFieldAsStringCall(ObjectField field,  List<String> path) {
-        var getFieldCall = field.getMappingFromFieldName().asGetCall();
-        var fullCallBlock = CodeBlock.of("$L$L$L", TYPE_NAME, path.stream().map(it -> new MethodMapping(it).asGetCall()).collect(Collectors.joining()), getFieldCall);
+        var getFieldCall = field.getMappingFromSchemaName().asGetCall();
+        var fullCallBlock = CodeBlock.of("$L$L$L", TYPE_NAME, path.stream().map(it -> new MethodMapping(it).asGetCall()).collect(CodeBlock.joining("")), getFieldCall);
 
         if (field.getTypeClass() != null &&
                 (field.getTypeClass().isPrimitive() || field.getTypeClass().equals(STRING.className))) {
@@ -201,13 +201,22 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
     @NotNull
     private CodeBlock getSimpleRootDBCall(String referenceFieldName, String queryLocation, String inputString) {
-        var queryBlock = CodeBlock.builder().addStatement("var $L = $T.getSelectionSet($N)", SELECTION_SET_NAME, RESOLVER_HELPERS.className, ENV_NAME);
-        queryBlock.add("var $L = $N.$L($N", QUERY_RESULT_NAME, uncapitalize(queryLocation), asQueryMethodName(referenceFieldName, getLocalObject().getName()), VariableNames.CONTEXT_NAME);
-        if (!inputString.isEmpty()) {
-            queryBlock.add(", $L", inputString);
-        }
-        return queryBlock
-                .addStatement(", $N)", SELECTION_SET_NAME)
+        return CodeBlock
+                .builder()
+                .add(declare(SELECTION_SET_NAME, getHelperSelectionSet()))
+                .add(
+                        declare(
+                                QUERY_RESULT_NAME,
+                                CodeBlock.of(
+                                        "$N.$L($N$L, $N)",
+                                        uncapitalize(queryLocation),
+                                        asQueryMethodName(referenceFieldName, getLocalObject().getName()),
+                                        VariableNames.CONTEXT_NAME,
+                                        inputString.isEmpty() ? empty() : CodeBlock.of(", $L", inputString),
+                                        SELECTION_SET_NAME
+                                )
+                        )
+                )
                 .add(returnCompletedFuture(QUERY_RESULT_NAME))
                 .build();
     }
@@ -225,7 +234,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                 referenceField.isIterableWrapped() && referenceField.isNonNullable() ? "loadNonNullable" : "load",
                 LOADER_NAME,
                 uncapitalize(localObject.getName()),
-                ENV_NAME
+                VARIABLE_ENV
         ).build();
     }
 

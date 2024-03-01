@@ -3,10 +3,9 @@ package no.fellesstudentsystem.graphql.schema;
 import graphql.language.*;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
-import no.fellesstudentsystem.graphitron.definitions.fields.FieldType;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
 import no.fellesstudentsystem.graphitron.validation.ProcessedDefinitionsValidator;
@@ -31,10 +30,11 @@ public class ProcessedSchema {
     private final Map<String, ObjectDefinition> objects;
     private final Map<String, ExceptionDefinition> exceptions;
     private final Map<String, InputDefinition> inputs;
+    private final Map<String, RecordObjectDefinition<? extends TypeDefinition<? extends TypeDefinition<?>>, ? extends GenerationField>> tableTypes;
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, ConnectionObjectDefinition> connectionObjects;
     private final Map<String, UnionDefinition> unions;
-    private final Set<String> objectsWithTableOrConnection;
+    private final Set<String> objectsWithTableOrConnection, tableTypesWithTable;
     private final ObjectDefinition queryType;
     private final ObjectDefinition mutationType;
 
@@ -85,12 +85,17 @@ public class ProcessedSchema {
                 .map(this::getSearchObjectDefinitionFor)
                 .collect(Collectors.toMap(ConnectionObjectDefinition::getName, Function.identity()));
 
-        var objectsWithTable = objects
+        var objectsWithTable = objects.values().stream().filter(ObjectDefinition::hasTable).collect(Collectors.toList());
+        objectsWithTableOrConnection = Stream.concat(connectionObjects.keySet().stream(), objectsWithTable.stream().map(RecordObjectDefinition::getName)).collect(Collectors.toSet());
+        tableTypes = Stream
+                .concat(objects.values().stream(), inputs.values().stream())
+                .collect(Collectors.toMap(AbstractObjectDefinition::getName, Function.identity()));
+        tableTypesWithTable = tableTypes
                 .values()
                 .stream()
-                .filter(ObjectDefinition::hasTable)
-                .map(ObjectDefinition::getName);
-        objectsWithTableOrConnection = Stream.concat(connectionObjects.keySet().stream(), objectsWithTable).collect(Collectors.toSet());
+                .filter(RecordObjectDefinition::hasTable)
+                .map(RecordObjectDefinition::getName)
+                .collect(Collectors.toSet());
 
         unions = UnionDefinition.processUnionDefinitions(typeRegistry.getTypes(UnionTypeDefinition.class))
                 .stream()
@@ -127,7 +132,7 @@ public class ProcessedSchema {
     /**
      * @return Does this field point to an enum type in the schema?
      */
-    public boolean isEnum(AbstractField<?> field) {
+    public boolean isEnum(GenerationField field) {
         return enums.containsKey(field.getTypeName()) || isConnectionObject(field) && isEnum(getConnectionObject(field).getNodeType());
     }
 
@@ -170,7 +175,7 @@ public class ProcessedSchema {
     /**
      * @return Does this field point to an interface type in the schema?
      */
-    public boolean isInterface(AbstractField<?> field) {
+    public boolean isInterface(GenerationField field) {
         return interfaces.containsKey(field.getTypeName()) || isConnectionObject(field) && isInterface(getConnectionObject(field).getNodeType());
     }
 
@@ -234,7 +239,7 @@ public class ProcessedSchema {
     /**
      * @return Get the object or connection node that this field points to.
      */
-    public ObjectDefinition getObjectOrConnectionNode(AbstractField<?> field) {
+    public ObjectDefinition getObjectOrConnectionNode(GenerationField field) {
         var typeName = field.getTypeName();
         return getObject(isConnectionObject(typeName) ? getConnectionObject(field).getNodeType() : typeName);
     }
@@ -249,7 +254,7 @@ public class ProcessedSchema {
     /**
      * @return Does this field point to an object type or connection node in the schema that is connected to a database table?
      */
-    public boolean isTableObject(AbstractField<?> field) {
+    public boolean isTableObject(GenerationSourceField<?> field) {
         return isObject(field) && getObject(field).hasTable() || isConnectionObject(field) && isTableObject(getConnectionObject(field).getNodeType());
     }
 
@@ -263,7 +268,7 @@ public class ProcessedSchema {
     /**
      * @return Does this field point to an object type in the schema which implements the Node interface?
      */
-    public boolean implementsNode(AbstractField<?> field) {
+    public boolean implementsNode(GenerationSourceField<?> field) {
         return isObject(field) && getObject(field).implementsInterface(NODE_TYPE.getName());
     }
 
@@ -284,7 +289,7 @@ public class ProcessedSchema {
     /**
      * @return Does this field point to a connection object type in the schema?
      */
-    public boolean isConnectionObject(AbstractField<?> field) {
+    public boolean isConnectionObject(GenerationField field) {
         return connectionObjects.containsKey(field.getTypeName());
     }
 
@@ -298,7 +303,7 @@ public class ProcessedSchema {
     /**
      * @return Get the connection object that this field points to.
      */
-    public ConnectionObjectDefinition getConnectionObject(AbstractField<?> field) {
+    public ConnectionObjectDefinition getConnectionObject(GenerationField field) {
         return connectionObjects.get(field.getTypeName());
     }
 
@@ -341,22 +346,29 @@ public class ProcessedSchema {
     /**
      * @return Does this field point to an input type in the schema?
      */
-    public boolean isInputType(AbstractField<?> field) {
+    public boolean isInputType(GenerationField field) {
         return inputs.containsKey(field.getTypeName());
     }
 
     /**
      * @return Does this field point to an input type with a table set in the schema?
      */
-    public boolean isTableInputType(AbstractField<?> field) {
+    public boolean isTableInputType(GenerationField field) {
         return Optional.ofNullable(getInputType(field)).map(InputDefinition::hasTable).orElse(false);
     }
 
     /**
      * @return Does this field point to an input type with a Java record set in the schema?
      */
-    public boolean isJavaRecordInputType(AbstractField<?> field) {
-        return Optional.ofNullable(getInputType(field)).map(InputDefinition::hasJavaRecordReference).orElse(false);
+    public boolean isJavaRecordType(GenerationField field) {
+        return Optional.ofNullable(getTableType(field)).map(RecordObjectDefinition::hasJavaRecordReference).orElse(false);
+    }
+
+    /**
+     * @return Does this field point to an input type with a record set in the schema?
+     */
+    public boolean isRecordType(GenerationField field) {
+        return Optional.ofNullable(getTableType(field)).map(RecordObjectDefinition::hasRecordReference).orElse(false);
     }
 
     /**
@@ -369,7 +381,7 @@ public class ProcessedSchema {
     /**
      * @return Get the input type that this field points to.
      */
-    public InputDefinition getInputType(AbstractField<?> field) {
+    public InputDefinition getInputType(GenerationField field) {
         return inputs.get(field.getTypeName());
     }
 
@@ -383,7 +395,7 @@ public class ProcessedSchema {
     /**
      * @return Does this field belong to a union type in the schema?
      */
-    public boolean isUnion(AbstractField<?> field) {
+    public boolean isUnion(GenerationField field) {
         return unions.containsKey(field.getTypeName()) || isConnectionObject(field) && isUnion(getConnectionObject(field).getNodeType());
     }
 
@@ -405,6 +417,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this field belong to an exception type or a union type containing only error types?
+     */
+    public boolean isExceptionOrExceptionUnion(ObjectField field) {
+        return isExceptionOrExceptionUnion(field.getTypeName());
+    }
+
+    /**
      * @return Get a union type with this name.
      */
     public UnionDefinition getUnion(String name) {
@@ -414,7 +433,7 @@ public class ProcessedSchema {
     /**
      * @return Get a union type that this field points to.
      */
-    public UnionDefinition getUnion(AbstractField<?> field) {
+    public UnionDefinition getUnion(GenerationField field) {
         return unions.get(isConnectionObject(field) ? getConnectionObject(field).getNodeType() : field);
     }
 
@@ -438,6 +457,48 @@ public class ProcessedSchema {
      */
     public Set<String> getNamesWithTableOrConnections() {
         return objectsWithTableOrConnection;
+    }
+
+    /**
+     * @return Does this name point to a type that may have a table set?
+     */
+    public boolean isTableType(String name) {
+        return tableTypes.containsKey(name);
+    }
+
+    /**
+     * @return Does this field point to a type that may have a table set?
+     */
+    public boolean isTableType(GenerationField field) {
+        return isTableType(field.getTypeName());
+    }
+
+    /**
+     * @return Does this name point to a type that has a table set?
+     */
+    public boolean hasTable(String name) {
+        return tableTypesWithTable.contains(name);
+    }
+
+    /**
+     * @return Does this field point to a type that has a table set?
+     */
+    public boolean hasTable(GenerationField field) {
+        return hasTable(field.getTypeName());
+    }
+
+    /**
+     * @return Get a type for this name.
+     */
+    public RecordObjectDefinition<?, ? extends GenerationField> getTableType(String name) {
+        return tableTypes.get(name);
+    }
+
+    /**
+     * @return Find the type this field refers to.
+     */
+    public RecordObjectDefinition<?, ? extends GenerationField> getTableType(GenerationField field) {
+        return getTableType(field.getTypeName());
     }
 
     /**
@@ -528,7 +589,7 @@ public class ProcessedSchema {
         return getObject(typeName)
                 .getFields()
                 .stream()
-                .filter(it -> isExceptionOrExceptionUnion(it.getTypeName()))
+                .filter(this::isExceptionOrExceptionUnion)
                 .collect(Collectors.toList());
     }
 
@@ -536,7 +597,7 @@ public class ProcessedSchema {
      * @return The error type or union of error types with this name if it exists.
      */
     @NotNull
-    public AbstractObjectDefinition<?, ?, ?> getErrorTypeDefinition(String name) {
+    public AbstractObjectDefinition<?, ?> getErrorTypeDefinition(String name) {
         return isUnion(name) ? getUnion(name) : getException(name);
     }
 
@@ -621,30 +682,41 @@ public class ProcessedSchema {
     }
 
     /**
-     * @param field Field whose arguments are to be searched.
-     * @return List of input fields that points to an input type with the table directive set.
+     * @param field Field that are to be searched.
+     * @return List of fields that points to a type with the table or record directive set.
      */
     @NotNull
-    public List<InputField> findTableOrRecordFields(ObjectField field) {
-        return field
-                .getArguments()
-                .stream()
-                .flatMap(it -> findTableOrRecordFields(it, 0).stream())
-                .collect(Collectors.toList());
+    public List<GenerationField> findTableOrRecordFields(ObjectField field) {
+        var objects = !field.isExplicitlyNotGenerated() ? findTableOrRecordFields(field, new HashSet<>(), 0).stream() : Stream.<ObjectField>of();
+        var inputs = field.getArguments().stream().flatMap(it -> findTableOrRecordFields(it, new HashSet<>(), 0).stream());
+        return Stream.concat(objects, inputs).collect(Collectors.toList());
     }
 
     @NotNull
-    private List<InputField> findTableOrRecordFields(InputField field, int recursion) {
+    private List<GenerationField> findTableOrRecordFields(GenerationField field, HashSet<GenerationField> seen, int recursion) {
         recursionCheck(recursion);
-
-        var array = new ArrayList<InputField>();
-        var input = getInputType(field);
-        if (input != null) {
-            if (field.isGenerated() && (input.hasTable() || input.hasJavaRecordReference())) {
-                array.add(field);
-            }
-            array.addAll(input.getFields().stream().flatMap(it -> findTableOrRecordFields(it, recursion + 1).stream()).collect(Collectors.toList()));
+        if (seen.contains(field)) {
+            return List.of();
         }
+        seen.add(field);
+
+        if (!field.isInput()) {
+            var objectField = (ObjectField) field;
+            if (objectField.hasMutationType() || objectField.isFetchByID()) {
+                return List.of();
+            }
+        }
+
+        var type = getTableType(field);
+        if (field.isResolver() || type == null) {
+            return List.of();
+        }
+
+        var array = new ArrayList<GenerationField>();
+        if (type.hasRecordReference() && !field.isExplicitlyNotGenerated()) {
+            array.add(field);
+        }
+        array.addAll(type.getFields().stream().flatMap(it -> findTableOrRecordFields(it, seen, recursion + 1).stream()).collect(Collectors.toList()));
 
         return array;
     }

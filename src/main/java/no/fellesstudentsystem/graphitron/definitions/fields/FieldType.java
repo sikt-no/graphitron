@@ -1,6 +1,9 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
-import graphql.language.*;
+import graphql.language.ListType;
+import graphql.language.NonNullType;
+import graphql.language.Type;
+import graphql.language.TypeName;
 
 import java.util.ArrayList;
 import java.util.Map;

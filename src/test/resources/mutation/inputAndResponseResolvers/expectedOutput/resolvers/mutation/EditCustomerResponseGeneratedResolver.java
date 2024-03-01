@@ -1,5 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerResponseMutationResolver;
 import fake.graphql.example.model.EditResponse;
 import graphql.schema.DataFetchingEnvironment;
@@ -18,16 +19,14 @@ public class EditCustomerResponseGeneratedResolver implements EditCustomerRespon
 
     @Override
     public CompletableFuture<EditResponse> editCustomerResponse(String id,
-            DataFetchingEnvironment env) throws Exception {
+                                                                DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var editCustomerResponseResult = testCustomerService.editCustomerResponse(id);
+        var transform = new RecordTransformer(env, ctx);
 
+        var editCustomerResponse = testCustomerService.editCustomerResponse(id);
 
-        var editResponse = new EditResponse();
-        editResponse.setId(editCustomerResponseResult.getId());
-        editResponse.setFirstName(editCustomerResponseResult.getFIRST_NAME());
-        editResponse.setPostalCode(editCustomerResponseResult.getPOSTAL_CODE());
+        var editResponse = transform.editResponseToGraphType(editCustomerResponse, "");
 
         return CompletableFuture.completedFuture(editResponse);
     }

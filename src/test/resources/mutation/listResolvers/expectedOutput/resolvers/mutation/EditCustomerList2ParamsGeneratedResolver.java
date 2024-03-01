@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerList2ParamsMutationResolver;
 import fake.graphql.example.model.EditInput;
 import graphql.schema.DataFetchingEnvironment;
@@ -24,12 +24,12 @@ public class EditCustomerList2ParamsGeneratedResolver implements EditCustomerLis
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var editCustomerList2ParamsResult = testCustomerService.editCustomerList2Params(inputRecordList, lastNames);
+        var editCustomerList2Params = testCustomerService.editCustomerList2Params(inputRecordList, lastNames);
 
-        return CompletableFuture.completedFuture(editCustomerList2ParamsResult);
+        return CompletableFuture.completedFuture(editCustomerList2Params);
     }
 }

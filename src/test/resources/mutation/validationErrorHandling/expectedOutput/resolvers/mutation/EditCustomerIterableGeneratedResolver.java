@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.code.generated.queries.mutation.EditCustomerIterableDBQueries;
 import fake.graphql.example.api.EditCustomerIterableMutationResolver;
 import fake.graphql.example.model.EditInput;
@@ -29,7 +29,7 @@ public class EditCustomerIterableGeneratedResolver implements EditCustomerIterab
             List<EditInput> in, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inRecordList = transform.editInputToJOOQRecord(in, "in", "in");
 

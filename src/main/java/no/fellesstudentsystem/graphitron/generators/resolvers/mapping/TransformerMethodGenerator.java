@@ -2,8 +2,10 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.mapping;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
+import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMethodGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -19,7 +21,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.Variable
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.STRING;
 
-public class TransformerMethodGenerator extends AbstractMethodGenerator<InputField> {
+public class TransformerMethodGenerator extends AbstractMethodGenerator<GenerationField> {
     protected static final String VARIABLE_INPUT = "input", VARIABLE_RECORDS = "records";
 
     public TransformerMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -27,37 +29,47 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<InputFie
     }
 
     @Override
-    public MethodSpec generate(InputField target) {
-        if (!processedSchema.isInputType(target)) {
-            return MethodSpec.methodBuilder(recordTransformMethod(target.getTypeName(), false)).build();
+    public MethodSpec generate(GenerationField target) {
+        var typeName = target.getTypeName();
+        var toRecord = target.isInput();
+        if (!processedSchema.isTableType(target)) {
+            return MethodSpec.methodBuilder(recordTransformMethod(typeName, false, toRecord)).build();
         }
 
-        var input = processedSchema.getInputType(target);
-        var hasReference = input.hasJavaRecordReference();
-        if (!input.hasTable() && !hasReference) {
-            return MethodSpec.methodBuilder(recordTransformMethod(target.getTypeName(), false)).build();
+        var type = processedSchema.getTableType(target);
+        if (!type.hasRecordReference()) {
+            return MethodSpec.methodBuilder(recordTransformMethod(typeName, false, toRecord)).build();
         }
 
-        var methodName = recordTransformMethod(target.getTypeName(), hasReference);
-        var returnType = hasReference ? input.getJavaRecordTypeName() : input.getRecordClassName();
+        var methodName = recordTransformMethod(typeName, type.hasJavaRecordReference(), toRecord);
+        var returnType = type.asTargetClassName(toRecord);
 
-        var spec = getDefaultSpecBuilder(methodName, returnType)
-                .addParameter(input.getGraphClassName(), VARIABLE_INPUT)
-                .addParameter(STRING.className, PATH_NAME);
-        if (recordValidationEnabled() && !hasReference) {
+        var spec = getDefaultSpecBuilder(methodName, returnType, type.asSourceClassName(toRecord));
+        var useValidation = toRecord && useValidation(type);
+        if (useValidation) {
             spec.addParameter(STRING.className, PATH_INDEX_NAME);
         }
         spec.addStatement(
-                "return $N($T.of($N), $N$L).stream().findFirst().orElse(new $T())",
+                "return $N($T.of($N), $N$L).stream().findFirst().orElse($L)",
                 methodName,
                 LIST.className,
                 VARIABLE_INPUT,
                 PATH_NAME,
-                recordValidationEnabled() && !hasReference ? CodeBlock.of(", $N", PATH_INDEX_NAME) : empty(),
-                returnType
+                useValidation ? CodeBlock.of(", $N", PATH_INDEX_NAME) : empty(),
+                toRecord ? CodeBlock.of("new $T()", returnType) : CodeBlock.of("null")
         );
 
         return spec.build();
+    }
+
+    protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {
+        return getDefaultSpecBuilder(methodName, returnType)
+                .addParameter(source, VARIABLE_INPUT)
+                .addParameter(STRING.className, PATH_NAME);
+    }
+
+    protected static boolean useValidation(RecordObjectDefinition<?, ?> type) {
+        return recordValidationEnabled() && type.hasTable() && !type.hasJavaRecordReference();
     }
 
     @Override
@@ -70,7 +82,8 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<InputFie
                 .getFields()
                 .stream()
                 .flatMap(field -> processedSchema.findTableOrRecordFields(field).stream())
-                .collect(Collectors.toMap(processedSchema::getInputType, Function.identity(), (it1, it2) -> it1)) // Filter duplicates if multiple fields use the same input type.
+                .filter(processedSchema::isTableType)
+                .collect(Collectors.toMap(processedSchema::getTableType, Function.identity(), (it1, it2) -> it1)) // Filter duplicates if multiple fields use the same input type.
                 .values()
                 .stream()
                 .map(this::generate)

@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.helpers;
 
+import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 
 import java.util.HashSet;
@@ -31,7 +32,7 @@ public class InputCondition {
     }
 
     private void inferAdditionalChecks(InputField input) {
-        var name = getNameWithPath();
+        var name = getNameWithPathString();
         if (input.isNullable()) {
             this.nullChecks.add(name + " != null");
         }
@@ -45,8 +46,12 @@ public class InputCondition {
         return namePath;
     }
 
-    public String getNameWithPath() {
-        return namePath.isEmpty() ? input.getName() : namePath + input.getMappingFromFieldName().asGetCall();
+    public CodeBlock getNameWithPath() {
+        return CodeBlock.of(getNameWithPathString());
+    }
+
+    public String getNameWithPathString() {
+        return namePath.isEmpty() ? input.getName() : namePath + input.getMappingFromSchemaName().asGetCall().toString();
     }
 
     public String getChecksAsSequence() {
@@ -54,7 +59,7 @@ public class InputCondition {
     }
 
     public InputCondition iterate(InputField input) {
-        return new InputCondition(input, getNameWithPath(), nullChecks);
+        return new InputCondition(input, getNameWithPathString(), nullChecks);
     }
 
     public InputCondition applyTo(InputField input) {

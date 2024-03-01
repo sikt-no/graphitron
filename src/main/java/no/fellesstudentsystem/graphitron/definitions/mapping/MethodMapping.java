@@ -1,17 +1,20 @@
 package no.fellesstudentsystem.graphitron.definitions.mapping;
 
+import com.squareup.javapoet.CodeBlock;
+
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
- * Stores operations related to rendering input method calls.
+ * Stores operations related to rendering get and set method calls.
  */
 public class MethodMapping {
-    private final String name, get, getCall, set, setCallPart;
+    private final String name, get, set, setCallPart;
+    private final CodeBlock getCall;
 
     public MethodMapping(String name) {
         this.name = name;
         get = "get" + capitalize(name);
-        getCall = "." + get + "()";
+        getCall = CodeBlock.of(".$L()", get);
 
         set = "set" + capitalize(name);
         setCallPart = "." + set + "(";
@@ -34,7 +37,7 @@ public class MethodMapping {
     /**
      * @return Format this name as a .get(name)() method call.
      */
-    public String asGetCall() {
+    public CodeBlock asGetCall() {
         return getCall;
     }
 
@@ -48,7 +51,14 @@ public class MethodMapping {
     /**
      * @return Format this column name for a .set(name)() method call.
      */
-    public String asSetCall(String input) {
-        return setCallPart + input + ")";
+    public CodeBlock asSetCall(String input) {
+        return CodeBlock.builder().addStatement("$L$N)", setCallPart, input).build();
+    }
+
+    /**
+     * @return Format this column name for a .set(name)() method call.
+     */
+    public CodeBlock asSetCall(CodeBlock input) {
+        return CodeBlock.builder().addStatement("$L$L)", setCallPart, input).build();
     }
 }

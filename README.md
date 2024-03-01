@@ -131,8 +131,8 @@ type OtherType {
 
 #### field directive
 By default, Graphitron assumes each field not annotated with the **notGenerated** or **splitQuery** directives to have a name
-equal to the column it corresponds to in the jOOQ table. The **field** directive overrides this behaviour. Specifying
-the _name_-parameter allows for using schema names that are not connected to the names of jOOQ fields.
+equal to the column it corresponds to in the jOOQ table or service record. The **field** directive overrides this behaviour. Specifying
+the _name_-parameter allows for using schema names that are not connected to the names of jOOQ or service record fields.
 This directive applies to normal type fields, input type fields, arguments and enum values.
 
 ```graphql
@@ -593,6 +593,25 @@ in the POM XML. The method is either specified through the directive or assumed 
 The directive invokes the creation of code that calls the specified class, rather than generating a query automatically.
 This allows the use of multiple record types at once, more complex return types and a certain level of exception handling.
 
+_Schema:_
+```graphql
+type Mutation {
+  editCustomer1(
+    # someValue: String # It is also allowed to put an extra input here when using services.
+    editInput: EditCustomerInput!
+  ): Customer! @service(service: {name: "SERVICE_CUSTOMER"}) # Returning just an ID is allowed as well.
+
+  editCustomer2(
+    editInput: EditCustomerInput!
+  ): Customer! @service(service: {name: "SERVICE_CUSTOMER", method: "editCustomerAndRespond"}) # Example of a case where the method name does not match the field name.
+}
+
+input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ table/record to use as input to the service.
+  id: ID!
+  firstName: String @field(name : "FIRST_NAME") # @field specifies the expected field name either in the jOOQ table or in the custom return class.
+}
+```
+
 #### Nested input structures
 Multiple layers of input types are also supported, but comes with its own limitations.
 Most notably, all records are sent to the service as a flat list of unorganised parameters,
@@ -615,41 +634,56 @@ _Generated code_:
 var editResult = service.edit(inputARecord, inputBRecord); // Sequential, independent of the input structure.
 ```
 
-#### Response mapping
-Graphitron inspects the return type of the service method to decide how it should be mapped to the schema response type.
-
-* If the mutation returns a node type and the method returns a jOOQ record, the ID assumed to be in the record is used
-to look up the type through the same query that is usually used by calls to the node interface.
-* Should the mutation return a scalar value, the method's return value is also treated like a scalar.
-This has only been tested for strings and IDs, but may also work for other types.
-* A special case is invoked when the mutation does not return a node type or scalar, where a special data class will be required
-for the return type. The service method must return a static class (contained within the service class, the generator can currently
-only find it there) that can provide all the data needed for the desired mapping through get-methods.
-The get methods must follow the pattern `get[FieldName]`.
-  * Note that this field name can be overridden by the **field** directive as well.
-
-Wrapping any of the response types in lists should also be unproblematic. The following example demonstrates the general
-use of custom service return classes.
+#### Input types with Java records
+When using services, custom input types may also be used. It is a referenced class [entry](#code-references),
+which must contain appropriate _set_ methods. The name of the method used for setting the values is assumed to be the
+same as a fields name in the schema, unless the **field** directive overrides this. These classes can be nested, listed
+and may contain JOOQ-records.
 
 _Schema:_
 ```graphql
 type Mutation {
   editCustomer(
-    # someValue: String # It is also allowed to put an extra input here when using services.
     editInput: EditCustomerInput!
-  ): Customer! @service(service: {name: "SERVICE_CUSTOMER"}) # Returning just an ID is allowed as well.
+  ): ID! @service(service: {name: "SERVICE_CUSTOMER"})
+}
 
+input EditCustomerInput @record(record: {name: "JAVA_RECORD_CUSTOMER"}) { # @record specifies the Java record to use. Setting @table here would not do anything.
+  id: ID! # We need a method with the name "setId" in the record class.
+  first: String @field(name: "FIRST_NAME") # We need a method with the name "setFirstName" in the record class. Overridden by @field.
+}
+```
+
+_Required service code_:
+```java
+public class CustomerService {
+    // The correct java class is defined through the code reference in the configuration.
+    public String editCustomer(JavaCustomerRecord person) { … }
+}
+```
+
+#### Response mapping
+By default, Graphitron inspects the return type of the service method to decide how it should be mapped to the
+schema response type.
+
+* If the mutation returns a node type and the method returns a jOOQ record, the ID assumed to be in the record is used
+to look up the type through the same query that is usually used by calls to the node interface.
+* Should the mutation return a scalar value, the method's return value is also treated like a scalar.
+This has only been tested for strings and IDs, but may also work for other types.
+* Custom service return types for responses work exactly as they do for input types,
+but require the Java record to have equivalent _get_ methods instead.
+
+_Schema:_
+```graphql
+type Mutation {
   editCustomerWithResponse(
-    editInput: EditCustomerInput!
-  ): EditCustomerResponse! @service(service: {name: "SERVICE_CUSTOMER", method: "editCustomerAndRespond"}) # Example of a case where the method name does not match the field name.
+    id: ID!
+  ): EditCustomerResponse! @service(service: {name: "SERVICE_CUSTOMER", method: "editCustomerAndRespond"})
 }
 
-input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ table/record to use.
-  id: ID!
-  firstName: String @field(name : "FIRST_NAME") # @table specifies the expected name, either in the jOOQ table or in the custom return class.
-}
-
-type EditCustomerResponse {
+type EditCustomerResponse @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  id: ID! # We need a method with the name "getId" in the record class.
+  first: String @field(name: "FIRST_NAME") # We need a method with the name "getFirstName" in the record class. Overridden by @field.
   customer: Customer # Some node type.
 }
 ```
@@ -657,30 +691,24 @@ type EditCustomerResponse {
 _Required service code_:
 ```java
 public class CustomerService {
-    // The only field that is required (except whatever the database requires) is the ID.
-    public CustomerRecord editCustomer(CustomerRecord person) { … }
-
-    // EditCustomerResponse is an instance of a static class within the service.
-    public EditCustomerResponse editCustomerAndRespond(CustomerRecord person) { … }
-
-    public static class EditCustomerResponse {
-        public CustomerRecord getCustomer() { … }
-    }
+    // The only field that is required (except whatever the database requires) is the ID. The correct java class is defined through the code reference in the configuration.
+    public JavaCustomerRecord editCustomer(String id) { … }
 }
 ```
 
-Nesting of return types is also allowed, and functions in a more orderly fashion than nesting of input types.
-This example shows the more complex case, where a nested custom return class is used.
+Nesting of return types is also allowed.
+This example shows the more complex case, where two nested custom return record classes are used.
+Such a setup can also be applied to input types.
 
 _Schema_:
 ```graphql
 edit(id: ID!): ReturnA! @service(service: {name: "EDIT_SERVICE"})
 
-type ReturnA {
+type ReturnA @record(record: {name: "RECORD_A"}) {
   returnB: ReturnB
 }
 
-type ReturnB {
+type ReturnB @record(record: {name: "RECORD_B"}) {
   someData: String @field(name: "INTERESTING_DATA")
 }
 ```
@@ -689,14 +717,17 @@ _Required service code_:
 ```java
 public class EditSomethingService {
     public ReturnA edit(String id) { … } // The service method that should be called. Note that the 'id' here corresponds to the 'id' in the schema.
-    
-    public static class ReturnA {
-        public ReturnB getReturnB() { … } // Must have a method that returns something that can be mapped to 'ReturnB' in the schema.
-    }
-    
-    public static class ReturnB {
-        public String getInterestingData() { … } // Must have a method that returns something that can be mapped to 'someData' in the schema.
-    }
+}
+```
+
+_Required record code_:
+```java
+public class ReturnA {
+  public ReturnB getReturnB() { … } // Must have a method that returns something that can be mapped to 'ReturnB' in the schema.
+}
+
+public class ReturnB {
+  public String getInterestingData() { … } // Must have a method that returns something that can be mapped to 'someData' in the schema.
 }
 ```
 

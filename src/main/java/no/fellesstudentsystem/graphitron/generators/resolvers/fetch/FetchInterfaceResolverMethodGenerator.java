@@ -47,7 +47,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         String inputFieldName = inputField.getName();
         spec
                 .addParameter(inputIterableWrap(inputField), inputFieldName)
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, ENV_NAME)
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
                 .addStatement("$T $L = $T.getTablePartOf($N)", STRING.className, TABLE_OF_ID, FIELD_HELPERS.className, inputFieldName)
                 .addCode("\n");
 
@@ -83,7 +83,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         return CodeBlock
                 .builder()
                 .beginControlFlow("if ($N.equals($T.$N.getViewId().toString()))", TABLE_OF_ID, TABLES.className, implementation.getTable().getMappingName())
-                .addStatement("return $T.loadInterfaceData($N, $N, $N, $L)", DATA_LOADERS.className, ENV_NAME, TABLE_OF_ID, inputFieldName, dbFunction)
+                .addStatement("return $T.loadInterfaceData($N, $N, $N, $L)", DATA_LOADERS.className, VARIABLE_ENV, TABLE_OF_ID, inputFieldName, dbFunction)
                 .endControlFlow()
                 .build();
     }

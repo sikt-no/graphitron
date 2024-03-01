@@ -1,13 +1,12 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerListInputAndResponseMutationResolver;
 import fake.graphql.example.model.EditInput;
 import fake.graphql.example.model.EditResponse;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
@@ -25,21 +24,13 @@ public class EditCustomerListInputAndResponseGeneratedResolver implements EditCu
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var editCustomerListInputAndResponseResult = testCustomerService.editCustomerListInputAndResponse(inputRecordList);
+        var editCustomerListInputAndResponse = testCustomerService.editCustomerListInputAndResponse(inputRecordList);
 
-
-        var editResponseList = new ArrayList<EditResponse>();
-        for (var itEditCustomerListInputAndResponseResult : editCustomerListInputAndResponseResult) {
-            var editResponse = new EditResponse();
-            editResponse.setId(itEditCustomerListInputAndResponseResult.getId());
-            editResponse.setFirstName(itEditCustomerListInputAndResponseResult.getFirstName());
-            editResponse.setEmail(itEditCustomerListInputAndResponseResult.getSecretEmail());
-            editResponseList.add(editResponse);
-        }
+        var editResponseList = transform.editResponseToGraphType(editCustomerListInputAndResponse, "");
 
         return CompletableFuture.completedFuture(editResponseList);
     }

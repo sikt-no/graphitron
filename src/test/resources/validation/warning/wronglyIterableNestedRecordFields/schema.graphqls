@@ -1,10 +1,10 @@
-input EditInputLevel1 @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INPUT_RECORD"}) {
+input EditInputLevel1 @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_RECORD"}) {
   edit2A: [EditInputLevel2A]
-  edit2B: [EditInputLevel2B] @recordField(name: "nameList2")
+  edit2B: [EditInputLevel2B] @field(name: "nameList2")
 }
 
 input EditInputLevel2A {
-  lastName: String! @field(name: "LAST_NAME") @recordField(name: "nameList1")
+  lastName: String! @field(name: "LAST_NAME") @field(name: "nameList1")
 }
 
 input EditInputLevel2B {

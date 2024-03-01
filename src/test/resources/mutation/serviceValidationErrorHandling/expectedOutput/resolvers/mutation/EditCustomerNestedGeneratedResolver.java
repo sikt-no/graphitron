@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerNestedMutationResolver;
 import fake.graphql.example.model.EditCustomerResponse;
 import fake.graphql.example.model.EditInputLevel1;
@@ -24,7 +24,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecord = transform.editInputLevel1ToJOOQRecord(input, "input", "input");
         var editA1Record = new CustomerRecord();
@@ -45,8 +45,8 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
             if (editB != null) {
                 editBRecord = transform.editInputLevel2BToJOOQRecord(editB, "input/editB", "input/editB");
                 var edit3 = editB.getEdit3();
-                edit3RecordList = transform.editInputLevel3ToJOOQRecord(edit3, "input/editB/edit3", "input/editB/edit3");
                 if (edit3 != null) {
+                    edit3RecordList = transform.editInputLevel3ToJOOQRecord(edit3, "input/editB/edit3", "input/editB/edit3");
                     for (int itEdit3Index = 0; itEdit3Index < edit3.size(); itEdit3Index++) {
                         var itEdit3 = edit3.get(itEdit3Index);
                         if (itEdit3 == null) continue;
@@ -59,10 +59,9 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
 
         transform.validate();
 
-        var editCustomerNestedResult = testCustomerService.editCustomerNested(inputRecord, editA1Record, editA2Record, editBRecord, edit3RecordList, edit4RecordList);
+        var editCustomerNested = testCustomerService.editCustomerNested(inputRecord, editA1Record, editA2Record, editBRecord, edit3RecordList, edit4RecordList);
 
-        var editCustomerResponse = new EditCustomerResponse();
-        editCustomerResponse.setId(editCustomerNestedResult.getId());
+        var editCustomerResponse = transform.editCustomerResponseToGraphType(editCustomerNested, "");
 
         return CompletableFuture.completedFuture(editCustomerResponse);
     }

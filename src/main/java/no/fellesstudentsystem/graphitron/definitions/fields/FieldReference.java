@@ -2,9 +2,9 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.sql.*;
 import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;

@@ -1,45 +1,45 @@
 package fake.code.generated.mappers;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.model.EditInput;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import no.fellesstudentsystem.graphitron.records.TestCustomerInputRecord;
+import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
 
 public class EditInputJavaMapper {
-    public static List<TestCustomerInputRecord> toJavaRecord(List<EditInput> editInput, String path,
-                                                             Set<String> arguments, InputTransformer transform) {
+    public static List<TestCustomerRecord> toJavaRecord(List<EditInput> editInput, String path,
+                                                        RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var testCustomerInputRecordList = new ArrayList<TestCustomerInputRecord>();
+        var arguments = transform.getArguments();
+        var testCustomerRecordList = new ArrayList<TestCustomerRecord>();
 
         if (editInput != null) {
             for (var itEditInput : editInput) {
                 if (itEditInput == null) continue;
-                var testCustomerInputRecord = new TestCustomerInputRecord();
+                var testCustomerRecord = new TestCustomerRecord();
+                if (arguments.contains(pathHere + "id")) {
+                    testCustomerRecord.setSomeID(itEditInput.getId());
+                }
+                if (arguments.contains(pathHere + "idList")) {
+                    testCustomerRecord.setSomeListID(itEditInput.getIdList());
+                }
                 var hiddenValue1 = itEditInput.getHiddenValue1();
-                if (hiddenValue1 != null) {
+                if (hiddenValue1 != null && arguments.contains(pathHere + "hiddenValue1")) {
                     if (arguments.contains(pathHere + "hiddenValue1/id")) {
-                        testCustomerInputRecord.setSomeID(hiddenValue1.getId());
+                        testCustomerRecord.setSomeID(hiddenValue1.getId());
                     }
                 }
                 var hiddenValue2 = itEditInput.getHiddenValue2();
-                if (hiddenValue2 != null) {
+                if (hiddenValue2 != null && arguments.contains(pathHere + "hiddenValue2")) {
                     if (arguments.contains(pathHere + "hiddenValue2/id")) {
-                        testCustomerInputRecord.setSomeID(hiddenValue2.getId());
+                        testCustomerRecord.setSomeID(hiddenValue2.getId());
                     }
                 }
-                if (arguments.contains(pathHere + "id")) {
-                    testCustomerInputRecord.setSomeID(itEditInput.getId());
-                }
-                if (arguments.contains(pathHere + "idList")) {
-                    testCustomerInputRecord.setSomeListID(itEditInput.getIdList());
-                }
-                testCustomerInputRecordList.add(testCustomerInputRecord);
+                testCustomerRecordList.add(testCustomerRecord);
             }
         }
 
-        return testCustomerInputRecordList;
+        return testCustomerRecordList;
     }
 }

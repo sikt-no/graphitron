@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerAddressMutationResolver;
 import fake.graphql.example.model.EditAddressInput;
 import fake.graphql.example.model.EditAddressResponse;
@@ -19,20 +19,16 @@ public class EditCustomerAddressGeneratedResolver implements EditCustomerAddress
 
     @Override
     public CompletableFuture<EditAddressResponse> editCustomerAddress(EditAddressInput in,
-            DataFetchingEnvironment env) throws Exception {
+                                                                      DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inRecord = transform.editAddressInputToJOOQRecord(in, "in");
 
-        var editCustomerAddressResult = testCustomerService.editCustomerAddress(inRecord);
+        var editCustomerAddress = testCustomerService.editCustomerAddress(inRecord);
 
-
-        var editAddressResponse = new EditAddressResponse();
-        editAddressResponse.setId(editCustomerAddressResult.getId());
-        editAddressResponse.setAddressId(editCustomerAddressResult.getAddressId());
+        var editAddressResponse = transform.editAddressResponseToGraphType(editCustomerAddress, "");
 
         return CompletableFuture.completedFuture(editAddressResponse);
     }

@@ -19,12 +19,16 @@ import java.util.*;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 public class MutationExceptionStrategyConfigurationGenerator implements ClassGenerator<ObjectDefinition> {
-    private static final String PAYLOAD_FOR_MUTATION_FIELD_NAME = "payloadForMutation";
-    private static final String MUTATIONS_FOR_EXCEPTION_FIELD = "mutationsForException";
+    private static final String
+            PAYLOAD_NAME = "payload",
+            ERRORS_NAME = "errors",
+            PAYLOAD_FOR_MUTATION_FIELD_NAME = PAYLOAD_NAME + "ForMutation",
+            MUTATIONS_FOR_EXCEPTION_FIELD = "mutationsForException";
     private static final ParameterizedTypeName MUTATIONS_FOR_EXCEPTIONS_TYPE =
             ParameterizedTypeName.get(MAP.className, ParameterizedTypeName.get(CLASS.className,
                     WildcardTypeName.subtypeOf(THROWABLE.className)), wrapSet(STRING.className));
@@ -100,16 +104,29 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
     }
 
     private CodeBlock createPayloadForMutationBlock(ObjectField mutation, UpdateContext ctx) {
-        var codeBuilder = CodeBlock.builder();
-        codeBuilder.add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
-                .beginControlFlow("errors ->")
-                .addStatement("var payload = new $T()", processedSchema.getObject(mutation.getTypeName()).getGraphClassName());
+        var codeBuilder = CodeBlock
+                .builder()
+                .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
+                .beginControlFlow("$L ->", ERRORS_NAME)
+                .add(declareVariable(PAYLOAD_NAME, processedSchema.getObject(mutation.getTypeName()).getGraphClassName()));
 
-        ctx.getAllErrors().forEach(errorField -> codeBuilder.addStatement(
-                "payload" + errorField.getMappingFromFieldName().asSetCall("($T<$T>) errors"),
-                LIST.className, processedSchema.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName()));
+        ctx.getAllErrors().forEach(errorField ->
+                codeBuilder.add(
+                        setValue(
+                                PAYLOAD_NAME,
+                                errorField.getMappingFromSchemaName(),
+                                CodeBlock.of(
+                                        "($T<$T>) $N",
+                                        LIST.className,
+                                        processedSchema.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName(),
+                                        ERRORS_NAME
+                                )
+                        )
+                )
+        );
 
-        return codeBuilder.addStatement("return payload")
+        return codeBuilder
+                .add(returnWrap(PAYLOAD_NAME))
                 .endControlFlow(")")
                 .build();
     }
@@ -168,7 +185,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
                 .returns(MUTATIONS_FOR_EXCEPTIONS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addStatement("return $N", MUTATIONS_FOR_EXCEPTION_FIELD)
+                .addCode(returnWrap(MUTATIONS_FOR_EXCEPTION_FIELD))
                 .build();
     }
 
@@ -178,7 +195,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
                 .returns(PAYLOAD_FOR_MUTATIONS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addStatement("return $N", PAYLOAD_FOR_MUTATION_FIELD_NAME)
+                .addCode(returnWrap(PAYLOAD_FOR_MUTATION_FIELD_NAME))
                 .build();
     }
 }

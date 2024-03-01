@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
-import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -11,7 +10,7 @@ import java.util.List;
  * Object that corresponds to a GraphQL type which is referred to by a connection's "edges" field.
  * The behaviour of this class should always reflect the <a href="https://relay.dev/graphql/connections.htm">connections specification</a>.
  */
-public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> {
+public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
     private final String nodeType;
     private final ObjectField cursor;
 

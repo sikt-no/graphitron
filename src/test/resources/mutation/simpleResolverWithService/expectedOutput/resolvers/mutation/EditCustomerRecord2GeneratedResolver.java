@@ -1,56 +1,34 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerRecord2MutationResolver;
-import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.EditResponse2;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class EditCustomerRecord2GeneratedResolver implements EditCustomerRecord2MutationResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
     @Override
     public CompletableFuture<EditResponse2> editCustomerRecord2(List<String> id,
-            DataFetchingEnvironment env) throws Exception {
+                                                                DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var select = new SelectionSet(env.getSelectionSet());
-        var editCustomerRecord2Result = testCustomerService.editCustomerRecord2(id);
-        var editResponse2Customers = getEditResponse2Customers(ctx, editCustomerRecord2Result, select);
+        var transform = new RecordTransformer(env, ctx);
 
-        var editResponse2 = new EditResponse2();
-        editResponse2.setId2(editCustomerRecord2Result.stream().map(itId2 -> itId2.getId()).collect(Collectors.toList()));
-        editResponse2.setCustomers(new ArrayList<>(editResponse2Customers.values()));
+        var editCustomerRecord2 = testCustomerService.editCustomerRecord2(id);
+
+        var editResponse2 = transform.editResponse2ToGraphType(editCustomerRecord2, "");
 
         return CompletableFuture.completedFuture(editResponse2);
-    }
-
-    private Map<String, Customer> getEditResponse2Customers(DSLContext ctx,
-            List<CustomerRecord> idContainer,
-            SelectionSet select) {
-        if (!select.contains("customers") || idContainer == null) {
-            return Map.of();
-        }
-
-        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("customers"));
     }
 }

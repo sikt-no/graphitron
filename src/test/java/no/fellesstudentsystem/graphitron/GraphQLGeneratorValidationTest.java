@@ -5,6 +5,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -22,7 +24,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
             new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
             new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
             new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
-            new ExternalClassReference("TEST_CUSTOMER_INPUT_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerInputRecord")
+            new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord")
     );
     public GraphQLGeneratorValidationTest() {
         super(SRC_TEST_RESOURCES_PATH);
@@ -93,7 +95,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
     void generate_whenMultisetRequireReferenceConditionOnItself_shouldThrowException() {
         assertThatThrownBy(() ->  generateFiles("error/multisetReferenceConditionNotSupported"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("List of type Address requires the @SplitQuery directive to be able to contain @condition in a @reference within a list");
+                .hasMessage(String.format("List of type Address requires the @%s directive to be able to contain @%s in a @%s within a list", GenerationDirective.SPLIT_QUERY.getName(), GenerationDirectiveParam.CONDITION.getName(), GenerationDirective.REFERENCE.getName()));
     }
 
     @Test

@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
-import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -12,6 +11,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_QUERY;
 
@@ -21,10 +21,11 @@ import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_R
  * Objects which do not fall within a different object category will become instances of this class.
  * This is typically the only object type used in table referencing and joining operations.
  */
-public class ObjectDefinition extends AbstractTableObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> implements GenerationTarget {
+public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinition, ObjectField> implements GenerationTarget {
     private final boolean isGenerated, isRoot;
     private final LinkedHashSet<String> implementsInterfaces;
     private final ObjectTypeDefinition objectTypeDefinition;
+    private final boolean explicitlyNotGenerated;
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
@@ -35,6 +36,11 @@ public class ObjectDefinition extends AbstractTableObjectDefinition<ObjectTypeDe
                 .map(it -> ((TypeName) it).getName())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         objectTypeDefinition = objectDefinition;
+        explicitlyNotGenerated = objectDefinition.hasDirective(NOT_GENERATED.getName());
+    }
+
+    public boolean isExplicitlyNotGenerated() {
+        return explicitlyNotGenerated;
     }
 
     @Override

@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import graphql.language.EnumTypeDefinition;
-import graphql.language.EnumValueDefinition;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.EnumField;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
@@ -14,7 +13,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ENUM
 /**
  * Representation of a GraphQL enum type.
  */
-public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumValueDefinition, EnumField> {
+public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumField> {
     private final CodeReference enumReference;
 
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {

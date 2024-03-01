@@ -10,6 +10,6 @@ public class ReflectionHelpers {
      * @return Does this jOOQ table contain this method name?
      */
     public static boolean classHasMethod(Class<?> reference, String methodName) {
-        return Arrays.stream(reference.getMethods()).anyMatch(it -> it.getName().equals(methodName));
+        return reference != null && Arrays.stream(reference.getMethods()).anyMatch(it -> it.getName().equals(methodName));
     }
 }

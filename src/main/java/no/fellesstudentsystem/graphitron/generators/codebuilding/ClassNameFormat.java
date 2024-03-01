@@ -9,7 +9,7 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
  * Helper methods for handling javapoet TypeNames.
  */
 public class ClassNameFormat {
-    private static final TypeName stringSetClassName = ParameterizedTypeName.get(SET.className, STRING.className);
+    private static final ParameterizedTypeName stringSetClassName = ParameterizedTypeName.get(SET.className, STRING.className);
 
     /**
      * @return The type wrapped in a List ParameterizedTypeName, if the boolean condition is true.
@@ -35,42 +35,42 @@ public class ClassNameFormat {
     /**
      * @return The type wrapped in a List ParameterizedTypeName.
      */
-    public static TypeName wrapList(TypeName type) {
+    public static ParameterizedTypeName wrapList(TypeName type) {
         return ParameterizedTypeName.get(LIST.className, type);
     }
 
     /**
      * @return The type wrapped in a Set ParameterizedTypeName.
      */
-    public static TypeName wrapSet(TypeName type) {
+    public static ParameterizedTypeName wrapSet(TypeName type) {
         return ParameterizedTypeName.get(SET.className, type);
     }
 
     /**
      * @return The type wrapped in a CompletableFuture ParameterizedTypeName.
      */
-    public static TypeName wrapFuture(TypeName type) {
+    public static ParameterizedTypeName wrapFuture(TypeName type) {
         return ParameterizedTypeName.get(COMPLETABLE_FUTURE.className, type);
     }
 
     /**
      * @return The type wrapped in a Map ParameterizedTypeName with String as key.
      */
-    public static TypeName wrapStringMap(TypeName type) {
+    public static ParameterizedTypeName wrapStringMap(TypeName type) {
         return ParameterizedTypeName.get(MAP.className, STRING.className, type);
     }
 
     /**
      * @return The type wrapped in a Map ParameterizedTypeName with key.
      */
-    public static TypeName wrapMap(TypeName key, TypeName type) {
+    public static ParameterizedTypeName wrapMap(TypeName key, TypeName type) {
         return ParameterizedTypeName.get(MAP.className, key, type);
     }
 
     /**
      * @return The ParameterizedTypeName for a Set of Strings.
      */
-    public static TypeName getStringSetTypeName() {
+    public static ParameterizedTypeName getStringSetTypeName() {
         return stringSetClassName;
     }
 }

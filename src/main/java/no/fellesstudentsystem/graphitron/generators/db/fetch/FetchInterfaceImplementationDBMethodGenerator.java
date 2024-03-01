@@ -10,6 +10,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 
@@ -20,7 +21,9 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.RECORD2;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
 
 /**
@@ -44,7 +47,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         var implementationTableObject = implementation.getTable();
         if(implementationTableObject == null) {
             var interfaceName = interfacesReturnedByObjectField.containsKey(target) ? interfacesReturnedByObjectField.get(target).getName() : "";
-            throw new IllegalArgumentException(String.format("Type %s needs to have the @table directive set to be able to implement interface %s", implementation.getName(), interfaceName));
+            throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), interfaceName));
         }
 
         ObjectField implementationReference = new ObjectField(new FieldDefinition(getLocalObject().getName(),
@@ -91,7 +94,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 wrapStringMap(implementation.getGraphClassName())
         )
                 .addParameter(getStringSetTypeName(), argumentName)
-                .addParameter(SELECTION_SET.className, SELECTION_NAME)
+                .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
                 .addCode(code.build())
                 .build();
     }

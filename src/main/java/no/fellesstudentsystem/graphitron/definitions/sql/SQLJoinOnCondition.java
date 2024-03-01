@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
+
 import java.util.List;
 
 /**

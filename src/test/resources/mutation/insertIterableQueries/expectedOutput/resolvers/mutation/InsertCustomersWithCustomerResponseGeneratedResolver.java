@@ -2,7 +2,7 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.InsertCustomersWithCustomerResponseDBQueries;
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.InsertCustomersWithCustomerResponseMutationResolver;
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.EditResponseWithCustomer;
@@ -38,7 +38,7 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.insertInputToJOOQRecord(input, "input");
 
@@ -61,7 +61,6 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
             return Map.of();
         }
 
-        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("customer"));
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

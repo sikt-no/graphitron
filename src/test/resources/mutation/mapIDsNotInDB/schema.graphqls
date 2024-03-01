@@ -7,7 +7,7 @@ input EditAddressInput @table(name: "CUSTOMER") {
   addressId: ID! @field(name: "ADDRESS_ID")
 }
 
-type EditAddressResponse {
+type EditAddressResponse @record(record: {name: "TEST_CUSTOMER_ADDRESS_RESPONSE"}) {
   id: ID!
   addressId: ID!
 }

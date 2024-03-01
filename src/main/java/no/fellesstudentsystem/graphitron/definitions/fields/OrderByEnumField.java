@@ -26,7 +26,7 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
         super(field);
         indexName = getOptionalDirectiveArgumentString(field, INDEX, NAME)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        String.format("Expected enum field '%s' of '%s' to have an '@index(name : ...)' directive, but no such directive was found", field.getName(), enumTypeDefinition.getName())));
+                        String.format("Expected enum field '%s' of '%s' to have an '@%s(name : ...)' directive, but no such directive was found", field.getName(), enumTypeDefinition.getName(), INDEX.getName())));
     }
 
     /**

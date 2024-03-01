@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.EditFilmRatingNoConverterDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditFilmRatingNoConverterMutationResolver;
 import fake.graphql.example.model.FilmInput1;
 import fake.graphql.example.model.Response;
@@ -25,7 +25,7 @@ public class EditFilmRatingNoConverterGeneratedResolver implements EditFilmRatin
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecord = transform.filmInput1ToJOOQRecord(input, "input");
 

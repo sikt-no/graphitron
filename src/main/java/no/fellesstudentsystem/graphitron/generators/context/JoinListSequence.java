@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
+
 /**
  * A list of table or key references.
  */
@@ -41,7 +43,7 @@ public class JoinListSequence extends LinkedList<JoinElement> {
                 if (element.clearsPreviousSequence()) {
                     code.clear().add(element.getMappingName());
                 } else {
-                    code.add(FormatCodeBlocks.asMethodCall(element.getCodeName()));
+                    code.add(asMethodCall(element.getCodeName()));
                 }
 
                 if (element.equals(limitElement)) {

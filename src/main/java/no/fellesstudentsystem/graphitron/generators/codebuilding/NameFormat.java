@@ -10,7 +10,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
-import static org.apache.commons.lang3.StringUtils.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Helper methods for formatting names.
@@ -19,12 +20,16 @@ public class NameFormat {
     public static final String
             VARIABLE_COUNT_PREFIX = "count",
             VARIABLE_GET_PREFIX = "get",
-            VARIABLE_RESULT_SUFFIX = "Result",
+            VARIABLE_RESULT_SUFFIX = "",
             VARIABLE_LIST_SUFFIX = "List",
             VARIABLE_ITERATE_PREFIX = "it",
             RECORD_NAME_SUFFIX = "Record",
+            INDEX_NAME_SUFFIX = "Index",
             RECORD_TRANSFORM_SUFFIX = "ToJOOQ" + RECORD_NAME_SUFFIX,
-            RECORD_JAVA_TRANSFORM_SUFFIX = "ToJava" + RECORD_NAME_SUFFIX,
+            RECORD_TRANSFORM_JAVA_SUFFIX = "ToJava" + RECORD_NAME_SUFFIX,
+            RESPONSE_TRANSFORM_SUFFIX = "ToGraphType",
+            RESPONSE_TRANSFORM_JOOQ_SUFFIX = RECORD_NAME_SUFFIX + RESPONSE_TRANSFORM_SUFFIX,
+            RESPONSE_TRANSFORM_JAVA_SUFFIX = RESPONSE_TRANSFORM_SUFFIX,
             VALIDATE_PREFIX = "validate";
 
     /**
@@ -55,8 +60,8 @@ public class NameFormat {
      * @return Inputs formatted as a get call.
      */
     @NotNull
-    public static String asGetMethodName(String source, String field) {
-        return VARIABLE_GET_PREFIX + capitalize(source) + capitalize(field);
+    public static String asGetMethodName(String field, String type) {
+        return VARIABLE_GET_PREFIX + capitalize(field) + capitalize(type);
     }
 
     /**
@@ -79,8 +84,11 @@ public class NameFormat {
      * @return Name formatted as a record mapper class name.
      */
     @NotNull
-    public static String asRecordMapperClass(String s, boolean isJavaRecord) {
-        return capitalize(s) + (isJavaRecord ? JavaRecordMapperClassGenerator.FILE_NAME_SUFFIX : RecordMapperClassGenerator.FILE_NAME_SUFFIX);
+    public static String asRecordMapperClass(String s, boolean isJavaRecord, boolean isInput) {
+        if (isInput) {
+            return capitalize(s) + (isJavaRecord ? JavaRecordMapperClassGenerator.FILE_NAME_TO_SUFFIX : RecordMapperClassGenerator.FILE_NAME_TO_SUFFIX);
+        }
+        return capitalize(s) + (isJavaRecord ? JavaRecordMapperClassGenerator.FILE_NAME_FROM_SUFFIX : RecordMapperClassGenerator.FILE_NAME_FROM_SUFFIX);
     }
 
     /**
@@ -132,19 +140,33 @@ public class NameFormat {
     }
 
     /**
+     * @return Format this string as an index naming pattern.
+     */
+    @NotNull
+    public static String asIndexName(String s) {
+        return uncapitalize(s) + INDEX_NAME_SUFFIX;
+    }
+
+    /**
      * @return Format this string as a record transform method naming pattern.
      */
     @NotNull
-    public static String recordTransformMethod(String s, boolean isJavaRecord) {
-        return uncapitalize(s) + (isJavaRecord ? RECORD_JAVA_TRANSFORM_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+    public static String recordTransformMethod(String s, boolean isJavaRecord, boolean isInput) {
+        if (isInput) {
+            return uncapitalize(s) + (isJavaRecord ? RECORD_TRANSFORM_JAVA_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+        }
+        return uncapitalize(s) + (isJavaRecord ? RESPONSE_TRANSFORM_JAVA_SUFFIX : RESPONSE_TRANSFORM_JOOQ_SUFFIX);
     }
 
     /**
      * @return Format a record transform method naming pattern.
      */
     @NotNull
-    public static String recordTransformMethod(boolean isJavaRecord) {
-        return uncapitalize(isJavaRecord ? RECORD_JAVA_TRANSFORM_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+    public static String recordTransformMethod(boolean isJavaRecord, boolean isInput) {
+        if (isInput) {
+            return uncapitalize(isJavaRecord ? RECORD_TRANSFORM_JAVA_SUFFIX : RECORD_TRANSFORM_SUFFIX);
+        }
+        return uncapitalize(isJavaRecord ? RESPONSE_TRANSFORM_JAVA_SUFFIX : RESPONSE_TRANSFORM_JOOQ_SUFFIX);
     }
 
     /**

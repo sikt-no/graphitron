@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -97,14 +99,14 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     void generate_queryWithPaginationAndOrderBy_whenMissingIndexDirective_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/queryWithOrderByWithMissingIndexReference"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Expected enum field 'TITLE' of 'FilmOrderByField' to have an '@index(name : ...)' directive, but no such directive was found");
+                .hasMessage(String.format("Expected enum field 'TITLE' of 'FilmOrderByField' to have an '@%s(%s : ...)' directive, but no such directive was found", GenerationDirective.INDEX.getName(), GenerationDirectiveParam.NAME.getName()));
     }
 
     @Test
     void generate_queryWithSortingCombinedWithLookupKey_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/queryWithOrderByAndLookUp"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("'films' has both @orderBy and @lookupKey defined. These directives can not be used together");
+                .hasMessage(String.format("'films' has both @%s and @%s defined. These directives can not be used together", GenerationDirective.ORDER_BY.getName(), GenerationDirective.LOOKUP_KEY.getName()));
     }
 
     @Test
@@ -213,7 +215,7 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     void generate_whenImplementsNodeWithoutTable_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implementsNodeWithoutTable"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Type Film needs to have the @table directive set to be able to implement interface Node");
+                .hasMessage(String.format("Type Film needs to have the @%s directive set to be able to implement interface Node", GenerationDirective.TABLE.getName()));
     }
     @Test
     void generate_simpleInterfaceWithoutTable_shouldNotThrowException() {

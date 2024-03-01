@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.UpsertCustomerInputDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.UpsertCustomerInputMutationResolver;
 import fake.graphql.example.model.UpsertInput;
 import graphql.schema.DataFetchingEnvironment;
@@ -27,7 +27,7 @@ public class UpsertCustomerInputGeneratedResolver implements UpsertCustomerInput
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.upsertInputToJOOQRecord(input, "input");
 

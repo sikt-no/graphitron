@@ -1,12 +1,10 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.TypeName;
-import graphql.language.DirectivesContainer;
-import graphql.language.NamedNode;
 import graphql.language.TypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.helpers.ClassReference;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecification;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 
 import java.util.ArrayList;
@@ -22,25 +20,32 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
  * A generalized implementation of {@link ObjectSpecification}.
  * Contains functionality that is common between the different kinds of GraphQL objects.
  */
-public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, F extends NamedNode<F> & DirectivesContainer<F>, U extends AbstractField<F>> implements ObjectSpecification {
+public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U extends FieldSpecification> implements ObjectSpecification {
     private final String name;
-    private final TypeName graphClassName;
+    private final ClassReference graphClass;
     private final LinkedHashMap<String, U> fieldsByName;
     private final T objectDefinition;
 
     public AbstractObjectDefinition(T objectDefinition) {
         this.objectDefinition = objectDefinition;
         name = objectDefinition.getName();
-        graphClassName = ClassName.get(GeneratorConfig.generatedModelsPackage(), capitalize(name));
-        fieldsByName = createFields(objectDefinition).stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
+        graphClass = new ClassReference(capitalize(name), GeneratorConfig.generatedModelsPackage());
+        fieldsByName = createFields(objectDefinition).stream().collect(Collectors.toMap(FieldSpecification::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
     }
 
+    @Override
     public String getName() {
         return name;
     }
 
-    public TypeName getGraphClassName() {
-        return graphClassName;
+    @Override
+    public Class<?> getClassReference() {
+        return graphClass.getReferenceClass();
+    }
+
+    @Override
+    public ClassName getGraphClassName() {
+        return graphClass.getClassName();
     }
 
     protected abstract List<U> createFields(T objectDefinition);
@@ -74,7 +79,7 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, F ex
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof AbstractObjectDefinition)) return false;
-        AbstractObjectDefinition<?, ?, ?> that = (AbstractObjectDefinition<?, ?, ?>) o;
+        AbstractObjectDefinition<?, ?> that = (AbstractObjectDefinition<?, ?>) o;
         return Objects.equals(getName(), that.getName());
     }
 

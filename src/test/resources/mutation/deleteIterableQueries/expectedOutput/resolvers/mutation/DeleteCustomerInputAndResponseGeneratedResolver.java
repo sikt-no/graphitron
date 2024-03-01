@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.DeleteCustomerInputAndResponseDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.DeleteCustomerInputAndResponseMutationResolver;
 import fake.graphql.example.model.DeleteInput;
 import fake.graphql.example.model.DeleteResponse;
@@ -28,7 +28,7 @@ public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCu
             List<DeleteInput> input, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 

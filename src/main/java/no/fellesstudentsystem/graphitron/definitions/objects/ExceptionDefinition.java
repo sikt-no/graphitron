@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
-import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -9,12 +8,12 @@ import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ERROR;
 
 /**
  * Represents the default GraphQL object, parsed as an exception type.
  */
-public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, FieldDefinition, ObjectField> {
+public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
     private final boolean isGenerated;
     private final CodeReference exceptionReference;
 

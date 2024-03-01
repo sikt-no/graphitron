@@ -3,15 +3,12 @@ package no.fellesstudentsystem.graphitron.definitions.helpers;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import org.jetbrains.annotations.NotNull;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.Arrays;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 
@@ -19,41 +16,28 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNam
  * Class that contains extended information about a mutation service.
  */
 public class ServiceWrapper {
-    private final boolean returnIsIterable, returnTypeInService;
-    private final Class<?> returnType;
+    private final boolean returnsJavaRecord;
+    private final Class<?> service, returnType;
     private final Method method;
-    private final int paramCount;
-    private final String serviceName, packageName;
     private final TypeName returnTypeName;
-    private final Set<Class<?>> internalClasses;
+    private final ClassName serviceClassName;
 
-    public ServiceWrapper(CodeReference reference, int paramCount) {
+    public ServiceWrapper(ObjectField field, ProcessedSchema processedSchema) {
+        var reference = field.getServiceReference();
         var references = GeneratorConfig.getExternalReferences();
-        var service = references.getClassFrom(reference);
+        service = references.getClassFrom(reference);
         method = references.getNullableMethodFrom(reference);
+        serviceClassName = ClassName.get(service);
 
-        this.paramCount = paramCount;
-        returnIsIterable = method != null && method.getReturnType().getName().equals("java.util.List");
-        serviceName = service.getSimpleName();
-        packageName = service.getPackageName();
-
-        returnType = method != null ? extractType(method.getGenericReturnType()) : null;
-        if (returnType != null) {
-            returnTypeInService = returnType.getEnclosingClass() == service;
-            returnTypeName = getServiceReturnClassName(returnType, returnIsIterable);
+        var response = processedSchema.getObject(field);
+        returnsJavaRecord = response != null && response.hasJavaRecordReference();
+        if (returnsJavaRecord) {
+            returnType = response.getRecordReference();
+            returnTypeName = response.getRecordClassName();
         } else {
-            returnTypeInService = false;
-            returnTypeName = null;
+            returnType = method != null ? extractType(method.getGenericReturnType()) : null;
+            returnTypeName = (returnType != null) ? wrapListIf(ClassName.get(returnType), field.isIterableWrapped()) : null;
         }
-        internalClasses = Arrays.stream(service.getClasses()).collect(Collectors.toSet());
-    }
-
-    /**
-     * @return The name for the result type for a query method call.
-     */
-    @NotNull
-    public static TypeName getServiceReturnClassName(Class<?> serviceReturnType, boolean isIterable) {
-        return wrapListIf(ClassName.get(serviceReturnType), isIterable);
     }
 
     /**
@@ -65,24 +49,10 @@ public class ServiceWrapper {
     }
 
     /**
-     * @return Is the return type of this service method iterable?
-     */
-    public boolean returnIsIterable() {
-        return returnIsIterable;
-    }
-
-    /**
      * @return Is the return type of this method located within this method's service class? Used for special return classes.
      */
-    public boolean isReturnTypeInService() {
-        return returnTypeInService;
-    }
-
-    /**
-     * @return Number of parameters for this service method.
-     */
-    public int getParamCount() {
-        return paramCount;
+    public boolean returnsJavaRecord() {
+        return returnsJavaRecord;
     }
 
     /**
@@ -100,17 +70,17 @@ public class ServiceWrapper {
     }
 
     /**
-     * @return The name of the class that the service method is located in.
+     * @return Reference of the class that the service method is located in.
      */
-    public String getServiceName() {
-        return serviceName;
+    public Class<?> getService() {
+        return service;
     }
 
     /**
-     * @return The package of the class that the service method is located in.
+     * @return Javapoet classname of the service.
      */
-    public String getPackageName() {
-        return packageName;
+    public ClassName getServiceClassName() {
+        return serviceClassName;
     }
 
     /**
@@ -118,12 +88,5 @@ public class ServiceWrapper {
      */
     public TypeName getReturnTypeName() {
         return returnTypeName;
-    }
-
-    /**
-     * @return Set of classes that are contained within this service method's class.
-     */
-    public Set<Class<?>> getInternalClasses() {
-        return internalClasses;
     }
 }

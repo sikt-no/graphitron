@@ -8,26 +8,35 @@ import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
+import javax.lang.model.element.Modifier;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMapIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
+import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
- * This class generates the resolvers for update queries with the mutationType directive set.
+ * This class generates the resolvers for update queries with the {@link GenerationDirective#MUTATION} directive set.
  */
 public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGenerator {
-    private static final String VARIABLE_ROWS = "rowsUpdated", VARIABLE_SELECT = "select";
+    private static final String
+            VARIABLE_ROWS = "rowsUpdated",
+            VARIABLE_GET_PARAM = "idContainer";
 
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
@@ -49,23 +58,22 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         var objectToCall = asQueryClass(target.getName());
         dependencySet.add(new QueryDependency(capitalize(objectToCall), UpdateDBClassGenerator.SAVE_DIRECTORY_NAME));
 
-        return CodeBlock
-                .builder()
-                .addStatement(
-                        "var $L = $N.$L($N, $L)",
-                        !context.hasService() ? VARIABLE_ROWS : asResultName(target.getUnprocessedNameInput()),
+        return declare(
+                !context.hasService() ? VARIABLE_ROWS : asResultName(target.getUnprocessedFieldOverrideInput()),
+                CodeBlock.of("$N.$L($N, $L)",
                         uncapitalize(objectToCall),
-                        target.getName(),
+                        target.getName(), // Method name is expected to be the field's name.
                         VariableNames.CONTEXT_NAME,
                         context.getServiceInputString()
-                ) // Method name is expected to be the field's name.
-                .build();
+                )
+        );
     }
 
     /**
      * @return Code that both fetches record data and creates the appropriate response objects.
      */
-    protected CodeBlock generateResponsesAndGetCalls(ObjectField target) {
+    @Override
+    protected CodeBlock generateResponses(ObjectField target) {
         var code = CodeBlock.builder();
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
             return code.build();
@@ -75,7 +83,8 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                 ? CodeBlock.of("$L", getIDMappingCode(target, target))
                 : CodeBlock.of("$N", getResolverResultName(target));
         return code
-                .add(super.generateResponsesAndGetCalls(target))
+                .add(generateGetCalls(target, target, 0))
+                .add(generateResponses(target, target, 0))
                 .add(returnCompletedFuture(returnValue))
                 .build();
     }
@@ -87,9 +96,8 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     protected CodeBlock generateGetCalls(ObjectField target, ObjectField previous, int recursion) {
         recursionCheck(recursion);
 
-        var code = CodeBlock.builder();
         if (!processedSchema.isObject(target)) {
-            return code.build();
+            return empty();
         }
 
         var responseObject = processedSchema.getObject(target);
@@ -100,26 +108,20 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             argumentName = asListedRecordNameIf(matchingRecord.getName(), matchingRecord.isIterableWrapped());
             variableName = asRecordName(matchingRecord.getName());
         } else {
-            argumentName = asResultName(previous.getUnprocessedNameInput());
+            argumentName = asResultName(previous.getMappingFromFieldOverride().getName());
             variableName = previous.getTypeName();
         }
         if (responseObject.implementsInterface(NODE_TYPE.getName())) {
-            return code
-                    .addStatement(
-                            "var $L = $N($N, $N, $N)",
-                            asGetMethodVariableName(variableName, target.getName()),
-                            asGetMethodName(previous.getTypeName(), target.getName()),
-                            VariableNames.CONTEXT_NAME,
-                            argumentName,
-                            VARIABLE_SELECT
-                    )
-                    .build();
+            return declare(
+                    asGetMethodVariableName(variableName, target.getName()),
+                    CodeBlock.of("$N($N, $N, $N)", asGetMethodName(previous.getTypeName(), target.getName()), VariableNames.CONTEXT_NAME, argumentName, VARIABLE_SELECT)
+            );
         }
 
+        var code = CodeBlock.builder();
         responseObject
                 .getFields()
                 .forEach(field -> code.add(generateGetCalls(field, target, recursion + 1)));
-
         return code.build();
     }
 
@@ -137,35 +139,41 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             return empty();
         }
 
-        var record = findUsableRecord(target);
         var targetTypeName = target.getTypeName();
-        var responseObject = processedSchema.getObject(targetTypeName);
-        var responseClassName = responseObject.getGraphClassName();
-        var code = CodeBlock.builder().add("\n");
-        var surroundWithFor = (target != previous || target.isIterableWrapped()) && record.isIterableWrapped();
-        if (surroundWithFor) {
-            var recordName = asListedRecordName(record.getName());
-            code
-                    .add(declareArrayList(targetTypeName, responseClassName))
-                    .beginControlFlow("for (var $L : $N)", asIterable(recordName), recordName);
-        }
-
-        var targetTypeNameLower = uncapitalize(targetTypeName);
-        code.add(declareVariable(targetTypeNameLower, responseClassName));
-
-        for (var field : responseObject.getFields()) {
-            if (!field.getMappingFromFieldName().getName().equalsIgnoreCase("Errors")) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
+        var object = processedSchema.getObject(targetTypeName);
+        var responseClassName = object.getGraphClassName();
+        var code = CodeBlock
+                .builder()
+                .add("\n")
+                .add(declareVariable(targetTypeName, responseClassName));
+        for (var field : object.getFields()) {
+            if (!field.getMappingFromFieldOverride().getName().equalsIgnoreCase("Errors")) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
                 code
                         .add(generateResponses(field, target, recursion + 1))
                         .add(mapToSetCall(field, target));
             }
         }
 
-        if (surroundWithFor) {
-            code.add(addToList(asListedName(targetTypeName), targetTypeNameLower)).endControlFlow();
+        var record = findUsableRecord(target);
+        if ((target != previous || target.isIterableWrapped()) && record.isIterableWrapped()) {
+            var recordName = asListedRecordName(record.getName());
+            return CodeBlock
+                    .builder()
+                    .add(declareArrayList(targetTypeName, responseClassName))
+                    .add(wrapFor(recordName, code.add(addToList(targetTypeName)).build()))
+                    .build();
         }
-
         return code.build();
+    }
+
+    /**
+     * @return Can this field's content be iterated through and mapped by usual means?
+     * True if it points to an object and if it does not point to an exception type or node type.
+     */
+    private boolean fieldIsMappable(ObjectField target) {
+        return processedSchema.isObject(target)
+                && !processedSchema.isExceptionOrExceptionUnion(target)
+                && !processedSchema.implementsNode(target);
     }
 
     /**
@@ -188,51 +196,104 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                 .builder()
                 .add("\n")
                 .add(declareArrayList(targetTypeName, processedSchema.getObject(targetTypeName).getGraphClassName()))
-                .beginControlFlow("for (var $L : $N)", asIterable(recordName), recordName)
                 .add(
-                        addToList(
-                                asListedName(targetTypeName),
-                                CodeBlock.of("$N.get($N.getId())", getVariable, asIterable(asListedRecordName(record.getName())))
+                        wrapFor(
+                                recordName,
+                                addToList(
+                                        asListedName(targetTypeName),
+                                        CodeBlock.of("$N.get($N.getId())", getVariable, asIterable(asListedRecordName(record.getName())))
+                                )
                         )
                 )
-                .endControlFlow()
                 .build();
-    }
-
-    private InputField findUsableRecord(ObjectField target) {
-        var responseObject = processedSchema.getObject(target);
-        return responseObject.hasTable()
-                ? findMatchingInputRecord(responseObject.getTable().getMappingName())
-                : findFirstRecord();
-    }
-
-    private InputField findFirstRecord() { // In practice this supports only one record type at once.
-        return context
-                .getTableInputs()
-                .entrySet()
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
-                .getValue();
     }
 
     /**
      * @return Code for any set method calls for this response object.
      */
     private CodeBlock mapToSetCall(ObjectField field, ObjectField previousField) {
-        var previousTypeNameLower = uncapitalize(previousField.getTypeName());
+        var content = getSetCallContent(field, previousField);
+        if (content.isEmpty()) {
+            return empty();
+        }
+
+        return setValue(uncapitalize(previousField.getTypeName()), field.getMappingFromSchemaName(), content);
+    }
+
+    /**
+     * @return The code for any service get helper methods to be made for this schema tree.
+     */
+    @NotNull
+    private List<MethodSpec> generateGetMethod(ObjectField target, ObjectField previous, String path) {
+        if (!processedSchema.isObject(target)) {
+            return List.of();
+        }
+
+        if (!processedSchema.implementsNode(target)) {
+            return processedSchema
+                    .getObject(target)
+                    .getFields()
+                    .stream()
+                    .flatMap(field -> generateGetMethod(field, target, (path.isEmpty() ? "" : path + "/") + field.getName()).stream())
+                    .collect(Collectors.toList());
+        }
+
+        var type = processedSchema.getObject(target);
+        var previousIsIterable = previousIsIterable(target, previous);
+        var methodCode = createGetMethodCode(target, path, !processedSchema.isJavaRecordType(previous), previousIsIterable);
+
+        var methodParameter = wrapListIf(processedSchema.getInputType(findMatchingInputRecord(type.getTable().getMappingName())).getRecordClassName(), previousIsIterable);
+        return List.of(
+                MethodSpec
+                        .methodBuilder(asGetMethodName(previous.getTypeName(), target.getName()))
+                        .addModifiers(Modifier.PRIVATE)
+                        .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME)
+                        .addParameter(methodParameter, VARIABLE_GET_PARAM)
+                        .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
+                        .returns(wrapStringMapIf(type.getGraphClassName(), previousIsIterable))
+                        .addCode(methodCode)
+                        .build()
+        );
+    }
+
+    /**
+     * @return The code for a get helper method for a node type.
+     */
+    @NotNull
+    private CodeBlock createGetMethodCode(ObjectField field, String path, boolean returnTypeIsRecord, boolean isIterable) {
+        dependencySet.add(new QueryDependency(asQueryClass(field.getTypeName()), SAVE_DIRECTORY_NAME));
+        var pathHere = path.isEmpty() ? field.getName() : path;
+        return CodeBlock
+                .builder()
+                .beginControlFlow("if (!$N.contains($S) || $N == null)", VARIABLE_SELECT, pathHere, VARIABLE_GET_PARAM)
+                .add(returnWrap(isIterable ? mapOf() : CodeBlock.of("null")))
+                .endControlFlow().add("\n")
+                .add(returnWrap(getNodeQueryCallBlock(field, VARIABLE_GET_PARAM, CodeBlock.of("$S", pathHere), !returnTypeIsRecord, isIterable, false)))
+                .build();
+    }
+
+    private boolean previousIsIterable(ObjectField target, ObjectField previous) {
+        if (context.hasService()) {
+            var service = context.getService();
+            return previous.isIterableWrapped() || previous == localField && !service.returnsJavaRecord() && target.isIterableWrapped();
+        } else {
+            return findMatchingInputRecord(processedSchema.getObject(target).getTable().getMappingName()).isIterableWrapped();
+        }
+    }
+
+    private CodeBlock getSetCallContent(ObjectField field, ObjectField previousField) {
+        if (processedSchema.implementsNode(field)) {
+            return getNodeSetContent(field);
+        }
 
         if (processedSchema.isObject(field)) {
-            return mapToObjectSetCall(field, previousField);
+            return getIterableMapCode(field);
         }
 
         if (!context.mutationReturnsNodes() && field.isID()) {
-            return CodeBlock
-                    .builder()
-                    .add("$N", previousTypeNameLower)
-                    .addStatement(field.getMappingFromFieldName().asSetCall("$L"), getIDMappingCode(field, previousField))
-                    .build();
+            return getIDMappingCode(field, previousField);
         }
+
         return empty();
     }
 
@@ -244,7 +305,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                 .filter(InputField::isID)
                 .findFirst();
 
-        boolean isIterable = field.isIterableWrapped(), shouldMap;
+        boolean isIterable = field.isIterableWrapped(), shouldMap = true;
         String idSource;
         if (inputSource.isPresent()) {
             var source = inputSource.get();
@@ -259,14 +320,13 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                     .filter(it -> processedSchema.getInputType(it.getValue()).getFields().stream().anyMatch(InputField::isID))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("Could not find a suitable ID to return for '" + containerField.getName() + "'."));
-            shouldMap = true;
             idSource = asIterableIf(recordSource.getKey(), containerField.isIterableWrapped() && processedSchema.isObject(containerField));
         }
 
         var code = CodeBlock.builder().add("$N", idSource);
         if (shouldMap) {
             if (isIterable) {
-                code.add(".stream().map(it -> it.getId())").add(collectToList());
+                code.add(".stream().map(it -> it.getId())$L", collectToList());
             } else {
                 code.add(".getId()");
             }
@@ -275,50 +335,65 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         return code.build();
     }
 
-    private CodeBlock mapToObjectSetCall(ObjectField field, ObjectField previousField) {
-        var code = CodeBlock.builder().add("$N", uncapitalize(previousField.getTypeName()));
-
-        var fieldObject = processedSchema.getObject(field);
-        if (fieldObject.implementsInterface(NODE_TYPE.getName())) {
-            return code.add(mapToNodeSetCall(field)).build();
-        }
-
+    @NotNull
+    private CodeBlock getIterableMapCode(ObjectField field) {
         var recordInputs = context.getTableInputs();
+        var fieldObject = processedSchema.getObject(field);
         var recordIterable = recordInputs.size() == 1 && recordInputs.entrySet().stream().findFirst().get().getValue().isIterableWrapped(); // In practice this supports only one record type at once. Can't map to types that are not records.
 
         var inputSource = !fieldObject.hasTable()
                 ? field.getTypeName()
                 : asGetMethodVariableName(asRecordName(findMatchingInputRecord(fieldObject.getTable().getMappingName()).getName()), field.getName());
 
-        CodeBlock iterableMapCode;
         if (recordIterable == field.isIterableWrapped()) {
-            iterableMapCode = CodeBlock.of("$N", asListedNameIf(inputSource, field.isIterableWrapped()));
-        } else if (!recordIterable && field.isIterableWrapped()) {
-            iterableMapCode = listOf(uncapitalize(inputSource));
-        } else {
-            iterableMapCode = CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf());
+            return CodeBlock.of("$N", asListedNameIf(inputSource, field.isIterableWrapped()));
         }
-
-        return code.addStatement(field.getMappingFromFieldName().asSetCall("$L"), iterableMapCode).build();
+        if (!recordIterable && field.isIterableWrapped()) {
+            return listOf(uncapitalize(inputSource));
+        }
+        return CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf());
     }
 
-    private CodeBlock mapToNodeSetCall(ObjectField field) {
+    private CodeBlock getNodeSetContent(ObjectField field) {
         var record = findUsableRecord(field);
         var getVariable = asGetMethodVariableName(asRecordName(record.getName()), field.getName());
 
-        var setContent = CodeBlock.builder();
-        if (record.isIterableWrapped() && field.isIterableWrapped()) {
-            setContent.add("$N", asListedName(field.getTypeName()));
-        } else if (record.isIterableWrapped()) {
-            setContent.add("$N.get($N.getId())", getVariable, asIterable(asListedRecordName(record.getName())));
-        } else {
-            setContent.add("$N", getVariable);
+        if (!record.isIterableWrapped()) {
+            return CodeBlock.of("$N", getVariable);
         }
 
-        return CodeBlock
-                .builder()
-                .addStatement(field.getMappingFromFieldName().asSetCall("$L"), setContent.build())
-                .build();
+        if (field.isIterableWrapped()) {
+            return CodeBlock.of("$N", asListedName(field.getTypeName()));
+        }
+
+        return CodeBlock.of("$N.get($N.getId())", getVariable, asIterable(asListedRecordName(record.getName())));
+    }
+
+    private InputField findUsableRecord(ObjectField target) {
+        var responseObject = processedSchema.getObject(target);
+        return responseObject.hasTable()
+                ? findMatchingInputRecord(responseObject.getTable().getMappingName())
+                : context
+                .getTableInputs()
+                .entrySet()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
+                .getValue(); // In practice this supports only one record type at once.
+    }
+
+    /**
+     * Attempt to find a suitable input record for this response field. This is not a direct mapping, but rather an inference that may be inaccurate.
+     * @return The best input record match for this response field.
+     */
+    private InputField findMatchingInputRecord(String responseFieldTableName) {
+        return context
+                .getTableInputs()
+                .values()
+                .stream()
+                .filter(it -> processedSchema.getInputType(it).getTable().getMappingName().equals(responseFieldTableName))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table reference '" + responseFieldTableName + "' to."));
     }
 
     /**
@@ -326,13 +401,13 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      *
      * @return The code for any get helper methods to be made for this schema tree.
      */
-    protected List<MethodSpec> generateGetMethods(ObjectField target) {
+    private List<MethodSpec> generateGetMethods(ObjectField target) {
         if (!processedSchema.isObject(target)) {
             return List.of();
         }
 
-        context = new UpdateContext(localField, processedSchema);
-        return generateGetMethod(target, target, "", null, null, Set.of());
+        context = new UpdateContext(target, processedSchema);
+        return generateGetMethod(target, target, "");
     }
 
     @Override

@@ -2,7 +2,7 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.EditCustomerWithCustomerIterable2DBQueries;
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerWithCustomerIterable2MutationResolver;
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.EditInput;
@@ -38,7 +38,7 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
@@ -62,7 +62,6 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
             return Map.of();
         }
 
-        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("customers"));
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customers"));
     }
 }

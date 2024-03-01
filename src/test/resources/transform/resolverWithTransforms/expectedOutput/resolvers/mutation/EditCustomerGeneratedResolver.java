@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.EditCustomerDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerMutationResolver;
 import fake.graphql.example.model.EndreInput;
 import graphql.schema.DataFetchingEnvironment;
@@ -24,7 +24,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     public CompletableFuture<String> editCustomer(EndreInput in, DataFetchingEnvironment env) throws
             Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inRecord = transform.endreInputToJOOQRecord(in, "in");
 

@@ -1,5 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerSimpleMutationResolver;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
@@ -20,8 +21,10 @@ public class EditCustomerSimpleGeneratedResolver implements EditCustomerSimpleMu
             throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var editCustomerSimpleResult = testCustomerService.simple(id);
+        var transform = new RecordTransformer(env, ctx);
 
-        return CompletableFuture.completedFuture(editCustomerSimpleResult);
+        var editCustomerSimple = testCustomerService.simple(id);
+
+        return CompletableFuture.completedFuture(editCustomerSimple);
     }
 }

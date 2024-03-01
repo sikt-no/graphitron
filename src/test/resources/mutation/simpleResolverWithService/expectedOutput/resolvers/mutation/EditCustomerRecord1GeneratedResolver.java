@@ -1,5 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerRecord1MutationResolver;
 import fake.graphql.example.model.EditResponse1;
 import graphql.schema.DataFetchingEnvironment;
@@ -23,10 +24,15 @@ public class EditCustomerRecord1GeneratedResolver implements EditCustomerRecord1
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var editCustomerRecord1Result = testCustomerService.editCustomerRecord1(id);
+        var transform = new RecordTransformer(env, ctx);
+
+        var editCustomerRecord1 = testCustomerService.editCustomerRecord1(id);
 
         var editResponse1 = new EditResponse1();
-        editResponse1.setId1(editCustomerRecord1Result.stream().map(itId1 -> itId1.getId()).collect(Collectors.toList()));
+
+        if (editCustomerRecord1 != null && transform.getArguments().contains("id1")) {
+            editResponse1.setId1(editCustomerRecord1.stream().map(itId1 -> itId1.getId()).collect(Collectors.toList()));
+        }
 
         return CompletableFuture.completedFuture(editResponse1);
     }

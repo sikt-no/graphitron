@@ -3,10 +3,12 @@ package no.fellesstudentsystem.graphitron.generators.dependencies;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.TypeName;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -15,12 +17,12 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 abstract public class NamedDependency implements Dependency, Comparable<Dependency> {
     private final String name, path;
-    private final ClassName className;
+    private final ClassName typeName;
 
-    public NamedDependency(String name, String path) {
-        this.name = name;
-        this.path = path;
-        className = ClassName.get(path, name);
+    public NamedDependency(ClassName className) {
+        typeName = className;
+        this.name = typeName.simpleName();
+        this.path = typeName.packageName();
     }
 
     /**
@@ -38,10 +40,10 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
     }
 
     /**
-     * @return The javapoet ClassName for this dependency.
+     * @return The javapoet TypeName for this dependency.
      */
-    public ClassName getClassName() {
-        return className;
+    public TypeName getTypeName() {
+        return typeName;
     }
 
     @Override
@@ -49,7 +51,7 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return CodeBlock.of("var $L = new $T($N)", uncapitalize(getName()), getClassName(), CONTEXT_NAME);
+        return declare(getName(), CodeBlock.of("new $T($N)", getTypeName(), CONTEXT_NAME));
     }
 
     @Override

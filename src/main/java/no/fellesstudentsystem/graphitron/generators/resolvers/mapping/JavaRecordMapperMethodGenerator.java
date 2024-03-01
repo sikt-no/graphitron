@@ -2,127 +2,79 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.mapping;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PATH_HERE_NAME;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
-import static no.fellesstudentsystem.graphitron.mappings.ReflectionHelpers.classHasMethod;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
+import java.util.stream.Collectors;
 
-public class JavaRecordMapperMethodGenerator extends AbstractMappingMethodGenerator {
-    public JavaRecordMapperMethodGenerator(InputField localField, ProcessedSchema processedSchema) {
-        super(localField, processedSchema);
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
+
+public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
+    public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
+        super(localField, processedSchema, toRecord);
     }
 
     @Override
-    public MethodSpec generate(InputField target) {
-        if (!processedSchema.isJavaRecordInputType(target)) {
-            return MethodSpec.methodBuilder(recordTransformMethod(true)).build();
+    public MethodSpec generate(GenerationField target) {
+        if (!processedSchema.isJavaRecordType(target)) {
+            return MethodSpec.methodBuilder(recordTransformMethod(true, toRecord)).build();
         }
 
-        return getMapperSpecBuilder(target)
-                .addCode("$L\n", fillRecords(target, "", "", null, 0))
-                .addStatement("return $N", asListedName(processedSchema.getInputType(target).getJavaRecordReferenceName()))
-                .build();
+        return getMapperSpecBuilder(target).build();
     }
 
     /**
-     * @return CodeBlock for the mapping of a record.
+     * @return Code for setting the record data from input types.
      */
     @NotNull
-    protected CodeBlock transformRecord(InputField target, String path, boolean isJava) {
-        return CodeBlock.of(
-                "$N.$L($N, $N + $S$L)",
-                TRANSFORMER_NAME,
-                recordTransformMethod(target.getTypeName(), isJava),
-                target.getName(),
-                PATH_HERE_NAME,
-                path,
-                recordValidationEnabled() && !isJava ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
-        );
-    }
-
-    /**
-     * @return Code for setting the record data of previously defined records.
-     */
-    @NotNull
-    protected CodeBlock fillRecords(InputField target, String previousName, String path, MethodMapping recordMappingBackup, int recursion) {
-        recursionCheck(recursion);
-
-        var input = processedSchema.getInputType(target);
-        var hasRecordReference = input.hasJavaRecordReference();
-        var hasTableOrRecordReference = input.hasTable() || hasRecordReference;
-        var reference = input.getJavaRecordReference();
-        var referenceName = input.getJavaRecordReferenceName();
-        var targetName = recursion == 0 ? uncapitalize(input.getName()) : uncapitalize(target.getName());
-        var name = hasTableOrRecordReference ? (hasRecordReference ? uncapitalize(referenceName) : targetName) : previousName;
-
-        var code = CodeBlock.builder();
-        var isIterable = target.isIterableWrapped() && !hasRecordReference || recursion == 0;
-        var iterableInputName = asIterableIf(targetName, isIterable);
-        if (isIterable) {
-            if (!hasTableOrRecordReference) {
-                return empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
-            }
-
-            code
-                    .beginControlFlow("$L", ifNotNull(targetName))
-                    .beginControlFlow("for (var $L : $N)", iterableInputName, targetName)
-                    .addStatement("if ($N == null) continue", iterableInputName)
-                    .add(declareVariable(referenceName, input.getJavaRecordTypeName()));
+    protected CodeBlock iterateRecords(MapperContext context) {
+        if (context.isIterable() && !context.hasRecordReference()) {
+            return empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
         }
 
-        for (var in : input.getInputsSortedByNullability()) {
-            var inName = in.getName();
-            var inNameLower = uncapitalize(inName);
-            var inTypeName = in.getTypeName();
-            var nextPath = path.isEmpty() ? inName : path + "/" + inName;
-            var isInput = processedSchema.isInputType(in);
-            var newInput = processedSchema.getInputType(in);
-            var nextHasReference = isInput && newInput.hasJavaRecordReference();
-            var methodMapping = in.hasRecordFieldName() || recordMappingBackup == null ? in.getMappingForJavaRecord() : recordMappingBackup;
-            if (hasRecordReference && !classHasMethod(reference, methodMapping.asSet()) && (!isInput || newInput.hasTable())) {
+        var fieldCode = CodeBlock.builder();
+        var fields = context.getTargetType().getFields().stream().filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver())).collect(Collectors.toList());
+        for (var innerField : fields) {
+            var innerContext = context.iterateContext(innerField);
+            if (innerContext.targetCanNotBeMapped()) {
                 continue;
             }
 
-            var getCall = CodeBlock.of("$N$L", iterableInputName, in.getMappingFromFieldName().asGetCall());
-            if (isInput) {
-                code.add(declareBlock(inNameLower, getCall));
+            var varName = innerContext.getHelperVariableName();
+            var innerCode = CodeBlock.builder();
+            if (!innerContext.targetIsType()) {
+                innerCode.add(innerContext.getFieldSetMappingBlock());
+            } else if (innerContext.shouldUseStandardRecordFetch()) {
+                innerCode.add(innerContext.getRecordSetMappingBlock());
+            } else if (innerContext.hasRecordReference()) {
+                innerCode.add(innerContext.getSetMappingBlock(createIdFetch(innerField, varName, innerContext.getPath(), false))); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
+            } else {
+                innerCode.add(iterateRecords(innerContext));
             }
 
-            if (isInput && (newInput.hasTable() || nextHasReference)) {
-                code
-                        .beginControlFlow("if ($N != null && $L)", inNameLower, argumentsLookup(nextPath))
-                        .add("$N", name)
-                        .addStatement(methodMapping.asSetCall("$L"), transformRecord(in, nextPath, nextHasReference))
+            if (!innerCode.isEmpty()) {
+                var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
+                if (notAlreadyDefined) {
+                    fieldCode.add(declare(varName, innerContext.getSourceGetCallBlock()));
+                }
+                var nullBlock = notAlreadyDefined ? CodeBlock.of("$N != null && ", varName) : empty();
+                fieldCode
+                        .beginControlFlow("if ($L$L)", nullBlock, argumentsLookup(innerContext.getPath(), false))
+                        .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");
-            } else if (isInput) {
-                code.add(fillRecords(in, name, nextPath, methodMapping, recursion + 1));
-            } else {
-                code.add(mapField(nextPath, name, methodMapping.asSetCall("$L"), applyEnumConversion(inTypeName, getCall)));
             }
         }
 
-        if (isIterable) {
-            if (hasTableOrRecordReference) {
-                code.add(addToList(asListedName(name), name));
-            }
-            code.endControlFlow().endControlFlow();
-        }
+        return context.wrapFields(fieldCode.build());
+    }
 
-        return code.isEmpty() || isIterable ? code.build() : CodeBlock
-                .builder()
-                .beginControlFlow("$L", ifNotNull(iterableInputName))
-                .add(code.build())
-                .endControlFlow()
-                .build();
+    @Override
+    public boolean mapsJavaRecord() {
+        return true;
     }
 }

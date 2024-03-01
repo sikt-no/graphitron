@@ -69,11 +69,11 @@ directive @orderBy on ARGUMENT_DEFINITION
 """Connect this enum value to an index with the given name"""
 directive @index(name: String) on ENUM_VALUE
 
-"""Wrap input in given record."""
-directive @record(record: ExternalCodeReference) on INPUT_OBJECT
+"""Wrap type in the given record."""
+directive @record(record: ExternalCodeReference) on INPUT_OBJECT | INPUT_FIELD_DEFINITION
 
-"""Map input to a record field."""
-directive @recordField(name: String) on INPUT_FIELD_DEFINITION
+"""Temporary directive annotating that this object should be fetched by IDs rather than be set from user-defined records."""
+directive @fetchByID on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 

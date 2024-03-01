@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphql.helpers;
 
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Base64;
 
 /**
  * A helper class that handles some special ID-unpacking. This does not belong in Graphitron and should be removed at some point.

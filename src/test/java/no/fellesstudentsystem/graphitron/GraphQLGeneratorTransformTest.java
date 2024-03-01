@@ -7,8 +7,8 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Transf
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +37,7 @@ public class GraphQLGeneratorTransformTest extends TestCommon {
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
-                new RecordMapperClassGenerator(processedSchema)
+                new RecordMapperClassGenerator(processedSchema, true)
         );
 
         return generateFiles(generators);

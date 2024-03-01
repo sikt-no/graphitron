@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.interfaces;
 
-import com.squareup.javapoet.TypeName;
+import com.squareup.javapoet.ClassName;
 
 /**
  * Specifies that this Java object represents a GraphQL object.
@@ -12,7 +12,12 @@ public interface ObjectSpecification {
     String getName();
 
     /**
-     * @return The javapoet {@link TypeName} for the imported generated GraphQL object.
+     * @return The pre-generated class for this GraphQL-type.
      */
-    TypeName getGraphClassName();
+    Class<?> getClassReference();
+
+    /**
+     * @return The javapoet {@link ClassName} for the imported generated GraphQL object.
+     */
+    ClassName getGraphClassName();
 }

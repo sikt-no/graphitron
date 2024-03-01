@@ -6,9 +6,9 @@ type EditResponse1 {
   id1: [ID!]! @field(name: "ID")
 }
 
-type EditResponse2 {
-  id2: [ID!]! @field(name: "ID")
-  customers: [Customer!]!
+type EditResponse2 @record(record: {name: "TEST_CUSTOMER_RECORD"}) {
+  id2: [ID!]! @field(name: "someID")
+  customers: [Customer!]! @field(name: "recordList")
 }
 
 type Mutation {

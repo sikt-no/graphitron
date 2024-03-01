@@ -1,33 +1,33 @@
 package fake.code.generated.mappers;
 
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.model.EditInputLevel2A;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import no.fellesstudentsystem.graphitron.records.TestCustomerInnerInputRecord;
+import no.fellesstudentsystem.graphitron.records.TestCustomerInnerRecord;
 
 public class EditInputLevel2AJavaMapper {
-    public static List<TestCustomerInnerInputRecord> toJavaRecord(List<EditInputLevel2A> editInputLevel2A,
-                                                    String path, Set<String> arguments, InputTransformer transform) {
+    public static List<TestCustomerInnerRecord> toJavaRecord(List<EditInputLevel2A> editInputLevel2A,
+                                                             String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var testCustomerInnerInputRecordList = new ArrayList<TestCustomerInnerInputRecord>();
+        var arguments = transform.getArguments();
+        var testCustomerInnerRecordList = new ArrayList<TestCustomerInnerRecord>();
 
         if (editInputLevel2A != null) {
             for (var itEditInputLevel2A : editInputLevel2A) {
                 if (itEditInputLevel2A == null) continue;
-                var testCustomerInnerInputRecord = new TestCustomerInnerInputRecord();
+                var testCustomerInnerRecord = new TestCustomerInnerRecord();
                 var hiddenValue = itEditInputLevel2A.getHiddenValue();
-                if (hiddenValue != null) {
+                if (hiddenValue != null && arguments.contains(pathHere + "hiddenValue")) {
                     if (arguments.contains(pathHere + "hiddenValue/i")) {
-                        testCustomerInnerInputRecord.setSomeInt(hiddenValue.getI());
+                        testCustomerInnerRecord.setSomeInt(hiddenValue.getI());
                     }
                 }
-                testCustomerInnerInputRecordList.add(testCustomerInnerInputRecord);
+                testCustomerInnerRecordList.add(testCustomerInnerRecord);
             }
         }
 
-        return testCustomerInnerInputRecordList;
+        return testCustomerInnerRecordList;
     }
 }

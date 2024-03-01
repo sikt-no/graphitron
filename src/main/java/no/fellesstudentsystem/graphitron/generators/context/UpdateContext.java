@@ -3,8 +3,8 @@ package no.fellesstudentsystem.graphitron.generators.context;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
+import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -34,13 +34,7 @@ public class UpdateContext {
     public UpdateContext(ObjectField target, ProcessedSchema processedSchema) {
         this.processedSchema = processedSchema;
 
-        if (target.hasServiceReference()) {
-            var reference = target.getServiceReference();
-            service = new ServiceWrapper(reference, countParams(target.getArguments(), false, processedSchema));
-        } else {
-            service = null;
-        }
-
+        service = target.hasServiceReference() ? new ServiceWrapper(target, processedSchema) : null;
         mutationType = target.hasMutationType() ? target.getMutationType() : null;
 
         mutationReturnsNodes = processedSchema.containsNodeField(target);
@@ -48,7 +42,7 @@ public class UpdateContext {
         recordInputs = mutationInputs
                 .entrySet()
                 .stream()
-                .filter(it -> processedSchema.isTableInputType(it.getValue()) || processedSchema.isJavaRecordInputType(it.getValue()))
+                .filter(it -> processedSchema.isTableInputType(it.getValue()) || processedSchema.isJavaRecordType(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         tableInputs = recordInputs
                 .entrySet()
@@ -69,25 +63,6 @@ public class UpdateContext {
                         .filter(it -> errorTypeName.equals(it.getName()))
                         .findFirst()
         ).orElse(null);
-    }
-
-    /**
-     * @return Count the number of parameters this mutation will have to use for its service call.
-     */
-    public static int countParams(List<? extends InputField> fields, boolean inRecord, ProcessedSchema processedSchema) {
-        var numFields = 0;
-        for (var input : fields) {
-            if (processedSchema.isInputType(input)) {
-                var object = processedSchema.getInputType(input);
-                if (object.hasTable()) {
-                    numFields++;
-                }
-                numFields += countParams(object.getFields(), inRecord || object.hasTable(), processedSchema);
-            } else if (!inRecord) {
-                numFields++;
-            }
-        }
-        return numFields;
     }
 
     /**

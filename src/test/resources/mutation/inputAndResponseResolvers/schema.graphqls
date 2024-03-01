@@ -4,26 +4,26 @@ input EditInput @table(name : "CUSTOMER") {
   postalCode: String @field(name : "POSTAL_CODE")
 }
 
-type EditResponse {
+type EditResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
-  firstName: String @field(name : "FIRST_NAME")
+  firstName: String @field(name : "firstName")
   postalCode: String @field(name : "POSTAL_CODE")
 }
 
-type EditResponseWithCustomer {
-  id: ID!
-  customer: Customer @field(name : "c")
-  payment: Payment
+type EditResponseWithCustomer @record(record: {name: "TEST_CUSTOMER_RESPONSE2"}) {
+  id: ID! @field(name: "Id2")
+  customerC: Customer @field(name: "customer")
+  payment: Payment # Not mapped correctly, won't be included.
 }
 
 type Mutation {
   editCustomerSimple(id: ID!): ID! @service(service : {name: "TEST_CUSTOMER", method: "simple"})
-  " Note: there are two methods with this name, but it resolves correctly based on number of arguments. Doesn't check the types though."
+  # Note: there are two methods with this name, but it resolves correctly based on number of arguments. Doesn't check the types though.
   editCustomerInput(input: EditInput!): ID! @service(service : {name: "TEST_CUSTOMER"})
   editCustomer2Params(input: EditInput!, lastName: String @field(name: "LAST_NAME")): ID! @service(service : {name: "TEST_CUSTOMER"})
   editCustomerResponse(id: ID!): EditResponse! @service(service : {name: "TEST_CUSTOMER"})
   editCustomerInputAndResponse(input: EditInput!): EditResponse! @service(service : {name: "TEST_CUSTOMER"})
-  " Column should not matter. It may change some internal variable names."
+  # Field should not matter. It may change some internal variable names.
   editCustomerWithCustomer(id: ID!): Customer! @field(name : "Terminator") @service(service : {name: "TEST_CUSTOMER"})
   editCustomerWithCustomerResponse(id: ID!): EditResponseWithCustomer! @service(service : {name: "TEST_CUSTOMER"})
 }

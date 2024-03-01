@@ -1,12 +1,12 @@
 package fake.code.generated.resolvers.mutation;
 
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerListResponseMutationResolver;
 import fake.graphql.example.model.EditResponse;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
@@ -23,17 +23,12 @@ public class EditCustomerListResponseGeneratedResolver implements EditCustomerLi
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var editCustomerListResponseResult = testCustomerService.editCustomerListResponse(ids);
 
+        var transform = new RecordTransformer(env, ctx);
 
-        var editResponseList = new ArrayList<EditResponse>();
-        for (var itEditCustomerListResponseResult : editCustomerListResponseResult) {
-            var editResponse = new EditResponse();
-            editResponse.setId(itEditCustomerListResponseResult.getId());
-            editResponse.setFirstName(itEditCustomerListResponseResult.getFirstName());
-            editResponse.setEmail(itEditCustomerListResponseResult.getSecretEmail());
-            editResponseList.add(editResponse);
-        }
+        var editCustomerListResponse = testCustomerService.editCustomerListResponse(ids);
+
+        var editResponseList = transform.editResponseToGraphType(editCustomerListResponse, "");
 
         return CompletableFuture.completedFuture(editResponseList);
     }

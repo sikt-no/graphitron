@@ -13,6 +13,8 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Record1;
@@ -20,6 +22,9 @@ import org.jooq.Record1;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.toJOOQEnumConverter;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeyFields;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -29,7 +34,6 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
  * @param <T> Field type that this generator operates on.
  */
 abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractMethodGenerator<T> {
-    protected final static String SELECTION_NAME = "select";
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
 
     public DBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -51,7 +55,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         var codeBuilder = CodeBlock.builder();
         for (var join : joinList) {
             var alias = join.getJoinAlias();
-            codeBuilder.addStatement("var $L = $N.as($S)", alias.getMappingName(), join.getJoinTargetTable().getMappingName(), alias.getShortName());
+            codeBuilder.add(declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", join.getJoinTargetTable().getMappingName(), alias.getShortName())));
         }
         return codeBuilder.build();
     }
@@ -249,7 +253,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         var conditionFields = context.getReferenceObjectField().getFieldReferences().stream().filter(it -> it.getTableCondition() != null).collect(Collectors.toList());
 
         if(!conditionFields.isEmpty()) {
-            throw new IllegalArgumentException(String.format("List of type %s requires the @SplitQuery directive to be able to contain @condition in a @reference within a list", context.getReferenceObject().getName()));
+            throw new IllegalArgumentException(String.format("List of type %s requires the @%s directive to be able to contain @%s in a @%s within a list", context.getReferenceObject().getName(), GenerationDirective.SPLIT_QUERY.getName(), GenerationDirectiveParam.CONDITION.getName(), GenerationDirective.REFERENCE.getName()));
         }
 
         var whereContent = CodeBlock.builder();
@@ -457,10 +461,10 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     private CodeBlock generateForScalarField(ObjectField field, FetchContext context) {
         var renderedSource = context.iterateJoinSequenceFor(field).render();
         if (field.isID()) {
-            return CodeBlock.of("$L.get$L()", renderedSource, capitalize(field.getMappingFromColumn().getName()));
+            return CodeBlock.of("$L.get$L()", renderedSource, capitalize(field.getMappingFromFieldOverride().getName()));
         }
-        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName()));
-        return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", SELECTION_NAME, context.getGraphPath() + field.getName(), content)) : content;
+        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
+        return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
     /**
@@ -496,7 +500,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             var inputField = inputCondition.getInput();
 
             if (inputField.isIterableWrapped() && processedSchema.isInputType(inputField)) {
-                iterableInputFieldNamePaths.add(inputCondition.getNameWithPath());
+                iterableInputFieldNamePaths.add(inputCondition.getNameWithPathString());
             }
 
             if (processedSchema.isInputType(inputField)) {

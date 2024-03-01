@@ -46,8 +46,10 @@ public class GraphQLGenerator {
                 new UpdateResolverClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
-                new RecordMapperClassGenerator(processedSchema),
-                new JavaRecordMapperClassGenerator(processedSchema),
+                new RecordMapperClassGenerator(processedSchema, true),
+                new RecordMapperClassGenerator(processedSchema, false),
+                new JavaRecordMapperClassGenerator(processedSchema, true),
+                new JavaRecordMapperClassGenerator(processedSchema, false),
                 new MutationExceptionStrategyConfigurationGenerator(processedSchema),
                 new DataAccessExceptionToErrorMappingProviderGenerator(processedSchema)
         );

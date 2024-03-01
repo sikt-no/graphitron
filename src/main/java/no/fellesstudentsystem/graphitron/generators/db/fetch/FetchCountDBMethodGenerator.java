@@ -6,8 +6,8 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
-import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -15,7 +15,8 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INTEGER;
 
 /**
  * Generator that creates methods for counting all available elements for a type.

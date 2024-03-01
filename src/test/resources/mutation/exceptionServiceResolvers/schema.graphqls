@@ -22,33 +22,33 @@ type SomeErrorB implements Error @error(error: {name: "EXCEPTION_TEST_CAUSE", me
 union EditErrorsUnion1 = SomeErrorA
 union EditErrorsUnion2 = SomeErrorA | SomeErrorB
 
-type EditCustomerResponse {
+type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
-  editCustomerResponse2: EditCustomerResponse2
-  editCustomerResponse3: [EditCustomerResponse3!]
+  editCustomerResponse2: EditCustomerResponse2 @field(name : "editResponse2")
+  editCustomerResponse3: [EditCustomerResponse3!] @field(name : "editResponse3")
   errors: [SomeErrorB!]!
 }
 
-type EditCustomerResponseUnion1 {
+type EditCustomerResponseUnion1 @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
-  editCustomerResponse2: EditCustomerResponse2
-  editCustomerResponse3: [EditCustomerResponse3!]
+  editCustomerResponse2: EditCustomerResponse2 @field(name : "editResponse2")
+  editCustomerResponse3: [EditCustomerResponse3!] @field(name : "editResponse3")
   errors: [EditErrorsUnion1!]!
 }
 
-type EditCustomerResponseUnion2 {
+type EditCustomerResponseUnion2 @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
-  editCustomerResponse2: EditCustomerResponse2
-  editCustomerResponse3: [EditCustomerResponse3!]
+  editCustomerResponse2: EditCustomerResponse2 @field(name : "editResponse2")
+  editCustomerResponse3: [EditCustomerResponse3!] @field(name : "editResponse3")
   errors: [EditErrorsUnion2!]!
 }
 
-type EditCustomerResponse2 {
+type EditCustomerResponse2 @record(record: {name: "TEST_CUSTOMER_RESPONSE2"}) {
   id: ID! @field(name : "id2")
   customer: Customer
 }
 
-type EditCustomerResponse3 {
+type EditCustomerResponse3 @record(record: {name: "TEST_CUSTOMER_RESPONSE3"}) {
   id: ID! @field(name : "id3")
   customer: Customer @field(name : "customer3")
 }

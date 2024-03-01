@@ -3,12 +3,10 @@ package no.fellesstudentsystem.graphitron.validation;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
-import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.AbstractTableObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
@@ -109,7 +107,7 @@ public class ProcessedDefinitionsValidator {
             var flattenedFields = flattenObjectFields(object.isRoot() ? null : object.getTable().getMappingName(), object.getFields());
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
-        schema.getInputTypes().values().stream().filter(AbstractTableObjectDefinition::hasTable).forEach(input -> {
+        schema.getInputTypes().values().stream().filter(RecordObjectDefinition::hasTable).forEach(input -> {
             var flattenedFields = flattenInputFields(input.getTable().getMappingName(), input.getFields(), false);
 
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
@@ -201,7 +199,7 @@ public class ProcessedDefinitionsValidator {
         return requiredJOOQTypesAndMethods;
     }
 
-    private String findForReferences(AbstractField<?> field, String lastTable, HashMap<String, HashSet<String>> requiredJOOQTypesAndMethods) {
+    private String findForReferences(GenerationField field, String lastTable, HashMap<String, HashSet<String>> requiredJOOQTypesAndMethods) {
         for (var reference : field.getFieldReferences()) {
             if (reference.hasKey() && lastTable != null) {
                 var key = reference.getKey();
@@ -210,7 +208,7 @@ public class ProcessedDefinitionsValidator {
                 }
                 var nextTable = reference.hasTable()
                         ? reference.getTable().getMappingName()
-                        : (schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
+                        : (schema.isTableType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
                 var reverseKeyFound = TableReflection.searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
                 requiredJOOQTypesAndMethods
                         .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
@@ -513,10 +511,10 @@ public class ProcessedDefinitionsValidator {
     }
 
     private final static class FieldWithOverrideStatus {
-        AbstractField<?> field;
+        GenerationSourceField<?> field;
         boolean hasOverrideCondition;
 
-        public FieldWithOverrideStatus(AbstractField<?> field, boolean hasOverrideCondition) {
+        public FieldWithOverrideStatus(GenerationSourceField<?> field, boolean hasOverrideCondition) {
             this.field = field;
             this.hasOverrideCondition = hasOverrideCondition;
         }

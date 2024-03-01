@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 import graphql.language.FieldDefinition;
 import graphql.language.IntValue;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.apache.commons.lang3.Validate;
@@ -18,7 +17,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
 /**
  * Represents the default field type, which in addition to the generic field functionality also provides join operation data.
  */
-public class ObjectField extends AbstractField<FieldDefinition> implements GenerationTarget {
+public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private int firstDefault = 100;
     private int lastDefault = 100;
     private boolean hasForwardPagination, hasBackwardPagination, hasRequiredPaginationFields;
@@ -27,7 +26,7 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
-    private final boolean isGenerated, isResolver, hasLookupKey;
+    private final boolean isGenerated, hasLookupKey, fetchByID;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -39,13 +38,13 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
 
     public ObjectField(FieldDefinition field) {
         super(field, new FieldType(field.getType()));
-        isResolver = field.hasDirective(SPLIT_QUERY.getName());
         arguments = setInputAndPagination(field, isRootField());
         orderField = arguments.stream().filter(InputField::isOrderField).findFirst().orElse(null);
         nonReservedArguments = arguments.stream().filter(inputField ->
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName())) && !inputField.equals(orderField)
         ).collect(Collectors.toList());
-        isGenerated = isResolver && !field.hasDirective(NOT_GENERATED.getName());
+        isGenerated = isResolver() && !isExplicitlyNotGenerated();
+        fetchByID = field.hasDirective(FETCH_BY_ID.getName());
 
         serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
         mutationType = field.hasDirective(MUTATION.getName())
@@ -62,7 +61,7 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
         var inputs = field.getInputValueDefinitions();
         var inputFields = new ArrayList<ArgumentField>();
 
-        if (!isResolver && !isTopLevel) {
+        if (!isResolver() && !isTopLevel) {
             return inputs.stream().map(ArgumentField::new).collect(Collectors.toList());
         }
 
@@ -103,17 +102,17 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
     }
 
     /**
-     * @return Does this field point to a resolver which has to be defined manually, rather than generated?
+     * @return Should this field use IDs to fetch record data?
      */
-    public boolean isManualResolver() {
-        return isResolver && !isGenerated;
+    public boolean isFetchByID() {
+        return fetchByID;
     }
 
     /**
-     * @return Does this field point to a resolver method?
+     * @return Does this field point to a resolver which has to be defined manually, rather than generated?
      */
-    public boolean isResolver() {
-        return isResolver;
+    public boolean isManualResolver() {
+        return isResolver() && !isGenerated;
     }
 
     /**
@@ -252,5 +251,10 @@ public class ObjectField extends AbstractField<FieldDefinition> implements Gener
 
     public Optional<ArgumentField> getOrderField() {
         return Optional.ofNullable(orderField);
+    }
+
+    @Override
+    public boolean isInput() {
+        return false;
     }
 }

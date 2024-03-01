@@ -2,7 +2,7 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.DeleteCustomerWithCustomerIterableDBQueries;
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.DeleteCustomerWithCustomerIterableMutationResolver;
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.EditInput;
@@ -39,7 +39,7 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
@@ -65,7 +65,6 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
             return Map.of();
         }
 
-        var ids = idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet());
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, ids, select.withPrefix("results/customer"));
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
     }
 }

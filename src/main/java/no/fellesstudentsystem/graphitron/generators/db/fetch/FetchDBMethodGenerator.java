@@ -13,8 +13,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.collectToList;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -63,8 +62,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
                         .add("$L.$N", renderedSequence, field.getUpperCaseName())
-                        .add(toJOOQEnumConverter(field.getTypeName()))
-                        .add(field.isIterableWrapped() ? ".in($N)" : ".eq($N)", name);
+                        .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
+                        .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
                 }
@@ -101,7 +100,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
         var nameWithPath = condition.getNameWithPath();
         var checks = condition.getChecksAsSequence();
-        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), CodeBlock.of(nameWithPath));
+        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), nameWithPath, condition.getInput().isIterableWrapped(), processedSchema);
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
                 enumConverter.isEmpty() ? nameWithPath : enumConverter
@@ -126,7 +125,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             codeBlockBuilder
                     .add("$L.$N", fieldSequence, field.getUpperCaseName())
-                    .add(toJOOQEnumConverter(field.getTypeName()))
+                    .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
                     .add(i < conditions.size()-1 ? ",\n" : "");
         }
         codeBlockBuilder
@@ -135,7 +134,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(".in($N.stream().map(input -> $T.row(\n", argumentInputFieldName, DSL.className)
                 .indent().indent()
                 .add(conditions.stream()
-                        .map(it -> "input" + it.getNameWithPath().replaceFirst(Pattern.quote(argumentInputFieldName), ""))
+                        .map(it -> "input" + it.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""))
                         .collect(Collectors.joining(",\n")))
                 .unindent().unindent()
                 .add(")\n)")

@@ -1,12 +1,12 @@
-input EditInputLevel1 @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INPUT_RECORD"}) {
+input EditInputLevel1 @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_RECORD"}) {
   edit2A: EditInputLevel2A
-  edit2B: EditInputLevel2B @recordField(name: "recordList")
+  edit2B: EditInputLevel2B @field(name: "recordList")
   edit2C: EditInputLevel2C
   edit2D: [EditInputLevel2D]
-  edit2E: [EditInputLevel2E] @recordField(name: "nameList2")
+  edit2E: [EditInputLevel2E] @field(name: "nameList2")
 }
 
-input EditInputLevel2A @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INPUT_INNER_RECORD"}) {
+input EditInputLevel2A @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INNER_RECORD"}) {
   hiddenValue: EditInputLevel3A
 }
 
@@ -15,11 +15,11 @@ input EditInputLevel2B {
 }
 
 input EditInputLevel2C {
-  lastName: String! @recordField(name: "name")
+  lastName: String! @field(name: "name")
 }
 
 input EditInputLevel2D {
-  lastName: String! @field(name: "LAST_NAME") @recordField(name: "nameList1")
+  lastName: String! @field(name: "nameList1")
 }
 
 input EditInputLevel2E {
@@ -27,7 +27,7 @@ input EditInputLevel2E {
 }
 
 input EditInputLevel3A {
-  i: Int @recordField(name: "someInt")
+  i: Int @field(name: "someInt")
 }
 
 input EditInputLevel3B @table(name: "CUSTOMER") {
@@ -39,7 +39,7 @@ type EditCustomerResponse {
 }
 
 type Mutation {
-  editCustomerNested(input: EditInputLevel1!): EditCustomerResponse! @service(service: {name: "TEST_CUSTOMER", method: "editCustomerWithRecordInputs"})
+  editCustomerNested(input: EditInputLevel1!): EditCustomerResponse! @service(service: {name: "TEST_CUSTOMER", method: "editCustomerWithRecordInputsList"})
 }
 
 type Customer implements Node @table {

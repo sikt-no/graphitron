@@ -1,8 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.sql;
 
 import com.squareup.javapoet.CodeBlock;
-import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.JoinElement;
+import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
 import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
 
 import java.util.List;

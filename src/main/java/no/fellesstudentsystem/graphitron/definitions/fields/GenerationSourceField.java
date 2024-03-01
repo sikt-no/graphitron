@@ -1,0 +1,142 @@
+package no.fellesstudentsystem.graphitron.definitions.fields;
+
+import graphql.language.ObjectField;
+import graphql.language.*;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
+import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
+import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
+import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
+import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
+
+/**
+ * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
+ */
+public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
+    private final boolean isGenerated, isResolver;
+    private final List<FieldReference> fieldReferences;
+    private final SQLCondition condition;
+    private final MethodMapping mappingForJOOQFieldOverride;
+
+    public GenerationSourceField(T field, FieldType fieldType) {
+        super(field, fieldType);
+        fieldReferences = new ArrayList<>();
+        if (field.hasDirective(REFERENCE.getName())) {
+            var refrenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
+
+            Optional.ofNullable(refrenceDirective.getArgument(VIA.getName()))
+                    .map(Argument::getValue)
+                    .ifPresent(this::addViaFieldReferences);
+
+            if (refrenceDirective.getArguments().stream()
+                    .map(Argument::getName)
+                    .anyMatch(it -> it.equals(GenerationDirectiveParam.TABLE.getName()) || it.equals(GenerationDirectiveParam.CONDITION.getName()) || it.equals(KEY.getName()))) {
+                fieldReferences.add(new FieldReference(field));
+            }
+        }
+
+        if (field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null) {
+            condition = new SQLCondition(
+                    new CodeReference(field, GenerationDirective.CONDITION, GenerationDirectiveParam.CONDITION, getName()),
+                    getOptionalDirectiveArgumentBoolean(field, GenerationDirective.CONDITION, OVERRIDE).orElse(false)
+            );
+        } else {
+            condition = null;
+        }
+
+        mappingForJOOQFieldOverride = field.hasDirective(FIELD.getName()) ? new MethodMapping(toCamelCase(getUpperCaseName())) : getMappingFromFieldOverride();
+        isGenerated = !isExplicitlyNotGenerated();
+        isResolver = field.hasDirective(SPLIT_QUERY.getName());
+    }
+
+    /**
+     * Construct references from the {@link no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam#VIA via} parameter.
+     */
+    private void addViaFieldReferences(Value<?> viaValue) {
+        var values = viaValue instanceof ArrayValue ? ((ArrayValue) viaValue).getValues() : List.of(((ObjectValue) viaValue));
+
+        values.stream()
+                .filter(value -> value instanceof ObjectValue)
+                .forEach(value -> {
+                    var objectFields = ((ObjectValue) value).getObjectFields();
+                    var table = getOptionalObjectFieldByName(objectFields, GenerationDirectiveParam.TABLE);
+                    var key = getOptionalObjectFieldByName(objectFields, KEY);
+                    var referencedCondition = getOptionalObjectFieldByName(objectFields, GenerationDirectiveParam.CONDITION)
+                            .map(ObjectField::getValue)
+                            .map(it -> (ObjectValue) it)
+                            .map(ObjectValue::getObjectFields)
+                            .map(fields ->
+                                    new SQLCondition(
+                                            new CodeReference(
+                                                    stringValueOf(getObjectFieldByName(fields, NAME)),
+                                                    getOptionalObjectFieldByName(fields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(getName())
+                                            )
+                                    )
+                            ).orElse(null);
+
+                    fieldReferences.add(
+                            new FieldReference(
+                                    table.map(DirectiveHelpers::stringValueOf).map(JOOQMapping::fromTable).orElse(null),
+                                    key.map(DirectiveHelpers::stringValueOf).map(JOOQMapping::fromKey).orElse(null),
+                                    referencedCondition
+                            )
+                    );
+                });
+    }
+
+    @Override
+    public boolean isResolver() {
+        return isResolver;
+    }
+
+    @Override
+    public MethodMapping getMappingForJOOQFieldOverride() {
+        return mappingForJOOQFieldOverride;
+    }
+
+    @Override
+    public String getFieldJOOQMappingName() {
+        return mappingForJOOQFieldOverride.getName();
+    }
+
+    @Override
+    public List<FieldReference> getFieldReferences() {
+        return fieldReferences;
+    }
+
+    @Override
+    public boolean hasFieldReferences() {
+        return !fieldReferences.isEmpty();
+    }
+
+    @Override
+    public SQLCondition getCondition() {
+        return condition;
+    }
+
+    @Override
+    public boolean hasCondition() {
+        return condition != null;
+    }
+
+    @Override
+    public boolean hasOverridingCondition() {
+        return hasCondition() && condition.isOverride();
+    }
+
+    @Override
+    public boolean isGenerated() {
+        return isGenerated;
+    }
+}

@@ -10,10 +10,10 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
-import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 
@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -112,7 +113,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
             spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
         }
-        return spec.addParameter(SELECTION_SET.className, SELECTION_NAME);
+        return spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
     }
 
     @NotNull

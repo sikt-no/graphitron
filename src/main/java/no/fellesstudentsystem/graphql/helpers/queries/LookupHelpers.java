@@ -215,7 +215,7 @@ public class LookupHelpers {
                 path.add(".stream().map($L -> $N != null ? $N", itName, itName, itName);
                 collectBlock.add(" : $N).collect($T.toList())", "null", COLLECTORS.className);
             }
-            path.add("$L", field.getMappingFromFieldName().asGetCall());
+            path.add("$L", field.getMappingFromSchemaName().asGetCall());
             previousField = field;
         }
 

@@ -2,7 +2,7 @@ package fake.code.generated.resolvers.mutation;
 
 import fake.code.generated.queries.mutation.UpsertCustomerWithCustomerResponseDBQueries;
 import fake.code.generated.queries.query.CustomerDBQueries;
-import fake.code.generated.transform.InputTransformer;
+import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.UpsertCustomerWithCustomerResponseMutationResolver;
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.UpsertInput;
@@ -35,7 +35,7 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
-        var transform = new InputTransformer(env, ctx);
+        var transform = new RecordTransformer(env, ctx);
 
         var inputRecord = transform.upsertInputToJOOQRecord(input, "input");
 
@@ -54,7 +54,6 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
             return null;
         }
 
-        var nodes = customerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer"));
-        return nodes.values().stream().findFirst().orElse(null);
+        return customerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
     }
 }

@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
-import graphql.language.FieldDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -11,7 +10,7 @@ import java.util.stream.Collectors;
 /**
  * Represents a GraphQL union type.
  */
-public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinition, FieldDefinition, ObjectField> {
+public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinition, ObjectField> {
     private final List<String> fieldTypeNames;
 
     public UnionDefinition(UnionTypeDefinition typeDefinition) {

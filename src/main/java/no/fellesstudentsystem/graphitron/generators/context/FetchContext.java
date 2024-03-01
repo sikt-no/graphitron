@@ -1,8 +1,8 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
 import com.squareup.javapoet.CodeBlock;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldReference;
+import no.fellesstudentsystem.graphitron.definitions.fields.GenerationSourceField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelation;
@@ -254,7 +254,7 @@ public class FetchContext {
      * @return The new join sequence, with the provided join sequence extended by all references in this layer's reference field,
      * or other appropriate start points for a sequence.
      */
-    public JoinListSequence iterateJoinSequenceFor(AbstractField<?> field) {
+    public JoinListSequence iterateJoinSequenceFor(GenerationSourceField<?> field) {
         var currentSequence = getCurrentJoinSequence();
         if (!field.hasFieldReferences()) {
             if(fromMultiset) {

@@ -13,5 +13,9 @@ public class VariableNames {
             PATH_NAME = "path",
             PATH_INDEX_NAME = "indexPath",
             PATH_HERE_NAME = "pathHere",
-            VARIABLE_ARGUMENTS = "arguments";
+            VARIABLE_ARGUMENTS = "arguments",
+            VARIABLE_ENV = "env",
+            VARIABLE_SELECT = "select",
+            VARIABLE_VALIDATION_ERRORS = "validationErrors",
+            VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties";
 }

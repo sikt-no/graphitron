@@ -17,8 +17,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareArrayList;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareArrayList;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
@@ -150,7 +151,7 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
                 .returns(ERROR_MAPPINGS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addStatement("return $N", MAPPINGS_FOR_MUTATION_FIELD_NAME)
+                .addCode(returnWrap(MAPPINGS_FOR_MUTATION_FIELD_NAME))
                 .build();
     }
 }
