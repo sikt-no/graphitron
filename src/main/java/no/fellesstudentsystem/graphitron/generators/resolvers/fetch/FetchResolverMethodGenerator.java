@@ -8,6 +8,7 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.OrderByEnumField;
+import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
@@ -180,15 +181,16 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     }
 
     private CodeBlock createJoinedGetFieldAsStringCallBlock(OrderByEnumField orderByField, ObjectDefinition objectNode) {
-        return orderByField.getSchemaFields(processedSchema, objectNode)
+        return orderByField.getSchemaFieldsWithPathForIndex(processedSchema, objectNode)
+                .entrySet()
                 .stream()
-                .map(this::createNullSafeGetFieldAsStringCall)
+                .map(fieldWithPath -> createNullSafeGetFieldAsStringCall(fieldWithPath.getKey(), fieldWithPath.getValue()))
                 .collect(CodeBlock.joining(" + \",\" + "));
     }
 
-    private CodeBlock createNullSafeGetFieldAsStringCall(ObjectField field) {
+    private CodeBlock createNullSafeGetFieldAsStringCall(ObjectField field,  List<String> path) {
         var getFieldCall = field.getMappingFromFieldName().asGetCall();
-        var fullCallBlock = CodeBlock.of("$L$L", TYPE_NAME, getFieldCall);
+        var fullCallBlock = CodeBlock.of("$L$L$L", TYPE_NAME, path.stream().map(it -> new MethodMapping(it).asGetCall()).collect(Collectors.joining()), getFieldCall);
 
         if (field.getTypeClass() != null &&
                 (field.getTypeClass().isPrimitive() || field.getTypeClass().equals(STRING.className))) {

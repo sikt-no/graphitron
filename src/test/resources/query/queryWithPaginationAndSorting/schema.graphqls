@@ -6,12 +6,20 @@ type Query {
 type Film implements Node @table {
   id: ID!
   title: String!
-  description: String!
   nested: Nested!
 }
 
 type Nested {
+  nested2: NestedNested!
+}
+
+type NestedNested {
   languageId: String! @field(name : "LANGUAGE_ID")
+  nested3: NestedNestedNested!
+}
+
+type NestedNestedNested {
+  description: String!
 }
 
 type FilmConnection {

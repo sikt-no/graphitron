@@ -36,7 +36,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                 (ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null,
                 (it) -> orderBy == null ? it.getId() :
                         Map.<String, Function<Film, String>>of(
-                                "LANGUAGE", type -> type.getLanguageId(),
+                                "LANGUAGE", type -> type.getNested().getNested2().getLanguageId(),
                                 "TITLE", type -> type.getTitle()
                         ).get(orderBy.getOrderByField().toString()).apply(it));
     }

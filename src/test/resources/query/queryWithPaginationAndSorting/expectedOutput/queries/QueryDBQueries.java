@@ -8,6 +8,8 @@ import fake.graphql.example.model.FilmOrder;
 import fake.graphql.example.model.Inventory;
 import fake.graphql.example.model.InventoryOrder;
 import fake.graphql.example.model.Nested;
+import fake.graphql.example.model.NestedNested;
+import fake.graphql.example.model.NestedNestedNested;
 import java.lang.Integer;
 import java.lang.Object;
 import java.lang.String;
@@ -27,9 +29,13 @@ public class QueryDBQueries {
                         DSL.row(
                                 FILM.getId().as("id"),
                                 FILM.TITLE.as("title"),
-                                FILM.DESCRIPTION.as("description"),
                                 DSL.row(
-                                        FILM.LANGUAGE_ID.as("languageId")
+                                        DSL.row(
+                                                FILM.LANGUAGE_ID.as("languageId"),
+                                                DSL.row(
+                                                        FILM.DESCRIPTION.as("description")
+                                                ).mapping(Functions.nullOnAllNull(NestedNestedNested::new)).as("nested3")
+                                        ).mapping(Functions.nullOnAllNull(NestedNested::new)).as("nested2")
                                 ).mapping(Functions.nullOnAllNull(Nested::new)).as("nested")
                         ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
                 )
