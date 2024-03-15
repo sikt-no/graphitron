@@ -31,7 +31,7 @@ public class FilmDBQueries {
                 .leftJoin(film_inventoryfilmidfkey_inventory_left)
                 .onKey(INVENTORY__INVENTORY_FILM_ID_FKEY)
                 .where(FILM.hasIds(filmIds))
-                .orderBy(INVENTORY.getIdFields())
+                .orderBy(film_inventoryfilmidfkey_inventory_left.getIdFields())
                 .seek(INVENTORY.getIdValues(after))
                 .limit(pageSize + 1)
                 .fetchGroups(Record2::value1, Record2::value2);

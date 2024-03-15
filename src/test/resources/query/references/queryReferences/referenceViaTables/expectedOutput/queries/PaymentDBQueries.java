@@ -26,6 +26,7 @@ public class PaymentDBQueries {
                 )
                 .from(PAYMENT)
                 .where(PAYMENT.hasIds(paymentIds))
+                .orderBy(PAYMENT.rental().inventory().film().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

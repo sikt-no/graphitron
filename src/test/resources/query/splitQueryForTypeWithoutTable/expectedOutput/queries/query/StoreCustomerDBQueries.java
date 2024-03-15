@@ -29,6 +29,7 @@ public class StoreCustomerDBQueries {
                 .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.hasIds(storeCustomerIds))
                 .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
+                .orderBy(store_customerstoreidfkey_customer.getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

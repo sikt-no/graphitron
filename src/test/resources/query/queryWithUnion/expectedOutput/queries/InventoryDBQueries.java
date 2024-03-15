@@ -51,6 +51,7 @@ public class InventoryDBQueries {
                 )
                 .from(INVENTORY)
                 .where(INVENTORY.hasIds(inventoryIds))
+                .orderBy(INVENTORY.film().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

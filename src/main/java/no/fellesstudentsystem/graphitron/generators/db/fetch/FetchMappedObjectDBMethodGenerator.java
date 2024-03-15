@@ -61,7 +61,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(createSelectJoins(context))
                 .add(where)
                 .add(createSelectConditions(context))
-                .add(setPaginationAndFetch(target, context.getReferenceTable().getMappingName()));
+                .add(setPaginationAndFetch(target, context.getCurrentJoinSequence().render().toString()));
 
         return getSpecBuilder(target, context.getReferenceObject().getGraphClassName())
                 .addCode(code.build())
@@ -131,7 +131,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder();
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
 
-        if (!lookupExists && isRoot || referenceField.hasForwardPagination()) {
+        if (!lookupExists) {
 
             var orderByField = referenceField.getOrderField();
             orderByField.ifPresentOrElse(

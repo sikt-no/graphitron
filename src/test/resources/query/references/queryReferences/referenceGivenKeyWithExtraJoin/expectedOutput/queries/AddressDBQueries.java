@@ -29,6 +29,7 @@ public class AddressDBQueries {
                 .leftJoin(address_customeraddressidfkey_customer_left)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.hasIds(addressIds))
+                .orderBy(address_customeraddressidfkey_customer_left.store().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -46,6 +47,7 @@ public class AddressDBQueries {
                 .join(address_customeraddressidfkey_customer)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.hasIds(addressIds))
+                .orderBy(address_customeraddressidfkey_customer.store().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

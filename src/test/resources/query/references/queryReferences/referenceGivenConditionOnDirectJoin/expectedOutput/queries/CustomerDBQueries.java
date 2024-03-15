@@ -28,6 +28,7 @@ public class CustomerDBQueries {
                 .from(CUSTOMER)
                 .where(CUSTOMER.hasIds(customerIds))
                 .and(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, CUSTOMER.address()))
+                .orderBy(CUSTOMER.address().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

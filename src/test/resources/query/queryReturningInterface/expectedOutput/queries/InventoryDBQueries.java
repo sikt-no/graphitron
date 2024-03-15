@@ -31,6 +31,7 @@ public class InventoryDBQueries {
                 .join(inventory_rentalinventoryidfkey_rental)
                 .onKey(RENTAL__RENTAL_INVENTORY_ID_FKEY)
                 .where(INVENTORY.hasIds(inventoryIds))
+                .orderBy(inventory_rentalinventoryidfkey_rental.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 

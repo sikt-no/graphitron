@@ -33,6 +33,7 @@ public class RentalDBQueries {
                 .join(rental_inventory_film_film_filmactor_film_actor)
                 .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(RENTAL.inventory().film(), rental_inventory_film_film_filmactor_film_actor))
                 .where(RENTAL.hasIds(rentalIds))
+                .orderBy(rental_inventory_film_film_filmactor_film_actor.getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

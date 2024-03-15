@@ -30,6 +30,7 @@ public class InventoryDBQueries {
                 .join(inventory_film_film_filmactor_film_actor)
                 .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(INVENTORY.film(), inventory_film_film_filmactor_film_actor))
                 .where(INVENTORY.hasIds(inventoryIds))
+                .orderBy(inventory_film_film_filmactor_film_actor.actor().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

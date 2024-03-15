@@ -28,6 +28,7 @@ public class FilmDBQueries {
                 .from(FILM)
                 .where(FILM.hasIds(filmIds))
                 .and(s != null && s.size() > 0 ? FILM.filmLanguageIdFkey().NAME.in(s) : DSL.noCondition())
+                .orderBy(FILM.filmLanguageIdFkey().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -43,6 +44,7 @@ public class FilmDBQueries {
                 .from(FILM)
                 .where(FILM.hasIds(filmIds))
                 .and(s != null && s.getName() != null && s.getName().size() > 0 ? FILM.filmLanguageIdFkey().NAME.in(s.getName()) : DSL.noCondition())
+                .orderBy(FILM.filmLanguageIdFkey().getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

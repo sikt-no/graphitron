@@ -41,6 +41,7 @@ public class InventoryDBQueries {
                 )
                 .from(INVENTORY)
                 .where(INVENTORY.hasIds(inventoryIds))
+                .orderBy(INVENTORY.store().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
@@ -157,6 +158,7 @@ public class InventoryDBQueries {
                 )
                 .from(INVENTORY)
                 .where(INVENTORY.hasIds(inventoryIds))
+                .orderBy(INVENTORY.film().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

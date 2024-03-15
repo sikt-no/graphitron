@@ -45,6 +45,7 @@ public class RentalDBQueries {
                 )
                 .from(RENTAL)
                 .where(RENTAL.hasIds(rentalIds))
+                .orderBy(RENTAL.inventory().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

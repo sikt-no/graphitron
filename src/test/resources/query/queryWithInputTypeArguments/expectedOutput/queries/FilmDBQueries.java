@@ -36,6 +36,7 @@ public class FilmDBQueries {
                 .where(FILM.hasIds(filmIds))
                 .and(film_filmcategoryfilmidfkey_film_category.LAST_UPDATED.eq(categoryIn.getLastUpdated()))
                 .and(film_filmcategoryfilmidfkey_film_category.category().NAME.eq(categoryIn.getName()))
+                .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -63,6 +64,7 @@ public class FilmDBQueries {
                                 input.getName())
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
+                .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -93,6 +95,7 @@ public class FilmDBQueries {
                                 input.getName())
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
+                .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -119,6 +122,7 @@ public class FilmDBQueries {
                                 input.getLastUpdated())
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
+                .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
@@ -147,6 +151,7 @@ public class FilmDBQueries {
                                 input.getName())
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
+                .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

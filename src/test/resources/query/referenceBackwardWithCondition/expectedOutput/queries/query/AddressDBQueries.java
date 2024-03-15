@@ -30,6 +30,7 @@ public class AddressDBQueries {
                 .where(ADDRESS.hasIds(addressIds))
                 .and(id != null ? address_customeraddressidfkey_customer.store().ID.eq(id) : DSL.noCondition())
                 .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_customeraddressidfkey_customer, address_customeraddressidfkey_customer.store()))
+                .orderBy(address_customeraddressidfkey_customer.store().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }
