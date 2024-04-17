@@ -5,6 +5,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecification;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.*;
@@ -34,13 +35,13 @@ public class ProcessedSchema {
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, ConnectionObjectDefinition> connectionObjects;
     private final Map<String, UnionDefinition> unions;
-    private final Set<String> objectsWithTableOrConnection, tableTypesWithTable;
-    private final ObjectDefinition queryType;
-    private final ObjectDefinition mutationType;
+    private final Set<String> objectsWithTableOrConnection, tableTypesWithTable, scalarTypes, typeNames, validFieldTypes;
+    private final ObjectDefinition queryType, mutationType;
 
     private final Map<String, ObjectDefinition> objectWithPreviousTable;
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
+        typeNames = typeRegistry.getTypes(TypeDefinition.class).stream().map(TypeDefinition::getName).collect(Collectors.toSet());
         var objectTypes = typeRegistry.getTypes(ObjectTypeDefinition.class);
         enums = EnumDefinition.processEnumDefinitions(typeRegistry.getTypes(EnumTypeDefinition.class))
                 .stream()
@@ -101,6 +102,9 @@ public class ProcessedSchema {
                 .stream()
                 .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
 
+        scalarTypes = typeRegistry.scalars().keySet();
+        validFieldTypes = Stream.concat(scalarTypes.stream(), typeNames.stream()).collect(Collectors.toSet());
+
         // queryType may be null in certain tests.
         objectWithPreviousTable = new HashMap<>();
         var nodes = objects.values().stream().filter(it -> it.implementsInterface(NODE_TYPE.getName()));
@@ -111,8 +115,39 @@ public class ProcessedSchema {
      * Ensure that the definitions created in this class match database names where applicable.
      */
     public void validate() {
+        validate(true);
+    }
+
+    /**
+     * Ensure that the definitions created in this class match database names where applicable.
+     */
+    public void validate(boolean checkTypes) {
         ProcessedDefinitionsValidator processedDefinitionsValidator = GeneratorConfig.getExtendedFunctionality().createExtensionIfAvailable(ProcessedDefinitionsValidator.class, new Class[]{ProcessedSchema.class}, this);
+        if (checkTypes) {
+            processedDefinitionsValidator.validateObjectFieldTypes();
+        }
         processedDefinitionsValidator.validateThatProcessedDefinitionsConformToJOOQNaming();
+    }
+
+    /**
+     * @return Does this name belong to a valid GraphQL type in the schema?
+     */
+    public boolean isType(String name) {
+        return typeNames.contains(name);
+    }
+
+    /**
+     * @return Does this field type belong to a valid GraphQL type in the schema?
+     */
+    public boolean isType(FieldSpecification field) {
+        return typeNames.contains(field.getTypeName());
+    }
+
+    /**
+     * @return Set of all possible type or scalar names that a field can have in the schema.
+     */
+    public Set<String> getAllValidFieldTypeNames() {
+        return validFieldTypes;
     }
 
     /**
@@ -438,6 +473,20 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this name belong to a scalar in the schema?
+     */
+    public boolean isScalar(String name) {
+        return scalarTypes.contains(name);
+    }
+
+    /**
+     * @return Does this field type belong to a scalar in the schema?
+     */
+    public boolean isScalar(FieldSpecification field) {
+        return scalarTypes.contains(field.getTypeName());
+    }
+
+    /**
      * @return The Query type.
      */
     public ObjectDefinition getQueryType() {
@@ -499,6 +548,13 @@ public class ProcessedSchema {
      */
     public RecordObjectDefinition<?, ? extends GenerationField> getTableType(GenerationField field) {
         return getTableType(field.getTypeName());
+    }
+
+    /**
+     * @return All types which could potentially have tables.
+     */
+    public Map<String, RecordObjectDefinition<? extends TypeDefinition<? extends TypeDefinition<?>>, ? extends GenerationField>> getTableTypes() {
+        return tableTypes;
     }
 
     /**

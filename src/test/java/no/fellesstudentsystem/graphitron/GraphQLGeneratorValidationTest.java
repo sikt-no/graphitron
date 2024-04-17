@@ -27,7 +27,7 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
             new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord")
     );
     public GraphQLGeneratorValidationTest() {
-        super(SRC_TEST_RESOURCES_PATH);
+        super(SRC_TEST_RESOURCES_PATH, false);
     }
 
     @Override
@@ -198,6 +198,28 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
         assertThatThrownBy(() -> getProcessedSchema("error/insertNoRecordSet"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Mutation registerCustomerInput is set as an insert operation, but does not link any input to tables.");
+    }
+
+    @Test
+    void generate_whenFieldHasInvalidType_shouldThrowExceptionWithSuggestions() {
+        assertThatThrownBy(() -> getProcessedSchema("error/invalidType", true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(
+                        "Problems have been found that prevent code generation:\n" +
+                                "Field \"rental\" within schema type \"Query\" has invalid type \"Rentaaal\" (or an union containing it). Closest type matches found by levenshtein distance are:\n" +
+                                "Rental - 2\n" +
+                                "Field \"rentalUnion\" within schema type \"Query\" has invalid type \"Rentaaaaal\" (or an union containing it). Closest type matches found by levenshtein distance are:\n" +
+                                "Rental - 4\n" +
+                                "Field \"rentalUnionExtra\" within schema type \"Query\" has invalid type \"Rentaaaaal\" (or an union containing it). Closest type matches found by levenshtein distance are:\n" +
+                                "Rental - 4\n" +
+                                "Field \"rentalUnionExtra\" within schema type \"Query\" has invalid type \"Reeentaaaaal\" (or an union containing it). Closest type matches found by levenshtein distance are:\n" +
+                                "Rental - 6\n" +
+                                "Field \"payment\" within schema type \"Query\" has invalid type \"Payment\" (or an union containing it). Closest type matches found by levenshtein distance are:\n" +
+                                "Payment0 - 1, Payment1 - 1\n\n" +
+
+                                "Field \"rental\" within schema type \"Customer\" has invalid type \"Rentaaal\" (or an union containing it). Closest type matches found by levenshtein distance are:\n" +
+                                "Rental - 2"
+                );
     }
 
     @Test

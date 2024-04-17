@@ -45,11 +45,17 @@ public abstract class TestCommon {
     protected Path tempOutputDirectory;
 
     private final String sourceTestPath, subpathSchema;
+    protected final boolean checkProcessedSchemaDefault;
     protected ListAppender<ILoggingEvent> logWatcher;
 
     public TestCommon(String testSubpath) {
+        this(testSubpath, true);
+    }
+
+    public TestCommon(String testSubpath, boolean checkProcessedSchemaDefault) {
         subpathSchema = SRC_ROOT + "/" + testSubpath + "/" + COMMON_SCHEMA_NAME;
         sourceTestPath = SRC_ROOT + "/" + testSubpath + "/";
+        this.checkProcessedSchemaDefault = checkProcessedSchemaDefault;
     }
 
     public String getSourceTestPath() {
@@ -127,10 +133,15 @@ public abstract class TestCommon {
 
     @NotNull
     protected ProcessedSchema getProcessedSchema(String schemaParentFolder) {
+        return getProcessedSchema(schemaParentFolder, checkProcessedSchemaDefault);
+    }
+
+    @NotNull
+    protected ProcessedSchema getProcessedSchema(String schemaParentFolder, boolean checkTypes) {
         GeneratorConfig.setSchemaFiles(SRC_COMMON_SCHEMA, SRC_DIRECTIVES, subpathSchema, sourceTestPath + schemaParentFolder + "/schema.graphqls");
 
         var processedSchema = GraphQLGenerator.getProcessedSchema();
-        processedSchema.validate();
+        processedSchema.validate(checkTypes);
         return processedSchema;
     }
 

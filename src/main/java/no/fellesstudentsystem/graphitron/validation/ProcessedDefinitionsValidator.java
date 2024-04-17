@@ -16,12 +16,15 @@ import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
+import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 
@@ -327,6 +330,63 @@ public class ProcessedDefinitionsValidator {
                 );
             }
         }
+    }
+
+    public void validateObjectFieldTypes() {
+        var errorMessages = schema
+                .getTableTypes()
+                .values()
+                .stream()
+                .map(this::validateFieldTypes)
+                .filter(it -> !it.isEmpty())
+                .collect(Collectors.joining("\n\n"));
+        if (!errorMessages.isEmpty()) {
+            throw new IllegalArgumentException("Problems have been found that prevent code generation:\n" + errorMessages);
+        }
+    }
+
+    private String validateFieldTypes(RecordObjectDefinition<?, ? extends GenerationField> object) {
+        var objectName = object.getName();
+        return object
+                .getFields()
+                .stream()
+                .flatMap(it -> validateFieldType(objectName, it).stream())
+                .filter(it -> !it.isEmpty())
+                .collect(Collectors.joining("\n"));
+    }
+
+    private List<String> validateFieldType(String objectName, GenerationField field) {
+        return checkTypeExists(field.getTypeName(), Set.of()) // May contain more than one if type is union.
+                .entrySet()
+                .stream()
+                .map(it -> String.format("Field \"%s\" within schema type \"%s\" has invalid type \"%s\" (or an union containing it). Closest type matches found by levenshtein distance are:\n%s", field.getName(), objectName, it.getKey(), it.getValue()))
+                .collect(Collectors.toList());
+    }
+
+    private Map<String, String> checkTypeExists(String typeName, Set<String> seenTypes) {
+        if (seenTypes.contains(typeName) || schema.isScalar(typeName)) { // Check seen types in case there are some strange Union recursions.
+            return Map.of();
+        }
+
+        if (schema.isUnion(typeName)) {
+            return schema
+                    .getUnion(typeName)
+                    .getFieldTypeNames()
+                    .stream()
+                    .flatMap(it -> checkTypeExists(it, Stream.concat(seenTypes.stream(), Stream.of(typeName)).collect(Collectors.toSet())).entrySet().stream())
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        }
+
+        if (schema.isType(typeName)) {
+            return Map.of();
+        }
+
+        // If we make it here, no valid type could be identified.
+        var levenshtein = new LevenshteinDistance(12); // Limit for better performance, but these names are probably not that long anyway. Higher values are converted to -1.
+        var distances = schema.getAllValidFieldTypeNames().stream().collect(Collectors.toMap(Function.identity(), it -> levenshtein.apply(typeName, it)));
+        var distanceThreshold = distances.values().stream().filter(it -> it > -1).min(Integer::compare).orElse(0); // Could potentially allow a wider match by picking a higher number.
+
+        return Map.of(typeName, distances.entrySet().stream().filter(it -> -1 < it.getValue() && it.getValue() <= distanceThreshold).map(it -> it.getKey() + " - " + it.getValue()).collect(Collectors.joining(", ")));
     }
 
     private void checkPaginationSpecs(List<ObjectField> fields) {
