@@ -70,7 +70,7 @@ directive @orderBy on ARGUMENT_DEFINITION
 directive @index(name: String) on ENUM_VALUE
 
 """Wrap type in the given record."""
-directive @record(record: ExternalCodeReference) on INPUT_OBJECT | INPUT_FIELD_DEFINITION
+directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 
 """Temporary directive annotating that this object should be fetched by IDs rather than be set from user-defined records."""
 directive @fetchByID on FIELD_DEFINITION
