@@ -174,9 +174,13 @@ public class DataLoaders {
 
         var keyToId = getKeyToId(keys);
         var idSet = new HashSet<>(keyToId.values());
-        var mapResult = resultAsMap(keyToId, dbFunction.callDBMethod(idSet, selectionSet));
-        var totalCount = countFunction.callDBMethod(idSet, selectionSet);
-        return DataLoaders.getPaginatedConnection(mapResult, pageSize, totalCount, maxNodes, idFunction);
+        return DataLoaders.getPaginatedConnection(
+                resultAsMapForConnection(keyToId, dbFunction.callDBMethod(idSet, selectionSet)),
+                pageSize,
+                countFunction.callDBMethod(idSet, selectionSet),
+                maxNodes,
+                idFunction
+        );
     }
 
     @NotNull
@@ -194,8 +198,27 @@ public class DataLoaders {
         return keyToId
                 .entrySet()
                 .stream()
+                .filter(it -> it.getValue() != null)
                 .filter(it -> dbResult.get(it.getValue()) != null)
                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
+    }
+
+    @NotNull
+    private static <T> Map<String, T> resultAsMapForConnection(Map<String, String> keyToId, Map<String, T> dbResult) {
+        return keyToId
+                .entrySet()
+                .stream()
+                .filter(it -> it.getValue() != null)
+                .filter(it -> dbResult.get(it.getValue()) != null)
+                .collect(
+                        Collectors.toMap(
+                                Map.Entry::getKey,
+                                it -> {
+                                    var dbValue = dbResult.get(it.getValue());
+                                    return dbValue instanceof List<?> ? (T)((List<?>)dbValue).stream().filter(Objects::nonNull).collect(Collectors.toList()) : dbValue;
+                                }
+                        )
+                );
     }
 
     @NotNull
@@ -223,9 +246,11 @@ public class DataLoaders {
         if (items.isEmpty()) {
             pageInfo = new DefaultPageInfo(null, null, false, dbResult.size() > pageSize);
         } else {
+            var itemStart = items.get(0);
+            var itemEnd = items.get(items.size() - 1);
             pageInfo = new DefaultPageInfo(
-                    new DefaultConnectionCursor(idFunction.apply(items.get(0))),
-                    new DefaultConnectionCursor(idFunction.apply(items.get(items.size() - 1))),
+                    new DefaultConnectionCursor(itemStart != null ? idFunction.apply(itemStart) : null),
+                    new DefaultConnectionCursor(itemEnd != null ? idFunction.apply(itemEnd) : null),
                     false,
                     dbResult.size() > pageSize
             );
@@ -233,7 +258,7 @@ public class DataLoaders {
 
         List<Edge<T>> edges = items
                 .stream()
-                .map(item -> new DefaultEdge<>(item, new DefaultConnectionCursor(idFunction.apply(item))))
+                .map(item -> new DefaultEdge<>(item, new DefaultConnectionCursor(item != null ? idFunction.apply(item) : null)))
                 .collect(Collectors.toList());
 
         return ConnectionImpl
