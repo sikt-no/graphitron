@@ -175,7 +175,7 @@ public class DataLoaders {
         var keyToId = getKeyToId(keys);
         var idSet = new HashSet<>(keyToId.values());
         return DataLoaders.getPaginatedConnection(
-                resultAsMapForConnection(keyToId, dbFunction.callDBMethod(idSet, selectionSet)),
+                resultAsMap(keyToId, dbFunction.callDBMethod(idSet, selectionSet)),
                 pageSize,
                 countFunction.callDBMethod(idSet, selectionSet),
                 maxNodes,
@@ -195,16 +195,6 @@ public class DataLoaders {
 
     @NotNull
     private static <T> Map<String, T> resultAsMap(Map<String, String> keyToId, Map<String, T> dbResult) {
-        return keyToId
-                .entrySet()
-                .stream()
-                .filter(it -> it.getValue() != null)
-                .filter(it -> dbResult.get(it.getValue()) != null)
-                .collect(Collectors.toMap(Map.Entry::getKey, it -> dbResult.get(it.getValue())));
-    }
-
-    @NotNull
-    private static <T> Map<String, T> resultAsMapForConnection(Map<String, String> keyToId, Map<String, T> dbResult) {
         return keyToId
                 .entrySet()
                 .stream()
