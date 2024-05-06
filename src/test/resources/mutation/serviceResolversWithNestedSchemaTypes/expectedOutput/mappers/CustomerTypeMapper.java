@@ -13,39 +13,39 @@ public class CustomerTypeMapper {
     public static List<Customer> recordToGraphType(List<CustomerRecord> customerRecord, String path,
                                                    RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var select = transform.getSelect();
         var customerList = new ArrayList<Customer>();
 
         if (customerRecord != null) {
             for (var itCustomerRecord : customerRecord) {
                 if (itCustomerRecord == null) continue;
                 var customer = new Customer();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     customer.setId(itCustomerRecord.getId());
                 }
 
-                if (arguments.contains(pathHere + "name")) {
+                if (select.contains(pathHere + "name")) {
                     var customer_name = new Name();
-                    if (arguments.contains(pathHere + "name/first")) {
+                    if (select.contains(pathHere + "name/first")) {
                         customer_name.setFirst(itCustomerRecord.getFirstName());
                     }
 
-                    if (arguments.contains(pathHere + "name/last")) {
+                    if (select.contains(pathHere + "name/last")) {
                         customer_name.setLast(itCustomerRecord.getLastName());
                     }
 
                     customer.setName(customer_name);
                 }
 
-                if (arguments.contains(pathHere + "nameTwoLevels")) {
+                if (select.contains(pathHere + "nameTwoLevels")) {
                     var customer_nameTwoLevels = new NameLevels();
-                    if (arguments.contains(pathHere + "nameTwoLevels/name")) {
+                    if (select.contains(pathHere + "nameTwoLevels/name")) {
                         var nameLevels_name = new Name();
-                        if (arguments.contains(pathHere + "nameTwoLevels/name/first")) {
+                        if (select.contains(pathHere + "nameTwoLevels/name/first")) {
                             nameLevels_name.setFirst(itCustomerRecord.getFirstName());
                         }
 
-                        if (arguments.contains(pathHere + "nameTwoLevels/name/last")) {
+                        if (select.contains(pathHere + "nameTwoLevels/name/last")) {
                             nameLevels_name.setLast(itCustomerRecord.getLastName());
                         }
                         customer_nameTwoLevels.setName(nameLevels_name);
@@ -53,11 +53,11 @@ public class CustomerTypeMapper {
                     customer.setNameTwoLevels(customer_nameTwoLevels);
                 }
 
-                if (arguments.contains(pathHere + "postalCode")) {
+                if (select.contains(pathHere + "postalCode")) {
                     customer.setPostalCode(itCustomerRecord.getPostalCode());
                 }
 
-                if (arguments.contains(pathHere + "lastUpdate")) {
+                if (select.contains(pathHere + "lastUpdate")) {
                     customer.setLastUpdate(itCustomerRecord.getLastUpdate());
                 }
                 customerList.add(customer);

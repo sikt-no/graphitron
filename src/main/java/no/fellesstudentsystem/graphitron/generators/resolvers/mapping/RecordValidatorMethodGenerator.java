@@ -18,6 +18,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordValidateMethod;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
+import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_ARGS_NAME;
 import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_ENV_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.GRAPHQL_ERROR;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.HASH_SET;
@@ -37,6 +38,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
         var input = processedSchema.getInputType(target);
         return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), input.getRecordClassName(), wrapSet(GRAPHQL_ERROR.className))
+                .addCode(declare(VARIABLE_ARGUMENTS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME)))
                 .addCode(declare(VARIABLE_ENV, asMethodCall(TRANSFORMER_NAME, METHOD_ENV_NAME)))
                 .addCode(declare(VARIABLE_VALIDATION_ERRORS, CodeBlock.of("new $T<$T>()", HASH_SET.className, GRAPHQL_ERROR.className)))
                 .addCode("\n")
@@ -68,7 +70,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
                 fieldCode.add(iterateRecords(innerContext));
             } else {
                 fieldCode
-                        .beginControlFlow("if ($L)", argumentsLookup(innerContext.getIndexPath().replaceAll("(.*?)\"/", ""), false))
+                        .beginControlFlow("if ($L)", selectionSetLookup(innerContext.getIndexPath().replaceAll("(.*?)\"/", ""), false, true))
                         .addStatement("$N.put($S, $N + $L\")", VARIABLE_PATHS_FOR_PROPERTIES, uncapitalize(innerField.getFieldJOOQMappingName()), PATH_HERE_NAME, innerContext.getIndexPath())
                         .endControlFlow();
             }

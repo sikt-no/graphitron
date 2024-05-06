@@ -16,7 +16,6 @@ public class EditFilmResponseLevel1TypeMapper {
     public static List<EditFilmResponseLevel1> toGraphType(List<TestFilmRecord> testFilmRecord,
                                                            String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editFilmResponseLevel1List = new ArrayList<EditFilmResponseLevel1>();
 
@@ -25,29 +24,29 @@ public class EditFilmResponseLevel1TypeMapper {
                 if (itTestFilmRecord == null) continue;
                 var editFilmResponseLevel1 = new EditFilmResponseLevel1();
                 var record = itTestFilmRecord.getRecord();
-                if (record != null && arguments.contains(pathHere + "film")) {
+                if (record != null && select.contains(pathHere + "film")) {
                     editFilmResponseLevel1.setFilm(transform.filmRecordToGraphType(record, pathHere + "film"));
                 }
 
-                if (arguments.contains(pathHere + "rating1")) {
+                if (select.contains(pathHere + "rating1")) {
                     editFilmResponseLevel1.setRating1(itTestFilmRecord.getRatingNoConverter() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(itTestFilmRecord.getRatingNoConverter(), null));
                 }
 
-                if (arguments.contains(pathHere + "rating2")) {
+                if (select.contains(pathHere + "rating2")) {
                     editFilmResponseLevel1.setRating2(itTestFilmRecord.getRatingWithConverter() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(itTestFilmRecord.getRatingWithConverter(), null));
                 }
 
-                if (arguments.contains(pathHere + "level2")) {
+                if (select.contains(pathHere + "level2")) {
                     var level2 = new EditFilmResponseLevel2();
-                    if (arguments.contains(pathHere + "level2/rating1")) {
+                    if (select.contains(pathHere + "level2/rating1")) {
                         level2.setRating1(itTestFilmRecord.getRatingNoConverter() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(itTestFilmRecord.getRatingNoConverter(), null));
                     }
 
-                    if (arguments.contains(pathHere + "level2/rating2")) {
+                    if (select.contains(pathHere + "level2/rating2")) {
                         level2.setRating2(itTestFilmRecord.getRatingWithConverter() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(itTestFilmRecord.getRatingWithConverter(), null));
                     }
 
-                    if (arguments.contains(pathHere + "level2/film")) {
+                    if (select.contains(pathHere + "level2/film")) {
                         level2.setFilm(transform.filmRecordToGraphType(record, pathHere + "level2/film"));
                     }
 

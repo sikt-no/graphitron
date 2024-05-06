@@ -40,8 +40,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
                 .addParameter(wrapList(inputType), uncapitalize(inputName))
                 .addParameter(STRING.className, PATH_NAME)
                 .addParameter(INPUT_TRANSFORMER.className, TRANSFORMER_NAME)
-                .addCode(declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/")))
-                .addCode(declare(VARIABLE_ARGUMENTS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME)));
+                .addCode(declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/")));
     }
 
     public MethodSpec.Builder getMapperSpecBuilder(T target) {
@@ -50,7 +49,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
 
         var fillCode = iterateRecords(context); // Note, do before declaring dependencies.
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), processedSchema.getTableType(target).asSourceClassName(toRecord), wrapList(context.getReturnType()))
-                .addCode(!toRecord && context.hasJavaRecordReference() ? declare(VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME)) : empty())
+                .addCode(declare(toRecord ? VARIABLE_ARGUMENTS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME)))
                 .addCode(toRecord && context.hasTable() && !context.hasJavaRecordReference() ? declare(CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)) : empty())
                 .addCode(declareArrayList(context.getOutputListName(), context.getReturnType()))
                 .addCode("\n")

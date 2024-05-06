@@ -62,7 +62,7 @@ public class EditErrorGeneratedResolver implements EditErrorMutationResolver {
 
         var editCustomerResponse = transform.editCustomerResponseToGraphType(editError, "");
 
-        if (editError != null && transform.getArguments().contains("errors")) {
+        if (editError != null && transform.getSelect().contains("errors")) {
             editCustomerResponse.setErrors(someErrorBList);
         }
 

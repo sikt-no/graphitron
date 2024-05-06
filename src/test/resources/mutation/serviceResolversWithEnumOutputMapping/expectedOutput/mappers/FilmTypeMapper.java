@@ -15,22 +15,22 @@ public class FilmTypeMapper {
     public static List<Film> recordToGraphType(List<FilmRecord> filmRecord, String path,
                                                RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var select = transform.getSelect();
         var filmList = new ArrayList<Film>();
 
         if (filmRecord != null) {
             for (var itFilmRecord : filmRecord) {
                 if (itFilmRecord == null) continue;
                 var film = new Film();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     film.setId(itFilmRecord.getId());
                 }
 
-                if (arguments.contains(pathHere + "rating1")) {
+                if (select.contains(pathHere + "rating1")) {
                     film.setRating1(itFilmRecord.getRating() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(itFilmRecord.getRating(), null));
                 }
 
-                if (arguments.contains(pathHere + "rating2")) {
+                if (select.contains(pathHere + "rating2")) {
                     film.setRating2(itFilmRecord.getRating() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(itFilmRecord.getRating(), null));
                 }
 

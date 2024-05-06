@@ -50,7 +50,7 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
 
         var editCustomerResponseUnion1 = transform.editCustomerResponseUnion1ToGraphType(editErrorUnion1, "");
 
-        if (editErrorUnion1 != null && transform.getArguments().contains("errors")) {
+        if (editErrorUnion1 != null && transform.getSelect().contains("errors")) {
             editCustomerResponseUnion1.setErrors(editErrorsUnion1List);
         }
 

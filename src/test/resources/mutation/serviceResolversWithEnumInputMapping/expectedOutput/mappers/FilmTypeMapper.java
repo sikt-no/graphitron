@@ -11,14 +11,14 @@ public class FilmTypeMapper {
     public static List<Film> recordToGraphType(List<FilmRecord> filmRecord, String path,
                                                RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var select = transform.getSelect();
         var filmList = new ArrayList<Film>();
 
         if (filmRecord != null) {
             for (var itFilmRecord : filmRecord) {
                 if (itFilmRecord == null) continue;
                 var film = new Film();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     film.setId(itFilmRecord.getId());
                 }
 

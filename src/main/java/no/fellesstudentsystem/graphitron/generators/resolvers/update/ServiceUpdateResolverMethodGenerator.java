@@ -238,7 +238,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
             if (!innerCode.isEmpty()) {
                 code
-                        .beginControlFlow("if ($N != null && $L)", previousTarget.getName(), argumentsLookup(innerContext.getPath(), true))
+                        .beginControlFlow("if ($N != null && $L)", previousTarget.getName(), selectionSetLookup(innerContext.getPath(), true, false))
                         .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");

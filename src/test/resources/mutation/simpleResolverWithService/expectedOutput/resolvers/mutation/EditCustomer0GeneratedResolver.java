@@ -28,7 +28,7 @@ public class EditCustomer0GeneratedResolver implements EditCustomer0MutationReso
 
         var editResponse0 = new EditResponse0();
 
-        if (editCustomer0 != null && transform.getArguments().contains("id0")) {
+        if (editCustomer0 != null && transform.getSelect().contains("id0")) {
             editResponse0.setId0(editCustomer0);
         }
 

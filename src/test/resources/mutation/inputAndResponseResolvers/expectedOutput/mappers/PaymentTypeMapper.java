@@ -11,26 +11,26 @@ public class PaymentTypeMapper {
     public static List<Payment> recordToGraphType(List<PaymentRecord> paymentRecord, String path,
                                                   RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var select = transform.getSelect();
         var paymentList = new ArrayList<Payment>();
 
         if (paymentRecord != null) {
             for (var itPaymentRecord : paymentRecord) {
                 if (itPaymentRecord == null) continue;
                 var payment = new Payment();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     payment.setId(itPaymentRecord.getId());
                 }
 
-                if (arguments.contains(pathHere + "amount")) {
+                if (select.contains(pathHere + "amount")) {
                     payment.setAmount(itPaymentRecord.getAmount());
                 }
 
-                if (arguments.contains(pathHere + "date")) {
+                if (select.contains(pathHere + "date")) {
                     payment.setDate(itPaymentRecord.getPaymentDate());
                 }
 
-                if (arguments.contains(pathHere + "lastUpdate")) {
+                if (select.contains(pathHere + "lastUpdate")) {
                     payment.setLastUpdate(itPaymentRecord.getLastUpdate());
                 }
 

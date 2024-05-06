@@ -13,7 +13,6 @@ public class EditCustomerResponse4TypeMapper {
             List<no.fellesstudentsystem.graphitron.records.EditCustomerResponse4> editCustomerResponse4,
             String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editCustomerResponse4List = new ArrayList<EditCustomerResponse4>();
 
@@ -23,12 +22,12 @@ public class EditCustomerResponse4TypeMapper {
             for (var itEditCustomerResponse4 : editCustomerResponse4) {
                 if (itEditCustomerResponse4 == null) continue;
                 var editCustomerResponse4 = new EditCustomerResponse4();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     editCustomerResponse4.setId(itEditCustomerResponse4.getId4());
                 }
 
                 var payment4 = itEditCustomerResponse4.getPayment4();
-                if (payment4 != null && arguments.contains(pathHere + "payment")) {
+                if (payment4 != null && select.contains(pathHere + "payment")) {
                     editCustomerResponse4.setPayment(paymentDBQueries.loadPaymentByIdsAsNode(ctx, Set.of(payment4.getId()), select.withPrefix(pathHere + "payment")).values().stream().findFirst().orElse(null));
                 }
 

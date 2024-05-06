@@ -65,7 +65,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
                     declareBlock = empty();
                 }
 
-                var ifBlock = isType && toRecord ? ifNotNull(varName) : CodeBlock.of("if ($L)", argumentsLookup(innerContext.getPath(), false));
+                var ifBlock = isType && toRecord ? ifNotNull(varName) : CodeBlock.of("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord));
                 fieldCode
                         .beginControlFlow("$L", ifBlock)
                         .add(isType && !toRecord ? declareBlock : empty())

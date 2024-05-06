@@ -11,7 +11,6 @@ public class EditCustomerResponse2TypeMapper {
             List<no.fellesstudentsystem.graphitron.records.EditCustomerResponse2> editCustomerResponse2,
             String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editCustomerResponse2List = new ArrayList<EditCustomerResponse2>();
 
@@ -19,12 +18,12 @@ public class EditCustomerResponse2TypeMapper {
             for (var itEditCustomerResponse2 : editCustomerResponse2) {
                 if (itEditCustomerResponse2 == null) continue;
                 var editCustomerResponse2 = new EditCustomerResponse2();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     editCustomerResponse2.setId(itEditCustomerResponse2.getId2());
                 }
 
                 var customer = itEditCustomerResponse2.getCustomer();
-                if (customer != null && arguments.contains(pathHere + "customer")) {
+                if (customer != null && select.contains(pathHere + "customer")) {
                     editCustomerResponse2.setCustomer(transform.customerRecordToGraphType(customer, pathHere + "customer"));
                 }
 

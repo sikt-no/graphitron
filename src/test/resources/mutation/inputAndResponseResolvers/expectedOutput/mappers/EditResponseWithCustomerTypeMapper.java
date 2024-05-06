@@ -12,7 +12,6 @@ public class EditResponseWithCustomerTypeMapper {
             List<EditCustomerResponse2> editCustomerResponse2, String path,
             RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editResponseWithCustomerList = new ArrayList<EditResponseWithCustomer>();
 
@@ -20,12 +19,12 @@ public class EditResponseWithCustomerTypeMapper {
             for (var itEditCustomerResponse2 : editCustomerResponse2) {
                 if (itEditCustomerResponse2 == null) continue;
                 var editResponseWithCustomer = new EditResponseWithCustomer();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     editResponseWithCustomer.setId(itEditCustomerResponse2.getId2());
                 }
 
                 var customer = itEditCustomerResponse2.getCustomer();
-                if (customer != null && arguments.contains(pathHere + "customerC")) {
+                if (customer != null && select.contains(pathHere + "customerC")) {
                     editResponseWithCustomer.setCustomerC(transform.customerRecordToGraphType(customer, pathHere + "customerC"));
                 }
 

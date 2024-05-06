@@ -11,7 +11,6 @@ public class EditResponseLevel2CTypeMapper {
     public static List<EditResponseLevel2C> toGraphType(List<TestCustomerRecord> testCustomerRecord,
                                                         String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editResponseLevel2CList = new ArrayList<EditResponseLevel2C>();
 
@@ -20,7 +19,7 @@ public class EditResponseLevel2CTypeMapper {
                 if (itTestCustomerRecord == null) continue;
                 var editResponseLevel2C = new EditResponseLevel2C();
                 var record = itTestCustomerRecord.getRecord();
-                if (record != null && arguments.contains(pathHere + "edit3")) {
+                if (record != null && select.contains(pathHere + "edit3")) {
                     editResponseLevel2C.setEdit3(transform.editResponseLevel3BRecordToGraphType(record, pathHere + "edit3"));
                 }
 

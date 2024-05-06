@@ -70,7 +70,7 @@ public class EditErrorUnion2GeneratedResolver implements EditErrorUnion2Mutation
 
         var editCustomerResponseUnion2 = transform.editCustomerResponseUnion2ToGraphType(editErrorUnion2, "");
 
-        if (editErrorUnion2 != null && transform.getArguments().contains("errors")) {
+        if (editErrorUnion2 != null && transform.getSelect().contains("errors")) {
             editCustomerResponseUnion2.setErrors(editErrorsUnion2List);
         }
 

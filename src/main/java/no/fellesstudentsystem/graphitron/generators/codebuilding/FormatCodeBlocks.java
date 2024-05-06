@@ -318,14 +318,14 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that checks whether a path for the selection set is in use.
+     * @return CodeBlock that checks whether a path is in use.
      */
     @NotNull
-    public static CodeBlock argumentsLookup(String path, boolean atResolver) {
+    public static CodeBlock selectionSetLookup(String path, boolean atResolver, boolean useArguments) {
         if (!atResolver) {
-            return CodeBlock.of("$N.contains($N + $S)", VARIABLE_ARGUMENTS, PATH_HERE_NAME, path);
+            return CodeBlock.of("$N.contains($N + $S)", useArguments ? VARIABLE_ARGUMENTS : VARIABLE_SELECT, PATH_HERE_NAME, path);
         }
-        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_ARGS_NAME), path);
+        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, useArguments ? TransformerClassGenerator.METHOD_ARGS_NAME : TransformerClassGenerator.METHOD_SELECT_NAME), path);
     }
 
     /**

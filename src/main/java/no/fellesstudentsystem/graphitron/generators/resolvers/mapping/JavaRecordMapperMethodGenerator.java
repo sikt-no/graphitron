@@ -63,7 +63,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 }
                 var nullBlock = notAlreadyDefined ? CodeBlock.of("$N != null && ", varName) : empty();
                 fieldCode
-                        .beginControlFlow("if ($L$L)", nullBlock, argumentsLookup(innerContext.getPath(), false))
+                        .beginControlFlow("if ($L$L)", nullBlock, selectionSetLookup(innerContext.getPath(), false, toRecord))
                         .add(innerCode.build())
                         .endControlFlow()
                         .add("\n");

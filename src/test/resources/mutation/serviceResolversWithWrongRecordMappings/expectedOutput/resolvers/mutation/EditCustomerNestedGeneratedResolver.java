@@ -35,7 +35,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
 
         var editCustomerResponse = new EditCustomerResponse();
 
-        if (editCustomerNested != null && transform.getArguments().contains("customer")) {
+        if (editCustomerNested != null && transform.getSelect().contains("customer")) {
             editCustomerResponse.setCustomer(customerDBQueries.loadCustomerByIdsAsNode(ctx, editCustomerNested.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix("customer")).values().stream().collect(Collectors.toList()));
         }
 

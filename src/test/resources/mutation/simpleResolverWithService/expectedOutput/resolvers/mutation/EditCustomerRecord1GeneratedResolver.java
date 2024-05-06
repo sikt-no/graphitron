@@ -30,7 +30,7 @@ public class EditCustomerRecord1GeneratedResolver implements EditCustomerRecord1
 
         var editResponse1 = new EditResponse1();
 
-        if (editCustomerRecord1 != null && transform.getArguments().contains("id1")) {
+        if (editCustomerRecord1 != null && transform.getSelect().contains("id1")) {
             editResponse1.setId1(editCustomerRecord1.stream().map(itId1 -> itId1.getId()).collect(Collectors.toList()));
         }
 

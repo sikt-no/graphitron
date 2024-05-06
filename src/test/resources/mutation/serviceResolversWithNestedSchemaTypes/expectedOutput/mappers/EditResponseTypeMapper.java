@@ -11,21 +11,19 @@ public class EditResponseTypeMapper {
     public static List<EditResponse> toGraphType(List<EditCustomerResponse2> editCustomerResponse2,
                                                  String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editResponseList = new ArrayList<EditResponse>();
-
 
         if (editCustomerResponse2 != null) {
             for (var itEditCustomerResponse2 : editCustomerResponse2) {
                 if (itEditCustomerResponse2 == null) continue;
                 var editResponse = new EditResponse();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     editResponse.setId(itEditCustomerResponse2.getId2());
                 }
 
                 var customer = itEditCustomerResponse2.getCustomer();
-                if (customer != null && arguments.contains(pathHere + "customerC")) {
+                if (customer != null && select.contains(pathHere + "customerC")) {
                     editResponse.setCustomerC(transform.customerRecordToGraphType(customer, pathHere + "customerC"));
                 }
 

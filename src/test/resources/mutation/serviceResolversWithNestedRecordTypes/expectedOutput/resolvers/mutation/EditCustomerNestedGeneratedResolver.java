@@ -32,7 +32,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
 
         var editCustomerResponse = new EditCustomerResponse();
 
-        if (editCustomerNested != null && transform.getArguments().contains("customer")) {
+        if (editCustomerNested != null && transform.getSelect().contains("customer")) {
             editCustomerResponse.setCustomer(transform.customerRecordToGraphType(editCustomerNested, "customer"));
         }
 

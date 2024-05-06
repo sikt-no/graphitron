@@ -12,7 +12,6 @@ public class EditCustomerResponseTypeMapper {
             List<EditCustomerResponse1> editCustomerResponse1, String path,
             RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editCustomerResponseList = new ArrayList<EditCustomerResponse>();
 
@@ -20,7 +19,7 @@ public class EditCustomerResponseTypeMapper {
             for (var itEditCustomerResponse1 : editCustomerResponse1) {
                 if (itEditCustomerResponse1 == null) continue;
                 var editCustomerResponse = new EditCustomerResponse();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     editCustomerResponse.setId(itEditCustomerResponse1.getId());
                 }
 

@@ -13,7 +13,6 @@ public class EditResponseLevel2ATypeMapper {
             List<TestCustomerInnerRecord> testCustomerInnerRecord, String path,
             RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
         var select = transform.getSelect();
         var editResponseLevel2AList = new ArrayList<EditResponseLevel2A>();
 
@@ -21,9 +20,9 @@ public class EditResponseLevel2ATypeMapper {
             for (var itTestCustomerInnerRecord : testCustomerInnerRecord) {
                 if (itTestCustomerInnerRecord == null) continue;
                 var editResponseLevel2A = new EditResponseLevel2A();
-                if (arguments.contains(pathHere + "hiddenValue")) {
+                if (select.contains(pathHere + "hiddenValue")) {
                     var hiddenValue = new EditResponseLevel3A();
-                    if (arguments.contains(pathHere + "hiddenValue/i")) {
+                    if (select.contains(pathHere + "hiddenValue/i")) {
                         hiddenValue.setI(itTestCustomerInnerRecord.getSomeInt());
                     }
 
@@ -31,12 +30,12 @@ public class EditResponseLevel2ATypeMapper {
                 }
 
                 var someRecord = itTestCustomerInnerRecord.getSomeRecord();
-                if (someRecord != null && arguments.contains(pathHere + "edit3")) {
+                if (someRecord != null && select.contains(pathHere + "edit3")) {
                     editResponseLevel2A.setEdit3(transform.editResponseLevel3BRecordToGraphType(someRecord, pathHere + "edit3"));
                 }
 
                 var someRecordList = itTestCustomerInnerRecord.getSomeRecordList();
-                if (someRecordList != null && arguments.contains(pathHere + "edit3List")) {
+                if (someRecordList != null && select.contains(pathHere + "edit3List")) {
                     editResponseLevel2A.setEdit3List(transform.editResponseLevel3BRecordToGraphType(someRecordList, pathHere + "edit3List"));
                 }
 

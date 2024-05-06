@@ -11,30 +11,30 @@ public class CustomerTypeMapper {
     public static List<Customer> recordToGraphType(List<CustomerRecord> customerRecord, String path,
                                                    RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var select = transform.getSelect();
         var customerList = new ArrayList<Customer>();
 
         if (customerRecord != null) {
             for (var itCustomerRecord : customerRecord) {
                 if (itCustomerRecord == null) continue;
                 var customer = new Customer();
-                if (arguments.contains(pathHere + "id")) {
+                if (select.contains(pathHere + "id")) {
                     customer.setId(itCustomerRecord.getId());
                 }
 
-                if (arguments.contains(pathHere + "firstName")) {
+                if (select.contains(pathHere + "firstName")) {
                     customer.setFirstName(itCustomerRecord.getFirstName());
                 }
 
-                if (arguments.contains(pathHere + "lastName")) {
+                if (select.contains(pathHere + "lastName")) {
                     customer.setLastName(itCustomerRecord.getLastName());
                 }
 
-                if (arguments.contains(pathHere + "postalCode")) {
+                if (select.contains(pathHere + "postalCode")) {
                     customer.setPostalCode(itCustomerRecord.getPostalCode());
                 }
 
-                if (arguments.contains(pathHere + "lastUpdate")) {
+                if (select.contains(pathHere + "lastUpdate")) {
                     customer.setLastUpdate(itCustomerRecord.getLastUpdate());
                 }
 

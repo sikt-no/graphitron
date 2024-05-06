@@ -28,7 +28,7 @@ public class EditCustomerRecord0GeneratedResolver implements EditCustomerRecord0
 
         var editResponse0 = new EditResponse0();
 
-        if (editCustomerRecord0 != null && transform.getArguments().contains("id0")) {
+        if (editCustomerRecord0 != null && transform.getSelect().contains("id0")) {
             editResponse0.setId0(editCustomerRecord0.getId());
         }
 

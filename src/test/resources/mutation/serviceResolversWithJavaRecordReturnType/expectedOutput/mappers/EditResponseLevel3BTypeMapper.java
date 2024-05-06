@@ -11,14 +11,14 @@ public class EditResponseLevel3BTypeMapper {
     public static List<EditResponseLevel3B> recordToGraphType(List<CustomerRecord> customerRecord,
                                                               String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var select = transform.getSelect();
         var editResponseLevel3BList = new ArrayList<EditResponseLevel3B>();
 
         if (customerRecord != null) {
             for (var itCustomerRecord : customerRecord) {
                 if (itCustomerRecord == null) continue;
                 var editResponseLevel3B = new EditResponseLevel3B();
-                if (arguments.contains(pathHere + "lastName")) {
+                if (select.contains(pathHere + "lastName")) {
                     editResponseLevel3B.setLastName(itCustomerRecord.getLastName());
                 }
 
