@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
@@ -136,9 +137,18 @@ public class UpdateContext {
     }
 
     /**
-     * @return Does this mutation type return any errors?
+     * @return Does this mutation type return any errors that should be handled?
      */
-    public boolean hasErrors() {
+    public boolean hasErrorsToHandle() {
+
+        if (GeneratorConfig.recordValidationEnabled() && GeneratorConfig.getRecordValidation().getSchemaErrorType().isPresent()) {
+            var validationErrorType = GeneratorConfig.getRecordValidation().getSchemaErrorType().orElseThrow();
+
+            return allErrors.stream()
+                    .map(it -> processedSchema.getExceptionDefinitions(it.getTypeName()))
+                    .flatMap(Collection::stream)
+                    .anyMatch(it -> !it.getName().equals(validationErrorType));
+        }
         return !allErrors.isEmpty();
     }
 

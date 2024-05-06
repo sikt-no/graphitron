@@ -1,0 +1,33 @@
+input EditInput @table(name : "CUSTOMER") {
+  id: ID!
+}
+
+type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
+  id: ID!
+  errors: [ValidationErrorUnion!]
+}
+
+type EditCustomerResponse2 @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
+  id: ID!
+  errors: [ValidationErrorAndHandledError!]!
+}
+
+type Mutation {
+  editCustomerInput(input: EditInput!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerInput2(input: EditInput!): EditCustomerResponse2! @service(service : {name: "TEST_CUSTOMER"})
+}
+
+union ValidationErrorUnion = MyValidationError
+
+type MyValidationError implements Error{
+  path: [String!]!
+  message: String!
+}
+
+type SomeErrorA implements Error @error(error: {name: "EXCEPTION_TEST"}) {
+  path: [String!]!
+  message: String!
+}
+
+union ValidationErrorAndHandledError = SomeErrorA | MyValidationError
+

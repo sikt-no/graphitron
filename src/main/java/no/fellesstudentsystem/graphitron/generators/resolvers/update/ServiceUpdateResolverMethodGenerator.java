@@ -53,7 +53,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         var serviceMethod = service.getMethod();
         var methodName = uncapitalize(serviceMethod != null ? serviceMethod.getName() : target.getName());
 
-        if (!context.hasErrors()) {
+        if (!context.hasErrorsToHandle()) {
             return declare(serviceResultName, generateServiceCall(methodName, objectToCall));
         }
         return CodeBlock
@@ -223,7 +223,9 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
             var innerCode = CodeBlock.builder();
             if (innerContext.shouldUseException()) {
-                innerCode.add(innerContext.getSetMappingBlock(asListedName(processedSchema.getErrorTypeDefinition(innerField.getTypeName()).getName())));
+                if (context.hasErrorsToHandle()) {
+                    innerCode.add(innerContext.getSetMappingBlock(asListedName(processedSchema.getErrorTypeDefinition(innerField.getTypeName()).getName())));
+                }
             } else if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
                 if (!innerContext.targetIsType()) {
                     innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget)));
