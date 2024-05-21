@@ -109,7 +109,7 @@ public class FormatCodeBlocks {
                 recordTransformPart(varName, typeName, isJava, isInput),
                 PATH_HERE_NAME,
                 path,
-                recordValidationEnabled() && !isJava ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
+                recordValidationEnabled() && !isJava && isInput ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
         );
     }
 
