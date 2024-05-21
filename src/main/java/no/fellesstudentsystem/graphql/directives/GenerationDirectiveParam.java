@@ -16,7 +16,13 @@ public enum GenerationDirectiveParam {
     SERVICE("service"),
     ERROR("error"),
     METHOD("method"),
-    RECORD("record");
+    RECORD("record"),
+    HANDLERS("handlers"),
+    HANDLER("handler"),
+    CLASS_NAME("className"),
+    CODE("code"),
+    MATCHES("matches"),
+    DESCRIPTION("description");
 
     private final String name;
 

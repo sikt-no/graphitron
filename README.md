@@ -33,12 +33,6 @@ The options are the same for both goals.
     _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
-* `exceptionToErrorMappings` List of mappings that define how specific java exceptions are converted to GraphQL errors. 
-  * `mutationName` - The name of the mutation.
-  * `errorTypeName` - The name of the error type in the GraphQL schema.
-  * `databaseErrorCode` - The database error code associated with the exception.
-  * `exceptionMessageContains` - OPTIONAL. A string that the exception message must contain. 
-  * `errorDescription` - OPTIONAL. A description of the error to be returned to the user.
 
 #### Code references
 * _externalReferences_ - List of references to classes that can be applied through certain directives.
@@ -731,9 +725,44 @@ public class ReturnB {
 }
 ```
 
-#### Error handling (subject to change)
-Graphitron allows for simple error handling when using services. In the schema a type is an error type if it implements
+#### Error handling (work in progress)
+
+Graphitron allows for simple error handling. In the schema a type is an error type if it implements
 the _Error_ interface and has the error **directive** set. Unions of such types are also considered error types.
+
+The `@error` directive is used to map specific Java exceptions to GraphQL errors. 
+The directive is applied to the error types in the schema and takes a list of handlers with parameters that specify how to map the various exceptions.
+
+```graphql
+type MyError implements Error @error(handlers:
+[
+  {
+    handler: "ORA",
+    className: "org.jooq.exception.DataAccessException",
+    code: "20997",
+    description: "You are not allowed to do this like that"
+  },
+  {
+    handler: "ORA",
+    className: "org.jooq.exception.DataAccessException",
+    code: "20998",
+    matches: "bad word detected"
+  }
+]) {
+  path: [String!]!
+  message: String!
+}
+```
+In this example, the `MyError` type is mapped to handle certain `DataAccessException` exceptions from jOOQ.
+- `handler` - This is used to determine which error handler to use. Currently, only "ORA" is supported.
+- `className` - The fully qualified named of the exception class.
+- `code` - The error code, for the "ORA" handler this is the database error code associated with the exception.
+- `description` OPTIONAL. A description of the error to be returned to the user.
+- `matches` OPTIONAL. Can be used to specify a string that the exception message must contain in order to be handled.
+
+##### deprecated error handling for services
+The `@error` directive also supports an `error` parameter that can be used to specify an external code reference. 
+This is deprecated and will be replaced by an enhanced version of the handlers based method described above.
 The error reference must be in the response type to be automatically mapped, and it must refer to an [entry](#code-references)
 in the POM XML. Only the first error to be thrown will be returned, as this uses a try-catch to map which error should be returned.
 

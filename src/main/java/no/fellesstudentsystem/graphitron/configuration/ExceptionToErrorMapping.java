@@ -1,36 +1,28 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
-import org.apache.maven.plugin.MojoExecutionException;
-
 import javax.annotation.Nullable;
+import java.util.Objects;
 import java.util.Optional;
 
 public class ExceptionToErrorMapping {
 
-    private String mutationName;
-    private String errorTypeName;
-    private String databaseErrorCode;
-    private String exceptionMessageContains;
-    private String errorDescription;
+    private final String exceptionClassName;
+    private final String errorTypeName;
+    private final String databaseErrorCode;
+    private final String exceptionMessageContains;
+    private final String errorDescription;
 
-    public ExceptionToErrorMapping() {}
-
-    public ExceptionToErrorMapping(String mutationName, String errorTypeName, String databaseErrorCode, @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
-        this.mutationName = mutationName;
+    public ExceptionToErrorMapping(String exceptionClassName, String errorTypeName, String databaseErrorCode,
+                                   @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
+        this.exceptionClassName = exceptionClassName;
         this.errorTypeName = errorTypeName;
         this.databaseErrorCode = databaseErrorCode;
         this.exceptionMessageContains = exceptionMessageContains;
         this.errorDescription = errorDescription;
     }
 
-    public void validate() throws MojoExecutionException {
-        if (mutationName == null || errorTypeName == null || databaseErrorCode == null) {
-            throw new MojoExecutionException("'mutationName', 'errorTypeName', 'databaseErrorCode' fields are required in 'ExceptionToErrorMapping'");
-        }
-    }
-
-    public String getMutationName() {
-        return mutationName;
+    public String getExceptionClassName() {
+        return exceptionClassName;
     }
 
     public String getErrorTypeName() {
@@ -47,5 +39,18 @@ public class ExceptionToErrorMapping {
 
     public Optional<String> getErrorDescription() {
         return Optional.ofNullable(errorDescription);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ExceptionToErrorMapping that = (ExceptionToErrorMapping) o;
+        return Objects.equals(exceptionClassName, that.exceptionClassName) && Objects.equals(errorTypeName, that.errorTypeName) && Objects.equals(databaseErrorCode, that.databaseErrorCode) && Objects.equals(exceptionMessageContains, that.exceptionMessageContains) && Objects.equals(errorDescription, that.errorDescription);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(exceptionClassName, errorTypeName, databaseErrorCode, exceptionMessageContains, errorDescription);
     }
 }

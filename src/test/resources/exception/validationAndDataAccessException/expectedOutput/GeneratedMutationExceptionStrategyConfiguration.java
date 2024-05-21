@@ -29,9 +29,9 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
     public GeneratedMutationExceptionStrategyConfiguration() {
         mutationsForException = new HashMap<>();
         payloadForMutation = new HashMap<>();
-
         mutationsForException.computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
         mutationsForException.computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
+        mutationsForException.computeIfAbsent(DataAccessException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
         payloadForMutation.put("editCustomerWithMultipleErrors", errors -> {
             var payload = new EditCustomerWithMultipleErrorPayloads();
             payload.setErrors1((List<MyValidationError>) errors);
@@ -39,12 +39,12 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
             return payload;
         } );
 
-        mutationsForException.computeIfAbsent(DataAccessException.class, k -> new HashSet<>()).add("editCustomerWithOtherError");
+        mutationsForException.get(DataAccessException.class).add("editCustomerWithOtherError");
         payloadForMutation.put("editCustomerWithOtherError", errors -> {
             var payload = new EditCustomerWithOtherErrorPayload();
             payload.setErrors((List<OtherError>) errors);
             return payload;
-        });
+        } );
 
         mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerWithUnionError");
         mutationsForException.get(IllegalArgumentException.class).add("editCustomerWithUnionError");
@@ -62,6 +62,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
             payload.setErrors((List<MyValidationError>) errors);
             return payload;
         } );
+
     }
 
     @Override

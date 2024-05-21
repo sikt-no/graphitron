@@ -2,24 +2,23 @@ package no.fellesstudentsystem.graphitron.generators.exception;
 
 import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.jooq.exception.DataAccessException;
 
 import javax.lang.model.element.Modifier;
 import java.io.File;
 import java.io.IOException;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareArrayList;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
@@ -27,6 +26,7 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 public class DataAccessExceptionToErrorMappingProviderGenerator implements ClassGenerator<ObjectDefinition> {
     private static final String MAPPINGS_FOR_MUTATION_FIELD_NAME = "mappingsForMutation";
     private static final TypeName ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
+    private static final String MAPPING_VARIABLE_PREFIX = "m";
     private final ProcessedSchema processedSchema;
 
     public DataAccessExceptionToErrorMappingProviderGenerator(ProcessedSchema processedSchema) {
@@ -51,57 +51,25 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
     }
 
     private CodeBlock createConstructorContentForMutations(ObjectDefinition mutationTypeDefinition) {
-        var codeBuilder = CodeBlock.builder();
-        var errorMappingsForMutationName = GeneratorConfig.getErrorMappingsForMutationName();
+        Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables = new HashMap<>();
+        Map<Integer, CodeBlock> mappingVariablesToBlocks = new HashMap<>();
 
-
-        errorMappingsForMutationName.forEach((key, value) -> {
-
-        });
-
-        mutationTypeDefinition.getFields().stream()
+        var mutationErrorListsCodeblock = mutationTypeDefinition.getFields().stream()
                 .sorted(Comparator.comparing(ObjectField::getName))
-                .forEach(mutation -> {
-                    List<ExceptionToErrorMapping> errorMappings = errorMappingsForMutationName.getOrDefault(mutation.getName(), List.of());
+                .map(mutation -> new MutationProcessor(mutation).process(exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
+                .collect(CodeBlock.joining(""));
 
-                    for (int i = 0; i < errorMappings.size(); i++) {
-                        ExceptionToErrorMapping exceptionToErrorMapping = errorMappings.get(i);
+        var codeBuilder = CodeBlock.builder();
+        mappingVariablesToBlocks.forEach((key, value) -> codeBuilder.add(declare(MAPPING_VARIABLE_PREFIX + key, value)));
 
-                        if (i == 0) {
-                            codeBuilder.add("\n");
-                            codeBuilder.add(declareArrayList(exceptionToErrorMapping.getMutationName(), DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
-                        }
-
-                        var errorsListName = asListedName(exceptionToErrorMapping.getMutationName());
-
-                        codeBuilder.addStatement(
-                                CodeBlock.builder()
-                                        .add("$N.add(\n", errorsListName)
-                                        .indent()
-                                        .add("new $T(\n", DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className)
-                                        .indent()
-                                        .add("new $T($S, $S),\n",
-                                                DATA_ACCESS_EXCEPTION_MAPPING_CONTENT.className,
-                                                exceptionToErrorMapping.getDatabaseErrorCode(),
-                                                exceptionToErrorMapping.getExceptionMessageContains())
-                                        .add("path -> new $T(path, $L)))",
-                                                processedSchema.getObject(exceptionToErrorMapping.getErrorTypeName()).getGraphClassName(), exceptionToErrorMapping.getErrorDescription().map(it -> CodeBlock.of("$S", it)).orElse(CodeBlock.of("null")))
-                                        .unindent().unindent()
-                                        .build());
-
-                        if (i == errorMappings.size()-1) {
-                            codeBuilder.addStatement("$N.put($S, $N)", MAPPINGS_FOR_MUTATION_FIELD_NAME, mutation.getName(), errorsListName);
-                        }
-                    }
-
-                });
+        codeBuilder.add(mutationErrorListsCodeblock);
         return codeBuilder.build();
     }
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
 
-        if (!GeneratorConfig.getErrorMappingsForMutationName().isEmpty()) {
+        if (!processedSchema.getExceptions(DataAccessException.class.getName()).isEmpty()) {
             Optional.ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
                     .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
@@ -153,5 +121,73 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
                 .addAnnotation(OVERRIDE.className)
                 .addCode(returnWrap(MAPPINGS_FOR_MUTATION_FIELD_NAME))
                 .build();
+    }
+
+    private class MutationProcessor {
+        private final UpdateContext ctx;
+        private final String mutationName;
+        private final String errorsListName;
+        private boolean mappingIsCreatedForMutation = false;
+
+        MutationProcessor(ObjectField mutation) {
+            this.ctx = new UpdateContext(mutation, processedSchema);
+            this.mutationName = mutation.getName();
+            this.errorsListName = asListedName(mutationName);
+        }
+
+        public CodeBlock process(Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables, Map<Integer, CodeBlock> mappingVariablesToBlocks) {
+            var codeBuilder = CodeBlock.builder();
+
+            for (var errorField : ctx.getAllErrors()) {
+                List<ExceptionDefinition> exceptionDefinitions = ctx.getProcessedSchema().getExceptionDefinitions(errorField.getTypeName());
+
+                var mappingVariablesBlock = exceptionDefinitions.stream()
+                        .map(ExceptionDefinition::getExceptionToErrorMappings)
+                        .flatMap(Collection::stream)
+                        .map(it -> processErrorMapping(it, exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
+                        .collect(CodeBlock.joining(", "));
+
+                if (!mappingVariablesBlock.isEmpty()) {
+                    codeBuilder.add("\n");
+                    codeBuilder.add(declare(asListedName(mutationName), listOf(mappingVariablesBlock)));
+                    mappingIsCreatedForMutation = true;
+                }
+            }
+
+            if (mappingIsCreatedForMutation) {
+                codeBuilder.addStatement("$N.put($S, $N)", MAPPINGS_FOR_MUTATION_FIELD_NAME, mutationName, errorsListName);
+            }
+
+            return codeBuilder.build();
+        }
+
+        private CodeBlock processErrorMapping(ExceptionToErrorMapping errorMapping, Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables, Map<Integer, CodeBlock> mappingVariablesToBlocks) {
+            var codeBuilder = CodeBlock.builder();
+            var variableNumber = exceptionMappingsToErrorMappingVariables.get(errorMapping);
+
+            if (variableNumber == null) {
+                int numberOfMappingVariablesFound = exceptionMappingsToErrorMappingVariables.size() + 1;
+                exceptionMappingsToErrorMappingVariables.put(errorMapping, numberOfMappingVariablesFound);
+                mappingVariablesToBlocks.put(numberOfMappingVariablesFound, createErrorMappingCodeBlock(errorMapping));
+                variableNumber = numberOfMappingVariablesFound;
+            }
+
+            codeBuilder.add("$L$L", MAPPING_VARIABLE_PREFIX, variableNumber);
+            return codeBuilder.build();
+        }
+
+        private  CodeBlock createErrorMappingCodeBlock(ExceptionToErrorMapping exceptionToErrorMapping) {
+            return CodeBlock.builder()
+                    .add("new $T(\n", DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className)
+                    .indent()
+                    .add("new $T($S, $S),\n",
+                            DATA_ACCESS_EXCEPTION_MAPPING_CONTENT.className,
+                            exceptionToErrorMapping.getDatabaseErrorCode(),
+                            exceptionToErrorMapping.getExceptionMessageContains())
+                    .add("path -> new $T(path, $L))",
+                            processedSchema.getObject(exceptionToErrorMapping.getErrorTypeName()).getGraphClassName(), exceptionToErrorMapping.getErrorDescription().map(it -> CodeBlock.of("$S", it)).orElse(CodeBlock.of("null")))
+                    .unindent()
+                    .build();
+        }
     }
 }

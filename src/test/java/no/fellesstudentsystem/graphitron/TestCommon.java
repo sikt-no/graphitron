@@ -119,7 +119,7 @@ public abstract class TestCommon {
             }
         });
 
-        assertThat(expectedFileNames).containsExactlyInAnyOrderElementsOf(generatedFiles.keySet());
+        assertThat(generatedFiles.keySet()).containsExactlyInAnyOrderElementsOf(expectedFileNames);
     }
 
     @NotNull

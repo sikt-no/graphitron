@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.mojo;
 
-import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
@@ -85,25 +84,11 @@ public class GenerateMojo extends AbstractMojo {
     @Parameter(property = "generate.maxAllowedPageSize", defaultValue = "1000")
     private int maxAllowedPageSize;
 
-    @Parameter(property = "generate.exceptionToErrorMappings")
-    private List<ExceptionToErrorMapping> exceptionToErrorMappings;
-
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
-        validateThatRequiredPropertiesAreSet();
-
         GraphQLGenerator.generate();
         project.addCompileSourceRoot(getOutputPath());
-    }
-
-    private void validateThatRequiredPropertiesAreSet() throws MojoExecutionException {
-        for (ExceptionToErrorMapping mapping : exceptionToErrorMappings) {
-            if (mapping == null) {
-                throw new MojoExecutionException("One of the 'ExceptionToErrorMapping' instances is null");
-            }
-            mapping.validate();
-        }
     }
 
     public String getOutputPath() {
@@ -132,10 +117,6 @@ public class GenerateMojo extends AbstractMojo {
 
     public int getMaxAllowedPageSize() {
         return maxAllowedPageSize;
-    }
-
-    public List<ExceptionToErrorMapping> getExceptionToErrorMappings() {
-        return exceptionToErrorMappings;
     }
 
     public void setOutputPath(String outputPath) {

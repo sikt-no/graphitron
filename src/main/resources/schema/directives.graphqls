@@ -29,9 +29,17 @@ directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
 """
 Map this type to a Java exception class.
 Only applicable on types that implement the Error interface.
-Available values are set in the plugin configuration.
+Work in progress, see readme.md for more information.
 """
-directive @error(error: ExternalCodeReference!) on OBJECT
+directive @error(error: ExternalCodeReference, handlers: [Handler!]) on OBJECT
+
+input Handler {
+  handler: String!
+  className: String!
+  code: String!
+  matches: String
+  description: String
+}
 
 """
 Helps create connections between tables where a simple implicit join would be insufficient.

@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.validation;
 
-import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
@@ -64,10 +63,6 @@ public class ProcessedDefinitionsValidator {
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
         validateSelfReferenceHasSplitQuery();
-
-        if (!GeneratorConfig.getExceptionToErrorMappings().isEmpty() && schema.getMutationType() != null) {
-            validateExceptionToErrorMappings(GeneratorConfig.getExceptionToErrorMappings());
-        }
     }
 
     private void validateTableAndFieldUsage() {
@@ -530,44 +525,6 @@ public class ProcessedDefinitionsValidator {
                             missingFields
                     )
             );
-        }
-    }
-
-    private void validateExceptionToErrorMappings(List<ExceptionToErrorMapping> exceptionToErrorMappings) {
-        var mutationFields = schema.getMutationType().getFields();
-        var mutationNames = mutationFields.stream()
-                .map(AbstractField::getName)
-                .collect(Collectors.toList());
-
-        exceptionToErrorMappings.forEach(mapping -> {
-            var mutationName = mapping.getMutationName();
-            Validate.isTrue(mutationNames.contains(mutationName),
-                    "Mutation '%s' defined in exceptionToErrorMappings is not found in the GraphQL schema.", mutationName);
-
-            var objectField = mutationFields.stream()
-                    .filter(it -> it.getName().equals(mutationName))
-                    .findFirst()
-                    .orElseThrow();
-
-            List<String> errorTypes = new UpdateContext(objectField, schema)
-                    .getAllErrors()
-                    .stream()
-                    .map(AbstractField::getTypeName)
-                    .collect(Collectors.toList());
-
-            validateExceptionToErrorMappingErrorType(mapping, errorTypes);
-        });
-    }
-
-    private void validateExceptionToErrorMappingErrorType(ExceptionToErrorMapping mapping, List<String> errorTypes) {
-        var errorTypeName = mapping.getErrorTypeName();
-        for (String type : errorTypes) {
-
-            Validate.isTrue(schema.isUnion(type)
-                            ? schema.getUnion(type).getFieldTypeNames().contains(errorTypeName)
-                            : errorTypes.contains(errorTypeName),
-                    "Mutation '%s' does not return any errors of type '%s' as defined in exceptionToErrorMappings",
-                    mapping.getMutationName(), errorTypeName);
         }
     }
 

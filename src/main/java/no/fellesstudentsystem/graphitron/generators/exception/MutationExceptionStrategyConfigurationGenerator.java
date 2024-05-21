@@ -1,8 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.exception;
 
 import com.squareup.javapoet.*;
-import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
@@ -16,7 +14,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.*;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
+import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -61,26 +60,31 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
 
     private CodeBlock createConstructorContentForMutations(ObjectDefinition mutationTypeDefinition) {
         var codeBuilder = CodeBlock.builder();
-        var errorMappingsForMutationName = GeneratorConfig.getErrorMappingsForMutationName();
 
         mutationTypeDefinition.getFields().stream()
                 .sorted(Comparator.comparing(ObjectField::getName))
                 .forEach(mutation -> {
                     var ctx = new UpdateContext(mutation, processedSchema);
-                    var shouldCreatePayLoadForMutation = false;
+                    var payloadBlockBuilder = CodeBlock.builder();
 
                     if (ctx.getValidationErrorException().isPresent()) {
-                        codeBuilder.add(createMutationsForExceptionBlock(mutation, VALIDATION_VIOLATION_EXCEPTION.className));
-                        codeBuilder.add(createMutationsForExceptionBlock(mutation, ILLEGAL_ARGUMENT_EXCEPTION.className));
-                        shouldCreatePayLoadForMutation = true;
+                        payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation, VALIDATION_VIOLATION_EXCEPTION.className));
+                        payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation, ILLEGAL_ARGUMENT_EXCEPTION.className));
                     }
-                    for (ExceptionToErrorMapping ignored : errorMappingsForMutationName.getOrDefault(mutation.getName(), List.of())) {
-                        codeBuilder.add(createMutationsForExceptionBlock(mutation, DATA_ACCESS_EXCEPTION.className));
-                        shouldCreatePayLoadForMutation = true;
+
+                    for (var errorField : ctx.getAllErrors()) {
+
+                        for (var exc : ctx.getProcessedSchema().getExceptionDefinitions(errorField.getTypeName())) {
+                            if (!exc.getExceptionToErrorMappings().isEmpty()) {
+                                payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation, DATA_ACCESS_EXCEPTION.className));
+                            }
+                        }
                     }
-                    if (shouldCreatePayLoadForMutation) {
-                        codeBuilder.add(createPayloadForMutationBlock(mutation, ctx));
-                        codeBuilder.add("\n");
+
+                    if (!payloadBlockBuilder.isEmpty()) {
+                        payloadBlockBuilder.add(createPayloadForMutationBlock(mutation, ctx));
+                        payloadBlockBuilder.add("\n");
+                        codeBuilder.add(payloadBlockBuilder.build());
                     }
                 });
         return codeBuilder.build();
@@ -134,11 +138,15 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || !getExceptionToErrorMappings().isEmpty()) {
+        if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || schemaContainsExceptionToErrorMappings()) {
             Optional.ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
                     .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
         }
+    }
+
+    private boolean schemaContainsExceptionToErrorMappings() {
+        return processedSchema.getExceptions().values().stream().anyMatch(it -> !it.getExceptionToErrorMappings().isEmpty());
     }
 
     @Override
