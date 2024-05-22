@@ -6,6 +6,7 @@ import fake.graphql.example.model.EditCustomerWithValidationErrorPayload;
 import fake.graphql.example.model.MyValidationError;
 import fake.graphql.example.model.UnionOfErrors;
 import java.lang.Class;
+import java.lang.IllegalArgumentException;
 import java.lang.Override;
 import java.lang.String;
 import java.lang.Throwable;
@@ -27,6 +28,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
         payloadForMutation = new HashMap<>();
 
         mutationsForException.computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
+        mutationsForException.computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
         payloadForMutation.put("editCustomerWithMultipleErrors", errors -> {
             var payload = new EditCustomerWithMultipleErrorPayloads();
             payload.setErrors1((List<MyValidationError>) errors);
@@ -35,6 +37,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
         } );
 
         mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerWithUnionError");
+        mutationsForException.get(IllegalArgumentException.class).add("editCustomerWithUnionError");
         payloadForMutation.put("editCustomerWithUnionError", errors -> {
             var payload = new EditCustomerWithUnionErrorPayload();
             payload.setErrors((List<UnionOfErrors>) errors);
@@ -42,6 +45,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
         } );
 
         mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerWithValidationError");
+        mutationsForException.get(IllegalArgumentException.class).add("editCustomerWithValidationError");
         payloadForMutation.put("editCustomerWithValidationError", errors -> {
             var payload = new EditCustomerWithValidationErrorPayload();
             payload.setErrors((List<MyValidationError>) errors);

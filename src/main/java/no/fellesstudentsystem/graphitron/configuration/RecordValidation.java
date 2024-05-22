@@ -16,10 +16,10 @@ public class RecordValidation {
     private boolean enabled;
 
     /**
-     * Name of the schema error to be returned in case of validation violations.
-     * If null while 'enabled' is true all validation violations will cause 'AbortExecutionExceptions' to be thrown,
+     * Name of the schema error to be returned in case of validation violations and IllegalArgumentExceptions.
+     * If null while 'enabled' is true all validation violations and IllegalArgumentExceptions will cause 'AbortExecutionExceptions' to be thrown,
      * leading to top-level GraphQL errors. If the given error is not present in the schema as a returnable error for
-     * a specific mutation, validation violations on this mutation will instead also cause top-level GraphQL errors.
+     * a specific mutation, validation violations and IllegalArgumentExceptions on this mutation will instead also cause top-level GraphQL errors.
      */
     private String schemaErrorType;
 

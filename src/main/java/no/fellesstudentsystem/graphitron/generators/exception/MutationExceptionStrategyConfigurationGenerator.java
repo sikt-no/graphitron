@@ -71,6 +71,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
 
                     if (ctx.getValidationErrorException().isPresent()) {
                         codeBuilder.add(createMutationsForExceptionBlock(mutation, VALIDATION_VIOLATION_EXCEPTION.className));
+                        codeBuilder.add(createMutationsForExceptionBlock(mutation, ILLEGAL_ARGUMENT_EXCEPTION.className));
                         shouldCreatePayLoadForMutation = true;
                     }
                     for (ExceptionToErrorMapping ignored : errorMappingsForMutationName.getOrDefault(mutation.getName(), List.of())) {

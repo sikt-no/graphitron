@@ -5,6 +5,7 @@ import fake.graphql.example.model.EditCustomerResponse;
 import fake.graphql.example.model.EditCustomerResponse2;
 import fake.graphql.example.model.ValidationErrorAndHandledError;
 import java.lang.Class;
+import java.lang.IllegalArgumentException;
 import java.lang.Override;
 import java.lang.String;
 import java.lang.Throwable;
@@ -25,6 +26,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
         mutationsForException = new HashMap<>();
         payloadForMutation = new HashMap<>();
         mutationsForException.computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add("editCustomerInput");
+        mutationsForException.computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add("editCustomerInput");
         payloadForMutation.put("editCustomerInput", errors -> {
             var payload = new EditCustomerResponse();
             payload.setErrors((List<ValidationErrorUnion>) errors);
@@ -32,6 +34,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
         } );
 
         mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerInput2");
+        mutationsForException.get(IllegalArgumentException.class).add("editCustomerInput2");
         payloadForMutation.put("editCustomerInput2", errors -> {
             var payload = new EditCustomerResponse2();
             payload.setErrors((List<ValidationErrorAndHandledError>) errors);
