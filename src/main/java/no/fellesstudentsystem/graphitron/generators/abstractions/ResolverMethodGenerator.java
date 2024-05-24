@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.generators.abstractions;
 
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
@@ -8,9 +9,8 @@ import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependen
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapFuture;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareContextVariable;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.EXCEPTION;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.OVERRIDE;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
  * This class contains common information and operations shared by resolver method generators.
@@ -27,7 +27,13 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
         return super
                 .getDefaultSpecBuilder(methodName, wrapFuture(returnType))
                 .addAnnotation(OVERRIDE.className)
-                .addException(EXCEPTION.className)
-                .addStatement(declareContextVariable());
+                .addException(EXCEPTION.className);
+    }
+
+    protected TypeName getReturnTypeName(ObjectField referenceField) {
+        if (!referenceField.hasForwardPagination()) { // TODO: This is actually wrong for cases where a single class is returned!
+            return wrapListIf(processedSchema.getObject(referenceField).getGraphClassName(), referenceField.isIterableWrapped() || getLocalObject().isRoot() && !referenceField.hasForwardPagination());
+        }
+        return ParameterizedTypeName.get(RELAY_CONNECTION.className, processedSchema.getObjectOrConnectionNode(referenceField).getGraphClassName());
     }
 }

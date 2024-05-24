@@ -83,4 +83,9 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
     public boolean mapsJavaRecord() {
         return false;
     }
+
+    @Override
+    public boolean generatesAll() {
+        return processedSchema.isTableType(getLocalField());
+    }
 }

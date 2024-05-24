@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.update;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
@@ -21,7 +22,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INPUT_TRANSFORMER;
 
 /**
  * This class generates the resolvers for default update queries.
@@ -39,11 +39,18 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     }
 
     @Override
+    public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
+        return super
+                .getDefaultSpecBuilder(methodName, returnType)
+                .addCode(declareContextVariable());
+    }
+
+    @Override
     public MethodSpec generate(ObjectField target) {
-        var spec = getDefaultSpecBuilder(target.getName(), objectIterableWrap(target));
+        var spec = getDefaultSpecBuilder(target.getName(), iterableWrap(target));
 
         var specInputs = target.getArguments();
-        specInputs.forEach(input -> spec.addParameter(inputIterableWrap(input), input.getName()));
+        specInputs.forEach(input -> spec.addParameter(iterableWrap(input), input.getName()));
 
         context = new UpdateContext(target, processedSchema);
         var code = CodeBlock.builder();
@@ -52,12 +59,12 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         }
 
         code
-                .add(declare(TRANSFORMER_NAME, CodeBlock.of("new $T($N, $N)", INPUT_TRANSFORMER.className, VARIABLE_ENV, CONTEXT_NAME)))
+                .add(declareTransform())
                 .add("\n")
                 .add(transformInputs(specInputs))
                 .add(generateUpdateMethodCall(target))
                 .add("\n")
-                .add(generateResponses(target));
+                .add(generateSchemaOutputs(target));
 
         return spec
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
@@ -97,6 +104,10 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         for (var in : inputObjects) {
             code.add(declareRecords(in, 0));
             recordCode.add(unwrapRecords(MapperContext.createResolverContext(in, true, processedSchema)));
+        }
+
+        if (code.isEmpty() && recordCode.isEmpty()) {
+            return empty();
         }
 
         code.add("\n").add(recordCode.build());
@@ -199,7 +210,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
 
     @Override
     public boolean generatesAll() {
-        return localField.isGenerated() && (localField.hasServiceReference() || localField.hasMutationType());
+        return localField.isGeneratedWithResolver() && (localField.hasServiceReference() || localField.hasMutationType());
     }
 
     /**
@@ -208,7 +219,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     abstract protected CodeBlock generateUpdateMethodCall(ObjectField target);
 
     /**
-     * @return Code that creates the appropriate response objects.
+     * @return Code that creates the appropriate schema objects.
      */
-    abstract protected CodeBlock generateResponses(ObjectField target);
+    abstract protected CodeBlock generateSchemaOutputs(ObjectField target);
 }

@@ -23,7 +23,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomer = testCustomerService.editCustomerID(id);
 

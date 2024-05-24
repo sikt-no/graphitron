@@ -68,10 +68,10 @@ public class DataAccessExceptionToErrorMappingProviderGenerator implements Class
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-
         if (!processedSchema.getExceptions(DataAccessException.class.getName()).isEmpty()) {
             Optional.ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
+                    .filter(it -> !it.methodSpecs.isEmpty())
                     .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
         }
     }

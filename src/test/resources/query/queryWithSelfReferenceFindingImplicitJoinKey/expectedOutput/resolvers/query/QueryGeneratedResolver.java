@@ -23,7 +23,6 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Film>> films(DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.filmsForQuery(ctx, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.filmsForQuery(ctx, selectionSet));
     }
 }

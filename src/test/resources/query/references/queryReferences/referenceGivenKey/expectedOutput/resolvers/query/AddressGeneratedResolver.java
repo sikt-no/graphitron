@@ -7,13 +7,10 @@ import fake.graphql.example.model.Customer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class AddressGeneratedResolver implements AddressResolver {
@@ -26,8 +23,6 @@ public class AddressGeneratedResolver implements AddressResolver {
     @Override
     public CompletableFuture<List<Customer>> customers(Address address, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Customer>> loader = DataLoaders.getDataLoader(env, "customersForAddress", (ids, selectionSet) -> addressDBQueries.customersForAddress(ctx, ids, selectionSet));
-        return DataLoaders.loadNonNullable(loader, address.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("customersForAddress", address.getId(), (ctx, ids, selectionSet) -> addressDBQueries.customersForAddress(ctx, ids, selectionSet));
     }
 }

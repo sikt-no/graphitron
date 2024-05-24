@@ -22,20 +22,20 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
 
     private final String indexName;
 
-    public OrderByEnumField(EnumTypeDefinition enumTypeDefinition, EnumValueDefinition field) {
-        super(field);
+    public OrderByEnumField(EnumValueDefinition field, String container) {
+        super(field, container);
         indexName = getOptionalDirectiveArgumentString(field, INDEX, NAME)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        String.format("Expected enum field '%s' of '%s' to have an '@%s(name : ...)' directive, but no such directive was found", field.getName(), enumTypeDefinition.getName(), INDEX.getName())));
+                        String.format("Expected enum field '%s' of '%s' to have an '@%s(name : ...)' directive, but no such directive was found", field.getName(), container, INDEX.getName())));
     }
 
     /**
      * @return List of instances based on an instance of {@link EnumTypeDefinition}.
      */
-    public static List<OrderByEnumField> from(EnumTypeDefinition e) {
+    public static List<OrderByEnumField> from(EnumTypeDefinition e, String container) {
         return e.getEnumValueDefinitions()
                 .stream()
-                .map(field -> new OrderByEnumField(e, field))
+                .map(field -> new OrderByEnumField(field, container))
                 .collect(Collectors.toList());
     }
 

@@ -7,9 +7,10 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.Transforme
 import no.fellesstudentsystem.graphql.exception.*;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.jooq.exception.DataAccessException;
@@ -31,7 +32,7 @@ public enum JavaPoetClassName {
     DATA_ACCESS_EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ClassName.get(DataAccessExceptionToErrorMappingProvider.class)),
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
     DATA_LOADER(ClassName.get(org.dataloader.DataLoader.class)),
-    DATA_LOADERS(ClassName.get(DataLoaders.class)),
+    DATA_FETCHER(ClassName.get(DataFetcher.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
     EXCEPTION(ClassName.get(java.lang.Exception.class)),
@@ -63,7 +64,8 @@ public enum JavaPoetClassName {
     TABLES(ClassName.get(GeneratorConfig.getGeneratedJooqTablesClass())),
     THROWABLE(ClassName.get(Throwable.class)),
     VALIDATION_VIOLATION_EXCEPTION(ClassName.get(ValidationViolationGraphQLException.class)),
-    INPUT_TRANSFORMER(ClassName.get(GeneratorConfig.outputPackage() + "." + TransformerClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, TransformerClassGenerator.FILE_NAME_SUFFIX));
+    RECORD_TRANSFORMER(ClassName.get(GeneratorConfig.outputPackage() + "." + TransformerClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, TransformerClassGenerator.FILE_NAME_SUFFIX)),
+    ABSTRACT_TRANSFORMER(ClassName.get(AbstractTransformer.class));
 
     public final ClassName className;
 

@@ -29,7 +29,7 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         EditCustomerResponse1 editErrorUnion1 = null;
         var editErrorsUnion1List = new ArrayList<EditErrorsUnion1>();

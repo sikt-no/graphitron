@@ -3,9 +3,9 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.mapping;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
-import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMethodGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -24,7 +24,7 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.STRIN
 public class TransformerMethodGenerator extends AbstractMethodGenerator<GenerationField> {
     protected static final String VARIABLE_INPUT = "input", VARIABLE_RECORDS = "records";
 
-    public TransformerMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+    public TransformerMethodGenerator(RecordObjectSpecification<?> localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
 
@@ -68,7 +68,7 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
                 .addParameter(STRING.className, PATH_NAME);
     }
 
-    protected static boolean useValidation(RecordObjectDefinition<?, ?> type) {
+    protected static boolean useValidation(RecordObjectSpecification<?> type) {
         return recordValidationEnabled() && type.hasTable() && !type.hasJavaRecordReference();
     }
 
@@ -81,12 +81,13 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
         return getLocalObject()
                 .getFields()
                 .stream()
-                .flatMap(field -> processedSchema.findTableOrRecordFields(field).stream())
+                .flatMap(field -> processedSchema.findTableOrRecordFields((ObjectField) field).stream())
                 .filter(processedSchema::isTableType)
                 .collect(Collectors.toMap(processedSchema::getTableType, Function.identity(), (it1, it2) -> it1)) // Filter duplicates if multiple fields use the same input type.
                 .values()
                 .stream()
                 .map(this::generate)
+                .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());
     }
 

@@ -22,7 +22,7 @@ public class EditFilmGeneratedResolver implements EditFilmMutationResolver {
             throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testFilmService = new TestFilmService(ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputLevel1ToJavaRecord(input, "input");
 

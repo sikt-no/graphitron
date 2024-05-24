@@ -4,6 +4,8 @@ import no.fellesstudentsystem.graphitron.records.EditCustomerAddressResponse;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse2;
 import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
+import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.AddressRecord;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -124,6 +126,14 @@ public class TestCustomerService {
     }
 
     public List<CustomerRecord> editCustomerWithRecordInputsList(TestCustomerRecord record, String s) {
+        return null;
+    }
+
+    public CustomerRecord editCustomerQuery(List<String> ids, SelectionSet selectionSet) {
+        return null;
+    }
+
+    public AddressRecord historicalAddresses(List<String> ids, SelectionSet selectionSet) {
         return null;
     }
 }

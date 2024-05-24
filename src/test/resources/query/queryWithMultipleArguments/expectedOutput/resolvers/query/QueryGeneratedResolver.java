@@ -11,7 +11,8 @@ import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.jooq.DSLContext;
@@ -27,17 +28,21 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Film>> filmTwoArguments(String releaseYear,
             List<Integer> languageID, Integer first, String after, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return DataLoaders.loadData(env, pageSize, 1000, (selectionSet) -> queryDBQueries.filmTwoArgumentsForQuery(ctx, releaseYear, languageID, pageSize, after, selectionSet), (ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmTwoArgumentsForQuery(ctx, releaseYear, languageID) : null, (it) -> it.getId());
+        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+                (ctx, selectionSet) -> queryDBQueries.filmTwoArgumentsForQuery(ctx, releaseYear, languageID, pageSize, after, selectionSet),
+                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmTwoArgumentsForQuery(ctx, releaseYear, languageID) : null,
+                (it) -> it.getId());
     }
 
     @Override
     public CompletableFuture<ExtendedConnection<Film>> filmFiveArguments(String releaseYear,
             List<Integer> languageID, String description, String title, Integer length,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return DataLoaders.loadData(env, pageSize, 1000, (selectionSet) -> queryDBQueries.filmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length, pageSize, after, selectionSet), (ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length) : null, (it) -> it.getId());
+        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+                (ctx, selectionSet) -> queryDBQueries.filmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length, pageSize, after, selectionSet),
+                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length) : null,
+                (it) -> it.getId());
     }
 }

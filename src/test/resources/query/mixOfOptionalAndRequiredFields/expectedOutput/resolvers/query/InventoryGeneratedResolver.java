@@ -8,12 +8,9 @@ import fake.graphql.example.model.Store;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import org.dataloader.DataLoader;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class InventoryGeneratedResolver implements InventoryResolver {
@@ -26,16 +23,12 @@ public class InventoryGeneratedResolver implements InventoryResolver {
     @Override
     public CompletableFuture<Store> store(Inventory inventory, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, Store> loader = DataLoaders.getDataLoader(env, "storeForInventory", (ids, selectionSet) -> inventoryDBQueries.storeForInventory(ctx, ids, selectionSet));
-        return DataLoaders.load(loader, inventory.getId(), env);
+        return new DataFetcher(env, this.ctx).load("storeForInventory", inventory.getId(), (ctx, ids, selectionSet) -> inventoryDBQueries.storeForInventory(ctx, ids, selectionSet));
     }
 
     @Override
     public CompletableFuture<Film> film(Inventory inventory, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, Film> loader = DataLoaders.getDataLoader(env, "filmForInventory", (ids, selectionSet) -> inventoryDBQueries.filmForInventory(ctx, ids, selectionSet));
-        return DataLoaders.load(loader, inventory.getId(), env);
+        return new DataFetcher(env, this.ctx).load("filmForInventory", inventory.getId(), (ctx, ids, selectionSet) -> inventoryDBQueries.filmForInventory(ctx, ids, selectionSet));
     }
 }

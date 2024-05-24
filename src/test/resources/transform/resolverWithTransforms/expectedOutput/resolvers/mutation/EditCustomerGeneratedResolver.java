@@ -24,7 +24,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     public CompletableFuture<String> editCustomer(EndreInput in, DataFetchingEnvironment env) throws
             Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inRecord = transform.endreInputToJOOQRecord(in, "in");
 

@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 
 /**
  * Class generator for basic select query classes.
@@ -28,8 +28,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 .getObjects()
                 .values()
                 .stream()
-                .filter(ObjectDefinition::isGenerated)
-                .filter(obj -> !obj.getName().equals(SCHEMA_ROOT_NODE_MUTATION.getName()))
+                .filter(ObjectDefinition::isGeneratedWithResolver)
+                .filter(obj -> !obj.getName().equals(SCHEMA_MUTATION.getName()))
                 .map(ObjectDefinition::getFields)
                 .flatMap(List::stream)
                 .filter(ObjectField::isGenerated)
@@ -39,22 +39,19 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        var classes = processedSchema
+        processedSchema
                 .getObjects()
                 .values()
                 .stream()
-                .filter(it -> it.isGenerated() ||
+                .filter(it -> !it.getName().equals(SCHEMA_MUTATION.getName()))
+                .filter(it -> it.isGeneratedWithResolver() ||
                                 interfacesReturnedByObjectField
                                         .values()
                                         .stream()
                                         .anyMatch(interfaceDefinition -> it.implementsInterface(interfaceDefinition.getName())))
-                .filter(it -> !it.getName().equals(SCHEMA_ROOT_NODE_MUTATION.getName()))
                 .map(this::generate)
-                .collect(Collectors.toList());
-
-        for (var generatedClass : classes) {
-            writeToFile(generatedClass, path, packagePath);
-        }
+                .filter(it -> !it.methodSpecs.isEmpty())
+                .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath));
     }
 
     @Override

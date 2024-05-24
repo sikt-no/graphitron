@@ -6,6 +6,7 @@ import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
@@ -80,7 +81,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent();
 
-        var ref = context.getReferenceObjectField();
+        var ref = (ObjectField) context.getReferenceObjectField();
         var table = context.renderQuerySource(getLocalTable());
         if (LookupHelpers.lookupExists(ref, processedSchema)) {
             var concatBlock = LookupHelpers.getLookUpKeysAsColumnList(ref, table, processedSchema);
@@ -107,7 +108,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         referenceField
                 .getNonReservedArgumentsWithOrderField()
-                .forEach(i -> spec.addParameter(inputIterableWrap(i), i.getName()));
+                .forEach(i -> spec.addParameter(iterableWrap(i), i.getName()));
 
         if (referenceField.hasForwardPagination()) {
             spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
@@ -206,20 +207,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getReferredFieldsFromObjectNames(processedSchema.getNamesWithTableOrConnections())
+        return ((ObjectDefinition) getLocalObject())
+                .getFieldsReferringTo(processedSchema.getNamesWithTableOrConnections())
                 .stream()
-                .filter(ObjectField::isGenerated)
+                .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !processedSchema.isInterface(it))
+                .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
+                .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());
     }
 
     @Override
     public boolean generatesAll() {
-        var fieldStream = getLocalObject().getFields().stream();
+        var fieldStream = getLocalObject()
+                .getFieldsReferringTo(processedSchema.getNamesWithTableOrConnections())
+                .stream()
+                .filter(it -> !it.hasServiceReference())
+                .filter(it -> !processedSchema.isInterface(it));
         return isRoot
-                ? fieldStream.allMatch(ObjectField::isGenerated)
-                : fieldStream.allMatch(f -> !f.isResolver() || f.isGenerated());
+                ? fieldStream.allMatch(GenerationField::isGeneratedWithResolver)
+                : fieldStream.allMatch(f -> (!f.isResolver() || f.isGeneratedWithResolver()));
     }
 }

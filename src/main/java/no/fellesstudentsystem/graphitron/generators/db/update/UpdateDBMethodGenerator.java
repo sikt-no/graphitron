@@ -4,8 +4,8 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
@@ -102,13 +102,13 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         if (Optional.ofNullable(inputObject).map(InputDefinition::hasTable).orElse(false)) {
             return wrapListIf(inputObject.getRecordClassName(), inputType.isIterableWrapped());
         } else {
-            return inputIterableWrap(inputType);
+            return iterableWrap(inputType);
         }
     }
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (localField.isGenerated() && localField.hasMutationType() && !localField.hasServiceReference()) {
+        if (localField.isGeneratedWithResolver() && localField.hasMutationType() && !localField.hasServiceReference()) {
             return List.of(generate(localField));
         }
         return List.of();
@@ -116,6 +116,6 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
     @Override
     public boolean generatesAll() {
-        return localField.isGenerated() && localField.hasMutationType() && !localField.hasServiceReference();
+        return localField.isGeneratedWithResolver() && localField.hasMutationType() && !localField.hasServiceReference();
     }
 }

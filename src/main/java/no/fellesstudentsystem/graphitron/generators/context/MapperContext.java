@@ -65,7 +65,7 @@ public class MapperContext {
         this.isValidation = previousContext.isValidation;
         this.isResolver = previousContext.isResolver;
         this.target = target;
-        this.targetType = schema.getTableType(target);
+        this.targetType = (RecordObjectDefinition<?, ?>)schema.getTableType(target);
 
         targetIsType = targetType != null;
         hasRecordReference = targetIsType && targetType.hasRecordReference();
@@ -234,7 +234,7 @@ public class MapperContext {
     }
 
     public boolean shouldUseException() {
-        return schema.isExceptionOrExceptionUnion((ObjectField) target) && previousContext.isTopLevelContext();
+        return schema.isExceptionOrExceptionUnion(target) && previousContext.isTopLevelContext();
     }
 
     public CodeBlock getSourceGetCallBlock() {

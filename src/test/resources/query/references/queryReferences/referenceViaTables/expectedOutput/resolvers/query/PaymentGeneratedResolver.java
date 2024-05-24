@@ -7,12 +7,10 @@ import fake.graphql.example.model.Payment;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class PaymentGeneratedResolver implements PaymentResolver {
@@ -25,8 +23,6 @@ public class PaymentGeneratedResolver implements PaymentResolver {
     @Override
     public CompletableFuture<Film> film(Payment payment, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, Film> loader = DataLoaders.getDataLoader(env, "filmForPayment", (ids, selectionSet) -> paymentDBQueries.filmForPayment(ctx, ids, selectionSet));
-        return DataLoaders.load(loader, payment.getId(), env);
+        return new DataFetcher(env, this.ctx).load("filmForPayment", payment.getId(), (ctx, ids, selectionSet) -> paymentDBQueries.filmForPayment(ctx, ids, selectionSet));
     }
 }

@@ -24,7 +24,7 @@ public class EditCustomerListResponseGeneratedResolver implements EditCustomerLi
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomerListResponse = testCustomerService.editCustomerListResponse(ids);
 

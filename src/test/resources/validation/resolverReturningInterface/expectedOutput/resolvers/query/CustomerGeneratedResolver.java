@@ -12,7 +12,7 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.sikt.graphitron.jooq.generated.testdata.Tables;
 import org.jooq.DSLContext;
 
@@ -33,10 +33,10 @@ public class CustomerGeneratedResolver implements CustomerResolver {
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.ADDRESS.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> addressDBQueries.loadAddressByIdsAsNodeRef(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> addressDBQueries.loadAddressByIdsAsNodeRef(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.CUSTOMER.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> customerDBQueries.loadCustomerByIdsAsNodeRef(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> customerDBQueries.loadCustomerByIdsAsNodeRef(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }

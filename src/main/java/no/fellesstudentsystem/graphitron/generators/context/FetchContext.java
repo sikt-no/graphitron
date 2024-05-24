@@ -1,12 +1,12 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
 import com.squareup.javapoet.CodeBlock;
-import no.fellesstudentsystem.graphitron.definitions.fields.FieldReference;
-import no.fellesstudentsystem.graphitron.definitions.fields.GenerationSourceField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelation;
-import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -20,8 +20,8 @@ import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
  */
 public class FetchContext {
     private final FetchContext previousContext;
-    private final ObjectField referenceObjectField;
-    private final ObjectDefinition referenceObject, previousTableObject;
+    private final GenerationField referenceObjectField;
+    private final RecordObjectSpecification<?> referenceObject, previousTableObject;
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
@@ -32,7 +32,7 @@ public class FetchContext {
     private boolean shouldUseOptional;
 
     private boolean requireAlias;
-    private List<ObjectField> multisetObjectFields;
+    private List<? extends GenerationField> multisetObjectFields;
     private boolean fromMultiset = false;
     private FetchContext currentMultisetContext = null;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
@@ -50,9 +50,9 @@ public class FetchContext {
      */
     private FetchContext(
             ProcessedSchema processedSchema,
-            ObjectField referenceObjectField,
+            GenerationField referenceObjectField,
             JoinListSequence pastJoinSequence,
-            ObjectDefinition previousObject,
+            RecordObjectSpecification<?> previousObject,
             LinkedHashSet<SQLJoinStatement> joinSet,
             LinkedHashMap<FetchContext, List<CodeBlock>> conditionSet,
             String pastGraphPath,
@@ -60,7 +60,7 @@ public class FetchContext {
             FetchContext previousContext,
             boolean shouldUseOptional,
             boolean requireAlias,
-            List<ObjectField> multisetObjectFields,
+            List<? extends GenerationField> multisetObjectFields,
             FetchContext currentMultisetContext
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
@@ -91,7 +91,7 @@ public class FetchContext {
     public FetchContext(
             ProcessedSchema processedSchema,
             ObjectField referenceObjectField,
-            ObjectDefinition previousObject
+            RecordObjectSpecification<?> previousObject
     ) {
         this(
                 processedSchema,
@@ -127,7 +127,7 @@ public class FetchContext {
     /**
      * @return The referred object being processed in the current context.
      */
-    public ObjectDefinition getReferenceObject() {
+    public RecordObjectSpecification<?> getReferenceObject() {
         return referenceObject;
     }
 
@@ -169,7 +169,7 @@ public class FetchContext {
     /**
      * @return The reference field which points to the reference object for this layer.
      */
-    public ObjectField getReferenceObjectField() {
+    public GenerationField getReferenceObjectField() {
         return referenceObjectField;
     }
 
@@ -177,11 +177,11 @@ public class FetchContext {
         return keyForMapping;
     }
 
-    public List<ObjectField> getMultisetObjectFields() {
+    public List<? extends GenerationField> getMultisetObjectFields() {
         return multisetObjectFields;
     }
 
-    public void setMultisetObjectFields(List<ObjectField> multisetObjectFields) {
+    public void setMultisetObjectFields(List<? extends GenerationField> multisetObjectFields) {
         this.multisetObjectFields = multisetObjectFields;
     }
 
@@ -229,7 +229,7 @@ public class FetchContext {
     /**
      * @return The next iteration of this context based on the provided reference field.
      */
-    public FetchContext nextContext(ObjectField referenceObjectField) {
+    public FetchContext nextContext(GenerationField referenceObjectField) {
         var newJoinListSequence = new JoinListSequence();
         newJoinListSequence.add(getReferenceTable());
         return new FetchContext(
@@ -254,7 +254,7 @@ public class FetchContext {
      * @return The new join sequence, with the provided join sequence extended by all references in this layer's reference field,
      * or other appropriate start points for a sequence.
      */
-    public JoinListSequence iterateJoinSequenceFor(GenerationSourceField<?> field) {
+    public JoinListSequence iterateJoinSequenceFor(GenerationField field) {
         var currentSequence = getCurrentJoinSequence();
         if (!field.hasFieldReferences()) {
             if(fromMultiset) {
@@ -296,7 +296,7 @@ public class FetchContext {
         }
 
         var lastTable = !updatedSequence.isEmpty() ? updatedSequence.getLast().getTable() : getPreviousTable(); // Wrong if key was reverse.
-        if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getName()))) {
+        if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))) {
             return !updatedSequence.isEmpty() ? updatedSequence : JoinListSequence.of(refTable);
         }
 
@@ -362,7 +362,7 @@ public class FetchContext {
     private boolean isMultisetContext() {
         return (getReferenceObjectField().isIterableWrapped()
                 && !getReferenceObjectField().isResolver()
-                && !getReferenceObjectField().hasInputFields()
+                && !((ObjectField) getReferenceObjectField()).hasInputFields()
                 && getPreviousTable() != null
                 && processedSchema.isObject(getReferenceObjectField())
         );

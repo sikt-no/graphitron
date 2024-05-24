@@ -141,6 +141,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
         if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || schemaContainsExceptionToErrorMappings()) {
             Optional.ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
+                    .filter(it -> !it.methodSpecs.isEmpty())
                     .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
         }
     }

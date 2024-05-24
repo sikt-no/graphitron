@@ -7,7 +7,6 @@ import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefin
 import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -15,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.newDataFetcher;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
@@ -46,7 +46,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         var inputField = target.getArguments().get(0);
         String inputFieldName = inputField.getName();
         spec
-                .addParameter(inputIterableWrap(inputField), inputFieldName)
+                .addParameter(iterableWrap(inputField), inputFieldName)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
                 .addStatement("$T $L = $T.getTablePartOf($N)", STRING.className, TABLE_OF_ID, FIELD_HELPERS.className, inputFieldName)
                 .addCode("\n");
@@ -68,14 +68,15 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
         var dbFunction = CodeBlock.of(
-                "($L, $L) -> $N.load$LBy$LsAs$L($N, $N, $N)",
+                "($L, $L, $L) -> $N.load$LBy$LsAs$L($N, $N, $N)",
+                CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME,
                 uncapitalize(queryLocation),
                 implementation.getName(),
                 capitalize(inputFieldName),
                 capitalize(target.getName()),
-                VariableNames.CONTEXT_NAME,
+                CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME
         );
@@ -83,7 +84,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         return CodeBlock
                 .builder()
                 .beginControlFlow("if ($N.equals($T.$N.getViewId().toString()))", TABLE_OF_ID, TABLES.className, implementation.getTable().getMappingName())
-                .addStatement("return $T.loadInterfaceData($N, $N, $N, $L)", DATA_LOADERS.className, VARIABLE_ENV, TABLE_OF_ID, inputFieldName, dbFunction)
+                .addStatement("return $L.$L($N, $N, $L)", newDataFetcher(), "loadInterface", TABLE_OF_ID, inputFieldName, dbFunction)
                 .endControlFlow()
                 .build();
     }
@@ -93,9 +94,10 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         return localObject
                 .getFields()
                 .stream()
-                .filter(ObjectField::isGenerated)
+                .filter(ObjectField::isGeneratedWithResolver)
                 .filter(it -> processedSchema.isInterface(it.getTypeName()))
                 .map(this::generate)
+                .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());
     }
 
@@ -105,6 +107,6 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                 .getFields()
                 .stream()
                 .filter(it -> processedSchema.isInterface(it.getTypeName()))
-                .allMatch(ObjectField::isGenerated);
+                .allMatch(ObjectField::isGeneratedWithResolver);
     }
 }

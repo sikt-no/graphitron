@@ -7,13 +7,10 @@ import fake.graphql.example.model.Inventory;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class InventoryGeneratedResolver implements InventoryResolver {
@@ -26,8 +23,6 @@ public class InventoryGeneratedResolver implements InventoryResolver {
     @Override
     public CompletableFuture<List<Actor>> mainActors(Inventory inventory,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Actor>> loader = DataLoaders.getDataLoader(env, "mainActorsForInventory", (ids, selectionSet) -> inventoryDBQueries.mainActorsForInventory(ctx, ids, selectionSet));
-        return DataLoaders.loadNonNullable(loader, inventory.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("mainActorsForInventory", inventory.getId(), (ctx, ids, selectionSet) -> inventoryDBQueries.mainActorsForInventory(ctx, ids, selectionSet));
     }
 }

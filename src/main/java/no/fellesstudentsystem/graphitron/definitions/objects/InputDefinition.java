@@ -23,7 +23,7 @@ public class InputDefinition extends RecordObjectDefinition<InputObjectTypeDefin
 
     @Override
     protected List<InputField> createFields(InputObjectTypeDefinition inputType) {
-        return InputField.from(inputType.getInputValueDefinitions());
+        return InputField.from(inputType.getInputValueDefinitions(), getName());
     }
 
     /**

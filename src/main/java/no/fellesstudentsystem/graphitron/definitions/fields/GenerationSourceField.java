@@ -3,6 +3,8 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 import graphql.language.ObjectField;
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
@@ -17,20 +19,24 @@ import java.util.Optional;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.SERVICE;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
 /**
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver;
+    private final boolean isGenerated, isResolver, isGeneratedAsResolver;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForJOOQFieldOverride;
+    private final CodeReference serviceReference;
 
-    public GenerationSourceField(T field, FieldType fieldType) {
-        super(field, fieldType);
+    public GenerationSourceField(T field, FieldType fieldType, String container) {
+        super(field, fieldType, container);
         fieldReferences = new ArrayList<>();
         if (field.hasDirective(REFERENCE.getName())) {
             var refrenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
@@ -55,9 +61,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
             condition = null;
         }
 
+        serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
         mappingForJOOQFieldOverride = field.hasDirective(FIELD.getName()) ? new MethodMapping(toCamelCase(getUpperCaseName())) : getMappingFromFieldOverride();
-        isGenerated = !isExplicitlyNotGenerated();
+        isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName());
+        isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
     }
 
     /**
@@ -138,5 +146,27 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public boolean isGenerated() {
         return isGenerated;
+    }
+
+    @Override
+    public boolean hasServiceReference() {
+        return serviceReference != null;
+    }
+
+    /**
+     * @return The reference to the external service that this field is related to.
+     */
+    public CodeReference getServiceReference() {
+        return serviceReference;
+    }
+
+    @Override
+    public boolean isGeneratedWithResolver() {
+        return isGeneratedAsResolver;
+    }
+
+    @Override
+    public boolean isExplicitlyNotGenerated() {
+        return !isGenerated;
     }
 }

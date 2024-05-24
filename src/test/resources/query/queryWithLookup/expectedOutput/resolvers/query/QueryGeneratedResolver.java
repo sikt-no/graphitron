@@ -11,8 +11,8 @@ import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -25,16 +25,14 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Customer>> customers(List<String> storeIds,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var keys = List.of(storeIds);
-        return DataLoaders.loadDataAsLookup(env, keys, (ids, selectionSet) -> queryDBQueries.customersForQuery(ctx, storeIds, selectionSet));
+        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> queryDBQueries.customersForQuery(ctx, storeIds, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Country>> countries(List<String> countryNames,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var keys = List.of(countryNames);
-        return DataLoaders.loadDataAsLookup(env, keys, (ids, selectionSet) -> queryDBQueries.countriesForQuery(ctx, countryNames, selectionSet));
+        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> queryDBQueries.countriesForQuery(ctx, countryNames, selectionSet));
     }
 }

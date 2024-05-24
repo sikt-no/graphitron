@@ -28,7 +28,7 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inRecordList = transform.editInputToJOOQRecord(in, "in");
 

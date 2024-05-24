@@ -8,7 +8,7 @@ import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import graphql.schema.GraphQLFieldDefinition;
 import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +18,7 @@ import static graphql.Scalars.GraphQLInt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class DataLoadersTest {
+public class DataFetcherTest {
     private static final List<Object>
             STRING_KEY_0 = List.of("A0", "A1", "A2"),
             STRING_KEY_1 = List.of("B0", "B1", "B2"),
@@ -45,28 +45,28 @@ public class DataLoadersTest {
 
     @Test
     public void mergeKeysEmptyKeysResultsInEmptyResult() {
-        assertThat(DataLoaders.mergeKeys(List.of(), ENV)).isEmpty();
+        assertThat(DataFetcher.mergeKeys(List.of(), ENV)).isEmpty();
     }
 
     @Test
     public void mergeKeysBuildsKeysForSingleKeySet() {
-        assertThat(DataLoaders.mergeKeys(List.of(STRING_KEY_0), ENV)).isEqualTo(STRING_KEY_0);
+        assertThat(DataFetcher.mergeKeys(List.of(STRING_KEY_0), ENV)).isEqualTo(STRING_KEY_0);
     }
 
     @Test
     public void mergeKeysBuildsKeysForIntegers() {
-        assertThat(DataLoaders.mergeKeys(List.of(INT_KEY), ENV)).isEqualTo(List.of("0", "1", "2"));
+        assertThat(DataFetcher.mergeKeys(List.of(INT_KEY), ENV)).isEqualTo(List.of("0", "1", "2"));
     }
 
     @Test
     public void mergeKeysBuildsKeysMultipleKeySets() {
-        assertThat(DataLoaders.mergeKeys(List.of(STRING_KEY_0, STRING_KEY_1, INT_KEY), ENV)).isEqualTo(List.of("A0,B0,0", "A1,B1,1", "A2,B2,2"));
+        assertThat(DataFetcher.mergeKeys(List.of(STRING_KEY_0, STRING_KEY_1, INT_KEY), ENV)).isEqualTo(List.of("A0,B0,0", "A1,B1,1", "A2,B2,2"));
     }
 
     @Test
     @Disabled
     public void mergeKeysThrowsErrorIfSetsDoNotMatchInSize() {
-        assertThatThrownBy(() -> DataLoaders.mergeKeys(List.of(STRING_KEY_0, List.of(0)), ENV))
+        assertThatThrownBy(() -> DataFetcher.mergeKeys(List.of(STRING_KEY_0, List.of(0)), ENV))
                 .isInstanceOf(ValidationViolationGraphQLException.class);
                 //.hasMessage("Keys sets have differing lengths. For this type of query, each key field is required to be an array of equal length.");
     }

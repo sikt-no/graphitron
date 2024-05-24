@@ -7,12 +7,10 @@ import fake.graphql.example.model.StoreCustomer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class StoreCustomerGeneratedResolver implements StoreCustomerResolver {
@@ -25,8 +23,6 @@ public class StoreCustomerGeneratedResolver implements StoreCustomerResolver {
     @Override
     public CompletableFuture<Customer> customer(StoreCustomer storeCustomer,
                                                 DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, Customer> loader = DataLoaders.getDataLoader(env, "customerForStoreCustomer", (ids, selectionSet) -> storeCustomerDBQueries.customerForStoreCustomer(ctx, ids, selectionSet));
-        return DataLoaders.load(loader, storeCustomer.getId(), env);
+        return new DataFetcher(env, this.ctx).load("customerForStoreCustomer", storeCustomer.getId(), (ctx, ids, selectionSet) -> storeCustomerDBQueries.customerForStoreCustomer(ctx, ids, selectionSet));
     }
 }

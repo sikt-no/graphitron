@@ -2,8 +2,8 @@ package no.fellesstudentsystem.graphitron.generators.context;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.fields.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;

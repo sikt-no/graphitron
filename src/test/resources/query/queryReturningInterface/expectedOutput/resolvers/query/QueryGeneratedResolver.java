@@ -14,8 +14,7 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.sikt.graphitron.jooq.generated.testdata.Tables;
 import org.jooq.DSLContext;
 
@@ -34,17 +33,16 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
 
     @Override
     public CompletableFuture<Node> node(String id, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> filmDBQueries.loadFilmByIdsAsNode(ctx, ids, selectionSet));
+            return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, id, (ctx, ids, selectionSet) -> filmDBQueries.loadFilmByIdsAsNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.INVENTORY.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> inventoryDBQueries.loadInventoryByIdsAsNode(ctx, ids, selectionSet));
+            return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, id, (ctx, ids, selectionSet) -> inventoryDBQueries.loadInventoryByIdsAsNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.RENTAL.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> rentalDBQueries.loadRentalByIdsAsNode(ctx, ids, selectionSet));
+            return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, id, (ctx, ids, selectionSet) -> rentalDBQueries.loadRentalByIdsAsNode(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }
@@ -52,11 +50,10 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<Titled> titled(String title, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         String tablePartOfId = FieldHelperHack.getTablePartOf(title);
 
         if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, title, (ids, selectionSet) -> filmDBQueries.loadFilmByTitlesAsTitled(ctx, ids, selectionSet));
+            return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, title, (ctx, ids, selectionSet) -> filmDBQueries.loadFilmByTitlesAsTitled(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for title with prefix " + tablePartOfId);
     }

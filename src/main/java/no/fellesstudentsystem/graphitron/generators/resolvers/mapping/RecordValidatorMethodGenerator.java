@@ -81,7 +81,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (getLocalObject() == null || !getLocalObject().isGenerated() || !recordValidationEnabled()) {
+        if (getLocalObject() == null || getLocalObject().isExplicitlyNotGenerated() || !recordValidationEnabled()) {
             return List.of();
         }
 
@@ -95,7 +95,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
     @Override
     public boolean generatesAll() {
-        return getLocalObject() == null || !recordValidationEnabled() || getLocalObject().isGenerated();
+        return (getLocalObject() == null || !recordValidationEnabled() || !getLocalObject().isExplicitlyNotGenerated()) && processedSchema.isTableInputType(getLocalField());
     }
 
     @Override

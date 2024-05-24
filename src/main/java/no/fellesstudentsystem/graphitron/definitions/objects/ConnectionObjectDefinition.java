@@ -19,7 +19,7 @@ public class ConnectionObjectDefinition extends AbstractObjectDefinition<ObjectT
 
     @Override
     protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
-        return ObjectField.from(objectDefinition.getFieldDefinitions());
+        return ObjectField.from(objectDefinition.getFieldDefinitions(), getName());
     }
 
     /**

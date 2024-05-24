@@ -22,7 +22,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
             throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomer = testCustomerService.editCustomer(id);
 

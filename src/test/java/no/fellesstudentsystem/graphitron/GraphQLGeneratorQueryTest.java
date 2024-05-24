@@ -24,7 +24,9 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
             new ExternalClassReference("TEST_CITY", "no.fellesstudentsystem.graphitron.conditions.CityTestConditions"),
             new ExternalClassReference("TEST_FILM_ACTOR", "no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions"),
             new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
-            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions")
+            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
+            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService")
     );
 
     public GraphQLGeneratorQueryTest() {

@@ -1,0 +1,36 @@
+type Query {
+  customersQueryConnection(storeIds: [ID!]! @field(name: "STORE_ID"), first: Int = 100, after: String): CustomerConnection @service(service : {name: "TEST_CUSTOMER"})
+  customersQueryDirect(storeId: ID! @field(name: "STORE_ID")): Customer @service(service : {name: "TEST_CUSTOMER"})
+}
+
+type CustomerConnection {
+  edges: [CustomerConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Customer!]!
+}
+
+type CustomerConnectionEdge {
+  cursor: String
+  node: Customer
+}
+
+type Customer implements Node @table {
+  id: ID!
+  historicalAddresses(first: Int = 10, after: String): AddressConnection @splitQuery @service(service : {name: "TEST_CUSTOMER"})
+}
+
+type AddressConnection {
+  edges: [AddressConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Address!]!
+}
+
+type AddressConnectionEdge {
+  cursor: String
+  node: Address
+}
+
+type Address implements Node @table {
+  id: ID!
+  postalCode: String!
+}

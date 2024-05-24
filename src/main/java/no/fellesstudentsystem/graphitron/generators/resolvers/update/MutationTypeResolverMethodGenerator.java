@@ -73,7 +73,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      * @return Code that both fetches record data and creates the appropriate response objects.
      */
     @Override
-    protected CodeBlock generateResponses(ObjectField target) {
+    protected CodeBlock generateSchemaOutputs(ObjectField target) {
         var code = CodeBlock.builder();
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
             return code.build();
@@ -412,7 +412,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (localField.isGenerated()) {
+        if (localField.isGeneratedWithResolver()) {
             if (localField.hasMutationType()) {
                 return Stream.concat(Stream.of(generate(localField)), generateGetMethods(localField).stream()).collect(Collectors.toList());
             } else if (!localField.hasServiceReference()) {

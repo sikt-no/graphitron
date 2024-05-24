@@ -16,14 +16,14 @@ public class EdgeObjectDefinition extends AbstractObjectDefinition<ObjectTypeDef
 
     public EdgeObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
-        var fields = ObjectField.from(objectDefinition.getFieldDefinitions());
+        var fields = ObjectField.from(objectDefinition.getFieldDefinitions(), getName());
         nodeType = getObjectForField(GraphQLReservedName.CONNECTION_NODE_FIELD.getName(), fields).getTypeName();
         cursor = getObjectForField(GraphQLReservedName.CONNECTION_CURSOR_FIELD.getName(), fields);
     }
 
     @Override
     protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
-        return ObjectField.from(objectDefinition.getFieldDefinitions());
+        return ObjectField.from(objectDefinition.getFieldDefinitions(), getName());
     }
 
     private ObjectField getObjectForField(String name, List<ObjectField> fields) {

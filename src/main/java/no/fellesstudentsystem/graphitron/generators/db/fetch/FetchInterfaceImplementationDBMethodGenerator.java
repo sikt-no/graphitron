@@ -5,6 +5,7 @@ import com.squareup.javapoet.MethodSpec;
 import graphql.language.FieldDefinition;
 import graphql.language.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
@@ -45,12 +46,15 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
     public MethodSpec generate(ObjectField target) {
         var implementation = getLocalObject();
         var implementationTableObject = implementation.getTable();
-        if(implementationTableObject == null) {
+        if (implementationTableObject == null) {
             var interfaceName = interfacesReturnedByObjectField.containsKey(target) ? interfacesReturnedByObjectField.get(target).getName() : "";
             throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), interfaceName));
         }
 
-        ObjectField implementationReference = new ObjectField(new FieldDefinition(target.getTypeName(), new TypeName(getLocalObject().getName())));
+        var implementationReference = new ObjectField(
+                new FieldDefinition(target.getName(), new TypeName(getLocalObject().getName())),
+                target.getTypeName()
+        );
 
         var context = new FetchContext(processedSchema, implementationReference, implementation);
         var selectCode = generateSelectRow(context);
@@ -103,7 +107,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         return interfacesReturnedByObjectField
                 .entrySet()
                 .stream()
-                .filter(entry -> getLocalObject().implementsInterface(entry.getValue().getName()))
+                .filter(entry -> ((ObjectDefinition) getLocalObject()).implementsInterface(entry.getValue().getName()))
                 .sorted(Comparator.comparing(it -> it.getKey().getName()))
                 .map(entry -> generate(entry.getKey()))
                 .collect(Collectors.toList());
@@ -115,6 +119,6 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .getFields()
                 .stream()
                 .filter(processedSchema::isInterface)
-                .allMatch(ObjectField::isGenerated);
+                .allMatch(GenerationField::isGenerated);
     }
 }

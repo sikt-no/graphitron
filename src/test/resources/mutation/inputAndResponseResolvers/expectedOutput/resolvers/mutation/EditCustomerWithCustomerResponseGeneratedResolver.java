@@ -22,7 +22,7 @@ public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCu
                                                                                         DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomerWithCustomerResponse = testCustomerService.editCustomerWithCustomerResponse(id);
 

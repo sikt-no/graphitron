@@ -7,13 +7,10 @@ import fake.graphql.example.model.Store;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class AddressGeneratedResolver implements AddressResolver {
@@ -26,16 +23,12 @@ public class AddressGeneratedResolver implements AddressResolver {
     @Override
     public CompletableFuture<List<Store>> stores0(Address address, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Store>> loader = DataLoaders.getDataLoader(env, "stores0ForAddress", (ids, selectionSet) -> addressDBQueries.stores0ForAddress(ctx, ids, selectionSet));
-        return DataLoaders.load(loader, address.getId(), env);
+        return new DataFetcher(env, this.ctx).load("stores0ForAddress", address.getId(), (ctx, ids, selectionSet) -> addressDBQueries.stores0ForAddress(ctx, ids, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Store>> stores1(Address address, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Store>> loader = DataLoaders.getDataLoader(env, "stores1ForAddress", (ids, selectionSet) -> addressDBQueries.stores1ForAddress(ctx, ids, selectionSet));
-        return DataLoaders.loadNonNullable(loader, address.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("stores1ForAddress", address.getId(), (ctx, ids, selectionSet) -> addressDBQueries.stores1ForAddress(ctx, ids, selectionSet));
     }
 }

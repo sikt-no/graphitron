@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerato
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -23,18 +22,15 @@ public class UpdateDBClassGenerator extends DBClassGenerator<ObjectField> {
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
         var mutation = processedSchema.getMutationType();
-        if (mutation != null && mutation.isGenerated()) {
-            var classes = mutation
+        if (mutation != null && !mutation.isExplicitlyNotGenerated()) {
+            mutation
                     .getFields()
                     .stream()
-                    .filter(ObjectField::isGenerated)
+                    .filter(ObjectField::isGeneratedWithResolver)
                     .filter(ObjectField::hasMutationType)
                     .map(this::generate)
-                    .collect(Collectors.toList());
-
-            for (var generatedClass : classes) {
-                writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
-            }
+                    .filter(it -> !it.methodSpecs.isEmpty())
+                    .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName()));
         }
     }
 

@@ -27,8 +27,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.paramConditionForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.paramConditionForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -36,8 +35,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.paramConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.paramConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -45,8 +43,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldConditionForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldConditionForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -54,8 +51,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -63,8 +59,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -72,8 +67,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             String releaseYear, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -81,8 +75,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             String releaseYear, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, rating, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
@@ -90,7 +83,6 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldInputConditionForQuery(ctx, ratingIn, releaseYear, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldInputConditionForQuery(ctx, ratingIn, releaseYear, selectionSet));
     }
 }

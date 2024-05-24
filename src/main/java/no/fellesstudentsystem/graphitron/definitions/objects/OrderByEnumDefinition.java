@@ -20,6 +20,6 @@ public class OrderByEnumDefinition extends AbstractObjectDefinition<EnumTypeDefi
 
     @Override
     protected List<OrderByEnumField> createFields(EnumTypeDefinition objectDefinition) {
-        return OrderByEnumField.from(objectDefinition);
+        return OrderByEnumField.from(objectDefinition, getName());
     }
 }

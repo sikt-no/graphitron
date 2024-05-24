@@ -12,9 +12,8 @@ import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class FilmGeneratedResolver implements FilmResolver {
@@ -27,16 +26,12 @@ public class FilmGeneratedResolver implements FilmResolver {
     @Override
     public CompletableFuture<List<Language>> languages(Film film, List<String> s,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Language>> loader = DataLoaders.getDataLoader(env, "languagesForFilm", (ids, selectionSet) -> filmDBQueries.languagesForFilm(ctx, ids, s, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("languagesForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.languagesForFilm(ctx, ids, s, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Language>> languagesInput(Film film, In s,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Language>> loader = DataLoaders.getDataLoader(env, "languagesInputForFilm", (ids, selectionSet) -> filmDBQueries.languagesInputForFilm(ctx, ids, s, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("languagesInputForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.languagesInputForFilm(ctx, ids, s, selectionSet));
     }
 }

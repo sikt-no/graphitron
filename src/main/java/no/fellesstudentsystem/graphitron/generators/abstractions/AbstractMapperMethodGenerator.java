@@ -15,7 +15,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.*;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INPUT_TRANSFORMER;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.STRING;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -24,7 +24,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
     protected final boolean toRecord;
 
     public AbstractMapperMethodGenerator(T localField, ProcessedSchema processedSchema, boolean toRecord) {
-        super(processedSchema.getMutationType(), processedSchema);
+        super(processedSchema.getTableType(localField.getContainerTypeName()), processedSchema);
 
         this.localField = localField;
         this.toRecord = toRecord;
@@ -39,7 +39,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
                 .addModifiers(Modifier.STATIC)
                 .addParameter(wrapList(inputType), uncapitalize(inputName))
                 .addParameter(STRING.className, PATH_NAME)
-                .addParameter(INPUT_TRANSFORMER.className, TRANSFORMER_NAME)
+                .addParameter(RECORD_TRANSFORMER.className, TRANSFORMER_NAME)
                 .addCode(declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/")));
     }
 
@@ -61,16 +61,11 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (getLocalObject() == null || !getLocalObject().isGenerated()) {
+        if (getLocalObject() == null || getLocalObject().isExplicitlyNotGenerated()) {
             return List.of();
         }
 
         return List.of(generate(getLocalField()));
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return getLocalObject() == null || getLocalObject().isGenerated();
     }
 
     public abstract boolean mapsJavaRecord();

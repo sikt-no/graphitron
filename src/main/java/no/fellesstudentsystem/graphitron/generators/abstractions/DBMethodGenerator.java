@@ -4,11 +4,11 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import graphql.language.FieldDefinition;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
@@ -143,7 +143,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         var fieldsOfTypeListWithoutSplitting = fieldsWithoutSplitting
                 .stream()
                 .filter(processedSchema::isObject)
-                .filter(AbstractField::isIterableWrapped)
+                .filter(GenerationField::isIterableWrapped)
                 .collect(Collectors.toList());
 
         context.setMultisetObjectFields(fieldsOfTypeListWithoutSplitting);
@@ -190,7 +190,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                 .build();
     }
 
-    public CodeBlock generateMultisetMapping(FetchContext context, List<ObjectField> fieldsWithoutSplitting) {
+    public CodeBlock generateMultisetMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting) {
         var mappingFrom = CodeBlock.builder().add("(");
         var mappingTo = CodeBlock.builder().add(" -> new $T(", context.getReferenceObject().getGraphClassName());
         var mappingIndex = 0;
@@ -264,16 +264,16 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             whereContent.add(".$L($L.eq($L))\n", (i == 0) ? "where" : "and", field.getKey(), joinAlias.map(alias -> alias.getMappingName() + "." + Arrays.stream(field.getValue().split("[.]")).reduce((first, second) -> second).orElseGet(field::getValue)).orElseGet(field::getValue));
             i++;
         }
-        if (context.getReferenceObjectField().hasNonReservedInputFields()) {
+        if (((ObjectField)context.getReferenceObjectField()).hasNonReservedInputFields()) {
             throw new IllegalArgumentException("Input arguments is not supported for multiset lists in " + context.getPreviousTable().getMappingName());
         }
 
         return whereContent.build();
     }
 
-    private CodeBlock createMappingFunction(FetchContext context, List<ObjectField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
-        boolean hasIdField = fieldsWithoutTable.stream().anyMatch(ObjectField::isID);
-        boolean hasNullableField = fieldsWithoutTable.stream().anyMatch(ObjectField::isNullable);
+    private CodeBlock createMappingFunction(FetchContext context, List<? extends GenerationField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
+        boolean hasIdField = fieldsWithoutTable.stream().anyMatch(GenerationField::isID);
+        boolean hasNullableField = fieldsWithoutTable.stream().anyMatch(GenerationField::isNullable);
 
         boolean canReturnNonNullableObjectWithAllFieldsNull = hasNullableField && context.getReferenceObjectField().isNonNullable() && !hasIdField;
 
@@ -298,7 +298,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         return codeBlock.build();
     }
 
-    private CodeBlock createMappingWithUnion(FetchContext context, List<ObjectField> fieldsWithoutTable) {
+    private CodeBlock createMappingWithUnion(FetchContext context, List<? extends GenerationField> fieldsWithoutTable) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
         for(var mappingIndex = 0; mappingIndex < fieldsWithoutTable.size(); mappingIndex++) {
@@ -367,7 +367,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         return codeBlockConditions.build();
     }
 
-    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<ObjectField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExeeded) {
+    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<? extends GenerationField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExeeded) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
@@ -379,7 +379,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         for (int i = 0; i < fieldsWithoutTable.size(); i++) {
             String argumentName;
-            ObjectField field = fieldsWithoutTable.get(i);
+            var field = fieldsWithoutTable.get(i);
             var isLastField = (i == fieldsWithoutTable.size()-1);
 
             if (processedSchema.isUnion(field.getTypeName())) {
@@ -426,7 +426,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<ObjectField> fieldsWithoutTable) {
+    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable) {
         var codeBlockBuilder = CodeBlock.builder();
         codeBlockBuilder.add("$T.class, r ->\n", context.getReferenceObject().getGraphClassName());
         codeBlockBuilder.indent().indent();
@@ -458,7 +458,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     /**
      * Generate a single argument in the row method call.
      */
-    private CodeBlock generateForScalarField(ObjectField field, FetchContext context) {
+    private CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.iterateJoinSequenceFor(field).render();
         if (field.isID()) {
             return CodeBlock.of("$L.get$L()", renderedSource, capitalize(field.getMappingFromFieldOverride().getName()));
@@ -470,14 +470,14 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     /**
      * Generate select row for each object within the union field
      */
-    private CodeBlock generateForUnionField(ObjectField field, FetchContext context) {
+    private CodeBlock generateForUnionField(GenerationField field, FetchContext context) {
         var codeBlock = CodeBlock.builder();
         var unionField = processedSchema.getUnion(field.getTypeName());
 
         var counter = 0;
         for(var fieldObject : unionField.getFieldTypeNames()) {
             var object = processedSchema.getObject(fieldObject).getName();
-            var objectField = new ObjectField(new FieldDefinition(object, new graphql.language.TypeName(object)));
+            var objectField = new ObjectField(new FieldDefinition(object, new graphql.language.TypeName(object)), object);
             codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
             if(counter + 1 < unionField.getFieldTypeNames().size()) {
                 codeBlock.add(".as($S),\n", field.getName());

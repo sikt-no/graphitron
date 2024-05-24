@@ -7,9 +7,9 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -32,16 +32,20 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class FormatCodeBlocks {
     private final static CodeBlock
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
-            DECLARE_CONTEXT_VARIABLE = CodeBlock.of(
+            DECLARE_CONTEXT_VARIABLE = CodeBlock.builder().addStatement(
                     "var $L = $T.selectContext($N, this.$N)",
-                    VariableNames.CONTEXT_NAME,
+                    CONTEXT_NAME,
                     RESOLVER_HELPERS.className,
-                    VariableNames.VARIABLE_ENV,
-                    VariableNames.CONTEXT_NAME
-            ),
+                    VARIABLE_ENV,
+                    CONTEXT_NAME
+            ).build(),
+            NEW_TRANSFORM = CodeBlock.of("new $T($N, this.$N)", RECORD_TRANSFORMER.className, VARIABLE_ENV, CONTEXT_NAME),
+            DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
+            NEW_DATA_FETCHER = CodeBlock.of("new $T($N, this.$N)", DATA_FETCHER.className, VARIABLE_ENV, CONTEXT_NAME),
+            NEW_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T($L)", DATA_FETCHER.className, NEW_TRANSFORM),
             RESOLVER_HELPERS_GET_SELECT = CodeBlock.of("$T.getSelectionSet($N)", RESOLVER_HELPERS.className, VARIABLE_ENV),
             NEW_SELECTION = CodeBlock.of("new $T($N.getSelectionSet())", SELECTION_SET.className, VARIABLE_ENV),
-            ATTACH = CodeBlock.of(".attach($N.configuration())", VariableNames.CONTEXT_NAME),
+            ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
@@ -64,7 +68,7 @@ public class FormatCodeBlocks {
      * @param isIterable Is this record wrapped in a list?
      * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
      */
-    public static CodeBlock declareRecord(String name, RecordObjectDefinition<?, ?> input, boolean isIterable) {
+    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable) {
         if (!input.hasRecordReference()) {
             return empty();
         }
@@ -360,6 +364,38 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that creates a resolver transformer.
+     */
+    @NotNull
+    public static CodeBlock newTransform() {
+        return NEW_TRANSFORM;
+    }
+
+    /**
+     * @return CodeBlock that creates a data fetcher object.
+     */
+    @NotNull
+    public static CodeBlock newDataFetcher() {
+        return NEW_DATA_FETCHER;
+    }
+
+    /**
+     * @return CodeBlock that creates a transform through a data fetcher object.
+     */
+    @NotNull
+    public static CodeBlock newDataFetcherWithTransform() {
+        return NEW_DATA_FETCHER_TRANSFORM;
+    }
+
+    /**
+     * @return CodeBlock that declares a resolver transformer.
+     */
+    @NotNull
+    public static CodeBlock declareTransform() {
+        return DECLARE_TRANSFORM;
+    }
+
+    /**
      * @return CodeBlock that calls a helper class to extract the selection set from an environment.
      */
     @NotNull
@@ -389,14 +425,15 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock countDBFunction(String queryLocation, String queryMethodName, String inputList) {
         return CodeBlock.of(
-                "($L, $L) -> $N.contains($S) ? $N.count$L($N$L) : null",
+                "($L, $L, $L) -> $N.contains($S) ? $N.count$L($N$L) : null",
+                CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME,
                 SELECTION_SET_NAME,
                 TOTAL_COUNT_NAME,
                 uncapitalize(queryLocation),
                 capitalize(queryMethodName),
-                VariableNames.CONTEXT_NAME,
+                CONTEXT_NAME,
                 inputList.isEmpty() ? "" : ", " + inputList
         );
     }
@@ -405,16 +442,17 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryDBFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds) {
+    public static CodeBlock queryDBFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds, boolean includeContext) {
         return CodeBlock.of(
-                "($L$L) -> $N.$L($N$L$L, $N)",
+                "($L$L$L) -> $N.$L($L$L$L$N)",
+                includeContext ? CONTEXT_NAME + ", " : empty(),
                 hasIds ? IDS_NAME + ", " : "",
                 SELECTION_SET_NAME,
                 uncapitalize(queryLocation),
                 queryMethodName,
-                VariableNames.CONTEXT_NAME,
-                usesIds ? ", " + IDS_NAME : "",
-                inputList.isEmpty() ? "" : ", " + inputList,
+                includeContext ? CodeBlock.of("$N, ", CONTEXT_NAME) : empty(),
+                usesIds ? IDS_NAME + ", " : "",
+                inputList.isEmpty() ? "" : inputList + ", ",
                 SELECTION_SET_NAME
         );
     }
@@ -430,7 +468,7 @@ public class FormatCodeBlocks {
                 "$N.$L($N, $L, $L.withPrefix($L))$L$L",
                 uncapitalize(asQueryClass(typeName)),
                 asQueryNodeMethod(typeName),
-                VariableNames.CONTEXT_NAME,
+                CONTEXT_NAME,
                 isIterable ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,

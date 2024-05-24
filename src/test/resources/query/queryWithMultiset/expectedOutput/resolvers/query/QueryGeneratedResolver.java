@@ -24,7 +24,6 @@ public class QueryGeneratedResolver implements QueryResolver {
             Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.inventoryForQuery(ctx, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.inventoryForQuery(ctx, selectionSet));
     }
 }

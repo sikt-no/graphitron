@@ -25,8 +25,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                                                      DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.address0ForQuery(ctx, cityID, storeID, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.address0ForQuery(ctx, cityID, storeID, selectionSet));
     }
 
     @Override
@@ -34,7 +33,6 @@ public class QueryGeneratedResolver implements QueryResolver {
                                                      DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.address1ForQuery(ctx, cityID, storeID, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.address1ForQuery(ctx, cityID, storeID, selectionSet));
     }
 }

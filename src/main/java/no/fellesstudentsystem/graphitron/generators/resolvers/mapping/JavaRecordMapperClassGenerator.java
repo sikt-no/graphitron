@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers.mapping;
 
 import com.squareup.javapoet.TypeSpec;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMapperClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -22,8 +21,9 @@ public class JavaRecordMapperClassGenerator extends AbstractMapperClassGenerator
 
     @Override
     protected boolean filterHasTableAndRecordProperties(GenerationField field) {
-        return processedSchema.getTableType(field).hasJavaRecordReference()
-                && (isToRecord() ? processedSchema.isInputType(field) : processedSchema.isObject((AbstractField<?>) field));
+        return processedSchema.isTableType(field)
+                && (processedSchema.getTableType(field).hasJavaRecordReference())
+                && (isToRecord() ? processedSchema.isInputType(field) : processedSchema.isObject(field));
     }
 
     @Override

@@ -1,13 +1,14 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
+import com.squareup.javapoet.TypeName;
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.FIELD;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 
 /**
@@ -15,16 +16,17 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam
  */
 public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer<T>> implements FieldSpecification {
     private final FieldType fieldType;
-    private final String name, upperCaseName, unprocessedFieldOverrideInput;
+    private final String name, upperCaseName, unprocessedFieldOverrideInput, containerType;
     private final MethodMapping mappingFromSchemaName, mappingFromFieldOverride;
-    private final boolean explicitlyNotGenerated, hasSetFieldOverride;
+    private final boolean hasSetFieldOverride;
 
-    public AbstractField(T field) {
-        this(field ,null);
+    public AbstractField(T field, String container) {
+        this(field ,null, container);
     }
 
-    public AbstractField(T field, FieldType fieldType) {
+    public AbstractField(T field, FieldType fieldType, String container) {
         name = field.getName();
+        containerType = container;
         hasSetFieldOverride = field.hasDirective(FIELD.getName());
         if (hasSetFieldOverride) {
             var columnValue = getDirectiveArgumentString(field, FIELD, NAME);
@@ -38,7 +40,6 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         this.fieldType = fieldType;
         mappingFromSchemaName = new MethodMapping(name);
         mappingFromFieldOverride = new MethodMapping(unprocessedFieldOverrideInput);
-        explicitlyNotGenerated = field.hasDirective(NOT_GENERATED.getName());
     }
 
     @Override
@@ -46,13 +47,14 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         return hasSetFieldOverride;
     }
 
-    public boolean isExplicitlyNotGenerated() {
-        return explicitlyNotGenerated;
-    }
-
     @Override
     public String getTypeName() {
         return fieldType.getName();
+    }
+
+    @Override
+    public String getContainerTypeName() {
+        return containerType;
     }
 
     /**
@@ -78,10 +80,8 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         return fieldType.isIterableWrapped() ? !fieldType.isIterableNullable() : !fieldType.isNullable();
     }
 
-    /**
-     * @return {@link com.squareup.javapoet.TypeName} for this field's type.
-     */
-    public com.squareup.javapoet.TypeName getTypeClass() {
+    @Override
+    public TypeName getTypeClass() {
         return fieldType.getTypeClass();
     }
 

@@ -37,7 +37,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (!isRoot) {
             code.add("$L.hasIds($N))\n", context.renderQuerySource(getLocalTable()), idParamName);
         }
-        if (context.getReferenceObjectField().hasNonReservedInputFields()) {
+        if (((ObjectField) context.getReferenceObjectField()).hasNonReservedInputFields()) {
             code.add(createWhere(context, !isRoot));
         } else if (isRoot) {
             return empty();
@@ -47,7 +47,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock createWhere(FetchContext context, boolean hasWhere) {
         var referenceField = context.getReferenceObjectField();
-        var inputConditions = getInputConditions(referenceField.getNonReservedArguments());
+        var inputConditions = getInputConditions(((ObjectField)referenceField).getNonReservedArguments());
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
 

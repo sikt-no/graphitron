@@ -1,6 +1,7 @@
 package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.InputValueDefinition;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldType;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -16,8 +17,8 @@ public class InputField extends GenerationSourceField<InputValueDefinition> {
     private final boolean isLookupKey;
     private final boolean isOrderField;
 
-    public InputField(InputValueDefinition field) {
-        super(field, new FieldType(field.getType()));
+    public InputField(InputValueDefinition field, String container) {
+        super(field, new FieldType(field.getType()), container);
         defaultValue = field.getDefaultValue() != null ? field.getDefaultValue().toString() : "";
 
         isLookupKey = field.hasDirective(LOOKUP_KEY.getName());
@@ -48,8 +49,8 @@ public class InputField extends GenerationSourceField<InputValueDefinition> {
     /**
      * @return List of instances based on a list of {@link InputValueDefinition}.
      */
-    public static List<InputField> from(List<InputValueDefinition> fields) {
-        return fields.stream().map(InputField::new).collect(Collectors.toList());
+    public static List<InputField> from(List<InputValueDefinition> fields, String container) {
+        return fields.stream().map(it -> new InputField(it, container)).collect(Collectors.toList());
     }
 
     public boolean isOrderField() {

@@ -21,7 +21,7 @@ public class EditCustomerSimpleGeneratedResolver implements EditCustomerSimpleMu
             throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomerSimple = testCustomerService.simple(id);
 

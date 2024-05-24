@@ -24,7 +24,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
- * This class generates the resolvers for update queries with the {@link GenerationDirective#SERVICE}  directive set.
+ * This class generates the resolvers for update queries with the {@link GenerationDirective#SERVICE} directive set.
  */
 public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGenerator {
     private static final String
@@ -189,14 +189,14 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
     /**
      * @return Code that both fetches record data and creates the appropriate response objects.
      */
-    protected CodeBlock generateResponses(ObjectField target) {
+    protected CodeBlock generateSchemaOutputs(ObjectField target) {
         var code = CodeBlock.builder();
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
             return code.build();
         }
 
         return code
-                .add(generateResponses(MapperContext.createResolverContext(target, false, processedSchema)))
+                .add(generateSchemaOutputs(MapperContext.createResolverContext(target, false, processedSchema)))
                 .add(returnCompletedFuture(getResolverResultName(target)))
                 .build();
     }
@@ -204,7 +204,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
     /**
      * @return Code for adding error types and calling transform methods.
      */
-    protected CodeBlock generateResponses(MapperContext mapperContext) {
+    protected CodeBlock generateSchemaOutputs(MapperContext mapperContext) {
         if (!mapperContext.targetIsType()) {
             return empty();
         }
@@ -243,7 +243,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                         innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
                     }
                 } else {
-                    innerCode.add(generateResponses(innerContext));
+                    innerCode.add(generateSchemaOutputs(innerContext));
                 }
             }
 
@@ -281,7 +281,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (localField.isGenerated()) {
+        if (localField.isGeneratedWithResolver()) {
             if (localField.hasServiceReference()) {
                 return List.of(generate(localField));
             } else if (!localField.hasMutationType()) {

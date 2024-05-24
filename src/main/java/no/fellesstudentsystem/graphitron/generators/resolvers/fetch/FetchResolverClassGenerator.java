@@ -6,9 +6,8 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverClassGe
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 
 /**
  * Class generator for basic select resolver classes.
@@ -22,18 +21,15 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        var classes = processedSchema
+        processedSchema
                 .getObjects()
                 .values()
                 .stream()
                 .filter(ObjectDefinition::isGenerated)
-                .filter(obj -> !obj.getName().equals(SCHEMA_ROOT_NODE_MUTATION.getName()))
+                .filter(obj -> !obj.getName().equals(SCHEMA_MUTATION.getName()))
                 .map(this::generate)
-                .collect(Collectors.toList());
-
-        for (var generatedClass : classes) {
-            writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
-        }
+                .filter(it -> !it.methodSpecs.isEmpty())
+                .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName()));
     }
 
     @Override
@@ -42,7 +38,8 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
                 target.getName(),
                 List.of(
                         new FetchResolverMethodGenerator(target, processedSchema),
-                        new FetchInterfaceResolverMethodGenerator(target, processedSchema)
+                        new FetchInterfaceResolverMethodGenerator(target, processedSchema),
+                        new ServiceFetchResolverMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

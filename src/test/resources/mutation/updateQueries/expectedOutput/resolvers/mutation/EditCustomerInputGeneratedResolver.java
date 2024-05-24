@@ -25,7 +25,7 @@ public class EditCustomerInputGeneratedResolver implements EditCustomerInputMuta
             throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input");
 

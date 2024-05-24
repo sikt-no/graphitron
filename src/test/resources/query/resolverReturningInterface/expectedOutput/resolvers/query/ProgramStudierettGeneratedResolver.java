@@ -9,10 +9,10 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import fake.graphql.example.api.ProgramStudierettResolver;
 import fake.graphql.example.model.Node;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import fake.code.example.package.queries.query.KullDBQueries;
-import fake.code.example.package.queries.query.ProgramStudierettDBQueries;
+package.queries.query.ProgramStudierettDBQueries;
 import no.fellesstudentsystem.kjerneapi.Tables;
 import org.jooq.DSLContext;
 
@@ -33,10 +33,10 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> kullDBQueries.loadKullByIdsAsReferertNode(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> kullDBQueries.loadKullByIdsAsReferertNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
-            return DataLoaders.loadInterfaceData(env, tablePartOfId, id, (ids, selectionSet) -> programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }

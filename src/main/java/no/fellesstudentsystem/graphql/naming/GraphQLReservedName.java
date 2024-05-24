@@ -22,8 +22,8 @@ public enum GraphQLReservedName {
     NODE_ID("id"),
     ERROR_TYPE("Error"),
     SCHEMA_CONNECTION_SUFFIX("Connection"),
-    SCHEMA_ROOT_NODE_QUERY("Query"),
-    SCHEMA_ROOT_NODE_MUTATION("Mutation");
+    SCHEMA_QUERY("Query"),
+    SCHEMA_MUTATION("Mutation");
 
     private final String name;
 

@@ -25,7 +25,7 @@ public class EditFilmRatingNoConverterGeneratedResolver implements EditFilmRatin
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.filmInput1ToJOOQRecord(input, "input");
 

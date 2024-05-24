@@ -27,7 +27,7 @@ public class EditFilmRatingNoConverterIterableGeneratedResolver implements EditF
             List<FilmInput1> input, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.filmInput1ToJOOQRecord(input, "input");
 

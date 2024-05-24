@@ -3,7 +3,9 @@ package no.fellesstudentsystem.graphitron.validation;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
@@ -129,7 +131,7 @@ public class ProcessedDefinitionsValidator {
             }
 
             var hasCondition = field.hasOverridingCondition();
-            if (field.hasNonReservedInputFields() && field.isGenerated()) {
+            if (field.hasNonReservedInputFields() && field.isGeneratedWithResolver()) {
                 var targetTable = schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
                 flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition())
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
@@ -266,7 +268,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateInterfaces() {
-        for (var field : allFields.stream().filter(ObjectField::isGenerated).collect(Collectors.toList())) {
+        for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).collect(Collectors.toList())) {
             var typeName = field.getTypeName();
             var name = Optional
                     .ofNullable(schema.getObjectOrConnectionNode(typeName))
@@ -341,7 +343,7 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    private String validateFieldTypes(RecordObjectDefinition<?, ? extends GenerationField> object) {
+    private String validateFieldTypes(RecordObjectSpecification<? extends GenerationField> object) {
         var objectName = object.getName();
         return object
                 .getFields()
@@ -404,7 +406,7 @@ public class ProcessedDefinitionsValidator {
             mutation
                     .getFields()
                     .stream()
-                    .filter(ObjectField::isGenerated)
+                    .filter(ObjectField::isGeneratedWithResolver)
                     .filter(ObjectField::hasMutationType)
                     .forEach(target -> {
                         validateRecordRequiredFields(target);

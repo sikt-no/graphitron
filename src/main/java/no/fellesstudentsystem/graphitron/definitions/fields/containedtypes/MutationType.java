@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.definitions.fields;
+package no.fellesstudentsystem.graphitron.definitions.fields.containedtypes;
 
 /**
  * Enum that lists all supported forms of mutations.

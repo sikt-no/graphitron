@@ -28,7 +28,7 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
     public ExceptionDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
 
-        isGenerated = getFields().stream().anyMatch(ObjectField::isGenerated);
+        isGenerated = getFields().stream().anyMatch(ObjectField::isGeneratedWithResolver);
 
         if (objectDefinition.hasDirective(ERROR.getName())) {
 
@@ -74,7 +74,7 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
 
     @Override
     protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
-        return ObjectField.from(objectDefinition.getFieldDefinitions());
+        return ObjectField.from(objectDefinition.getFieldDefinitions(), getName());
     }
 
     public boolean isGenerated() {

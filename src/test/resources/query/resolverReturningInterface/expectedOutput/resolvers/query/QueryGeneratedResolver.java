@@ -26,7 +26,6 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<ProgramStudierett>> programStudierett(String id,
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var dbResult = queryDBQueries.programStudierettForQuery(ctx, id, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env)));
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.programStudierettForQuery(ctx, id, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env))));
     }
 }

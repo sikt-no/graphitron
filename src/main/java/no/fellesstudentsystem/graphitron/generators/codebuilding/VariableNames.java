@@ -5,7 +5,6 @@ public class VariableNames {
             SELECTION_SET_NAME = "selectionSet",
             IDS_NAME = "ids",
             PAGE_SIZE_NAME = "pageSize",
-            LOADER_NAME = "loader",
             TABLE_OF_ID = "tablePartOfId",
             CONTEXT_NAME = "ctx",
             VALIDATION_ERRORS_NAME = "validationErrors",

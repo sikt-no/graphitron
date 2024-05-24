@@ -33,7 +33,7 @@ public class EditErrorUnion2GeneratedResolver implements EditErrorUnion2Mutation
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input");
         var edit2Record = new CustomerRecord();

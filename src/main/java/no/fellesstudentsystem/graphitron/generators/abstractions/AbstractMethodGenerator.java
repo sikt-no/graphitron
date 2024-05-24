@@ -3,13 +3,10 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
-import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
-import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -30,11 +27,11 @@ import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClass
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.
  */
 abstract public class AbstractMethodGenerator<T extends GenerationTarget> implements MethodGenerator<T> {
-    protected final ObjectDefinition localObject;
+    protected final RecordObjectSpecification<? extends GenerationField> localObject;
     protected final ProcessedSchema processedSchema;
     protected Set<Dependency> dependencySet = new HashSet<>();
 
-    public AbstractMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+    public AbstractMethodGenerator(RecordObjectSpecification<? extends GenerationField> localObject, ProcessedSchema processedSchema) {
         this.localObject = localObject;
         this.processedSchema = processedSchema;
     }
@@ -42,7 +39,7 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
     /**
      * @return The object that this generator is attempting to build methods for.
      */
-    public ObjectDefinition getLocalObject() {
+    public RecordObjectSpecification<? extends GenerationField> getLocalObject() {
         return localObject;
     }
 
@@ -53,7 +50,7 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
         }
         return Optional
                 .ofNullable(processedSchema.getPreviousTableObjectForObject(localObject))
-                .map(RecordObjectDefinition::getTable)
+                .map(RecordObjectSpecification::getTable)
                 .orElse(null);
     }
 
@@ -76,19 +73,8 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
     /**
      * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
      */
-    protected TypeName inputIterableWrap(InputField field) {
-        var typeClass = processedSchema.isInputType(field) ? processedSchema.getInputType(field).getGraphClassName() : field.getTypeClass();
-        if (typeClass == null && processedSchema.isEnum(field)) {
-            typeClass = processedSchema.getEnum(field).getGraphClassName();
-        }
-        return wrapListIf(typeClass, field.isIterableWrapped());
-    }
-
-    /**
-     * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
-     */
-    protected TypeName objectIterableWrap(ObjectField field) {
-        var typeClass = processedSchema.isObject(field) ? processedSchema.getObject(field).getGraphClassName() : field.getTypeClass();
+    protected TypeName iterableWrap(GenerationField field) {
+        var typeClass = processedSchema.isTableType(field) ? processedSchema.getTableType(field).getGraphClassName() : field.getTypeClass();
         if (typeClass == null && processedSchema.isEnum(field)) {
             typeClass = processedSchema.getEnum(field).getGraphClassName();
         }

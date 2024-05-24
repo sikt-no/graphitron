@@ -27,7 +27,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
                                                                       DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputLevel1ToJavaRecord(input, "input");
 

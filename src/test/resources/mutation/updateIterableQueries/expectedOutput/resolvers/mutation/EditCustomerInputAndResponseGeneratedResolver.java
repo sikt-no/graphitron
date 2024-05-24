@@ -27,7 +27,7 @@ public class EditCustomerInputAndResponseGeneratedResolver implements EditCustom
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 

@@ -2,7 +2,8 @@ package no.fellesstudentsystem.graphitron.definitions.fields;
 
 import graphql.language.FieldDefinition;
 import graphql.language.IntValue;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldType;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import org.apache.commons.lang3.Validate;
@@ -26,7 +27,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
-    private final boolean isGenerated, hasLookupKey, fetchByID;
+    private final boolean hasLookupKey, fetchByID;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -34,19 +35,15 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
             GraphQLReservedName.PAGINATION_BEFORE.getName()
     );
 
-    private final CodeReference serviceReference;
-
-    public ObjectField(FieldDefinition field) {
-        super(field, new FieldType(field.getType()));
-        arguments = setInputAndPagination(field, isRootField());
+    public ObjectField(FieldDefinition field, String container) {
+        super(field, new FieldType(field.getType()), container);
+        arguments = setInputAndPagination(field, isRootField(), container);
         orderField = arguments.stream().filter(InputField::isOrderField).findFirst().orElse(null);
         nonReservedArguments = arguments.stream().filter(inputField ->
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName())) && !inputField.equals(orderField)
         ).collect(Collectors.toList());
-        isGenerated = isResolver() && !isExplicitlyNotGenerated();
         fetchByID = field.hasDirective(FETCH_BY_ID.getName());
 
-        serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
         mutationType = field.hasDirective(MUTATION.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
                 : null;
@@ -57,12 +54,12 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
                 "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
     }
 
-    private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel) {
+    private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel, String container) {
         var inputs = field.getInputValueDefinitions();
         var inputFields = new ArrayList<ArgumentField>();
 
         if (!isResolver() && !isTopLevel) {
-            return inputs.stream().map(ArgumentField::new).collect(Collectors.toList());
+            return inputs.stream().map(it -> new ArgumentField(it, container)).collect(Collectors.toList());
         }
 
         boolean hasFirst = false, hasAfter = false, hasLast = false, hasBefore = false;
@@ -84,7 +81,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
             } else if (name.equals(GraphQLReservedName.PAGINATION_BEFORE.getName())) {
                 hasBefore = true;
             }
-            inputFields.add(new ArgumentField(in));
+            inputFields.add(new ArgumentField(in, container));
         }
 
         var hasConnection = getTypeName().endsWith(GraphQLReservedName.SCHEMA_CONNECTION_SUFFIX.getName());
@@ -95,24 +92,10 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     }
 
     /**
-     * @return Should this field result in a generated method in a resolver?
-     */
-    public boolean isGenerated() {
-        return isGenerated;
-    }
-
-    /**
      * @return Should this field use IDs to fetch record data?
      */
     public boolean isFetchByID() {
         return fetchByID;
-    }
-
-    /**
-     * @return Does this field point to a resolver which has to be defined manually, rather than generated?
-     */
-    public boolean isManualResolver() {
-        return isResolver() && !isGenerated;
     }
 
     /**
@@ -129,20 +112,6 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
      */
     public boolean hasBackwardPagination() {
         return hasBackwardPagination;
-    }
-
-    /**
-     * @return The reference to the external service that this field is related to.
-     */
-    public CodeReference getServiceReference() {
-        return serviceReference;
-    }
-
-    /**
-     * @return Does this field have a service reference defined?
-     */
-    public boolean hasServiceReference() {
-        return serviceReference != null;
     }
 
     public boolean hasMutationType() {
@@ -231,8 +200,8 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     /**
      * @return List of instances based on a list of {@link FieldDefinition}.
      */
-    public static List<ObjectField> from(List<FieldDefinition> fields) {
-        return fields.stream().map(ObjectField::new).collect(Collectors.toList());
+    public static List<ObjectField> from(List<FieldDefinition> fields, String container) {
+        return fields.stream().map(it -> new ObjectField(it, container)).collect(Collectors.toList());
     }
 
     /**

@@ -7,13 +7,11 @@ import fake.graphql.example.model.Customer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class CustomerGeneratedResolver implements CustomerResolver {
@@ -24,10 +22,7 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     private CustomerDBQueries customerDBQueries;
 
     @Override
-    public CompletableFuture<List<Address>> historicalAddresses(Customer customer,
-            DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<Address>> loader = DataLoaders.getDataLoader(env, "historicalAddressesForCustomer", (ids, selectionSet) -> customerDBQueries.historicalAddressesForCustomer(ctx, ids, selectionSet));
-        return DataLoaders.loadNonNullable(loader, customer.getId(), env);
+    public CompletableFuture<List<Address>> historicalAddresses(Customer customer, DataFetchingEnvironment env) throws Exception {
+        return new DataFetcher(env, this.ctx).loadNonNullable("historicalAddressesForCustomer", customer.getId(), (ctx, ids, selectionSet) -> customerDBQueries.historicalAddressesForCustomer(ctx, ids, selectionSet));
     }
 }

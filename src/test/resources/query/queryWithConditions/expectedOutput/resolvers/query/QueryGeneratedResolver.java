@@ -26,8 +26,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.paramConditionForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.paramConditionForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -35,8 +34,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<String> cityNames, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.paramConditionOverrideForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.paramConditionOverrideForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -44,8 +42,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldConditionForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldConditionForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -53,8 +50,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<String> cityNames, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldConditionOverrideForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldConditionOverrideForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -62,8 +58,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<String> cityNames, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldAndParamConditionForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -71,8 +66,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<String> cityNames, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -80,8 +74,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<String> cityNames, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, countryId, cityNames, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, countryId, cityNames, selectionSet));
     }
 
     @Override
@@ -89,7 +82,6 @@ public class QueryGeneratedResolver implements QueryResolver {
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.fieldInputConditionForQuery(ctx, countryId, cityInput, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.fieldInputConditionForQuery(ctx, countryId, cityInput, selectionSet));
     }
 }

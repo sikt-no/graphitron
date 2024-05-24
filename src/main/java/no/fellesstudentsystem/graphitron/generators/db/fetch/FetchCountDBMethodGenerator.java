@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphitron.generators.db.fetch;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
@@ -71,26 +72,29 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         referenceField
                 .getNonReservedArguments()
-                .forEach(it -> spec.addParameter(inputIterableWrap(it), it.getName()));
+                .forEach(it -> spec.addParameter(iterableWrap(it), it.getName()));
 
         return spec;
     }
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getReferredFieldsFromObjectNames(processedSchema.getNamesWithTableOrConnections())
+        return ((ObjectDefinition) getLocalObject())
+                .getFieldsReferringTo(processedSchema.getNamesWithTableOrConnections())
                 .stream()
-                .filter(ObjectField::isGenerated)
+                .filter(GenerationField::isGeneratedWithResolver)
                 .filter(ObjectField::hasRequiredPaginationFields)
                 .filter(it -> !processedSchema.isInterface(it))
                 .map(this::generate)
+                .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());
     }
 
     @Override
     public boolean generatesAll() {
-        var fieldStream = getLocalObject().getFields().stream();
-        return fieldStream.allMatch(objectField -> objectField.isGenerated() && objectField.hasRequiredPaginationFields());
+        return getLocalObject()
+                .getFields()
+                .stream()
+                .allMatch(field -> field.isGeneratedWithResolver() && ((ObjectField) field).hasRequiredPaginationFields());
     }
 }

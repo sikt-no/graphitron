@@ -8,54 +8,41 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_MUTATION;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_ROOT_NODE_QUERY;
-
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
 /**
  * Represents the default GraphQL object.
  * Objects which do not fall within a different object category will become instances of this class.
  * This is typically the only object type used in table referencing and joining operations.
  */
-public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinition, ObjectField> implements GenerationTarget {
-    private final boolean isGenerated, isRoot;
+public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinition, ObjectField> {
+    private final boolean isRoot, hasResolvers;
     private final LinkedHashSet<String> implementsInterfaces;
     private final ObjectTypeDefinition objectTypeDefinition;
-    private final boolean explicitlyNotGenerated;
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
 
         isRoot = isRootType(objectDefinition);
-        isGenerated = getFields().stream().anyMatch(ObjectField::isGenerated);
+        hasResolvers = getFields().stream().anyMatch(GenerationTarget::isGeneratedWithResolver);
         implementsInterfaces = objectDefinition.getImplements().stream()
                 .map(it -> ((TypeName) it).getName())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         objectTypeDefinition = objectDefinition;
-        explicitlyNotGenerated = objectDefinition.hasDirective(NOT_GENERATED.getName());
-    }
-
-    public boolean isExplicitlyNotGenerated() {
-        return explicitlyNotGenerated;
     }
 
     @Override
     protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
         var definitions = objectDefinition.getFieldDefinitions();
-        return isRootType(objectDefinition) ? TopLevelObjectField.from(definitions) : ObjectField.from(definitions);
+        return isRootType(objectDefinition) ? TopLevelObjectField.from(definitions, getName()) : ObjectField.from(definitions, getName());
     }
 
     private boolean isRootType(ObjectTypeDefinition objectDefinition) {
-        return objectDefinition.getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_QUERY.getName())
-                || objectDefinition.getName().equalsIgnoreCase(SCHEMA_ROOT_NODE_MUTATION.getName());
-    }
-
-    public boolean isGenerated() {
-        return isGenerated;
+        return objectDefinition.getName().equalsIgnoreCase(SCHEMA_QUERY.getName())
+                || objectDefinition.getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
     }
 
     /**
@@ -72,14 +59,9 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
         return objectTypeDefinition;
     }
 
-    /**
-     * @return The fields which refer to any of these named objects.
-     */
-    public List<ObjectField> getReferredFieldsFromObjectNames(Set<String> objectsNames) {
-        return getFields()
-                .stream()
-                .filter(f -> objectsNames.contains(f.getTypeName()))
-                .collect(Collectors.toList());
+    @Override
+    public boolean isGeneratedWithResolver() {
+        return hasResolvers;
     }
 
     /**

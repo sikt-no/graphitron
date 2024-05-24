@@ -38,7 +38,7 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var select = new SelectionSet(env.getSelectionSet());
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.upsertInputToJOOQRecord(input, "input");
 

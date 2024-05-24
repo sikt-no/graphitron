@@ -15,6 +15,6 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
 
     @Override
     protected List<ObjectField> createFields(InterfaceTypeDefinition objectDefinition) {
-        return ObjectField.from(objectDefinition.getFieldDefinitions());
+        return ObjectField.from(objectDefinition.getFieldDefinitions(), getName());
     }
 }

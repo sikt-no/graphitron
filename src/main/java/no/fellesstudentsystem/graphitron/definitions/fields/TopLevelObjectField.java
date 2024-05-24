@@ -5,22 +5,13 @@ import graphql.language.FieldDefinition;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;
-
 /**
  * Represents an object field type placed on a top level object, for example the Query type.
  */
 public class TopLevelObjectField extends ObjectField {
-    private final boolean isGenerated;
 
-    public TopLevelObjectField(FieldDefinition field) {
-        super(field);
-        isGenerated = !field.hasDirective(NOT_GENERATED.getName());
-    }
-
-    @Override
-    public boolean isGenerated() {
-        return isGenerated;
+    public TopLevelObjectField(FieldDefinition field, String container) {
+        super(field, container);
     }
 
     @Override
@@ -31,7 +22,7 @@ public class TopLevelObjectField extends ObjectField {
     /**
      * @return List of instances based on a list of {@link TopLevelObjectField}.
      */
-    public static List<ObjectField> from(List<FieldDefinition> fields) {
-        return fields.stream().map(TopLevelObjectField::new).collect(Collectors.toList());
+    public static List<ObjectField> from(List<FieldDefinition> fields, String container) {
+        return fields.stream().map(it -> new TopLevelObjectField(it, container)).collect(Collectors.toList());
     }
 }

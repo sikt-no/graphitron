@@ -6,7 +6,9 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.helpers.ClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
@@ -23,15 +25,16 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameForm
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.RECORD;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 
 /**
  * A generalized implementation of {@link ObjectSpecification} for types that can be linked to tables or records.
  */
-public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> {
+public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
@@ -43,6 +46,9 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
                 ? JOOQMapping.fromTable(getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.TABLE, NAME).orElse(getName().toUpperCase()))
                 : null;
 
+        isGenerated = getFields().stream().anyMatch(GenerationTarget::isGenerated);
+        hasResolvers = getFields().stream().anyMatch(GenerationTarget::isGeneratedWithResolver);
+        explicitlyNotGenerated = objectDefinition.hasDirective(NOT_GENERATED.getName());
         usesJavaRecord = objectDefinition.hasDirective(RECORD.getName());
         if (usesJavaRecord) {
             classReference = new ClassReference(new CodeReference(objectDefinition, RECORD, GenerationDirectiveParam.RECORD, objectDefinition.getName()));
@@ -78,73 +84,67 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         return requiredInputs.contains(field.getUpperCaseName());
     }
 
-    /**
-     * @return Table objects which holds table names.
-     */
+    @Override
+    public boolean isGenerated() {
+        return isGenerated;
+    }
+
+    @Override
+    public boolean isGeneratedWithResolver() {
+        return hasResolvers;
+    }
+
+    @Override
+    public boolean isExplicitlyNotGenerated() {
+        return explicitlyNotGenerated;
+    }
+
+    @Override
     public JOOQMapping getTable() {
         return table;
     }
 
-    /**
-     * @return Does this object have the "{@link GenerationDirective#TABLE table}" directive
-     * which implies a connection to a database table?
-     */
+    @Override
     public boolean hasTable() {
         return hasTable;
     }
 
-    /**
-     * @return The reference for a record class for this input type.
-     */
+    @Override
     public Class<?> getRecordReference() {
         return hasRecordReference() ? classReference.getReferenceClass() : null;
     }
 
-    /**
-     * @return The reference name for a record class for this input type.
-     */
+    @Override
     public String getRecordReferenceName() {
         return hasRecordReference() ? classReference.getClassNameString() : null;
     }
 
-    /**
-     * @return The {@link ClassName} for the record that corresponds to this type.
-     */
+    @Override
     public ClassName getRecordClassName() {
         return hasRecordReference() ? classReference.getClassName() : null;
     }
 
-    /**
-     * @return Does this input type have a record java class attached?
-     */
+    @Override
     public boolean hasJavaRecordReference() {
         return usesJavaRecord;
     }
 
-    /**
-     * @return Does this input type have a record class attached?
-     */
+    @Override
     public boolean hasRecordReference() {
         return classReference != null;
     }
 
-    /**
-     * @return The {@link ClassName} for this object when it is considered the source of a mapping.
-     */
+    @Override
     public ClassName asSourceClassName(boolean toRecord) {
         return toRecord ? getGraphClassName() : getRecordClassName();
     }
 
-    /**
-     * @return The {@link ClassName} for this object when it is considered the target of a mapping.
-     */
+    @Override
     public ClassName asTargetClassName(boolean toRecord) {
         return toRecord ? getRecordClassName() : getGraphClassName();
     }
 
-    /**
-     * @return The name of this object once it is transformed into a record.
-     */
+    @Override
     public String asRecordName() {
         return hasJavaRecordReference() || hasTable ? getRecordReferenceName() : NameFormat.asRecordName(getName());
     }

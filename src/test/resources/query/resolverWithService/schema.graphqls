@@ -1,0 +1,13 @@
+type Query {
+  customersQuery(storeIds: [ID!]! @field(name: "STORE_ID")): [Customer] @service(service : {name: "TEST_CUSTOMER"})
+}
+
+type Customer implements Node @table {
+  id: ID!
+  historicalAddresses: [Address!]! @splitQuery @reference(condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"}) @service(service : {name: "TEST_CUSTOMER"}) # Reference won't do anything since no queries are created.
+}
+
+type Address implements Node @table {
+  id: ID!
+  postalCode: String!
+}

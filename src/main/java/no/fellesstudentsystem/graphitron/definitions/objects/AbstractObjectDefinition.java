@@ -7,10 +7,7 @@ import no.fellesstudentsystem.graphitron.definitions.helpers.ClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecification;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -20,7 +17,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
  * A generalized implementation of {@link ObjectSpecification}.
  * Contains functionality that is common between the different kinds of GraphQL objects.
  */
-public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U extends FieldSpecification> implements ObjectSpecification {
+public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U extends FieldSpecification> implements ObjectSpecification<U> {
     private final String name;
     private final ClassReference graphClass;
     private final LinkedHashMap<String, U> fieldsByName;
@@ -50,9 +47,7 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U ex
 
     protected abstract List<U> createFields(T objectDefinition);
 
-    /**
-     * @return The fields contained within this object.
-     */
+    @Override
     public List<U> getFields() {
         return new ArrayList<>(fieldsByName.values());
     }
@@ -73,6 +68,21 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U ex
 
     public T getObjectDefinition() {
         return objectDefinition;
+    }
+
+    /**
+     * @return The fields which refer to any of these named objects.
+     */
+    public List<U> getFieldsReferringTo(Set<String> names) {
+        return getFields()
+                .stream()
+                .filter(f -> names.contains(f.getTypeName()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean isRoot() {
+        return false;
     }
 
     @Override

@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.interfaces;
 
+import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 
@@ -21,6 +22,16 @@ public interface FieldSpecification {
      * @return The name of the field's underlying data type.
      */
     String getTypeName();
+
+    /**
+     * @return {@link com.squareup.javapoet.TypeName} for this field's type.
+     */
+    TypeName getTypeClass();
+
+    /**
+     * @return The name of the field's container schema type.
+     */
+    String getContainerTypeName();
 
     /**
      * @return Is this field wrapped in a list?

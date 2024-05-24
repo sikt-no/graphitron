@@ -10,13 +10,10 @@ import fake.graphql.example.model.OriginalCategoryInputWithOneField;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.dataloader.DataLoader;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class FilmGeneratedResolver implements FilmResolver {
@@ -29,44 +26,34 @@ public class FilmGeneratedResolver implements FilmResolver {
     @Override
     public CompletableFuture<List<FilmCategory>> categories(Film film,
             OriginalCategoryInput categoryIn, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<FilmCategory>> loader = DataLoaders.getDataLoader(env, "categoriesForFilm", (ids, selectionSet) -> filmDBQueries.categoriesForFilm(ctx, ids, categoryIn, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("categoriesForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.categoriesForFilm(ctx, ids, categoryIn, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<FilmCategory>> categoriesForInputList(Film film,
             List<OriginalCategoryInput> categoryInList, DataFetchingEnvironment env) throws
             Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<FilmCategory>> loader = DataLoaders.getDataLoader(env, "categoriesForInputListForFilm", (ids, selectionSet) -> filmDBQueries.categoriesForInputListForFilm(ctx, ids, categoryInList, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("categoriesForInputListForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.categoriesForInputListForFilm(ctx, ids, categoryInList, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<FilmCategory>> categoriesForMixOfListAndSingleInput(Film film,
             OriginalCategoryInput categoryIn, List<OriginalCategoryInput> categoryInList,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<FilmCategory>> loader = DataLoaders.getDataLoader(env, "categoriesForMixOfListAndSingleInputForFilm", (ids, selectionSet) -> filmDBQueries.categoriesForMixOfListAndSingleInputForFilm(ctx, ids, categoryIn, categoryInList, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("categoriesForMixOfListAndSingleInputForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.categoriesForMixOfListAndSingleInputForFilm(ctx, ids, categoryIn, categoryInList, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<FilmCategory>> categoriesForInputWithOneFieldList(Film film,
             List<OriginalCategoryInputWithOneField> categoryInListOneField,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<FilmCategory>> loader = DataLoaders.getDataLoader(env, "categoriesForInputWithOneFieldListForFilm", (ids, selectionSet) -> filmDBQueries.categoriesForInputWithOneFieldListForFilm(ctx, ids, categoryInListOneField, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("categoriesForInputWithOneFieldListForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.categoriesForInputWithOneFieldListForFilm(ctx, ids, categoryInListOneField, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<FilmCategory>> categoriesForInputWithNestedFieldList(Film film,
             List<OriginalCategoryInputNested> categoryInListNestedField,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        DataLoader<String, List<FilmCategory>> loader = DataLoaders.getDataLoader(env, "categoriesForInputWithNestedFieldListForFilm", (ids, selectionSet) -> filmDBQueries.categoriesForInputWithNestedFieldListForFilm(ctx, ids, categoryInListNestedField, selectionSet));
-        return DataLoaders.loadNonNullable(loader, film.getId(), env);
+        return new DataFetcher(env, this.ctx).loadNonNullable("categoriesForInputWithNestedFieldListForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.categoriesForInputWithNestedFieldListForFilm(ctx, ids, categoryInListNestedField, selectionSet));
     }
 }

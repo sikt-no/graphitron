@@ -24,7 +24,7 @@ public class EditCustomerList2ParamsGeneratedResolver implements EditCustomerLis
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 

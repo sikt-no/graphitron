@@ -25,7 +25,7 @@ public class InsertCustomer2ParamsGeneratedResolver implements InsertCustomer2Pa
             DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
 
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.insertInputToJOOQRecord(input, "input");
 

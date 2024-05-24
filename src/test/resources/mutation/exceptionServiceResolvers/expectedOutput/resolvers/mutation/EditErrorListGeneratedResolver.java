@@ -28,7 +28,7 @@ public class EditErrorListGeneratedResolver implements EditErrorListMutationReso
                                                                      DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var testCustomerService = new TestCustomerService(ctx);
-        var transform = new RecordTransformer(env, ctx);
+        var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInput2ToJOOQRecord(input, "input");
 

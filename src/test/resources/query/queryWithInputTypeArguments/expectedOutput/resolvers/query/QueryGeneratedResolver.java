@@ -15,7 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataLoaders;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -30,24 +30,27 @@ public class QueryGeneratedResolver implements QueryResolver {
             CustomerInput pin, DataFetchingEnvironment env) throws Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = ResolverHelpers.getSelectionSet(env);
-        var dbResult = queryDBQueries.customersNoPageForQuery(ctx, active, storeIds, pin, selectionSet);
-        return CompletableFuture.completedFuture(dbResult);
+        return CompletableFuture.completedFuture(queryDBQueries.customersNoPageForQuery(ctx, active, storeIds, pin, selectionSet));
     }
 
     @Override
     public CompletableFuture<ExtendedConnection<Customer>> customersWithPage(String active,
             List<Integer> storeIds, CustomerInput pin, Integer first, String after,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return DataLoaders.loadData(env, pageSize, 1000, (selectionSet) -> queryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet), (ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin) : null, (it) -> it.getId());
+        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+                (ctx, selectionSet) -> queryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet),
+                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin) : null,
+                (it) -> it.getId());
     }
 
     @Override
     public CompletableFuture<ExtendedConnection<Film>> films(String releaseYear, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return DataLoaders.loadData(env, pageSize, 1000, (selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet), (ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null, (it) -> it.getId());
+        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+                (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet),
+                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null,
+                (it) -> it.getId());
     }
 }

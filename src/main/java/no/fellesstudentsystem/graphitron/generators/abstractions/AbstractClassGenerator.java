@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -43,6 +44,7 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
                 .flatMap(gen -> gen.getDependencySet().stream())
                 .distinct()
                 .sorted()
+                .filter(dep -> !(dep instanceof ServiceDependency)) // Inelegant solution, but it should work for now.
                 .forEach(dep -> spec.addField(dep.getSpec()));
     }
 

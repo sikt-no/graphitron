@@ -25,7 +25,7 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition,
 
     @Override
     protected List<EnumField> createFields(EnumTypeDefinition objectDefinition) {
-        return EnumField.from(objectDefinition);
+        return EnumField.from(objectDefinition, getName());
     }
 
     /**

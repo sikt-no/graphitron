@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.definitions.fields;
+package no.fellesstudentsystem.graphitron.definitions.fields.containedtypes;
 
 import graphql.language.ListType;
 import graphql.language.NonNullType;
