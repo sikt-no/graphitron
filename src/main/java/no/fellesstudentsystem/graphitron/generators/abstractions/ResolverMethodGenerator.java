@@ -32,7 +32,7 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
 
     protected TypeName getReturnTypeName(ObjectField referenceField) {
         if (!referenceField.hasForwardPagination()) { // TODO: This is actually wrong for cases where a single class is returned!
-            return wrapListIf(processedSchema.getObject(referenceField).getGraphClassName(), referenceField.isIterableWrapped() || getLocalObject().isRoot() && !referenceField.hasForwardPagination());
+            return wrapListIf(processedSchema.getObject(referenceField).getGraphClassName(), referenceField.isIterableWrapped());
         }
         return ParameterizedTypeName.get(RELAY_CONNECTION.className, processedSchema.getObjectOrConnectionNode(referenceField).getGraphClassName());
     }

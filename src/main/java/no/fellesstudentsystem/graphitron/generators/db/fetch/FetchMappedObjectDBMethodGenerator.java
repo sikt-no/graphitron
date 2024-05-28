@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
@@ -121,7 +122,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
         if (isRoot && !lookupExists) {
-            return wrapList(refClassName);
+            return wrapListIf(refClassName, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
         } else {
             return wrapMap(STRING.className, wrapListIf(refClassName, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
         }
@@ -129,12 +130,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock setPaginationAndFetch(ObjectField referenceField, String actualRefTable) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
+        if (!refObject.hasTable()) {
+            return empty();
+        }
+
         var refTable = refObject.getTable().getMappingName();
         var code = CodeBlock.builder();
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
 
-        if (!lookupExists) {
-
+        if (!lookupExists && (referenceField.isIterableWrapped() || referenceField.hasForwardPagination() || !isRoot)) {
             var orderByField = referenceField.getOrderField();
             orderByField.ifPresentOrElse(
                     it -> code.add(createCustomOrderBy(it, actualRefTable)),
@@ -156,7 +160,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         if (isRoot && !lookupExists) {
-            code.addStatement(".fetch(0, $T.class)", refObject.getGraphClassName());
+            code.addStatement(".fetch$L(0, $T.class)", referenceField.isIterableWrapped() || referenceField.hasForwardPagination() ? "" : "One", refObject.getGraphClassName());
         } else {
             code
                     .add(".")
@@ -208,10 +212,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public List<MethodSpec> generateAll() {
         return ((ObjectDefinition) getLocalObject())
-                .getFieldsReferringTo(processedSchema.getNamesWithTableOrConnections())
+                .getFields()
                 .stream()
-                .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !processedSchema.isInterface(it))
+                .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
                 .filter(it -> !it.code.isEmpty())
@@ -221,10 +225,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public boolean generatesAll() {
         var fieldStream = getLocalObject()
-                .getFieldsReferringTo(processedSchema.getNamesWithTableOrConnections())
+                .getFields()
                 .stream()
-                .filter(it -> !it.hasServiceReference())
-                .filter(it -> !processedSchema.isInterface(it));
+                .filter(it -> !processedSchema.isInterface(it))
+                .filter(it -> !it.hasServiceReference());
         return isRoot
                 ? fieldStream.allMatch(GenerationField::isGeneratedWithResolver)
                 : fieldStream.allMatch(f -> (!f.isResolver() || f.isGeneratedWithResolver()));

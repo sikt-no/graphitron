@@ -9,7 +9,7 @@ import java.lang.Override;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -22,8 +22,6 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Inventory>> inventory(DataFetchingEnvironment env) throws
             Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.inventoryForQuery(ctx, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.inventoryForQuery(ctx, selectionSet));
     }
 }

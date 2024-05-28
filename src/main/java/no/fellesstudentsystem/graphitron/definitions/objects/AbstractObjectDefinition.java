@@ -7,7 +7,10 @@ import no.fellesstudentsystem.graphitron.definitions.helpers.ClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecification;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.ObjectSpecification;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -70,18 +73,8 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U ex
         return objectDefinition;
     }
 
-    /**
-     * @return The fields which refer to any of these named objects.
-     */
-    public List<U> getFieldsReferringTo(Set<String> names) {
-        return getFields()
-                .stream()
-                .filter(f -> names.contains(f.getTypeName()))
-                .collect(Collectors.toList());
-    }
-
     @Override
-    public boolean isRoot() {
+    public boolean isOperationRoot() {
         return false;
     }
 

@@ -6,14 +6,13 @@ import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import fake.graphql.example.model.Film;
 import fake.graphql.example.model.Language;
 import java.lang.String;
-import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<Film> filmForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public Film filmForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -28,7 +27,6 @@ public class QueryDBQueries {
                 )
                 .from(FILM)
                 .where(FILM.ID.eq(id))
-                .orderBy(FILM.getIdFields())
-                .fetch(0, Film.class);
+                .fetchOne(0, Film.class);
     }
 }

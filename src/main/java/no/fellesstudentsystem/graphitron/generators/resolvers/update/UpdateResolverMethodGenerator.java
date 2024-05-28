@@ -2,25 +2,20 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.update;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.inputTransform;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 
 /**
@@ -36,13 +31,6 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     ) {
         super(processedSchema.getMutationType(), processedSchema);
         this.localField = localField;
-    }
-
-    @Override
-    public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
-        return super
-                .getDefaultSpecBuilder(methodName, returnType)
-                .addCode(declareContextVariable());
     }
 
     @Override
@@ -97,115 +85,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
             return empty();
         }
 
-        var code = CodeBlock.builder();
-        var recordCode = CodeBlock.builder();
-
-        var inputObjects = specInputs.stream().filter(processedSchema::isInputType).collect(Collectors.toList());
-        for (var in : inputObjects) {
-            code.add(declareRecords(in, 0));
-            recordCode.add(unwrapRecords(MapperContext.createResolverContext(in, true, processedSchema)));
-        }
-
-        if (code.isEmpty() && recordCode.isEmpty()) {
-            return empty();
-        }
-
-        code.add("\n").add(recordCode.build());
-
-        if (recordValidationEnabled()) {
-            code.add("\n").addStatement(asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_VALIDATE_NAME));
-        }
-
-        return code.build();
-    }
-
-    protected CodeBlock declareRecords(InputField target, int recursion) {
-        recursionCheck(recursion);
-
-        var input = processedSchema.getInputType(target);
-        if (!input.hasRecordReference()) {
-            return empty();
-        }
-
-        var targetName = target.getName();
-        var code = CodeBlock.builder();
-        var declareBlock = declare(asListedRecordNameIf(targetName, target.isIterableWrapped()), transformRecord(targetName, target.getTypeName(), input.hasJavaRecordReference()));
-        if (input.hasJavaRecordReference()) {
-            return declareBlock; // If the input type is a Java record, no further records should be declared.
-        }
-
-        if (input.hasTable() && recursion == 0) {
-            code.add(declareBlock);
-        } else {
-            code.add(declareRecord(asRecordName(target.getName()), input, target.isIterableWrapped()));
-        }
-
-        input
-                .getFields()
-                .stream()
-                .filter(processedSchema::isInputType)
-                .forEach(in -> code.add(declareRecords(in, recursion + 1)));
-
-        return code.build();
-    }
-
-    /**
-     * @return Code for setting the record data of previously defined records.
-     */
-    @NotNull
-    private CodeBlock unwrapRecords(MapperContext context) {
-        if (context.hasJavaRecordReference()) {
-            return empty();
-        }
-
-        var containedInputTypes = context.getTargetType()
-                .getInputsSortedByNullability()
-                .stream()
-                .filter(processedSchema::isInputType)
-                .filter(it -> processedSchema.isTableInputType(it) || processedSchema.isJavaRecordType(it) || processedSchema.getInputType(it).getFields().stream().anyMatch(processedSchema::isInputType))
-                .collect(Collectors.toList());
-
-        var fieldCode = CodeBlock.builder();
-        for (var in : containedInputTypes) {
-            var innerContext = context.iterateContext(in);
-            fieldCode
-                    .add(declare(in.getName(), innerContext.getSourceGetCallBlock()))
-                    .add(unwrapRecords(innerContext));
-        }
-
-        var code = CodeBlock.builder();
-        var sourceName = context.getSourceName();
-        if (context.hasTable() && !context.isTopLevelContext()) {
-            var record = transformRecord(sourceName, context.getTarget().getTypeName(), context.getPath(), context.getIndexPath(), false);
-            if (!context.getPreviousContext().wasIterable()) {
-                code.addStatement("$L = $L", asListedRecordNameIf(sourceName, context.isIterable()), record);
-            } else {
-                code.addStatement("$N.add$L($L)", asListedRecordName(sourceName), context.isIterable() ? "All" : "", record);
-            }
-        }
-
-        var fields = context.getTargetType().getFields();
-        if (fieldCode.isEmpty() || fields.stream().noneMatch(processedSchema::isInputType)) {
-            return code.build();
-        }
-
-        if (context.isIterable() && !(context.hasTable() && fields.stream().anyMatch(it -> it.isIterableWrapped() && processedSchema.isInputType(it)))) {
-            return code.build();
-        }
-
-        return wrapNotNull(sourceName, code.add(context.wrapFields(fieldCode.build())).build());
-    }
-
-    /**
-     * @return This field's name formatted as a method call result.
-     */
-    @NotNull
-    protected String getResolverResultName(ObjectField target) {
-        if (!processedSchema.isObject(target)) {
-            return asResultName(target.getUnprocessedFieldOverrideInput());
-        }
-
-        return asListedNameIf(target.getTypeName(), target.isIterableWrapped());
+        return inputTransform(specInputs, processedSchema);
     }
 
     @Override

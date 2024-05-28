@@ -29,9 +29,9 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<Integer> languageID, Integer first, String after, DataFetchingEnvironment env)
             throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.filmTwoArgumentsForQuery(ctx, releaseYear, languageID, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmTwoArgumentsForQuery(ctx, releaseYear, languageID) : null,
+                (ctx, ids) -> queryDBQueries.countFilmTwoArgumentsForQuery(ctx, releaseYear, languageID),
                 (it) -> it.getId());
     }
 
@@ -40,9 +40,9 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<Integer> languageID, String description, String title, Integer length,
             Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.filmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length) : null,
+                (ctx, ids) -> queryDBQueries.countFilmFiveArgumentsForQuery(ctx, releaseYear, languageID, description, title, length),
                 (it) -> it.getId());
     }
 }

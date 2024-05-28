@@ -28,9 +28,9 @@ public class FilmGeneratedResolver implements FilmResolver {
     public CompletableFuture<ExtendedConnection<Inventory>> inventory(Film film, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 10);
-        return new DataFetcher(env, this.ctx).load("inventoryForFilm", film.getId(), pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated("inventoryForFilm", film.getId(), pageSize, 1000,
                 (ctx, ids, selectionSet) -> filmDBQueries.inventoryForFilm(ctx, ids, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? filmDBQueries.countInventoryForFilm(ctx, ids) : null,
+                (ctx, ids) -> filmDBQueries.countInventoryForFilm(ctx, ids),
                 (it) -> it.getId());
     }
 }

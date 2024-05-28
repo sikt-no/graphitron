@@ -11,7 +11,6 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
@@ -28,9 +27,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Film>> films(Integer first, String after,
                                                              DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx) : null,
+                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx),
                 (it) -> it.getId());
     }
 
@@ -38,9 +37,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Inventory>> inventory(Integer first, String after,
                                                                       DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.inventoryForQuery(ctx, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countInventoryForQuery(ctx) : null,
+                (ctx, ids) -> queryDBQueries.countInventoryForQuery(ctx),
                 (it) -> it.getId());
     }
 }

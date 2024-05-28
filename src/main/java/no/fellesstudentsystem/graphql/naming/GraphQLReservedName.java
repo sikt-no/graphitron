@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphql.naming;
 
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
+
 /**
  * Enum of various names or substrings that have special meanings in the schema.
  * These should always be used rather than specifying them as Strings in various places throughout the code.
@@ -16,6 +18,8 @@ public enum GraphQLReservedName {
     CONNECTION_EDGE_FIELD("edges"),
     CONNECTION_PAGE_INFO_NODE("PageInfo"),
 
+    CONNECTION_TOTAL_COUNT("totalCount"),
+
     ORDER_BY_FIELD("orderByField"),
 
     NODE_TYPE("Node"),
@@ -23,7 +27,10 @@ public enum GraphQLReservedName {
     ERROR_TYPE("Error"),
     SCHEMA_CONNECTION_SUFFIX("Connection"),
     SCHEMA_QUERY("Query"),
-    SCHEMA_MUTATION("Mutation");
+    SCHEMA_MUTATION("Mutation"),
+    SCHEMA("schema"),
+    OPERATION_QUERY(uncapitalize(SCHEMA_QUERY.getName())),
+    OPERATION_MUTATION(uncapitalize(SCHEMA_MUTATION.getName()));
 
     private final String name;
 

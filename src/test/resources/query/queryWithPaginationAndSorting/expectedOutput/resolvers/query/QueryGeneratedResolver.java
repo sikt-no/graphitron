@@ -32,9 +32,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Film>> films(String releaseYear, FilmOrder orderBy,
                                                              Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, orderBy, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null,
+                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx, releaseYear),
                 (it) -> orderBy == null ? it.getId() :
                         Map.<String, Function<Film, String>>of(
                                 "LANGUAGE", type -> type.getNested().getNested2().getLanguageId(),
@@ -46,9 +46,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Inventory>> inventories(InventoryOrder orderBy,
                                                                         Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.inventoriesForQuery(ctx, orderBy, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countInventoriesForQuery(ctx) : null,
+                (ctx, ids) -> queryDBQueries.countInventoriesForQuery(ctx),
                 (it) -> orderBy == null ? it.getId() :
                         Map.<String, Function<Inventory, String>>of(
                                 "STORE_ID_FILM_ID", type -> type.getStoreId() + "," + type.getFilmId()

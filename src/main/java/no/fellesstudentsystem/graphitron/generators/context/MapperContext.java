@@ -22,9 +22,22 @@ public class MapperContext {
     private final GenerationField target;
     private final int recursion;
     private final RecordObjectDefinition<?, ?> targetType;
-    private final boolean hasRecordReference, hasJavaRecordReference, hasTable, isIterable, wasIterable, toRecord, mapsJavaRecord, isValidation, isResolver, targetIsType, isInitContext;
+    private final boolean
+            hasRecordReference,
+            hasJavaRecordReference,
+            hasTable,
+            isIterable,
+            wasIterable,
+            toRecord,
+            mapsJavaRecord,
+            isValidation,
+            isResolver,
+            targetIsType,
+            isInitContext,
+            pastFieldOverrideExists,
+            noRecordIterability;
     private final String sourceName, targetName, path, indexPath;
-    private final MethodMapping recordMappingHere, getSourceMapping, setTargetMapping;
+    private final MethodMapping getSourceMapping, setTargetMapping, lastRecordMapping;
     private final MapperContext previousContext;
     private final ProcessedSchema schema;
 
@@ -38,7 +51,7 @@ public class MapperContext {
         targetIsType = false;
         sourceName = "";
         targetName = "";
-        recordMappingHere = null;
+        lastRecordMapping = null;
         getSourceMapping = null;
         setTargetMapping = null;
         previousContext = null;
@@ -54,6 +67,8 @@ public class MapperContext {
         this.schema = schema;
 
         isInitContext = true;
+        pastFieldOverrideExists = false;
+        noRecordIterability = false;
     }
 
     private MapperContext(GenerationField target, MapperContext previousContext) {
@@ -65,8 +80,9 @@ public class MapperContext {
         this.isValidation = previousContext.isValidation;
         this.isResolver = previousContext.isResolver;
         this.target = target;
-        this.targetType = (RecordObjectDefinition<?, ?>)schema.getTableType(target);
+        this.targetType = (RecordObjectDefinition<?, ?>)schema.getRecordType(target);
 
+        pastFieldOverrideExists = previousContext.pastFieldOverrideExists || (previousContext.target != null && previousContext.target.hasSetFieldOverride());
         targetIsType = targetType != null;
         hasRecordReference = targetIsType && targetType.hasRecordReference();
         hasTable = targetIsType && targetType.hasTable();
@@ -82,17 +98,19 @@ public class MapperContext {
         targetName = select(recordName, schemaNameToUse);
 
         var schemaMethodMapping = target.getMappingFromSchemaName();
-        recordMappingHere = getNextRecordMapping();
+        var recordMappingHere = getNextRecordMapping();
+        lastRecordMapping = recordMappingHere;
         getSourceMapping = select(schemaMethodMapping, recordMappingHere);
         setTargetMapping = select(recordMappingHere, schemaMethodMapping);
 
         path = getNextPath();
         indexPath = getNextIndexPath();
+        noRecordIterability = targetIsType && sourceName.isEmpty() && target.isIterableWrapped();
     }
 
     private @Nullable MethodMapping getNextRecordMapping() {
-        if (previousContext.isInitContext || (!target.hasSetFieldOverride() && previousContext.recordMappingHere != null)) {
-            return previousContext.recordMappingHere;
+        if (previousContext.isInitContext || (!target.hasSetFieldOverride() && previousContext.lastRecordMapping != null && pastFieldOverrideExists)) {
+            return previousContext.lastRecordMapping;
         }
 
         return mapsJavaRecord ? target.getMappingFromFieldOverride() : target.getMappingForJOOQFieldOverride();
@@ -104,7 +122,7 @@ public class MapperContext {
         }
 
         if (previousContext.isInitContext || isResolver) {
-            return uncapitalize(target.getTypeName());
+            return uncapitalize(schema.isRecordType(target) ? schema.getRecordType(target).getName() : target.getTypeName());
         }
 
         if (mapsJavaRecord) {
@@ -153,6 +171,10 @@ public class MapperContext {
         return targetType;
     }
 
+    public ProcessedSchema getSchema() {
+        return schema;
+    }
+
     public boolean hasRecordReference() {
         return hasRecordReference;
     }
@@ -199,6 +221,10 @@ public class MapperContext {
 
     public String getSourceName() {
         return sourceName;
+    }
+
+    public boolean hasSourceName() {
+        return !sourceName.isEmpty();
     }
 
     public String getTargetName() {
@@ -250,7 +276,7 @@ public class MapperContext {
         return select(targetType.getName(), targetType.asRecordName());
     }
 
-    public String getOutputListName() {
+    public String getOutputName() {
         return select(targetType.asRecordName(), targetType.getName());
     }
 
@@ -330,7 +356,15 @@ public class MapperContext {
     }
 
     public CodeBlock getRecordSetMappingBlock() {
-        return getSetMappingBlock(transformRecord(getHelperVariableName(), uncapitalize(target.getTypeName()), path, hasJavaRecordReference, toRecord));
+        return getSetMappingBlock(
+                transformRecord(
+                        previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
+                        uncapitalize(target.getTypeName()),
+                        path,
+                        hasJavaRecordReference,
+                        toRecord
+                )
+        );
     }
 
     public CodeBlock getRecordSetMappingBlock(String variableName) {
@@ -346,7 +380,7 @@ public class MapperContext {
     }
 
     public CodeBlock getReturnBlock() {
-        return returnWrap(asListedName(select(targetType.getRecordReferenceName(), targetType.getName())));
+        return returnWrap(asListedNameIf(select(targetType.getRecordReferenceName(), targetType.getName()), hasSourceName() || noRecordIterability));
     }
 
     private boolean isMappingPossible() {

@@ -5,14 +5,13 @@ import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
 import fake.graphql.example.model.Rental;
 import java.lang.String;
-import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<Rental> rentalForQuery(DSLContext ctx, String id, String lastName,
+    public Rental rentalForQuery(DSLContext ctx, String id, String lastName,
                                        SelectionSet select) {
         var rental_inventory_film_film_filmactor_film_actor = FILM_ACTOR.as("rental_4209375040");
         return ctx
@@ -26,7 +25,6 @@ public class QueryDBQueries {
                 .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(RENTAL.inventory().film(), rental_inventory_film_film_filmactor_film_actor))
                 .where(RENTAL.ID.eq(id))
                 .and(rental_inventory_film_film_filmactor_film_actor.actor().LAST_NAME.eq(lastName))
-                .orderBy(RENTAL.getIdFields())
-                .fetch(0, Rental.class);
+                .fetchOne(0, Rental.class);
     }
 }

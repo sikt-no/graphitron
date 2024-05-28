@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryNodeMethod;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.createIdFetch;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -21,10 +22,6 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
     @Override
     public MethodSpec generate(GenerationField target) {
-        if (!processedSchema.isJavaRecordType(target)) {
-            return MethodSpec.methodBuilder(recordTransformMethod(true, toRecord)).build();
-        }
-
         return getMapperSpecBuilder(target).build();
     }
 
@@ -52,6 +49,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             } else if (innerContext.shouldUseStandardRecordFetch()) {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (innerContext.hasRecordReference()) {
+                registerQueryDependency(innerField.getTypeName());
                 var fetchCode = createIdFetch(innerField, varName, innerContext.getPath(), false);
                 if (innerContext.isIterable()) {
                     var tempName = asQueryNodeMethod(innerField.getTypeName());

@@ -10,8 +10,8 @@ import java.lang.Override;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
+import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
@@ -22,12 +22,11 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     @Override
     public CompletableFuture<List<Address>> historicalAddresses(Customer customer,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
 
-        return new DataFetcher(new RecordTransformer(env, this.ctx)).loadNonNullable(
+        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadNonNullable(
                 "historicalAddressesForCustomer", customer.getId(),
-                (ids, selectionSet) -> testCustomerService.historicalAddresses(ids, selectionSet),
+                (ids) -> testFetchCustomerService.historicalAddresses(ids),
                 (transform, response) -> transform.addressRecordToGraphType(response, "")
         );
     }

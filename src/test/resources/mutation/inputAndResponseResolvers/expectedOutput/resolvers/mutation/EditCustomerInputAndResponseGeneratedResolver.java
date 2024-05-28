@@ -20,8 +20,7 @@ public class EditCustomerInputAndResponseGeneratedResolver implements EditCustom
     @Override
     public CompletableFuture<EditResponse> editCustomerInputAndResponse(EditInput input,
                                                                         DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input");

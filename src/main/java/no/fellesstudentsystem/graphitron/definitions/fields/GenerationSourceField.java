@@ -153,9 +153,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return serviceReference != null;
     }
 
-    /**
-     * @return The reference to the external service that this field is related to.
-     */
+    @Override
     public CodeReference getServiceReference() {
         return serviceReference;
     }

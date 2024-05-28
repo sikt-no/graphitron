@@ -5,6 +5,7 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks;
 import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -16,8 +17,9 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.COLLECTORS;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asResultName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.getResolverResultName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -164,7 +166,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     @NotNull
     private CodeBlock generateNullReturn(ObjectField target) {
-        var resolverResultName = getResolverResultName(target);
+        var resolverResultName = getResolverResultName(target, processedSchema);
         var code = CodeBlock
                 .builder()
                 .beginControlFlow("if ($N == null)", asResultName(target.getName()))
@@ -190,93 +192,17 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
      * @return Code that both fetches record data and creates the appropriate response objects.
      */
     protected CodeBlock generateSchemaOutputs(ObjectField target) {
-        var code = CodeBlock.builder();
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
-            return code.build();
-        }
-
-        return code
-                .add(generateSchemaOutputs(MapperContext.createResolverContext(target, false, processedSchema)))
-                .add(returnCompletedFuture(getResolverResultName(target)))
-                .build();
-    }
-
-    /**
-     * @return Code for adding error types and calling transform methods.
-     */
-    protected CodeBlock generateSchemaOutputs(MapperContext mapperContext) {
-        if (!mapperContext.targetIsType()) {
             return empty();
         }
 
-        var code = CodeBlock.builder();
-        if (mapperContext.hasRecordReference() && mapperContext.isTopLevelContext()) {
-            code.add(declare(asListedNameIf(mapperContext.getTargetName(), mapperContext.isIterable()), mapperContext.getRecordTransform(mapperContext.getTarget().getName())));
-        } else if (!mapperContext.hasRecordReference()) {
-            code.add(declareVariable(mapperContext.getTargetName(), mapperContext.getTargetType().getGraphClassName()));
-        }
-
-        code.add("\n");
-
-        for (var innerField : mapperContext.getTargetType().getFields()) {
-            var innerContext = mapperContext.iterateContext(innerField);
-            var previousTarget = innerContext.getPreviousContext().getTarget();
-
-            var innerCode = CodeBlock.builder();
-            if (innerContext.shouldUseException()) {
-                if (context.hasErrorsToHandle()) {
-                    innerCode.add(innerContext.getSetMappingBlock(asListedName(processedSchema.getErrorTypeDefinition(innerField.getTypeName()).getName())));
-                }
-            } else if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
-                if (!innerContext.targetIsType()) {
-                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget)));
-                } else if (innerContext.shouldUseStandardRecordFetch()) {
-                    innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
-                } else if (innerContext.hasRecordReference()) {
-                    var fetchCode = createIdFetch(innerField, previousTarget.getName(), innerContext.getPath(), true);
-                    if (innerContext.isIterable()) {
-                        var tempName = asQueryNodeMethod(innerField.getTypeName());
-                        innerCode
-                                .add(declare(tempName, fetchCode))
-                                .add(innerContext.getSetMappingBlock(CodeBlock.of("$N.stream().map(it -> $N.get(it.getId()))$L", previousTarget.getName(), tempName, collectToList())));
-                    } else {
-                        innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
-                    }
-                } else {
-                    innerCode.add(generateSchemaOutputs(innerContext));
-                }
-            }
-
-            if (!innerCode.isEmpty()) {
-                code
-                        .beginControlFlow("if ($N != null && $L)", previousTarget.getName(), selectionSetLookup(innerContext.getPath(), true, false))
-                        .add(innerCode.build())
-                        .endControlFlow()
-                        .add("\n");
-            }
-        }
-
-        return code.add("\n").build();
-    }
-
-    @NotNull
-    private CodeBlock getFieldSetContent(ObjectField field, ObjectField previousField) {
-        var resultName = asIterableResultNameIf(previousField.getUnprocessedFieldOverrideInput(), previousField.isIterableWrapped());
-
-        var service = context.getService();
-        var returnIsMappable = service.getReturnType().getName().endsWith(RECORD_NAME_SUFFIX) || service.returnsJavaRecord();
-        if (processedSchema.isObject(previousField) && returnIsMappable) {
-            var getMapping = field.getMappingForJOOQFieldOverride();
-            var extractValue = field.isIterableWrapped() && !previousField.isIterableWrapped();
-            if (extractValue) {
-                var iterationName = asIterable(field.getName());
-                return CodeBlock.of("$N.stream().map($L -> $L).collect($T.toList())", resultName, iterationName, getValue(iterationName, getMapping), COLLECTORS.className);
-            } else {
-                return getValue(resultName, getMapping);
-            }
-        }
-
-        return CodeBlock.of("$N", resultName);
+        var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
+        registerQueryDependencies(mapperContext);
+        return CodeBlock
+                .builder()
+                .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, context.hasErrorsToHandle(), context.getService(), processedSchema))
+                .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
+                .build();
     }
 
     @Override

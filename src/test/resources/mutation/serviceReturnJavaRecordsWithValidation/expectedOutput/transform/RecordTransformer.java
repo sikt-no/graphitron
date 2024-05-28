@@ -8,17 +8,11 @@ import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.EditResponse;
 import fake.graphql.example.model.EditResponseList;
 import fake.graphql.example.model.EditResult;
-import graphql.GraphQLError;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import no.fellesstudentsystem.graphitron.records.TestCustomerInnerRecord;
 import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
-import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
-import no.fellesstudentsystem.graphql.helpers.arguments.Arguments;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 

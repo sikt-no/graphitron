@@ -21,8 +21,7 @@ public class EditCustomerListInputGeneratedResolver implements EditCustomerListI
     @Override
     public CompletableFuture<List<String>> editCustomerListInput(List<EditInput> input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
 
         var transform = new RecordTransformer(env, this.ctx);
 

@@ -10,7 +10,7 @@ import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -23,8 +23,6 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Address>> address(String cityID, String lastName,
                                                     DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.addressForQuery(ctx, cityID, lastName, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.addressForQuery(ctx, cityID, lastName, selectionSet));
     }
 }

@@ -5,14 +5,13 @@ import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
 import fake.graphql.example.model.Rental;
 import java.lang.String;
-import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<Rental> rentalForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public Rental rentalForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -21,7 +20,6 @@ public class QueryDBQueries {
                 )
                 .from(RENTAL)
                 .where(RENTAL.ID.eq(id))
-                .orderBy(RENTAL.getIdFields())
-                .fetch(0, Rental.class);
+                .fetchOne(0, Rental.class);
     }
 }

@@ -1,8 +1,10 @@
 package no.fellesstudentsystem.graphitron.generators.abstractions;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -10,7 +12,7 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
@@ -24,7 +26,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
     protected final boolean toRecord;
 
     public AbstractMapperMethodGenerator(T localField, ProcessedSchema processedSchema, boolean toRecord) {
-        super(processedSchema.getTableType(localField.getContainerTypeName()), processedSchema);
+        super(processedSchema.getRecordType(localField.getContainerTypeName()), processedSchema);
 
         this.localField = localField;
         this.toRecord = toRecord;
@@ -37,7 +39,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, String inputName, TypeName inputType, TypeName returnType) {
         return getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
-                .addParameter(wrapList(inputType), uncapitalize(inputName))
+                .addParameter(inputType, uncapitalize(inputName))
                 .addParameter(STRING.className, PATH_NAME)
                 .addParameter(RECORD_TRANSFORMER.className, TRANSFORMER_NAME)
                 .addCode(declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/")));
@@ -48,15 +50,26 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
         var methodName = recordTransformMethod(context.hasJavaRecordReference(), toRecord);
 
         var fillCode = iterateRecords(context); // Note, do before declaring dependencies.
-        return getDefaultSpecBuilder(methodName, context.getInputVariableName(), processedSchema.getTableType(target).asSourceClassName(toRecord), wrapList(context.getReturnType()))
+        var type = processedSchema.getRecordType(target);
+        var source = wrapListIf(getSource(type.asSourceClassName(toRecord), target), context.hasSourceName());
+        var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
+        return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
                 .addCode(declare(toRecord ? VARIABLE_ARGUMENTS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME)))
                 .addCode(toRecord && context.hasTable() && !context.hasJavaRecordReference() ? declare(CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)) : empty())
-                .addCode(declareArrayList(context.getOutputListName(), context.getReturnType()))
+                .addCode(context.hasSourceName() || noRecordIterability ? declareArrayList(context.getOutputName(), context.getReturnType()) : declareVariable(context.getOutputName(), context.getReturnType()))
                 .addCode("\n")
                 .addCode(declareDependencyClasses())
                 .addCode(fillCode)
                 .addCode("\n")
                 .addCode(context.getReturnBlock());
+    }
+
+    private TypeName getSource(ClassName currentSource, GenerationField target) {
+        if (currentSource != null) {
+            return currentSource;
+        }
+
+        return ClassName.get(new ServiceWrapper(target, processedSchema).getMethod().getGenericReturnType());
     }
 
     @Override

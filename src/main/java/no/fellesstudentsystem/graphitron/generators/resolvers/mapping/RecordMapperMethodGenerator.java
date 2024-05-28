@@ -11,7 +11,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 
 public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
     public RecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -20,10 +19,6 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
 
     @Override
     public MethodSpec generate(GenerationField target) {
-        if (!processedSchema.hasTable(target)) {
-            return MethodSpec.methodBuilder(recordTransformMethod(false, toRecord)).build();
-        }
-
         return getMapperSpecBuilder(target).build();
     }
 
@@ -32,7 +27,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
      */
     @NotNull
     protected CodeBlock iterateRecords(MapperContext context) {
-        if (context.isIterable() && !context.hasTable()) {
+        if (context.isIterable() && !context.hasTable() && context.hasSourceName()) {
             return empty();
         }
 
@@ -45,12 +40,15 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
         for (var innerField : fields) {
             var innerContext = context.iterateContext(innerField);
             var isType = innerContext.targetIsType();
+            var previousHadSource = innerContext.getPreviousContext().hasSourceName();
 
             var innerCode = CodeBlock.builder();
             if (!isType) {
                 innerCode.add(innerContext.getFieldSetMappingBlock());
             } else if (!innerField.isResolver() && !innerContext.hasTable()) {
                 innerCode.add(iterateRecords(innerContext));
+            } else if (!previousHadSource) {
+                innerCode.add(innerContext.getRecordSetMappingBlock());
             }
 
             if (!innerCode.isEmpty()) {
@@ -68,15 +66,15 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
                 var ifBlock = isType && toRecord ? ifNotNull(varName) : CodeBlock.of("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord));
                 fieldCode
                         .beginControlFlow("$L", ifBlock)
-                        .add(isType && !toRecord ? declareBlock : empty())
+                        .add(isType && !toRecord && previousHadSource ? declareBlock : empty())
                         .add(innerCode.build())
-                        .add(isType && !toRecord ? innerContext.getSetMappingBlock(varName) : empty())
+                        .add(isType && !toRecord && previousHadSource ? innerContext.getSetMappingBlock(varName) : empty())
                         .endControlFlow()
                         .add("\n");
             }
         }
 
-        return context.wrapFields(fieldCode.build());
+        return context.hasSourceName() ? context.wrapFields(fieldCode.build()) : fieldCode.build();
     }
 
     @Override
@@ -86,6 +84,6 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
 
     @Override
     public boolean generatesAll() {
-        return processedSchema.isTableType(getLocalField());
+        return processedSchema.isRecordType(getLocalField());
     }
 }

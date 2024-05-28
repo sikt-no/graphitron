@@ -5,14 +5,13 @@ import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
 import fake.graphql.example.model.Payment;
 import java.lang.String;
-import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<Payment> paymentForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public Payment paymentForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -22,7 +21,6 @@ public class QueryDBQueries {
                 )
                 .from(PAYMENT)
                 .where(PAYMENT.ID.eq(id))
-                .orderBy(PAYMENT.getIdFields())
-                .fetch(0, Payment.class);
+                .fetchOne(0, Payment.class);
     }
 }

@@ -26,11 +26,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     private QueryDBQueries queryDBQueries;
 
     @Override
-    public CompletableFuture<List<Customer>> customersNoPage(String active, List<String> storeIds,
+    public CompletableFuture<Customer> customersNoPage(String active, String storeId,
             CustomerInput pin, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.customersNoPageForQuery(ctx, active, storeIds, pin, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.customersNoPageForQuery(ctx, active, storeId, pin, selectionSet));
     }
 
     @Override
@@ -38,9 +36,9 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<Integer> storeIds, CustomerInput pin, Integer first, String after,
             DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin) : null,
+                (ctx, ids) -> queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin),
                 (it) -> it.getId());
     }
 
@@ -48,9 +46,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Film>> films(String releaseYear, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmsForQuery(ctx, releaseYear) : null,
+                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx, releaseYear),
                 (it) -> it.getId());
     }
 }

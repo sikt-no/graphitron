@@ -42,7 +42,7 @@ type CustomerConnectionEdge {
 }
 
 type Query {
-  customersNoPage(active: String!, storeIds: [ID!] @field(name : "STORE_ID"), pin: CustomerInput): Customer
+  customersNoPage(active: String!, storeId: ID! @field(name : "STORE_ID"), pin: CustomerInput): Customer
   customersWithPage(active: String!, storeIds: [Int!] @field(name : "STORE_ID"), pin: CustomerInput, first: Int = 100, after: String): CustomerConnection!
   films(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): QueryFilmConnection
 }

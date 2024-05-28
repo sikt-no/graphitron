@@ -30,7 +30,8 @@ public class DirectiveHelpers {
     public static Optional<String> getOptionalDirectiveArgumentString(DirectivesContainer<?> container, GenerationDirective directive, GenerationDirectiveParam param) {
         directive.checkParamIsValid(param);
         return Optional.ofNullable((StringValue) getArgument(container, directive, param.getName()))
-                .map(StringValue::getValue);
+                .map(StringValue::getValue)
+                .map(String::strip);
     }
 
     /**
@@ -42,7 +43,8 @@ public class DirectiveHelpers {
     public static Optional<String> getOptionalDirectiveArgumentEnum(DirectivesContainer<?> container, GenerationDirective directive, GenerationDirectiveParam param) {
         directive.checkParamIsValid(param);
         return Optional.ofNullable((EnumValue) getArgument(container, directive, param.getName()))
-                .map(EnumValue::getName);
+                .map(EnumValue::getName)
+                .map(String::strip);
     }
 
     /**
@@ -73,7 +75,7 @@ public class DirectiveHelpers {
             return List.of(((StringValue) argsValue).getValue());
         }
         return ((ArrayValue) argsValue).getValues().stream()
-                .map(stringValue -> stringValue instanceof NullValue ? null : ((StringValue) stringValue).getValue())
+                .map(stringValue -> stringValue instanceof NullValue ? null : ((StringValue) stringValue).getValue().strip())
                 .collect(Collectors.toList());
 
     }
@@ -112,6 +114,7 @@ public class DirectiveHelpers {
     public static String getDirectiveArgumentString(DirectivesContainer<?> container, GenerationDirective directive, GenerationDirectiveParam param) {
         directive.checkParamIsValid(param);
         return getOptionalDirectiveArgumentString(container, directive, param)
+                .map(String::strip)
                 .orElseThrow(getIllegalArgumentExceptionSupplier(param.getName(), directive.getName()));
     }
 
@@ -126,6 +129,7 @@ public class DirectiveHelpers {
     public static String getDirectiveArgumentEnum(DirectivesContainer<?> container, GenerationDirective directive, GenerationDirectiveParam param) {
         directive.checkParamIsValid(param);
         return getOptionalDirectiveArgumentEnum(container, directive, param)
+                .map(String::strip)
                 .orElseThrow(getIllegalArgumentExceptionSupplier(param.getName(), directive.getName()));
     }
 

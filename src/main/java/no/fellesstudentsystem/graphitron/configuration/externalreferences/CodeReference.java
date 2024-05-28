@@ -21,8 +21,8 @@ public class CodeReference {
 
     public CodeReference(DirectivesContainer<?> field, GenerationDirective fromDirective, GenerationDirectiveParam fromParam, String defaultMethodName) {
         var referenceFields = getDirectiveArgumentObjectFields(field, fromDirective, fromParam);
-        schemaClassReference = stringValueOf(getObjectFieldByName(referenceFields, NAME));
-        methodName = getOptionalObjectFieldByName(referenceFields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(defaultMethodName);
+        schemaClassReference = stringValueOf(getObjectFieldByName(referenceFields, NAME)).strip();
+        methodName = getOptionalObjectFieldByName(referenceFields, METHOD).map(DirectiveHelpers::stringValueOf).map(String::strip).orElse(defaultMethodName);
     }
 
     public CodeReference(String schemaClassReference, String methodName) {

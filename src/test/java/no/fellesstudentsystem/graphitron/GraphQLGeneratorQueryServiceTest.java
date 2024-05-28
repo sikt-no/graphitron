@@ -22,7 +22,10 @@ public class GraphQLGeneratorQueryServiceTest extends TestCommon {
 
     private final List<ExternalClassReference> references = List.of(
             new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService")
+            new ExternalClassReference("TEST_FETCH_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestFetchCustomerService"),
+            new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord"),
+            new ExternalClassReference("TEST_ADDRESS_RECORD", "no.fellesstudentsystem.graphitron.records.TestAddressRecord"),
+            new ExternalClassReference("TEST_CITY_RECORD", "no.fellesstudentsystem.graphitron.records.TestCityRecord")
     );
 
     public GraphQLGeneratorQueryServiceTest() {
@@ -33,7 +36,7 @@ public class GraphQLGeneratorQueryServiceTest extends TestCommon {
     protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
         var processedSchema = getProcessedSchema(schemaParentFolder);
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new FetchDBClassGenerator(processedSchema),
+                new FetchDBClassGenerator(processedSchema), // Need to test that queries are NOT generated.
                 new FetchResolverClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
                 new RecordMapperClassGenerator(processedSchema, true),
@@ -59,20 +62,28 @@ public class GraphQLGeneratorQueryServiceTest extends TestCommon {
     }
 
     @Test
-    @Disabled
     void generate_queryWithService_shouldGenerateMappersAndCallSimpleServices() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithService");
     }
 
     @Test
-    @Disabled
     void generate_queryWithService_shouldGenerateMappersAndCallServicesWithPagination() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithServicePagination");
     }
 
     @Test
-    @Disabled
-    void generate_queryWithService_shouldGenerateMappersAndCallServicesWithNestedTypes() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithServiceNestedTypes");
+    void generate_queryWithService_shouldGenerateMappersAndCallServicesWithNestedRecordTypes() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithServiceNestedRecordTypes");
+    }
+
+    @Test
+    void generate_queryWithService_shouldGenerateMappersAndCallServicesWithJavaRecordOutputs() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithServiceJavaRecordOutputs");
+    }
+
+    @Disabled // TODO: Support records for fetch services.
+    @Test
+    void generate_queryWithService_shouldGenerateMappersAndCallServicesWithJavaRecordInputs() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithServiceJavaRecordInputs");
     }
 }

@@ -1,11 +1,10 @@
 type Query {
-  customersQueryConnection(storeIds: [ID!]! @field(name: "STORE_ID"), first: Int = 100, after: String): CustomerConnection @service(service : {name: "TEST_CUSTOMER"})
-  customersQueryDirect(storeId: ID! @field(name: "STORE_ID")): Customer @service(service : {name: "TEST_CUSTOMER"})
+  customersQueryConnection(ids: [ID!]! @field(name: "CUSTOMER_ID"), first: Int = 100, after: String): CustomerConnection @service(service : {name: "TEST_FETCH_CUSTOMER", method: "customersQuery0"})
+  customersQueryDirect(id: ID! @field(name: "CUSTOMER_ID")): Customer @service(service : {name: "TEST_FETCH_CUSTOMER", method: "customersQuery1"})
 }
 
 type CustomerConnection {
   edges: [CustomerConnectionEdge]
-  pageInfo: PageInfo
   nodes: [Customer!]!
 }
 
@@ -16,12 +15,11 @@ type CustomerConnectionEdge {
 
 type Customer implements Node @table {
   id: ID!
-  historicalAddresses(first: Int = 10, after: String): AddressConnection @splitQuery @service(service : {name: "TEST_CUSTOMER"})
+  historicalAddresses(first: Int = 10, after: String): AddressConnection @splitQuery @service(service : {name: "TEST_FETCH_CUSTOMER"})
 }
 
 type AddressConnection {
   edges: [AddressConnectionEdge]
-  pageInfo: PageInfo
   nodes: [Address!]!
 }
 

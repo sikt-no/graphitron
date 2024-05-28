@@ -20,8 +20,7 @@ public class EditCustomer0GeneratedResolver implements EditCustomer0MutationReso
     @Override
     public CompletableFuture<EditResponse0> editCustomer0(String id, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomer0 = testCustomerService.editCustomerID(id);

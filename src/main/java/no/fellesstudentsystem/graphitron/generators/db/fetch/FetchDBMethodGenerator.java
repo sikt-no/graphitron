@@ -22,7 +22,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     final String idParamName = uncapitalize(getLocalObject().getName()) + "Ids";
-    final boolean isRoot = getLocalObject().isRoot();
+    final boolean isRoot = getLocalObject().isOperationRoot();
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);

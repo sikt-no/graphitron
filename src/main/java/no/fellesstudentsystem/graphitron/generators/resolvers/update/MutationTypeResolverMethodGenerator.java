@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.update;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
@@ -22,6 +23,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNam
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMapIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.getResolverResultName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
@@ -40,6 +42,13 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
+    }
+
+    @Override
+    public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
+        return super
+                .getDefaultSpecBuilder(methodName, returnType)
+                .addCode(declareContextVariable());
     }
 
     /**
@@ -80,8 +89,8 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         }
 
         var returnValue = !processedSchema.isObject(target)
-                ? CodeBlock.of("$L", getIDMappingCode(target, target))
-                : CodeBlock.of("$N", getResolverResultName(target));
+                ? getIDMappingCode(target, target)
+                : CodeBlock.of(getResolverResultName(target, processedSchema));
         return code
                 .add(generateGetCalls(target, target, 0))
                 .add(generateResponses(target, target, 0))

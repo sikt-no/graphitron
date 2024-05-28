@@ -18,13 +18,12 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNam
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INTEGER;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_TOTAL_COUNT;
 
 /**
  * Generator that creates methods for counting all available elements for a type.
  */
 public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
-    public static String TOTAL_COUNT_NAME = "totalCount";
-
     public FetchCountDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
@@ -46,7 +45,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .add(".select($T.count().as($S))\n", DSL.className, TOTAL_COUNT_NAME)
+                .add(".select($T.count().as($S))\n", DSL.className, CONNECTION_TOTAL_COUNT.getName())
                 .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
                 .add(createSelectJoins(context))
                 .add(where)
@@ -80,11 +79,12 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public List<MethodSpec> generateAll() {
         return ((ObjectDefinition) getLocalObject())
-                .getFieldsReferringTo(processedSchema.getNamesWithTableOrConnections())
+                .getFields()
                 .stream()
+                .filter(it -> !processedSchema.isInterface(it))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(ObjectField::hasRequiredPaginationFields)
-                .filter(it -> !processedSchema.isInterface(it))
+                .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
                 .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());

@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
@@ -37,7 +38,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
         }
 
         var input = processedSchema.getInputType(target);
-        return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), input.getRecordClassName(), wrapSet(GRAPHQL_ERROR.className))
+        return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), wrapList(input.getRecordClassName()), wrapSet(GRAPHQL_ERROR.className))
                 .addCode(declare(VARIABLE_ARGUMENTS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME)))
                 .addCode(declare(VARIABLE_ENV, asMethodCall(TRANSFORMER_NAME, METHOD_ENV_NAME)))
                 .addCode(declare(VARIABLE_VALIDATION_ERRORS, CodeBlock.of("new $T<$T>()", HASH_SET.className, GRAPHQL_ERROR.className)))

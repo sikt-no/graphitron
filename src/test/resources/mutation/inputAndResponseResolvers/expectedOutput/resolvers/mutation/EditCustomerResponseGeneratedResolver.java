@@ -20,8 +20,7 @@ public class EditCustomerResponseGeneratedResolver implements EditCustomerRespon
     @Override
     public CompletableFuture<EditResponse> editCustomerResponse(String id,
                                                                 DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomerResponse = testCustomerService.editCustomerResponse(id);

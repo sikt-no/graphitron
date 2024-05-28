@@ -27,17 +27,15 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<ExtendedConnection<Film>> film(String releaseYear, Integer first,
             String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).load(pageSize, 1000,
+        return new DataFetcher(env, this.ctx).loadPaginated(pageSize, 1000,
                 (ctx, selectionSet) -> queryDBQueries.filmForQuery(ctx, releaseYear, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? queryDBQueries.countFilmForQuery(ctx, releaseYear) : null,
+                (ctx, ids) -> queryDBQueries.countFilmForQuery(ctx, releaseYear),
                 (it) -> it.getId());
     }
 
     @Override
     public CompletableFuture<List<Film>> film2(String releaseYear, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.film2ForQuery(ctx, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.film2ForQuery(ctx, releaseYear, selectionSet));
     }
 }

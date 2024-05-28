@@ -20,8 +20,7 @@ public class EditFilmGeneratedResolver implements EditFilmMutationResolver {
     @Override
     public CompletableFuture<EditFilmResponseLevel1> editFilm(String id,
                                                               DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testFilmService = new TestFilmService(ctx);
+        var testFilmService = new TestFilmService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var editFilm = testFilmService.editFilm(id);

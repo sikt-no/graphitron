@@ -21,8 +21,7 @@ public class EditCustomerIDListGeneratedResolver implements EditCustomerIDListMu
     @Override
     public CompletableFuture<EditResponseList> editCustomerIDList(List<String> id,
                                                                   DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomerIDList = testCustomerService.editCustomerIDList(id);

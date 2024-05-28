@@ -16,13 +16,13 @@ public class JavaRecordMapperClassGenerator extends AbstractMapperClassGenerator
 
     @Override
     public TypeSpec generate(GenerationField target) {
-        return getSpec(target.getTypeName(), List.of(new JavaRecordMapperMethodGenerator(target, processedSchema, isToRecord()))).build();
+        return getSpec(processedSchema.getRecordType(target).getName(), List.of(new JavaRecordMapperMethodGenerator(target, processedSchema, isToRecord()))).build();
     }
 
     @Override
     protected boolean filterHasTableAndRecordProperties(GenerationField field) {
-        return processedSchema.isTableType(field)
-                && (processedSchema.getTableType(field).hasJavaRecordReference())
+        return processedSchema.isRecordType(field)
+                && (processedSchema.getRecordType(field).hasJavaRecordReference())
                 && (isToRecord() ? processedSchema.isInputType(field) : processedSchema.isObject(field));
     }
 

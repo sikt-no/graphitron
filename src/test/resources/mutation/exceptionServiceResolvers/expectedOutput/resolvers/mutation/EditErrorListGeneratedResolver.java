@@ -26,8 +26,7 @@ public class EditErrorListGeneratedResolver implements EditErrorListMutationReso
     @Override
     public CompletableFuture<EditCustomerResponseList> editErrorList(List<EditInput2> input,
                                                                      DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInput2ToJOOQRecord(input, "input");

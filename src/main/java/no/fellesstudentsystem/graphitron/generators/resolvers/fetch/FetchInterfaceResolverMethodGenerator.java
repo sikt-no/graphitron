@@ -39,7 +39,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
         var spec = getDefaultSpecBuilder(target.getName(), interfaceDefinition.getGraphClassName());
 
-        if (!localObject.isRoot()) {
+        if (!localObject.isOperationRoot()) {
             spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
         }
 

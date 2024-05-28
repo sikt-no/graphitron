@@ -6,13 +6,15 @@ import fake.graphql.example.model.Address;
 import fake.graphql.example.model.Customer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
+import java.lang.Integer;
 import java.lang.Override;
-import java.util.List;
+import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
+import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.jooq.DSLContext;
 
 public class CustomerGeneratedResolver implements CustomerResolver {
@@ -23,13 +25,12 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     public CompletableFuture<ExtendedConnection<Address>> historicalAddresses(Customer customer,
                                                                               Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 10);
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
 
-        return new DataFetcher(new RecordTransformer(env, this.ctx)).load(
+        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadPaginated(
                 "historicalAddressesForCustomer", customer.getId(), pageSize, 1000,
-                (ids, selectionSet) -> testCustomerService.historicalAddresses(ids, pageSize, after, selectionSet),
-                (ctx, ids, selectionSet) -> selectionSet.contains("totalCount") ? testCustomerService.countHistoricalAddresses(ctx, ids) : null,
+                (ids) -> testFetchCustomerService.historicalAddresses(ids, pageSize, after),
+                (ids) -> testFetchCustomerService.countHistoricalAddresses(ids),
                 (it) -> it.getId(),
                 (transform, response) -> transform.addressRecordToGraphType(response, "")
         );

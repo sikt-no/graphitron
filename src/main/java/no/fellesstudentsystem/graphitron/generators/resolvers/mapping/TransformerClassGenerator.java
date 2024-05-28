@@ -26,22 +26,12 @@ public class TransformerClassGenerator extends AbstractClassGenerator<ObjectDefi
             METHOD_SELECT_NAME = "get" + capitalize(VARIABLE_SELECT),
             METHOD_ARGS_NAME = "get" + capitalize(VARIABLE_ARGUMENTS),
             DEFAULT_SAVE_DIRECTORY_NAME = "transform";
-    private final List<MethodGenerator<? extends GenerationTarget>> generators;
+    private final List<MethodGenerator<? extends GenerationTarget>> generators = new ArrayList<>();
 
     public TransformerClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
-        var generatorList = new ArrayList<MethodGenerator<? extends GenerationTarget>>();
-        var query = processedSchema.getQueryType();
-        if (query != null && !query.isExplicitlyNotGenerated()) { // TODO: Does not catch nested jOOQ records.
-            // generatorList.add(new TransformerListMethodGenerator(query, processedSchema));
-            // generatorList.add(new TransformerMethodGenerator(query, processedSchema));
-        }
-        var mutation = processedSchema.getMutationType();
-        if (mutation != null && !mutation.isExplicitlyNotGenerated()) {
-            generatorList.add(new TransformerListMethodGenerator(mutation, processedSchema));
-            generatorList.add(new TransformerMethodGenerator(mutation, processedSchema));
-        }
-        generators = generatorList; // TODO: Test this.
+        generators.add(new TransformerListMethodGenerator(processedSchema));
+        generators.add(new TransformerMethodGenerator(processedSchema));
     }
 
     @Override
@@ -70,7 +60,7 @@ public class TransformerClassGenerator extends AbstractClassGenerator<ObjectDefi
 
     @Override
     public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        writeToFile(generate(processedSchema.getMutationType()), path, packagePath, getDefaultSaveDirectoryName());
+        writeToFile(generate(null), path, packagePath, getDefaultSaveDirectoryName());
     }
 
     @Override

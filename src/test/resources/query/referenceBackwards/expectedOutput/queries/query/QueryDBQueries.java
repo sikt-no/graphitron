@@ -6,14 +6,13 @@ import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 import fake.graphql.example.model.City;
 import fake.graphql.example.model.Store;
 import java.lang.String;
-import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<City> cityForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public City cityForQuery(DSLContext ctx, String id, SelectionSet select) {
         var city_addresscityidfkey_address = ADDRESS.as("city_3990159062");
         var city_customeraddressidfkey_customer = CUSTOMER.as("city_3624136159");
         return ctx
@@ -32,7 +31,6 @@ public class QueryDBQueries {
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(CITY.ID.eq(id))
                 .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(city_customeraddressidfkey_customer, city_customeraddressidfkey_customer.store()))
-                .orderBy(CITY.getIdFields())
-                .fetch(0, City.class);
+                .fetchOne(0, City.class);
     }
 }

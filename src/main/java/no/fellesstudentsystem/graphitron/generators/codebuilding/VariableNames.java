@@ -16,5 +16,6 @@ public class VariableNames {
             VARIABLE_ENV = "env",
             VARIABLE_SELECT = "select",
             VARIABLE_VALIDATION_ERRORS = "validationErrors",
-            VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties";
+            VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties",
+            VARIABLE_TYPE_NAME = "type";
 }

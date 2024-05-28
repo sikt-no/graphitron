@@ -16,8 +16,8 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<Customer> customersNoPageForQuery(DSLContext ctx, String active,
-            List<String> storeIds, CustomerInput pin, SelectionSet select) {
+    public Customer customersNoPageForQuery(DSLContext ctx, String active,
+            String storeId, CustomerInput pin, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -32,13 +32,12 @@ public class QueryDBQueries {
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ACTIVE.eq(active))
-                .and(storeIds != null && storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : DSL.noCondition())
+                .and(CUSTOMER.STORE_ID.eq(storeId))
                 .and(pin != null && pin.getFirstName() != null ? CUSTOMER.FIRST_NAME.eq(pin.getFirstName()) : DSL.noCondition())
                 .and(pin != null ? CUSTOMER.LAST_NAME.eq(pin.getLastName()) : DSL.noCondition())
                 .and(pin != null && pin.getEmail() != null && pin.getEmail().getPrivateEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getPrivateEmail()) : DSL.noCondition())
                 .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : DSL.noCondition())
-                .orderBy(CUSTOMER.getIdFields())
-                .fetch(0, Customer.class);
+                .fetchOne(0, Customer.class);
     }
 
     public List<Customer> customersWithPageForQuery(DSLContext ctx, String active,

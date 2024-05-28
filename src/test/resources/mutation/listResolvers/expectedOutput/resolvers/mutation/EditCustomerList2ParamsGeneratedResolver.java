@@ -21,8 +21,7 @@ public class EditCustomerList2ParamsGeneratedResolver implements EditCustomerLis
     @Override
     public CompletableFuture<List<String>> editCustomerList2Params(List<EditInput> input,
             List<String> lastNames, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
 
         var transform = new RecordTransformer(env, this.ctx);
 

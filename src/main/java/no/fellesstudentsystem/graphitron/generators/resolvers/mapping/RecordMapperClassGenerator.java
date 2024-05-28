@@ -22,13 +22,13 @@ public class RecordMapperClassGenerator extends AbstractMapperClassGenerator<Gen
         List<MethodGenerator<? extends GenerationTarget>> generators = isToRecord()
                 ? List.of(recordMapper, new RecordValidatorMethodGenerator(target, processedSchema))
                 : List.of(recordMapper);
-        return getSpec(target.getTypeName(), generators).build();
+        return getSpec(processedSchema.getRecordType(target).getName(), generators).build();
     }
 
     @Override
     protected boolean filterHasTableAndRecordProperties(GenerationField field) {
-        var type = processedSchema.getTableType(field);
-        if (type == null || !type.hasTable() || type.hasJavaRecordReference()) {
+        var type = processedSchema.getRecordType(field);
+        if (type == null || !type.hasTable() && !field.hasServiceReference() || type.hasJavaRecordReference()) {
             return false;
         }
 

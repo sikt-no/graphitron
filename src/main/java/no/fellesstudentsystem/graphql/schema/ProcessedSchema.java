@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphql.schema;
 
+import graphql.language.SchemaDefinition;
 import graphql.language.*;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
@@ -24,6 +25,7 @@ import java.util.stream.Stream;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class represents a fully processed GraphQL schema. This is Graphitron's pre-processing of the schema.
@@ -33,14 +35,15 @@ public class ProcessedSchema {
     private final Map<String, ObjectDefinition> objects;
     private final Map<String, ExceptionDefinition> exceptions;
     private final Map<String, InputDefinition> inputs;
-    private final Map<String, RecordObjectSpecification<? extends GenerationField>> tableTypes;
+    private final Map<String, RecordObjectSpecification<? extends GenerationField>> recordTypes;
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, ConnectionObjectDefinition> connectionObjects;
     private final Map<String, UnionDefinition> unions;
-    private final Set<String> objectsWithTableOrConnection, tableTypesWithTable, scalarTypes, typeNames, validFieldTypes;
+    private final Set<String> tableTypesWithTable, scalarTypes, typeNames, validFieldTypes;
     private final ObjectDefinition queryType, mutationType;
-
     private final Map<String, RecordObjectSpecification<?>> objectWithPreviousTable;
+    private final no.fellesstudentsystem.graphitron.definitions.objects.SchemaDefinition rootObject;
+    private final List<GenerationField> transformableFields;
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
         typeNames = typeRegistry.getTypes(TypeDefinition.class).stream().map(TypeDefinition::getName).collect(Collectors.toSet());
@@ -70,8 +73,9 @@ public class ProcessedSchema {
                 .stream()
                 .collect(Collectors.toMap(ExceptionDefinition::getName, Function.identity()));
 
-        queryType = objects.get(SCHEMA_QUERY.getName());
-        mutationType = objects.get(SCHEMA_MUTATION.getName());
+        rootObject = new no.fellesstudentsystem.graphitron.definitions.objects.SchemaDefinition(createSchemaDefinition());
+        queryType = rootObject.getQuery() != null ? getObject(rootObject.getQuery()) : null;
+        mutationType = rootObject.getMutation() != null ? getObject(rootObject.getMutation()) : null;
 
         inputs = InputDefinition.processInputDefinitions(typeRegistry.getTypes(InputObjectTypeDefinition.class))
                 .stream()
@@ -88,12 +92,10 @@ public class ProcessedSchema {
                 .map(this::getSearchObjectDefinitionFor)
                 .collect(Collectors.toMap(ConnectionObjectDefinition::getName, Function.identity()));
 
-        var objectsWithTable = objects.values().stream().filter(ObjectDefinition::hasTable).collect(Collectors.toList());
-        objectsWithTableOrConnection = Stream.concat(connectionObjects.keySet().stream(), objectsWithTable.stream().map(RecordObjectDefinition::getName)).collect(Collectors.toSet());
-        tableTypes = Stream
+        recordTypes = Stream
                 .concat(objects.values().stream(), inputs.values().stream())
                 .collect(Collectors.toMap(AbstractObjectDefinition::getName, Function.identity()));
-        tableTypesWithTable = tableTypes
+        tableTypesWithTable = recordTypes
                 .values()
                 .stream()
                 .filter(RecordObjectSpecification::hasTable)
@@ -111,6 +113,34 @@ public class ProcessedSchema {
         objectWithPreviousTable = new HashMap<>();
         var nodes = objects.values().stream().filter(it -> it.implementsInterface(NODE_TYPE.getName())).map(it -> (RecordObjectSpecification<?>) it);
         (queryType != null ? Stream.concat(nodes, Stream.of(queryType)) : nodes).forEach(this::buildPreviousTableMap);
+
+        transformableFields = findTransformableFields();
+    }
+
+    private SchemaDefinition createSchemaDefinition() {
+        var definitionBuilder = SchemaDefinition.newSchemaDefinition();
+        var query = objects.get(SCHEMA_QUERY.getName());
+        if (query != null) {
+            var queryName = query.getName();
+            definitionBuilder.operationTypeDefinition(
+                    OperationTypeDefinition
+                            .newOperationTypeDefinition()
+                            .name(uncapitalize(queryName)).typeName(TypeName.newTypeName().name(queryName).build())
+                            .build()
+            );
+        }
+
+        var mutation = objects.get(SCHEMA_MUTATION.getName());
+        if (mutation != null) {
+            var mutationName = mutation.getName();
+            definitionBuilder.operationTypeDefinition(
+                    OperationTypeDefinition
+                            .newOperationTypeDefinition()
+                            .name(uncapitalize(mutationName)).typeName(TypeName.newTypeName().name(mutationName).build())
+                            .build()
+            );
+        }
+        return definitionBuilder.build();
     }
 
     /**
@@ -283,15 +313,15 @@ public class ProcessedSchema {
     /**
      * @return Does this name belong to an object type or connection node in the schema that is connected to a database table?
      */
-    public boolean isTableObject(String name) {
-        return isObject(name) && getObject(name).hasTable() || isConnectionObject(name) && isTableObject(getConnectionObject(name).getNodeType());
+    public boolean hasTableObject(String name) {
+        return isObject(name) && getObject(name).hasTable() || isConnectionObject(name) && hasTableObject(getConnectionObject(name).getNodeType());
     }
 
     /**
      * @return Does this field point to an object type or connection node in the schema that is connected to a database table?
      */
-    public boolean isTableObject(FieldSpecification field) {
-        return isTableObject(field.getTypeName());
+    public boolean hasTableObject(FieldSpecification field) {
+        return hasTableObject(field.getTypeName());
     }
 
     /**
@@ -399,14 +429,14 @@ public class ProcessedSchema {
      * @return Does this field point to an input type with a Java record set in the schema?
      */
     public boolean isJavaRecordType(GenerationField field) {
-        return Optional.ofNullable(getTableType(field)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
+        return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
     }
 
     /**
      * @return Does this field point to an input type with a record set in the schema?
      */
-    public boolean isRecordType(GenerationField field) {
-        return Optional.ofNullable(getTableType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
+    public boolean hasRecordObject(GenerationField field) {
+        return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
     }
 
     /**
@@ -504,25 +534,17 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Set of all the objects with the
-     * "{@link GenerationDirective#TABLE table}" directive set and root objects.
-     */
-    public Set<String> getNamesWithTableOrConnections() {
-        return objectsWithTableOrConnection;
-    }
-
-    /**
      * @return Does this name point to a type that may have a table set?
      */
-    public boolean isTableType(String name) {
-        return tableTypes.containsKey(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+    public boolean isRecordType(String name) {
+        return recordTypes.containsKey(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
     }
 
     /**
      * @return Does this field point to a type that may have a table set?
      */
-    public boolean isTableType(FieldSpecification field) {
-        return isTableType(field.getTypeName());
+    public boolean isRecordType(FieldSpecification field) {
+        return isRecordType(field.getTypeName());
     }
 
     /**
@@ -542,22 +564,22 @@ public class ProcessedSchema {
     /**
      * @return Get a type for this name.
      */
-    public RecordObjectSpecification<?> getTableType(String name) {
-        return tableTypes.get(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+    public RecordObjectSpecification<?> getRecordType(String name) {
+        return recordTypes.get(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
     }
 
     /**
      * @return Find the type this field refers to.
      */
-    public RecordObjectSpecification<?> getTableType(GenerationField field) {
-        return getTableType(field.getTypeName());
+    public RecordObjectSpecification<?> getRecordType(GenerationField field) {
+        return getRecordType(field.getTypeName());
     }
 
     /**
      * @return All types which could potentially have tables.
      */
-    public Map<String, RecordObjectSpecification<? extends GenerationField>> getTableTypes() {
-        return tableTypes;
+    public Map<String, RecordObjectSpecification<? extends GenerationField>> getRecordTypes() {
+        return recordTypes;
     }
 
     /**
@@ -618,8 +640,8 @@ public class ProcessedSchema {
         object
                 .getFields()
                 .stream()
-                .filter(this::isTableType)
-                .map(this::getTableType)
+                .filter(this::isRecordType)
+                .map(this::getRecordType)
                 .filter(Objects::nonNull)
                 .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
                 .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
@@ -633,7 +655,7 @@ public class ProcessedSchema {
             return false;
         }
 
-        if (isTableObject(target)) {
+        if (hasTableObject(target)) {
             return true;
         }
 
@@ -741,41 +763,82 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return List of fields in the schema that may be used to generate transforms.
+     */
+    public List<GenerationField> getTransformableFields() {
+        return transformableFields;
+    }
+
+    private List<GenerationField> findTransformableFields() {
+        var fields = new ArrayList<GenerationField>();
+        var query = getQueryType();
+        if (query != null && !query.isExplicitlyNotGenerated()) {
+            query
+                    .getFields()
+                    .stream()
+                    .filter(GenerationField::hasServiceReference)
+                    .flatMap(field -> findTransformableFields(field, false).stream())
+                    .forEach(fields::add);
+        }
+
+        var mutation = getMutationType();
+        if (mutation != null && !mutation.isExplicitlyNotGenerated()) {
+            mutation
+                    .getFields()
+                    .stream()
+                    .flatMap(field -> findTransformableFields(field, true).stream())
+                    .forEach(fields::add);
+        }
+        return fields;
+    }
+
+    /**
      * @param field Field that are to be searched.
      * @return List of fields that points to a type with the table or record directive set.
      */
-    @NotNull
-    public List<GenerationField> findTableOrRecordFields(ObjectField field) {
-        var objects = field.isGenerated() ? findTableOrRecordFields(field, new HashSet<>(), 0).stream() : Stream.<ObjectField>of();
-        var inputs = field.getArguments().stream().flatMap(it -> findTableOrRecordFields(it, new HashSet<>(), 0).stream());
+    private List<GenerationField> findTransformableFields(ObjectField field, boolean isMutation) {
+        var canMapTable = isMutation || field.hasServiceReference();
+        var objects = field.isGenerated() ? findTransformableFields(field, new HashSet<>(), isMutation, canMapTable, false, 0).stream() : Stream.<ObjectField>of();
+        var inputs = field.getArguments().stream().flatMap(it -> findTransformableFields(it, new HashSet<>(), isMutation, canMapTable, false, 0).stream());
         return Stream.concat(objects, inputs).collect(Collectors.toList());
     }
 
-    @NotNull
-    private List<GenerationField> findTableOrRecordFields(GenerationField field, HashSet<GenerationField> seen, int recursion) {
+    private List<GenerationField> findTransformableFields(GenerationField field, HashSet<GenerationField> seen, boolean isMutation, boolean canMapTable, boolean hadTable, int recursion) {
         recursionCheck(recursion);
         if (seen.contains(field)) {
             return List.of();
         }
         seen.add(field);
 
+        var hasService = field.hasServiceReference();
         if (!field.isInput()) {
             var objectField = (ObjectField) field;
-            if (objectField.hasMutationType() || objectField.isFetchByID() || (recursion > 0 && objectField.hasServiceReference())) {
+            if (objectField.hasMutationType() || objectField.isFetchByID() || (recursion > 0 && isMutation && hasService)) {
                 return List.of();
             }
         }
 
-        var type = getTableType(field);
-        if (field.isResolver() || type == null) {
+        var type = getRecordType(field);
+        if (field.isResolver() && isMutation || type == null) {
             return List.of();
         }
 
+        var canMapTableHere = isMutation || (hasService || type.hasJavaRecordReference() || canMapTable);
+        var alreadyWrappedInTable = hadTable && type.hasTable();
         var array = new ArrayList<GenerationField>();
-        if (type.hasRecordReference() && !field.isExplicitlyNotGenerated()) {
+        if ((type.hasRecordReference() || hasService && !isMutation) && !field.isExplicitlyNotGenerated() && !alreadyWrappedInTable && canMapTableHere) {
             array.add(field);
         }
-        array.addAll(type.getFields().stream().flatMap(it -> findTableOrRecordFields(it, seen, recursion + 1).stream()).collect(Collectors.toList()));
+        array.addAll(type.getFields().stream().flatMap(it ->
+                findTransformableFields(
+                        it,
+                        seen,
+                        isMutation,
+                        canMapTableHere && !(hadTable || type.hasTable()),
+                        !canMapTableHere && (hadTable || type.hasTable()),
+                        recursion + 1
+                ).stream()).collect(Collectors.toList())
+        );
 
         return array;
     }

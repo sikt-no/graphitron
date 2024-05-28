@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphitron.definitions.helpers;
 import com.squareup.javapoet.ClassName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.lang.reflect.Method;
@@ -18,7 +19,7 @@ public class ServiceWrapper {
     private final Method method;
     private final ClassName serviceClassName;
 
-    public ServiceWrapper(ObjectField field, ProcessedSchema processedSchema) {
+    public ServiceWrapper(GenerationField field, ProcessedSchema processedSchema) {
         var reference = field.getServiceReference();
         var references = GeneratorConfig.getExternalReferences();
         service = references.getClassFrom(reference);

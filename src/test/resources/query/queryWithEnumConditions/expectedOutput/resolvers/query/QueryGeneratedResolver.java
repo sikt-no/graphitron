@@ -12,7 +12,7 @@ import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -25,64 +25,48 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Film>> paramCondition(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.paramConditionForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.paramConditionForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> paramConditionOverride(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.paramConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.paramConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> fieldCondition(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.fieldConditionForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.fieldConditionForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> fieldConditionOverride(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.fieldConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.fieldConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> fieldAndParamCondition(Rating rating, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.fieldAndParamConditionForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> fieldAndParamConditionOverride(Rating rating,
             String releaseYear, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.fieldAndParamConditionOverrideForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> fieldAndParamConditionOverrideBoth(Rating rating,
             String releaseYear, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, rating, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.fieldAndParamConditionOverrideBothForQuery(ctx, rating, releaseYear, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Film>> fieldInputCondition(FilmInput ratingIn, String releaseYear,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.fieldInputConditionForQuery(ctx, ratingIn, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.fieldInputConditionForQuery(ctx, ratingIn, releaseYear, selectionSet));
     }
 }

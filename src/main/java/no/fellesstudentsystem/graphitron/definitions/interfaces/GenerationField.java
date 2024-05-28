@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.interfaces;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
@@ -32,6 +33,11 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      * @return Does this field have a service reference defined?
      */
     boolean hasServiceReference();
+
+    /**
+     * @return The reference to the external service that this field is related to.
+     */
+    CodeReference getServiceReference();
 
     /**
      * @return jOOQ record-side name mapping based on the name of the field or the {@link GenerationDirective#FIELD} directive set on this type.

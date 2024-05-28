@@ -26,8 +26,7 @@ public class EditErrorUnion1GeneratedResolver implements EditErrorUnion1Mutation
     @Override
     public CompletableFuture<EditCustomerResponseUnion1> editErrorUnion1(String name,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
 
         var transform = new RecordTransformer(env, this.ctx);
 

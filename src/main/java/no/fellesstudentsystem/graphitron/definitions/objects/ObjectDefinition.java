@@ -48,7 +48,8 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
     /**
      * @return Is this object the top node? That should be either the Query or the Mutation type.
      */
-    public boolean isRoot() {
+    @Override
+    public boolean isOperationRoot() {
         return isRoot;
     }
 

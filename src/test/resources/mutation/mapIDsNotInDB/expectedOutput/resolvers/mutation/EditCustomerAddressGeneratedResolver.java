@@ -20,8 +20,7 @@ public class EditCustomerAddressGeneratedResolver implements EditCustomerAddress
     @Override
     public CompletableFuture<EditAddressResponse> editCustomerAddress(EditAddressInput in,
                                                                       DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var inRecord = transform.editAddressInputToJOOQRecord(in, "in");

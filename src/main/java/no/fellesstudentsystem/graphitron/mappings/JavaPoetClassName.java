@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
@@ -33,6 +34,7 @@ public enum JavaPoetClassName {
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
     DATA_LOADER(ClassName.get(org.dataloader.DataLoader.class)),
     DATA_FETCHER(ClassName.get(DataFetcher.class)),
+    DATA_SERVICE_FETCHER(ClassName.get(ServiceDataFetcher.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
     EXCEPTION(ClassName.get(java.lang.Exception.class)),

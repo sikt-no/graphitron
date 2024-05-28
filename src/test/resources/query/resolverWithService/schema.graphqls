@@ -1,13 +1,19 @@
 type Query {
-  customersQuery(storeIds: [ID!]! @field(name: "STORE_ID")): [Customer] @service(service : {name: "TEST_CUSTOMER"})
+  customersQuery(ids: [ID!]! @field(name: "CUSTOMER_ID")): [Customer] @service(service : {name: "TEST_FETCH_CUSTOMER"})
+  films: [Film] # Irrelevant other query, should not generate mapper for this.
 }
 
 type Customer implements Node @table {
   id: ID!
-  historicalAddresses: [Address!]! @splitQuery @reference(condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"}) @service(service : {name: "TEST_CUSTOMER"}) # Reference won't do anything since no queries are created.
+  historicalAddresses: [Address!]! @splitQuery @reference(condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"}) @service(service : {name: "TEST_FETCH_CUSTOMER"}) # Reference won't do anything since no queries are created.
 }
 
 type Address implements Node @table {
   id: ID!
   postalCode: String!
+}
+
+type Film implements Node @table {
+  id: ID!
+  title: String!
 }

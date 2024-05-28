@@ -9,8 +9,8 @@ import java.lang.Integer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import fake.code.generated.queries.query.QueryDBQueries;
+import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
@@ -23,8 +23,6 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Film>> film(Integer releaseYear, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var selectionSet = ResolverHelpers.getSelectionSet(env);
-        return CompletableFuture.completedFuture(queryDBQueries.filmForQuery(ctx, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.filmForQuery(ctx, releaseYear, selectionSet));
     }
 }

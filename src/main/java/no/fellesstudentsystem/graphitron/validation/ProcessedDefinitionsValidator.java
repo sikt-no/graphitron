@@ -118,8 +118,8 @@ public class ProcessedDefinitionsValidator {
     @NotNull
     private HashMap<String, HashSet<String>> getUsedTablesWithRequiredMethods() {
         var tableMethodsRequired = new HashMap<String, HashSet<String>>();
-        schema.getObjects().values().stream().filter(it -> it.hasTable() || it.isRoot()).forEach(object -> {
-            var flattenedFields = flattenObjectFields(object.isRoot() ? null : object.getTable().getMappingName(), object.getFields());
+        schema.getObjects().values().stream().filter(it -> it.hasTable() || it.isOperationRoot()).forEach(object -> {
+            var flattenedFields = flattenObjectFields(object.isOperationRoot() ? null : object.getTable().getMappingName(), object.getFields());
             unpackReferences(flattenedFields).forEach((key, value) -> tableMethodsRequired.computeIfAbsent(key, k -> new HashSet<>()).addAll(value));
         });
         schema.getInputTypes().values().stream().filter(RecordObjectDefinition::hasTable).forEach(input -> {
@@ -137,7 +137,7 @@ public class ProcessedDefinitionsValidator {
             if (schema.isObject(field) && !schema.isInterface(field)) {
                 var table = lastTableIsNonNull
                         ? lastTable
-                        : (schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : null);
+                        : (schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : null);
                 var object = schema.getObjectOrConnectionNode(field);
                 if (!object.hasTable()) {
                     flattenObjectFields(table, object.getFields()).forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
@@ -146,7 +146,7 @@ public class ProcessedDefinitionsValidator {
 
             var hasCondition = field.hasOverridingCondition();
             if (field.hasNonReservedInputFields() && field.isGeneratedWithResolver()) {
-                var targetTable = schema.isTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
+                var targetTable = schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable;
                 flattenInputFields(targetTable, field.getNonReservedArguments(), field.hasOverridingCondition())
                         .forEach((key, value) -> flatFields.computeIfAbsent(key, k -> new ArrayList<>()).addAll(value));
             }
@@ -182,7 +182,7 @@ public class ProcessedDefinitionsValidator {
             var fields = fieldEntry.getValue();
             for (var fieldWithConditionStatus : fields) {
                 var field = fieldWithConditionStatus.field;
-                var fieldIsTableObject = schema.isTableObject(field);
+                var fieldIsTableObject = schema.hasTableObject(field);
                 var lastTable = table;
                 if (field.hasFieldReferences()) {
                     lastTable = findForReferences(field, lastTable, requiredJOOQTypesAndMethods);
@@ -223,7 +223,7 @@ public class ProcessedDefinitionsValidator {
                 }
                 var nextTable = reference.hasTable()
                         ? reference.getTable().getMappingName()
-                        : (schema.isTableType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
+                        : (schema.isRecordType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
                 var reverseKeyFound = TableReflection.searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
                 requiredJOOQTypesAndMethods
                         .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
@@ -311,7 +311,7 @@ public class ProcessedDefinitionsValidator {
     private void validateInputFields() {
         var oneLayerFlattenedFields = allFields
                 .stream()
-                .filter(schema::isTableObject)
+                .filter(schema::hasTableObject)
                 .flatMap(it -> it.getNonReservedArguments().stream())
                 .filter(AbstractField::isIterableWrapped)
                 .filter(schema::isInputType)
@@ -350,7 +350,7 @@ public class ProcessedDefinitionsValidator {
 
     public void validateObjectFieldTypes() {
         var errorMessages = schema
-                .getTableTypes()
+                .getRecordTypes()
                 .values()
                 .stream()
                 .map(this::validateFieldTypes)

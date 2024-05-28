@@ -19,8 +19,7 @@ public class EditCustomerSimpleGeneratedResolver implements EditCustomerSimpleMu
     @Override
     public CompletableFuture<String> editCustomerSimple(String id, DataFetchingEnvironment env)
             throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var testCustomerService = new TestCustomerService(ctx);
+        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var editCustomerSimple = testCustomerService.simple(id);
