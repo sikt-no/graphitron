@@ -276,6 +276,13 @@ public class GraphQLGeneratorValidationTest extends TestCommon {
         );
     }
 
+    @Test
+    void generate_queryWithSelfReferenceMissingSplitQuery_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/queryWithSelfReferenceMissingSplitQuery"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Self reference must have splitQuery, field \"sequel\" in object \"Film\"");
+    }
+
     private Set<String> getLogMessagesWithLevelWarn() {
         return getLogMessagesWithLevel(Level.WARN);
     }

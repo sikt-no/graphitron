@@ -63,6 +63,7 @@ public class ProcessedDefinitionsValidator {
         validateExternalMappingReferences();
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
+        validateSelfReferenceHasSplitQuery();
 
         if (!GeneratorConfig.getExceptionToErrorMappings().isEmpty() && schema.getMutationType() != null) {
             validateExceptionToErrorMappings(GeneratorConfig.getExceptionToErrorMappings());
@@ -578,5 +579,16 @@ public class ProcessedDefinitionsValidator {
             this.field = field;
             this.hasOverrideCondition = hasOverrideCondition;
         }
+    }
+
+    private void validateSelfReferenceHasSplitQuery() {
+        schema.getObjects().values().forEach(object -> {
+            object.getFields().forEach(field -> {
+                if (Objects.equals(field.getTypeName(), object.getName()) && !field.isResolver()) {
+                    throw new IllegalArgumentException("Self reference must have splitQuery, field \""+ field.getName() + "\" in object \"" + object.getName() + "\"");
+                }
+
+            });
+        });
     }
 }

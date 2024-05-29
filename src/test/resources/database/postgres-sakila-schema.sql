@@ -1699,6 +1699,14 @@ ALTER TABLE ONLY store
 
 
 --
+-- Add sequel to Film table for self reference test
+--
+ALTER TABLE ONLY film
+    ADD COLUMN sequel bigint;
+ALTER TABLE ONLY film
+    ADD CONSTRAINT sequel_fkey FOREIGN KEY(film_id) REFERENCES film;
+
+--
 -- Name: public; Type: ACL; Schema: -; Owner: postgres
 --
 

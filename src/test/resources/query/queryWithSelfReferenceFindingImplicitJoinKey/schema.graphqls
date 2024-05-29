@@ -1,0 +1,13 @@
+type Film @table {
+  id: ID!
+  sequel: Film @splitQuery
+  title: FilmTitle
+}
+
+type FilmTitle {
+  title: String
+}
+
+type Query {
+  films: [Film]
+}

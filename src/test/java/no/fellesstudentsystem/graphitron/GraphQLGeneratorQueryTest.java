@@ -221,4 +221,14 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     void generate_simpleInterfaceWithoutTable_shouldNotThrowException() {
         assertDoesNotThrow(() -> generateFiles("simpleInterfaceWithoutTable"));
     }
+
+    @Test
+    void generate_queryWithSelfReferenceHavingExplicitJoinKey() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithSelfReferenceHavingExplicitJoinKey");
+    }
+
+    @Test
+    void generate_queryWithSelfReferenceFindingImplicitJoinKey() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithSelfReferenceFindingImplicitJoinKey");
+    }
 }

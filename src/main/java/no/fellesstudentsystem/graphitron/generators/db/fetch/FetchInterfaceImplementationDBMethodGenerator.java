@@ -50,8 +50,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
             throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), interfaceName));
         }
 
-        ObjectField implementationReference = new ObjectField(new FieldDefinition(getLocalObject().getName(),
-                new TypeName(getLocalObject().getName())));
+        ObjectField implementationReference = new ObjectField(new FieldDefinition(target.getTypeName(), new TypeName(getLocalObject().getName())));
 
         var context = new FetchContext(processedSchema, implementationReference, implementation);
         var selectCode = generateSelectRow(context);

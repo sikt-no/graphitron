@@ -1,0 +1,9 @@
+type Film @table {
+  id: ID!
+  sequel: Film @splitQuery @reference(key : "SEQUEL_FKEY")
+}
+
+type Query {
+  films: [Film]
+}
+
