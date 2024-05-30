@@ -10,7 +10,6 @@ import java.util.Objects;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * An abstract dependency on a class somewhere in the codebase.

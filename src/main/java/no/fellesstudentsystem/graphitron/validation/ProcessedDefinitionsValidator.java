@@ -6,9 +6,9 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeRe
 import no.fellesstudentsystem.graphitron.definitions.fields.*;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;

@@ -13,7 +13,6 @@ import org.jetbrains.annotations.Nullable;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.ReflectionHelpers.classHasMethod;

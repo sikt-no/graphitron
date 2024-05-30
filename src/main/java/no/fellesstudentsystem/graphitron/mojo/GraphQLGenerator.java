@@ -8,9 +8,9 @@ import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGener
 import no.fellesstudentsystem.graphitron.generators.exception.DataAccessExceptionToErrorMappingProviderGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;

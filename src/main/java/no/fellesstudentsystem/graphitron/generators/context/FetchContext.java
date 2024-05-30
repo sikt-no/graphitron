@@ -1,14 +1,11 @@
 package no.fellesstudentsystem.graphitron.generators.context;
 
 import com.squareup.javapoet.CodeBlock;
-import graphql.language.ObjectTypeDefinition;
 import no.fellesstudentsystem.graphitron.definitions.fields.FieldReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.GenerationSourceField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.definitions.fields.TopLevelObjectField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelation;
-import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
