@@ -21,8 +21,7 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.ARRAYS;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.ARRAY_LIST;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
 /**
  * Generator that creates the default data mutation methods.
@@ -82,13 +81,15 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 code.add(declareVariable(VARIABLE_RECORD_LIST, ARRAY_LIST.className));
                 recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
             }
+            code.beginControlFlow("return $N.transactionResult(configuration -> ", VariableNames.CONTEXT_NAME);
+            code.addStatement("$T transactionCtx = $T.using(configuration)", DSL_CONTEXT.className, DSL.className);
             code.addStatement(
-                    "return $T.stream($N.$L($N).execute()).sum()",
+                    "return $T.stream(transactionCtx.$L($N).execute()).sum()",
                     ARRAYS.className,
-                    VariableNames.CONTEXT_NAME,
                     recordMethod,
                     batchInputVariable
             );
+            code.endControlFlow(")");
         }
 
         return spec
