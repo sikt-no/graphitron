@@ -37,7 +37,7 @@ public class EditCustomerInput2GeneratedResolver implements EditCustomerInput2Mu
         EditCustomerResponse1 editCustomerInput2 = null;
         var validationErrorAndHandledErrorList = new ArrayList<ValidationErrorAndHandledError>();
         try {
-            editCustomerInput2 = testCustomerService.editCustomerInput2(inputRecord);
+            editCustomerInput2 = testCustomerService.editCustomerInputAndResponse(inputRecord);
         } catch (TestException e) {
             var error = new SomeErrorA();
             error.setMessage(e.getMessage());

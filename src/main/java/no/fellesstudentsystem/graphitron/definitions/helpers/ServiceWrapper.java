@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.definitions.helpers;
 
 import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -10,8 +9,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
-
 /**
  * Class that contains extended information about a mutation service.
  */
@@ -19,7 +16,6 @@ public class ServiceWrapper {
     private final boolean returnsJavaRecord;
     private final Class<?> service, returnType;
     private final Method method;
-    private final TypeName returnTypeName;
     private final ClassName serviceClassName;
 
     public ServiceWrapper(ObjectField field, ProcessedSchema processedSchema) {
@@ -33,10 +29,8 @@ public class ServiceWrapper {
         returnsJavaRecord = response != null && response.hasJavaRecordReference();
         if (returnsJavaRecord) {
             returnType = response.getRecordReference();
-            returnTypeName = response.getRecordClassName();
         } else {
             returnType = method != null ? extractType(method.getGenericReturnType()) : null;
-            returnTypeName = (returnType != null) ? wrapListIf(ClassName.get(returnType), field.isIterableWrapped()) : null;
         }
     }
 
@@ -83,10 +77,4 @@ public class ServiceWrapper {
         return serviceClassName;
     }
 
-    /**
-     * @return Javapoet classname of the return type.
-     */
-    public TypeName getReturnTypeName() {
-        return returnTypeName;
-    }
 }

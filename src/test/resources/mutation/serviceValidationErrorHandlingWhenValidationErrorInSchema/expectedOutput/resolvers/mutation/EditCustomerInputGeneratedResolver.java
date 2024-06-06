@@ -27,7 +27,7 @@ public class EditCustomerInputGeneratedResolver implements EditCustomerInputMuta
         var inputRecord = transform.editInputToJOOQRecord(input, "input", "input");
 
         transform.validate();
-        var editCustomerInput = testCustomerService.editCustomerInput(inputRecord);
+        var editCustomerInput = testCustomerService.editCustomerInputAndResponse(inputRecord);
 
         var editCustomerResponse = transform.editCustomerResponseToGraphType(editCustomerInput, "");
 

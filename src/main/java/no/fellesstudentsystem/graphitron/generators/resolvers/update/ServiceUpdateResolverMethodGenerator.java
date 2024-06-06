@@ -52,13 +52,14 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         var serviceResultName = asResultName(target.getName());
         var serviceMethod = service.getMethod();
         var methodName = uncapitalize(serviceMethod != null ? serviceMethod.getName() : target.getName());
+        var returnType = serviceMethod != null ? ClassName.get(serviceMethod.getGenericReturnType()) : service.getReturnType();
 
         if (!context.hasErrorsToHandle()) {
             return declare(serviceResultName, generateServiceCall(methodName, objectToCall));
         }
         return CodeBlock
                 .builder()
-                .addStatement("$T $L = null", service.getReturnTypeName(), serviceResultName)
+                .addStatement("$T $L = null", returnType, serviceResultName)
                 .add(defineErrorLists())
                 .beginControlFlow("try")
                 .addStatement("$N = $L", serviceResultName, generateServiceCall(methodName, objectToCall))

@@ -29,6 +29,11 @@ type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   errors: [SomeErrorB!]!
 }
 
+type EditCustomerResponseList {
+  editCustomerResponse2List: [EditCustomerResponse2]
+  errors: [SomeErrorB!]!
+}
+
 type EditCustomerResponseUnion1 @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   id: ID!
   editCustomerResponse2: EditCustomerResponse2 @field(name : "editResponse2")
@@ -55,6 +60,7 @@ type EditCustomerResponse3 @record(record: {name: "TEST_CUSTOMER_RESPONSE3"}) {
 
 type Mutation {
   editError(input: EditInput!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER"})
+  editErrorList(input: [EditInput2!]!): EditCustomerResponseList! @service(service : {name: "TEST_CUSTOMER"})
   editErrorUnion1(name: String! @field(name: "FIRST_NAME")): EditCustomerResponseUnion1! @service(service : {name: "TEST_CUSTOMER"})
   editErrorUnion2(input: EditInput!): EditCustomerResponseUnion2! @service(service : {name: "TEST_CUSTOMER"})
 }

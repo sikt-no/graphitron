@@ -13,8 +13,8 @@ type EditCustomerResponse2 @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
 }
 
 type Mutation {
-  editCustomerInput(input: EditInput!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER"})
-  editCustomerInput2(input: EditInput!): EditCustomerResponse2! @service(service : {name: "TEST_CUSTOMER"})
+  editCustomerInput(input: EditInput!): EditCustomerResponse! @service(service : {name: "TEST_CUSTOMER", method: "editCustomerInputAndResponse"})
+  editCustomerInput2(input: EditInput!): EditCustomerResponse2! @service(service : {name: "TEST_CUSTOMER", method: "editCustomerInputAndResponse"})
 }
 
 union ValidationErrorUnion = MyValidationError

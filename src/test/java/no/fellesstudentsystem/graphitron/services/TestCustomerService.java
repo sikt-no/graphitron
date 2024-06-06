@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.services;
 
 import no.fellesstudentsystem.graphitron.records.EditCustomerAddressResponse;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
+import no.fellesstudentsystem.graphitron.records.EditCustomerResponse2;
 import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
@@ -96,6 +97,10 @@ public class TestCustomerService {
 
     public EditCustomerResponse1 editError(CustomerRecord record0, CustomerRecord record1) {
         return new EditCustomerResponse1();
+    }
+
+    public List<EditCustomerResponse2> editErrorList(List<CustomerRecord> records) {
+        return List.of(new EditCustomerResponse2());
     }
 
     public EditCustomerResponse1 editErrorUnion1(String s) {
