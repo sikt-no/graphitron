@@ -233,7 +233,15 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
                 } else if (innerContext.shouldUseStandardRecordFetch()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else if (innerContext.hasRecordReference()) {
-                    innerCode.add(innerContext.getSetMappingBlock(createIdFetch(innerField, previousTarget.getName(), innerContext.getPath(), true))); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
+                    var fetchCode = createIdFetch(innerField, previousTarget.getName(), innerContext.getPath(), true);
+                    if (innerContext.isIterable()) {
+                        var tempName = asQueryNodeMethod(innerField.getTypeName());
+                        innerCode
+                                .add(declare(tempName, fetchCode))
+                                .add(innerContext.getSetMappingBlock(CodeBlock.of("$N.stream().map(it -> $N.get(it.getId()))$L", previousTarget.getName(), tempName, collectToList())));
+                    } else {
+                        innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
+                    }
                 } else {
                     innerCode.add(generateResponses(innerContext));
                 }

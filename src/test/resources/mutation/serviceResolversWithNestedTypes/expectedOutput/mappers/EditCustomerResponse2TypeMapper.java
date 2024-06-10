@@ -34,7 +34,8 @@ public class EditCustomerResponse2TypeMapper {
 
                 var customerList = itEditCustomerResponse2.getCustomerList();
                 if (customerList != null && select.contains(pathHere + "customerList")) {
-                    editCustomerResponse2.setCustomerList(customerDBQueries.loadCustomerByIdsAsNode(ctx, customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + "customerList")));
+                    var loadCustomerByIdsAsNode = customerDBQueries.loadCustomerByIdsAsNode(ctx, customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + "customerList"));
+                    editCustomerResponse2.setCustomerList(customerList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()));
                 }
 
                 editCustomerResponse2List.add(editCustomerResponse2);

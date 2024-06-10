@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryNodeMethod;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
@@ -51,7 +52,15 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             } else if (innerContext.shouldUseStandardRecordFetch()) {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (innerContext.hasRecordReference()) {
-                innerCode.add(innerContext.getSetMappingBlock(createIdFetch(innerField, varName, innerContext.getPath(), false))); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
+                var fetchCode = createIdFetch(innerField, varName, innerContext.getPath(), false);
+                if (innerContext.isIterable()) {
+                    var tempName = asQueryNodeMethod(innerField.getTypeName());
+                    innerCode
+                            .add(declare(tempName, fetchCode))
+                            .add(innerContext.getSetMappingBlock(CodeBlock.of("$N.stream().map(it -> $N.get(it.getId()))$L", varName, tempName, collectToList())));
+                } else {
+                    innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
+                }
             } else {
                 innerCode.add(iterateRecords(innerContext));
             }

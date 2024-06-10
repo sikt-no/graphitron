@@ -435,7 +435,7 @@ public class FormatCodeBlocks {
                 atResolver ? asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,
                 isIterable ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst()),
-                atResolver ? CodeBlock.of(".values().stream()$L", collectToList()) : empty()
+                atResolver && !isIterable ? CodeBlock.of(".values().stream()$L", collectToList()) : empty()
         );
     }
 
