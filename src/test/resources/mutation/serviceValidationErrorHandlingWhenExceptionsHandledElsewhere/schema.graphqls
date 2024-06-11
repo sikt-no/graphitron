@@ -24,7 +24,8 @@ type MyValidationError implements Error{
   message: String!
 }
 
-type SomeErrorA implements Error @error(error: {name: "EXCEPTION_TEST"}) {
+type SomeErrorA implements Error @error(handlers:
+[{handler: "ORA", className: "org.jooq.exception.DataAccessException", code: "1337", matches: "data error", description: "This is an error for the union type"}]) {
   path: [String!]!
   message: String!
 }

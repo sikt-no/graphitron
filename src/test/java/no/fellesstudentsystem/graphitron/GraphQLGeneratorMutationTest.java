@@ -165,9 +165,9 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     }
 
     @Test
-    void generate_serviceMutation_shouldGenerateResolverValidationErrorHandlingWhenErrorTypesInSchema() throws IOException {
+    void generate_serviceMutation_shouldGenerateResolversWithoutErrorHandlingForErrorsMappedByExceptionHandler() throws IOException {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, "MyValidationError"));
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceValidationErrorHandlingWhenValidationErrorInSchema");
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceValidationErrorHandlingWhenExceptionsHandledElsewhere");
     }
 
     @Test

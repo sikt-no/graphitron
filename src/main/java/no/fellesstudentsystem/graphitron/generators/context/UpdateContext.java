@@ -147,7 +147,7 @@ public class UpdateContext {
             return allErrors.stream()
                     .map(it -> processedSchema.getExceptionDefinitions(it.getTypeName()))
                     .flatMap(Collection::stream)
-                    .anyMatch(it -> !it.getName().equals(validationErrorType));
+                    .anyMatch(it -> !it.getName().equals(validationErrorType) && it.getExceptionToErrorMappings().isEmpty());
         }
         return !allErrors.isEmpty();
     }

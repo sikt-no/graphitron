@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import no.fellesstudentsystem.graphql.exception.MutationExceptionStrategyConfiguration;
 import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
+import org.jooq.exception.DataAccessException;
 
 public class GeneratedMutationExceptionStrategyConfiguration implements MutationExceptionStrategyConfiguration {
     private final Map<Class<? extends Throwable>, Set<String>> mutationsForException;
@@ -35,6 +36,7 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
 
         mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerInput2");
         mutationsForException.get(IllegalArgumentException.class).add("editCustomerInput2");
+        mutationsForException.computeIfAbsent(DataAccessException.class, k -> new HashSet<>()).add("editCustomerInput2");
         payloadForMutation.put("editCustomerInput2", errors -> {
             var payload = new EditCustomerResponse2();
             payload.setErrors((List<ValidationErrorAndHandledError>) errors);

@@ -4,17 +4,11 @@ import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.EditCustomerInput2MutationResolver;
 import fake.graphql.example.model.EditCustomerResponse2;
 import fake.graphql.example.model.EditInput;
-import fake.graphql.example.model.SomeErrorA;
-import fake.graphql.example.model.ValidationErrorAndHandledError;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphitron.exceptions.TestException;
-import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
@@ -32,32 +26,10 @@ public class EditCustomerInput2GeneratedResolver implements EditCustomerInput2Mu
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input", "input");
 
-
         transform.validate();
-        EditCustomerResponse1 editCustomerInput2 = null;
-        var validationErrorAndHandledErrorList = new ArrayList<ValidationErrorAndHandledError>();
-        try {
-            editCustomerInput2 = testCustomerService.editCustomerInputAndResponse(inputRecord);
-        } catch (TestException e) {
-            var error = new SomeErrorA();
-            error.setMessage(e.getMessage());
-            error.setPath(List.of("editCustomerInput2"));
-            validationErrorAndHandledErrorList.add(error);
-        }
-
-        if (editCustomerInput2 == null) {
-            var editCustomerResponse2 = new EditCustomerResponse2();
-            editCustomerResponse2.setErrors(validationErrorAndHandledErrorList);
-            return CompletableFuture.completedFuture(editCustomerResponse2);
-        }
-
+        var editCustomerInput2 = testCustomerService.editCustomerInputAndResponse(inputRecord);
 
         var editCustomerResponse2 = transform.editCustomerResponse2ToGraphType(editCustomerInput2, "");
-
-        if (editCustomerInput2 != null && transform.getSelect().contains("errors")) {
-            editCustomerResponse2.setErrors(validationErrorAndHandledErrorList);
-        }
-
 
         return CompletableFuture.completedFuture(editCustomerResponse2);
     }
