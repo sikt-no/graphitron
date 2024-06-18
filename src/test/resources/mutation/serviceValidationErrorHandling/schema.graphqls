@@ -4,7 +4,6 @@ input EditInputLevel1 @table(name : "CUSTOMER") {
   editA2: EditInputLevel2A @field(name : "editDouble")
   editB: EditInputLevel2B
   editC1: EditInputLevel2C!
-  editC2: [EditInputLevel2C!]!
 }
 
 input EditInputLevel2A @table(name : "CUSTOMER") {

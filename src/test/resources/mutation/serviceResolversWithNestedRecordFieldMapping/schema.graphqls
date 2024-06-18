@@ -2,8 +2,6 @@ input EditInputLevel1 @table(name: "CUSTOMER") @record(record: {name: "TEST_CUST
   edit2A: EditInputLevel2A
   edit2B: EditInputLevel2B @field(name: "recordList")
   edit2C: EditInputLevel2C
-  edit2D: [EditInputLevel2D]
-  edit2E: [EditInputLevel2E] @field(name: "nameList2")
 }
 
 input EditInputLevel2A @table(name: "CUSTOMER") @record(record: {name: "TEST_CUSTOMER_INNER_RECORD"}) {

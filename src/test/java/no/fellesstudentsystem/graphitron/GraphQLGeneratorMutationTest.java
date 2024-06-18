@@ -229,7 +229,8 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     void generate_whenServiceNotFound_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Could not find external class with name SERVICE_NOT_FOUND");
+                .hasMessage("Problems have been found that prevent code generation:\n" +
+                        "No service with name 'SERVICE_NOT_FOUND' found.");
     }
 
     @Test

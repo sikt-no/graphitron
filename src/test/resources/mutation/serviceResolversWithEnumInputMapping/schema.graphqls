@@ -3,7 +3,6 @@ input EditInputLevel1 @record(record: {name: "TEST_FILM_RECORD"}) {
   rating2: Rating! @field(name: "ratingWithConverter")
 
   edit2: EditInputLevel2 # TODO: If EditInputLevel2 should happen to have a field with this name, we get a name conflict.
-  edit2List: [EditInputLevel2]
 }
 
 input EditInputLevel2 {

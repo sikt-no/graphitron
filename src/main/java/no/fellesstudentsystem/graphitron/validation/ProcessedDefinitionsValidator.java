@@ -2,7 +2,10 @@ package no.fellesstudentsystem.graphitron.validation;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
-import no.fellesstudentsystem.graphitron.definitions.fields.*;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.fields.GenerationSourceField;
+import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -38,6 +41,8 @@ public class ProcessedDefinitionsValidator {
     protected final ProcessedSchema schema;
     private final List<ObjectField> allFields;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
+    private final List<String> warningMessages = new ArrayList<>();
+    private final List<String> errorMessages = new ArrayList<>();
     protected static final String
             ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
             ERROR_MISSING_NON_NULLABLE = "Input type %s referencing table %s does not map all fields required by the database as non-nullable. Nullable required fields: %s";
@@ -65,6 +70,14 @@ public class ProcessedDefinitionsValidator {
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
         validateSelfReferenceHasSplitQuery();
+
+        if (!warningMessages.isEmpty()) {
+            LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
+        }
+
+        if (!errorMessages.isEmpty()) {
+            throw new IllegalArgumentException("Problems have been found that prevent code generation:\n" + String.join("\n", errorMessages));
+        }
     }
 
     private void validateTableAndFieldUsage() {
@@ -96,7 +109,8 @@ public class ProcessedDefinitionsValidator {
                             .collect(Collectors.toList());
 
                     if (!missingElements.isEmpty()) {
-                        LOGGER.warn("No field(s) or method(s) with name(s) '{}' found in table '{}'", missingElements.stream().sorted().collect(Collectors.joining(", ")), tableName);
+                        warningMessages.add(String.format("No field(s) or method(s) with name(s) '%s' found in table '%s'",
+                                missingElements.stream().sorted().collect(Collectors.joining(", ")), tableName));
                     }
                 });
     }
@@ -237,7 +251,7 @@ public class ProcessedDefinitionsValidator {
                 .map(EnumDefinition::getEnumReference)
                 .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> LOGGER.warn("No enum with name '{}' found.", e));
+                .forEach(e -> errorMessages.add(String.format("No enum with name '%s' found.", e)));
 
         allFields
                 .stream()
@@ -245,7 +259,7 @@ public class ProcessedDefinitionsValidator {
                 .map(ObjectField::getServiceReference)
                 .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> LOGGER.warn("No service with name '{}' found.", e));
+                .forEach(e -> errorMessages.add(String.format("No service with name '%s' found.", e)));
 
         allFields
                 .stream()
@@ -254,7 +268,7 @@ public class ProcessedDefinitionsValidator {
                 .map(SQLCondition::getConditionReference)
                 .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> LOGGER.warn("No condition with name '{}' found.", e));
+                .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e)));
 
         schema
                 .getExceptions()
@@ -264,7 +278,7 @@ public class ProcessedDefinitionsValidator {
                 .map(ExceptionDefinition::getExceptionReference)
                 .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> LOGGER.warn("No exception with name '{}' found.", e));
+                .forEach(e -> errorMessages.add(String.format("No exception with name '%s' found.", e)));
     }
 
     private void validateInterfaces() {
@@ -287,7 +301,8 @@ public class ProcessedDefinitionsValidator {
                                 "'%s' must return only one %s", field.getName(), field.getTypeName()
                 );
                 if (!(field.isRootField())) {
-                    LOGGER.warn("interface ({}) returned in non root object. This is not fully supported. Use with care", name);
+                    errorMessages.add(String.format("interface (%s) returned in non root object. This is not fully " +
+                            "supported. Use with care", name));
                 }
             }
         }
@@ -321,10 +336,13 @@ public class ProcessedDefinitionsValidator {
                     .map(AbstractField::getName)
                     .collect(Collectors.toList());
             if (!optionalFields.isEmpty()) {
-                LOGGER.warn(
-                        "{} Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: '{}'",
-                        messageStart,
-                        String.join("', '", optionalFields)
+                errorMessages.add(
+                        String.format(
+                                "%s Optional fields on such types are not supported. The following fields will be " +
+                                        "treated as mandatory in the resulting, generated condition tuple: '%s'",
+                                messageStart,
+                                String.join("', '", optionalFields)
+                        )
                 );
             }
         }
@@ -391,9 +409,11 @@ public class ProcessedDefinitionsValidator {
         for (var field : fields) {
             var hasConnectionSuffix = field.getTypeName().endsWith(GraphQLReservedName.SCHEMA_CONNECTION_SUFFIX.getName());
             if (hasConnectionSuffix && !field.hasRequiredPaginationFields()) {
-                LOGGER.warn("Type {} ending with the reserved suffix 'Connection' must have either " +
-                        "forward(first and after fields) or backwards(last and before fields) pagination, " +
-                        "yet neither was found. No pagination was generated for this type.", field.getTypeName()
+                errorMessages.add(
+                        String.format("Type %s ending with the reserved suffix 'Connection' must have either " +
+                                "forward(first and after fields) or backwards(last and before fields) pagination, " +
+                                "yet neither was found. No pagination was generated for this type.", field.getTypeName()
+                        )
                 );
             }
         }
@@ -439,7 +459,7 @@ public class ProcessedDefinitionsValidator {
         var hasTableOrRecordReference = input.hasTable() || input.hasJavaRecordReference();
 
         if (field.isIterableWrapped() && wasRecord && !hasTableOrRecordReference) {
-            LOGGER.warn(
+            errorMessages.add(
                     String.format(
                             "Field %s with Input type %s is iterable, but has no record mapping set. Iterable Input types within records without record mapping can not be mapped to a single field in the surrounding record.",
                             field.getName(),
@@ -465,12 +485,14 @@ public class ProcessedDefinitionsValidator {
                         .anyMatch(AbstractField::isIterableWrapped);
 
         if (!inputField.isIterableWrapped() && payloadContainsIterableField) {
-            LOGGER.warn(
-                    String.format("Mutation %s with Input %s is not defined as a list while Payload type %s contains a list",
+            warningMessages.add(
+                    String.format("Mutation %s with Input %s is not defined as a list while Payload type %s contains " +
+                                    "a list",
                             objectField.getName(), inputField.getTypeName(), objectField.getTypeName()));
         } else if (inputField.isIterableWrapped() && !payloadContainsIterableField) {
-            LOGGER.warn(
-                    String.format("Mutation %s with Input %s is defined as a list while Payload type %s does not contain a list",
+            warningMessages.add(
+                    String.format("Mutation %s with Input %s is defined as a list while Payload type %s does not " +
+                                    "contain a list",
                             objectField.getName(), inputField.getTypeName(), objectField.getTypeName()));
         }
     }
@@ -519,7 +541,7 @@ public class ProcessedDefinitionsValidator {
     protected void checkRequiredFieldsExist(Set<String> actualFields, List<String> requiredFields, InputField recordInput, String message) {
         if (!actualFields.containsAll(requiredFields)) {
             var missingFields = requiredFields.stream().filter(it -> !actualFields.contains(it)).collect(Collectors.joining(", "));
-            LOGGER.warn(
+            warningMessages.add(
                     String.format(
                             message,
                             recordInput.getTypeName(),
@@ -541,13 +563,13 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateSelfReferenceHasSplitQuery() {
-        schema.getObjects().values().forEach(object -> {
-            object.getFields().forEach(field -> {
-                if (Objects.equals(field.getTypeName(), object.getName()) && !field.isResolver()) {
-                    throw new IllegalArgumentException("Self reference must have splitQuery, field \""+ field.getName() + "\" in object \"" + object.getName() + "\"");
-                }
-
-            });
-        });
+        schema.getObjects().values()
+                .forEach(object -> object.getFields()
+                        .forEach(field -> {
+                            if (Objects.equals(field.getTypeName(), object.getName()) && !field.isResolver()) {
+                                errorMessages.add("Self reference must have splitQuery, field \"" + field.getName() + "\" in object \"" + object.getName() + "\"");
+                            }
+                        })
+                );
     }
 }
