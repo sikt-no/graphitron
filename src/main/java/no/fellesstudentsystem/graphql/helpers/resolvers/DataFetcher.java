@@ -9,7 +9,7 @@ import no.fellesstudentsystem.graphql.helpers.functions.DBCount;
 import no.fellesstudentsystem.graphql.helpers.functions.DBQuery;
 import no.fellesstudentsystem.graphql.helpers.functions.DBQueryRoot;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
+import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
@@ -46,16 +46,27 @@ public class DataFetcher extends AbstractFetcher {
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @param idFunction Function that extracts an ID from the fetched type.
+     * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <T> Type that the resolver fetches.
      */
-    public <T> CompletableFuture<ExtendedConnection<T>> loadPaginated(int pageSize, int maxNodes, DBQueryRoot<List<T>> dbFunction, DBCount<String> countFunction, Function<T, String> idFunction) {
-        return getPaginatedConnection(
-                dbFunction.callDBMethod(ctx, connectionSelection),
-                pageSize,
-                countFunction.callDBMethod(ctx, Set.of()),
-                maxNodes,
-                idFunction
+    public <T, U> CompletableFuture<U> loadPaginated(
+            int pageSize,
+            int maxNodes,
+            DBQueryRoot<List<T>> dbFunction,
+            DBCount<String> countFunction,
+            Function<T, String> idFunction,
+            Function<ConnectionImpl<T>, U> connectionFunction
+    ) {
+        return CompletableFuture.completedFuture(
+                getPaginatedConnection(
+                        dbFunction.callDBMethod(ctx, connectionSelection),
+                        pageSize,
+                        countFunction.callDBMethod(ctx, Set.of()),
+                        maxNodes,
+                        idFunction,
+                        connectionFunction
+                )
         );
     }
 
@@ -64,7 +75,7 @@ public class DataFetcher extends AbstractFetcher {
      * @param resolveName Name of the resolver.
      * @param dbFunction Function to call to retrieve the query data.
      * @param id ID of the queried element.
-     * @return A paginated resolver result.
+     * @return A resolver result.
      * @param <T> Type that the resolver fetches.
      */
     public <T> CompletableFuture<T> load(String resolveName, String id, DBQuery<String, T> dbFunction) {
@@ -79,20 +90,30 @@ public class DataFetcher extends AbstractFetcher {
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @param idFunction Function that extracts an ID from the fetched type.
+     * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <T> Type that the resolver fetches.
      */
-    public <T> CompletableFuture<ExtendedConnection<T>> loadPaginated(String resolveName, String id, int pageSize, int maxNodes, DBQuery<String, List<T>> dbFunction, DBCount<String> countFunction, Function<T, String> idFunction) {
-        return getConnectionLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, idFunction))
+    public <T, U> CompletableFuture<U> loadPaginated(
+            String resolveName,
+            String id,
+            int pageSize,
+            int maxNodes,
+            DBQuery<String, List<T>> dbFunction,
+            DBCount<String> countFunction,
+            Function<T, String> idFunction,
+            Function<ConnectionImpl<T>, U> connectionFunction
+    ) {
+        return getConnectionLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, idFunction, connectionFunction))
                 .load(asKeyPath(id), env);
     }
 
     /**
-     * Load the data for a resolver. The result is paginated.
+     * Load the data for a resolver.
      * @param resolveName Name of the resolver.
      * @param dbFunction Function to call to retrieve the query data.
      * @param id ID of the queried element.
-     * @return A paginated resolver result.
+     * @return A resolver result.
      * @param <T> Type that the resolver fetches.
      */
     public <T> CompletableFuture<List<T>> loadNonNullable(String resolveName, String id, DBQuery<String, List<T>> dbFunction) {
@@ -171,14 +192,15 @@ public class DataFetcher extends AbstractFetcher {
                 .load(keyToLoad, env);
     }
 
-    private <T> CompletableFuture<Map<String, ExtendedConnection<T>>> getMappedDataLoader(
+    private <T, U> CompletableFuture<Map<String, U>> getMappedDataLoader(
             Set<String> keys,
             SelectionSet selectionSet,
             int maxNodes,
             int pageSize,
             DBQuery<String, List<T>> dbFunction,
             DBCount<String> countFunction,
-            Function<T, String> idFunction
+            Function<T, String> idFunction,
+            Function<ConnectionImpl<T>, U> connectionFunction
     ) {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
@@ -186,12 +208,15 @@ public class DataFetcher extends AbstractFetcher {
 
         var keyToId = getKeyToId(keys);
         var idSet = new HashSet<>(keyToId.values());
-        return getPaginatedConnection(
-                resultAsMap(keyToId, dbFunction.callDBMethod(ctx, idSet, selectionSet)),
-                pageSize,
-                countFunction.callDBMethod(ctx, idSet),
-                maxNodes,
-                idFunction
+        return CompletableFuture.completedFuture(
+                getPaginatedConnection(
+                        resultAsMap(keyToId, dbFunction.callDBMethod(ctx, idSet, selectionSet)),
+                        pageSize,
+                        countFunction.callDBMethod(ctx, idSet),
+                        maxNodes,
+                        idFunction,
+                        connectionFunction
+                )
         );
     }
 

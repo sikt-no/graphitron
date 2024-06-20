@@ -13,7 +13,6 @@ import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
 import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
-import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.jooq.exception.DataAccessException;
 
 /**
@@ -58,7 +57,6 @@ public enum JavaPoetClassName {
     QUERY_HELPER(ClassName.get(QueryHelper.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
     RECORD_VALIDATOR(ClassName.get(RecordValidator.class)),
-    RELAY_CONNECTION(ClassName.get(ExtendedConnection.class)),
     RESOLVER_HELPERS(ClassName.get(ResolverHelpers.class)),
     SELECTION_SET(ClassName.get(SelectionSet.class)),
     SET(ClassName.get(java.util.Set.class)),

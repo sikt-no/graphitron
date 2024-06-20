@@ -26,6 +26,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -132,13 +133,14 @@ public class ServiceCodeBlocks {
         return wrapNotNull(sourceName, code.add(context.wrapFields(fieldCode.build())).build());
     }
 
+    // Does not actually belong here since it does not only deal with services.
     public static CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, ArrayList<String> allQueryInputs, RecordObjectSpecification<?> localObject, CodeBlock queryFunction, CodeBlock transformFunction, boolean isService, ProcessedSchema schema) {
         var queryMethodName = asQueryMethodName(target.getName(), localObject.getName());
         var dataBlock = CodeBlock
                 .builder()
                 .add(fetcherCodeInit(target, queryMethodName, localObject, isService ? newDataFetcherWithTransform() : newDataFetcher()));
 
-        var transformWrap = transformFunction.isEmpty() ? CodeBlock.of("\n") : CodeBlock.of(",\n$L\n", transformFunction);
+        var transformWrap = transformFunction.isEmpty() ? empty() : CodeBlock.of(",\n$L", transformFunction);
         if (!target.hasRequiredPaginationFields()) {
             if (!localObject.isOperationRoot()) {
                 dataBlock.add("\n");
@@ -158,8 +160,9 @@ public class ServiceCodeBlocks {
                 .collect(Collectors.joining(", "));
         var inputsWithId = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
         var countFunction = countDBFunction(objectToCall, method, inputsWithId, !isService);
+        var connectionFunction = connectionFunction(schema.getConnectionObject(target), schema.getObject(CONNECTION_PAGE_INFO_NODE.getName()));
         return dataBlock
-                .add("$N, $L,\n$L,\n$L,\n$L$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction(target, schema), transformWrap)
+                .add("$N, $L,\n$L,\n$L,\n$L$L,\n$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction(target, schema), transformWrap, connectionFunction)
                 .unindent()
                 .unindent()
                 .addStatement(")")

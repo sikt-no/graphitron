@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphql.relay;
 
+import graphql.relay.DefaultConnection;
 import graphql.relay.Edge;
 import graphql.relay.PageInfo;
 
@@ -8,35 +9,20 @@ import java.util.List;
 /**
  * Helper class for handling connection types as defined in the <a href="https://relay.dev/graphql/connections.htm">cursor connection specification</a>.
  */
-public class ConnectionImpl<T> implements ExtendedConnection<T> {
-    private final List<Edge<T>> edges;
+public class ConnectionImpl<T> extends DefaultConnection<T> {
     private final List<T> nodes;
-    private final PageInfo pageInfo;
     private final Integer totalCount;
 
     public ConnectionImpl(List<Edge<T>> edges, List<T> nodes, PageInfo pageInfo, Integer totalCount) {
-        this.edges = edges;
+        super(edges, pageInfo);
         this.nodes = nodes;
-        this.pageInfo = pageInfo;
         this.totalCount = totalCount;
     }
 
-    @Override
-    public List<Edge<T>> getEdges() {
-        return edges;
-    }
-
-    @Override
-    public PageInfo getPageInfo() {
-        return pageInfo;
-    }
-
-    @Override
     public List<T> getNodes() {
         return nodes;
     }
 
-    @Override
     public Integer getTotalCount() {
         return totalCount;
     }
@@ -46,7 +32,6 @@ public class ConnectionImpl<T> implements ExtendedConnection<T> {
     }
 
     public static class Builder<T> {
-
         private List<Edge<T>> edges;
         private List<T> nodes;
         private PageInfo pageInfo;

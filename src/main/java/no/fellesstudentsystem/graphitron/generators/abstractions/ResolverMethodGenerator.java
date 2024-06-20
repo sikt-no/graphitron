@@ -1,7 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.abstractions;
 
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
@@ -34,6 +33,6 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
         if (!referenceField.hasForwardPagination()) { // TODO: This is actually wrong for cases where a single class is returned!
             return wrapListIf(processedSchema.getObject(referenceField).getGraphClassName(), referenceField.isIterableWrapped());
         }
-        return ParameterizedTypeName.get(RELAY_CONNECTION.className, processedSchema.getObjectOrConnectionNode(referenceField).getGraphClassName());
+        return processedSchema.getConnectionObject(referenceField).getGraphClassName();
     }
 }

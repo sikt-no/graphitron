@@ -10,14 +10,12 @@ import no.fellesstudentsystem.graphql.helpers.functions.DataLoaderMapper;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
-import no.fellesstudentsystem.graphql.relay.ExtendedConnection;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -90,16 +88,12 @@ public abstract class AbstractFetcher {
         return keys.stream().collect(Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
     }
 
-    protected <T> CompletableFuture<ExtendedConnection<T>> getPaginatedConnection(List<T> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<T, String> idFunction) {
-        return CompletableFuture.completedFuture(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null, idFunction));
+    protected <T, U> U getPaginatedConnection(List<T> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<T, String> idFunction, Function<ConnectionImpl<T>, U> connectionFunction) {
+        return connectionFunction.apply(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null, idFunction));
     }
 
-    protected <T> CompletableFuture<Map<String, ExtendedConnection<T>>> getPaginatedConnection(Map<String, List<T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<T, String> idFunction) {
-        var pagedResult = dbResult.entrySet().stream().map(resultEntry -> {
-            var pagedResultEntry = createPagedResult(resultEntry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null, idFunction);
-            return new AbstractMap.SimpleEntry<String, ExtendedConnection<T>>(resultEntry.getKey(), pagedResultEntry);
-        }).collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue));
-        return CompletableFuture.completedFuture(pagedResult);
+    protected <T, U> Map<String, U> getPaginatedConnection(Map<String, List<T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<T, String> idFunction, Function<ConnectionImpl<T>, U> connectionFunction) {
+        return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null, idFunction))));
     }
 
     protected <T> ConnectionImpl<T> createPagedResult(List<T> dbResult, int pageSize, Integer totalCount, Function<T, String> idFunction) {

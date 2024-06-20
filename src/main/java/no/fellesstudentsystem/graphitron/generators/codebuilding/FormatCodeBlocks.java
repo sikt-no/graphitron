@@ -9,7 +9,9 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Transf
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
+import no.fellesstudentsystem.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -50,6 +52,7 @@ public class FormatCodeBlocks {
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
             EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className),
             EMPTY_BLOCK = CodeBlock.builder().build();
+    private final static String CONNECTION_NAME = "connection", PAGE_NAME = "page", EDGES_NAME = "edges", GRAPH_PAGE_NAME = "graphPage";
 
     /**
      * @param variableName The name of the ArrayList variable.
@@ -313,6 +316,22 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps the provided variable name in a simple null check.
+     */
+    @NotNull
+    public static CodeBlock nullIfNullElseThis(String variable) {
+        return CodeBlock.of("$L$N", nullIfNullElse(variable), variable);
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock name in a simple null check.
+     */
+    @NotNull
+    public static CodeBlock nullIfNullElseThis(CodeBlock code) {
+        return CodeBlock.of("$L$L", nullIfNullElse(code), code);
+    }
+
+    /**
      * @return CodeBlock that adds something to a String if it is not empty.
      */
     @NotNull
@@ -477,6 +496,55 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock for a function that maps relay connection types.
+     */
+    public static CodeBlock connectionFunction(ConnectionObjectDefinition connectionType, ObjectDefinition pageInfoType) {
+        return CodeBlock
+                .builder()
+                .beginControlFlow("($L) -> ", CONNECTION_NAME)
+                .add(
+                        declare(
+                                EDGES_NAME,
+                                CodeBlock.of(
+                                        "$N.getEdges().stream().map(it -> $T.builder().setCursor($L.getValue()).setNode(it.getNode()).build())$L",
+                                        CONNECTION_NAME,
+                                        connectionType.getEdgeObject().getGraphClassName(),
+                                        nullIfNullElseThis(CodeBlock.of("it.getCursor()")),
+                                        collectToList()
+                                )
+                        )
+                )
+                .add(declare(PAGE_NAME, CodeBlock.of("$N.getPageInfo()", CONNECTION_NAME)))
+                .add(
+                        declare(
+                                GRAPH_PAGE_NAME,
+                                CodeBlock.of(
+                                        "$T.builder().setStartCursor($L.getValue()).setEndCursor($L.getValue()).setHasNextPage($N.isHasNextPage()).setHasPreviousPage($N.isHasPreviousPage()).build()",
+                                        pageInfoType.getGraphClassName(),
+                                        nullIfNullElseThis(CodeBlock.of("$N.getStartCursor()", PAGE_NAME)),
+                                        nullIfNullElseThis(CodeBlock.of("$N.getEndCursor()", PAGE_NAME)),
+                                        PAGE_NAME,
+                                        PAGE_NAME
+                                )
+                        )
+                )
+                .add(
+                        returnWrap(
+                                CodeBlock.of(
+                                        "$T.builder().setNodes($N.getNodes()).setEdges($N).setTotalCount($N.getTotalCount()).setPageInfo($N).build()",
+                                        connectionType.getGraphClassName(),
+                                        CONNECTION_NAME,
+                                        EDGES_NAME,
+                                        CONNECTION_NAME,
+                                        GRAPH_PAGE_NAME
+                                )
+                        )
+                )
+                .endControlFlow()
+                .build();
+    }
+
+    /**
      * @return CodeBlock consisting of a function for an ID fetch DB call.
      */
     @NotNull
@@ -599,9 +667,8 @@ public class FormatCodeBlocks {
         if (isIterable && forDeclaredCondition) {
             var itName = asIterable(enumEntry.getName());
             return CodeBlock.of(
-                    "$L$L.stream().map($L -> $L.getOrDefault($L, null))$L",
-                    nullIfNullElse(variable),
-                    variable,
+                    "$L.stream().map($L -> $L.getOrDefault($L, null))$L",
+                    nullIfNullElseThis(variable),
                     itName,
                     mapOf(renderEnumMapElements(enumEntry, flipDirection)),
                     itName,

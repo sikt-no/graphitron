@@ -68,10 +68,3 @@ input InventoryOrder {
 enum InventoryOrderByField {
   STORE_ID_FILM_ID @index(name : "IDX_STORE_ID_FILM_ID")
 }
-
-type PageInfo {
-  hasPreviousPage: Boolean!
-  hasNextPage: Boolean!
-  startCursor: String
-  endCursor: String
-}
