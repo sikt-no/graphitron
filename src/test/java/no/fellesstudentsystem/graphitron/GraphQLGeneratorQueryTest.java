@@ -21,6 +21,7 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
 
     private final List<ExternalClassReference> references = List.of(
+            new ExternalClassReference("TEST_ENUM_RATING_LIST", "no.fellesstudentsystem.graphitron.enums.RatingListTest"),
             new ExternalClassReference("TEST_CITY", "no.fellesstudentsystem.graphitron.conditions.CityTestConditions"),
             new ExternalClassReference("TEST_FILM_ACTOR", "no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions"),
             new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
@@ -154,6 +155,11 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     @Test
     void generate_queryWithConditions_shouldCreateQueriesWithEnumConditionInputs() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumConditions");
+    }
+
+    @Test
+    void generate_queryWithConditions_shouldCreateQueriesWithEnumListConditionInputs() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumListConditions");
     }
 
     @Test

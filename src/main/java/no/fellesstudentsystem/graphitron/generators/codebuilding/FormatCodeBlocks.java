@@ -554,7 +554,7 @@ public class FormatCodeBlocks {
     /**
      * @return Code block containing the enum conversion method call with an anonymous function declaration.
      */
-    public static CodeBlock toJOOQEnumConverter(String enumType, boolean isIterable, ProcessedSchema schema) {
+    public static CodeBlock toJOOQEnumConverter(String enumType, boolean isIterable, boolean forDeclaredCondition, ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
             return empty();
         }
@@ -564,11 +564,11 @@ public class FormatCodeBlocks {
         return CodeBlock
                 .builder()
                 .add(".convert($T.class, $L -> $L, $L -> $L)",
-                        enumEntry.getGraphClassName(),
-                        tempVariableName,
-                        toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, true),
-                        tempVariableName,
-                        toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, false)
+                     enumEntry.getGraphClassName(),
+                     tempVariableName,
+                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, forDeclaredCondition, true),
+                     tempVariableName,
+                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, forDeclaredCondition, false)
                 )
                 .build();
     }
@@ -576,19 +576,29 @@ public class FormatCodeBlocks {
     /**
      * @return Code block containing the enum conversion method call.
      */
-    public static CodeBlock toGraphEnumConverter(String enumType, CodeBlock field, boolean isIterable, ProcessedSchema schema) {
+    public static CodeBlock toGraphEnumConverter(
+            String enumType,
+            CodeBlock field,
+            boolean isIterable,
+            boolean forDeclaredCondition,
+            ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
             return empty();
         }
 
         var enumEntry = schema.getEnum(enumType);
-        return toNullSafeMapCall(field, enumEntry, isIterable, false);
+        return toNullSafeMapCall(field, enumEntry, isIterable, forDeclaredCondition, false);
     }
 
-    private static CodeBlock toNullSafeMapCall(CodeBlock variable, EnumDefinition enumEntry, boolean isIterable, boolean flipDirection) {
-        if (isIterable) {
+    private  static CodeBlock toNullSafeMapCall(
+            CodeBlock variable,
+            EnumDefinition enumEntry,
+            boolean isIterable,
+            boolean forDeclaredCondition,
+            boolean flipDirection) {
+        if (isIterable && forDeclaredCondition) {
             var itName = asIterable(enumEntry.getName());
-            CodeBlock.of(
+            return CodeBlock.of(
                     "$L$L.stream().map($L -> $L.getOrDefault($L, null))$L",
                     nullIfNullElse(variable),
                     variable,
@@ -614,6 +624,7 @@ public class FormatCodeBlocks {
         var entryClassName = enumEntry.getGraphClassName();
         var entrySet = new ArrayList<>(enumEntry.getFields());
         var entrySetSize = entrySet.size();
+
         for (int i = 0; i < entrySetSize; i++) {
             var enumValue = entrySet.get(i);
             if (flipDirection) {
@@ -629,6 +640,7 @@ public class FormatCodeBlocks {
                 code.add(", ");
             }
         }
+
         return code.build();
     }
 
@@ -643,7 +655,6 @@ public class FormatCodeBlocks {
             return CodeBlock.of("$S", valueName);
         }
     }
-
     /**
      * @param recordName Name of the record to transform.
      * @param scope      The scope of transforms that should be applied. Currently only {@link TransformScope#ALL_MUTATIONS} is supported.

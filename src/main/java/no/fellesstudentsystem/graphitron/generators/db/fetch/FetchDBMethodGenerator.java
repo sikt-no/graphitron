@@ -62,7 +62,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
                         .add("$L.$N", renderedSequence, field.getUpperCaseName())
-                        .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
+                        .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), false, processedSchema))
                         .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
@@ -100,7 +100,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
         var nameWithPath = condition.getNameWithPath();
         var checks = condition.getChecksAsSequence();
-        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), nameWithPath, condition.getInput().isIterableWrapped(), processedSchema);
+        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), nameWithPath, condition.getInput().isIterableWrapped(), true, processedSchema);
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
                 enumConverter.isEmpty() ? nameWithPath : enumConverter
@@ -125,7 +125,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             codeBlockBuilder
                     .add("$L.$N", fieldSequence, field.getUpperCaseName())
-                    .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
+                    .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), false, processedSchema))
                     .add(i < conditions.size()-1 ? ",\n" : "");
         }
         codeBlockBuilder
