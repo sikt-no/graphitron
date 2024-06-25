@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Address;
 import fake.graphql.example.model.City;
 import fake.graphql.example.model.Store;
@@ -11,7 +9,6 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
-
 public class QueryDBQueries {
     public City cityForQuery(DSLContext ctx, String id, SelectionSet select) {
         var city_addresscityidfkey_address_left = ADDRESS.as("city_639528019");
@@ -54,6 +51,6 @@ public class QueryDBQueries {
                 .where(CITY.ID.eq(id))
                 .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(city_customeraddressidfkey_customer_left, city_customeraddressidfkey_customer_left.store()))
                 .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(city_customeraddressidfkey_customer, city_customeraddressidfkey_customer.store()))
-                .fetchOne(0, City.class);
+                .fetchOne(it -> it.into(City.class));
     }
 }

@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Film;
 import fake.graphql.example.model.FilmOrder;
 import fake.graphql.example.model.Inventory;
@@ -20,10 +18,9 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
-
 public class QueryDBQueries {
     public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, FilmOrder orderBy,
-                                    Integer pageSize, String after, SelectionSet select) {
+            Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -42,22 +39,21 @@ public class QueryDBQueries {
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .orderBy(
-                        orderBy == null
-                                ? FILM.getIdFields()
-                                : QueryHelper.getSortFields(FILM.getIndexes(), Map.ofEntries(
-                                        Map.entry("LANGUAGE", "IDX_FK_LANGUAGE_ID"),
-                                        Map.entry("TITLE", "IDX_TITLE"))
-                                .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString()))
+                    orderBy == null
+                            ? FILM.getIdFields()
+                            : QueryHelper.getSortFields(FILM.getIndexes(), Map.ofEntries(
+                                Map.entry("LANGUAGE", "IDX_FK_LANGUAGE_ID"),
+                                Map.entry("TITLE", "IDX_TITLE"))
+                            .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString()))
                 .seek(
-                        orderBy == null
-                                ? FILM.getIdValues(after)
-                                : after == null ? new Object[]{} : after.split(","))
+                    orderBy == null
+                        ? FILM.getIdValues(after)
+                        : after == null ? new Object[]{} : after.split(","))
                 .limit(pageSize + 1)
-                .fetch(0, Film.class);
+                .fetch(it -> it.into(Film.class));
     }
-
     public List<Inventory> inventoriesForQuery(DSLContext ctx, InventoryOrder orderBy,
-                                               Integer pageSize, String after, SelectionSet select) {
+            Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -68,19 +64,18 @@ public class QueryDBQueries {
                 )
                 .from(INVENTORY)
                 .orderBy(
-                        orderBy == null
-                                ? INVENTORY.getIdFields()
-                                : QueryHelper.getSortFields(INVENTORY.getIndexes(), Map.ofEntries(
-                                        Map.entry("STORE_ID_FILM_ID", "IDX_STORE_ID_FILM_ID"))
-                                .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString()))
+                    orderBy == null
+                            ? INVENTORY.getIdFields()
+                            : QueryHelper.getSortFields(INVENTORY.getIndexes(), Map.ofEntries(
+                                Map.entry("STORE_ID_FILM_ID", "IDX_STORE_ID_FILM_ID"))
+                            .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString()))
                 .seek(
-                        orderBy == null
-                                ? INVENTORY.getIdValues(after)
-                                : after == null ? new Object[]{} : after.split(","))
+                    orderBy == null
+                        ? INVENTORY.getIdValues(after)
+                        : after == null ? new Object[]{} : after.split(","))
                 .limit(pageSize + 1)
-                .fetch(0, Inventory.class);
+                .fetch(it -> it.into(Inventory.class));
     }
-
     public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(DSL.count().as("totalCount"))
@@ -88,7 +83,6 @@ public class QueryDBQueries {
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);
     }
-
     public Integer countInventoriesForQuery(DSLContext ctx) {
         return ctx
                 .select(DSL.count().as("totalCount"))

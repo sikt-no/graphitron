@@ -160,7 +160,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         if (isRoot && !lookupExists) {
-            code.addStatement(".fetch$L(0, $T.class)", referenceField.isIterableWrapped() || referenceField.hasForwardPagination() ? "" : "One", refObject.getGraphClassName());
+            code.addStatement(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() || referenceField.hasForwardPagination() ? "" : "One", refObject.getGraphClassName());
         } else {
             code
                     .add(".")

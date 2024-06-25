@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.CustomerEmail;
 import fake.graphql.example.model.CustomerInput;
@@ -14,10 +12,9 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
-
 public class QueryDBQueries {
-    public Customer customersNoPageForQuery(DSLContext ctx, String active,
-            String storeId, CustomerInput pin, SelectionSet select) {
+    public Customer customersNoPageForQuery(DSLContext ctx, String active, String storeId,
+            CustomerInput pin, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
@@ -37,9 +34,8 @@ public class QueryDBQueries {
                 .and(pin != null ? CUSTOMER.LAST_NAME.eq(pin.getLastName()) : DSL.noCondition())
                 .and(pin != null && pin.getEmail() != null && pin.getEmail().getPrivateEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getPrivateEmail()) : DSL.noCondition())
                 .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : DSL.noCondition())
-                .fetchOne(0, Customer.class);
+                .fetchOne(it -> it.into(Customer.class));
     }
-
     public List<Customer> customersWithPageForQuery(DSLContext ctx, String active,
             List<Integer> storeIds, CustomerInput pin, Integer pageSize, String after,
             SelectionSet select) {
@@ -65,9 +61,8 @@ public class QueryDBQueries {
                 .orderBy(CUSTOMER.getIdFields())
                 .seek(CUSTOMER.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, Customer.class);
+                .fetch(it -> it.into(Customer.class));
     }
-
     public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
             String after, SelectionSet select) {
         return ctx
@@ -81,9 +76,8 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, Film.class);
+                .fetch(it -> it.into(Film.class));
     }
-
     public Integer countCustomersWithPageForQuery(DSLContext ctx, String active,
             List<Integer> storeIds, CustomerInput pin) {
         return ctx
@@ -97,7 +91,6 @@ public class QueryDBQueries {
                 .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : DSL.noCondition())
                 .fetchOne(0, Integer.class);
     }
-
     public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(DSL.count().as("totalCount"))

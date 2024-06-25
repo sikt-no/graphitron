@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Film;
 import java.lang.Integer;
 import java.lang.String;
@@ -11,7 +9,6 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
-
 public class QueryDBQueries {
     public List<Film> filmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, Integer pageSize, String after, SelectionSet select) {
@@ -29,9 +26,8 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, Film.class);
+                .fetch(it -> it.into(Film.class));
     }
-
     public List<Film> filmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, String description, String title, Integer length,
             Integer pageSize, String after, SelectionSet select) {
@@ -52,9 +48,8 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .seek(FILM.getIdValues(after))
                 .limit(pageSize + 1)
-                .fetch(0, Film.class);
+                .fetch(it -> it.into(Film.class));
     }
-
     public Integer countFilmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID) {
         return ctx
@@ -64,7 +59,6 @@ public class QueryDBQueries {
                 .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : DSL.noCondition())
                 .fetchOne(0, Integer.class);
     }
-
     public Integer countFilmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, String description, String title, Integer length) {
         return ctx
