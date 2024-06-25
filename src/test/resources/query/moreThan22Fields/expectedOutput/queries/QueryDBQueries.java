@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Duration1;
 import fake.graphql.example.model.Duration2;
 import fake.graphql.example.model.Film;
@@ -16,7 +14,6 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
-
 public class QueryDBQueries {
     public List<Film> filmsForQuery(DSLContext ctx, List<String> ids, SelectionSet select) {
         return ctx
@@ -142,6 +139,6 @@ public class QueryDBQueries {
                 .from(FILM)
                 .where(ids.size() > 0 ? FILM.FILM_ID.in(ids) : DSL.noCondition())
                 .orderBy(FILM.getIdFields())
-                .fetch(0, Film.class);
+                .fetch(it -> it.into(Film.class));
     }
 }

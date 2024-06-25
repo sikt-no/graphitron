@@ -1,15 +1,12 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Store;
 import java.lang.String;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
-
 public class QueryDBQueries {
     public Store storeForQuery(DSLContext ctx, String id, String name, SelectionSet select) {
         var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
@@ -25,6 +22,6 @@ public class QueryDBQueries {
                 .where(STORE.ID.eq(id))
                 .and(store_customerstoreidfkey_customer.address().city().NAME.eq(name))
                 .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
-                .fetchOne(0, Store.class);
+                .fetchOne(it -> it.into(Store.class));
     }
 }
