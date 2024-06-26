@@ -17,12 +17,9 @@ public class StoreCustomerGeneratedResolver implements StoreCustomerResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private StoreCustomerDBQueries storeCustomerDBQueries;
-
     @Override
     public CompletableFuture<Customer> customer(StoreCustomer storeCustomer,
                                                 DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load("customerForStoreCustomer", storeCustomer.getId(), (ctx, ids, selectionSet) -> storeCustomerDBQueries.customerForStoreCustomer(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("customerForStoreCustomer", storeCustomer.getId(), (ctx, ids, selectionSet) -> StoreCustomerDBQueries.customerForStoreCustomer(ctx, ids, selectionSet));
     }
 }

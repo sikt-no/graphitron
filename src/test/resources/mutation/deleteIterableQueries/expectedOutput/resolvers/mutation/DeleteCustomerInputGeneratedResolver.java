@@ -19,9 +19,6 @@ public class DeleteCustomerInputGeneratedResolver implements DeleteCustomerInput
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private DeleteCustomerInputDBQueries deleteCustomerInputDBQueries;
-
     @Override
     public CompletableFuture<List<String>> deleteCustomerInput(List<DeleteInput> input,
             DataFetchingEnvironment env) throws Exception {
@@ -31,7 +28,7 @@ public class DeleteCustomerInputGeneratedResolver implements DeleteCustomerInput
 
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = deleteCustomerInputDBQueries.deleteCustomerInput(ctx, inputRecordList);
+        var rowsUpdated = DeleteCustomerInputDBQueries.deleteCustomerInput(ctx, inputRecordList);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

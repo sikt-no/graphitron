@@ -20,7 +20,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, List<Film2>> filmsForInventory(DSLContext ctx, Set<String> inventoryIds,
+    public static Map<String, List<Film2>> filmsForInventory(DSLContext ctx, Set<String> inventoryIds,
                                                       SelectionSet select) {
         return ctx
                 .select(

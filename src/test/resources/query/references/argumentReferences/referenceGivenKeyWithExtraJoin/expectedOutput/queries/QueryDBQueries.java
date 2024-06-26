@@ -9,7 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Address> address0ForQuery(DSLContext ctx, String cityID, String storeID,
+    public static List<Address> address0ForQuery(DSLContext ctx, String cityID, String storeID,
             SelectionSet select) {
         var address_customeraddressidfkey_customer_left = CUSTOMER.as("address_2097104879");
         return ctx
@@ -26,7 +26,7 @@ public class QueryDBQueries {
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(it -> it.into(Address.class));
     }
-    public List<Address> address1ForQuery(DSLContext ctx, String cityID, String storeID,
+    public static List<Address> address1ForQuery(DSLContext ctx, String cityID, String storeID,
             SelectionSet select) {
         var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
         return ctx

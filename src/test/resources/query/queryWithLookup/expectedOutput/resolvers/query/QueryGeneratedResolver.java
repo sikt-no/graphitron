@@ -19,20 +19,17 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<List<Customer>> customers(List<String> storeIds,
             DataFetchingEnvironment env) throws Exception {
         var keys = List.of(storeIds);
-        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> queryDBQueries.customersForQuery(ctx, storeIds, selectionSet));
+        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> QueryDBQueries.customersForQuery(ctx, storeIds, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Country>> countries(List<String> countryNames,
             DataFetchingEnvironment env) throws Exception {
         var keys = List.of(countryNames);
-        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> queryDBQueries.countriesForQuery(ctx, countryNames, selectionSet));
+        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> QueryDBQueries.countriesForQuery(ctx, countryNames, selectionSet));
     }
 }

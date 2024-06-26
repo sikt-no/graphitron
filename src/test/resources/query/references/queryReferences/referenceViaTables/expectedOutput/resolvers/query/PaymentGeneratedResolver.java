@@ -17,12 +17,9 @@ public class PaymentGeneratedResolver implements PaymentResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private PaymentDBQueries paymentDBQueries;
-
     @Override
     public CompletableFuture<Film> film(Payment payment, DataFetchingEnvironment env) throws
             Exception {
-        return new DataFetcher(env, this.ctx).load("filmForPayment", payment.getId(), (ctx, ids, selectionSet) -> paymentDBQueries.filmForPayment(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("filmForPayment", payment.getId(), (ctx, ids, selectionSet) -> PaymentDBQueries.filmForPayment(ctx, ids, selectionSet));
     }
 }

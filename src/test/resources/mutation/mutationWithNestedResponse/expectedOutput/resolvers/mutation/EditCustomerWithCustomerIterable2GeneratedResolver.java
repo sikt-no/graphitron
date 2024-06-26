@@ -26,12 +26,6 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private EditCustomerWithCustomerIterable2DBQueries editCustomerWithCustomerIterable2DBQueries;
-
     @Override
     public CompletableFuture<ListedNodeResponse> editCustomerWithCustomerIterable2(
             List<EditInput> input, DataFetchingEnvironment env) throws Exception {
@@ -42,7 +36,7 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = editCustomerWithCustomerIterable2DBQueries.editCustomerWithCustomerIterable2(ctx, inputRecordList);
+        var rowsUpdated = EditCustomerWithCustomerIterable2DBQueries.editCustomerWithCustomerIterable2(ctx, inputRecordList);
         var inputRecordCustomers = getListedNodeResponseCustomers(ctx, inputRecordList, select);
 
         var listedNodeResponse = new ListedNodeResponse();
@@ -62,6 +56,6 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
             return Map.of();
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customers"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customers"));
     }
 }

@@ -20,18 +20,15 @@ public class FilmGeneratedResolver implements FilmResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private FilmDBQueries filmDBQueries;
-
     @Override
     public CompletableFuture<List<Language>> languages(Film film, List<String> s,
             DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).loadNonNullable("languagesForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.languagesForFilm(ctx, ids, s, selectionSet));
+        return new DataFetcher(env, this.ctx).loadNonNullable("languagesForFilm", film.getId(), (ctx, ids, selectionSet) -> FilmDBQueries.languagesForFilm(ctx, ids, s, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Language>> languagesInput(Film film, In s,
             DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).loadNonNullable("languagesInputForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.languagesInputForFilm(ctx, ids, s, selectionSet));
+        return new DataFetcher(env, this.ctx).loadNonNullable("languagesInputForFilm", film.getId(), (ctx, ids, selectionSet) -> FilmDBQueries.languagesInputForFilm(ctx, ids, s, selectionSet));
     }
 }

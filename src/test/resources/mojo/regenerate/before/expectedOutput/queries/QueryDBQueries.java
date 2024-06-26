@@ -14,7 +14,7 @@ import org.jooq.impl.DSL;
 
 
 public class QueryDBQueries {
-    public List<Film> filmForQuery(DSLContext ctx, Integer releaseYear, SelectionSet select) {
+    public static List<Film> filmForQuery(DSLContext ctx, Integer releaseYear, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

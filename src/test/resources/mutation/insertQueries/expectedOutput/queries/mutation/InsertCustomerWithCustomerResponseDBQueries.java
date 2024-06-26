@@ -6,7 +6,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class InsertCustomerWithCustomerResponseDBQueries {
-    public int insertCustomerWithCustomerResponse(DSLContext ctx, CustomerRecord inputRecord) {
+    public static int insertCustomerWithCustomerResponse(DSLContext ctx, CustomerRecord inputRecord) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);
             return Arrays.stream(transactionCtx.batchInsert(inputRecord).execute()).sum();

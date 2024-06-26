@@ -1,12 +1,16 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers.fetch;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -65,14 +69,14 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
     private CodeBlock codeForImplementation(ObjectField target, ObjectDefinition implementation, String inputFieldName) {
         var queryLocation = asQueryClass(implementation.getName());
-        dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
 
+        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         var dbFunction = CodeBlock.of(
-                "($L, $L, $L) -> $N.load$LBy$LsAs$L($N, $N, $N)",
+                "($L, $L, $L) -> $T.load$LBy$LsAs$L($N, $N, $N)",
                 CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME,
-                uncapitalize(queryLocation),
+                queryClass,
                 implementation.getName(),
                 capitalize(inputFieldName),
                 capitalize(target.getName()),

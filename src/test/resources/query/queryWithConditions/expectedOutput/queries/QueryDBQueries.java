@@ -10,7 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<City> paramConditionForQuery(DSLContext ctx, String countryId,
+    public static List<City> paramConditionForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -27,7 +27,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> paramConditionOverrideForQuery(DSLContext ctx, String countryId,
+    public static List<City> paramConditionOverrideForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -43,7 +43,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> fieldConditionForQuery(DSLContext ctx, String countryId,
+    public static List<City> fieldConditionForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -60,7 +60,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> fieldConditionOverrideForQuery(DSLContext ctx, String countryId,
+    public static List<City> fieldConditionOverrideForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -75,7 +75,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> fieldAndParamConditionForQuery(DSLContext ctx, String countryId,
+    public static List<City> fieldAndParamConditionForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -93,7 +93,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> fieldAndParamConditionOverrideForQuery(DSLContext ctx, String countryId,
+    public static List<City> fieldAndParamConditionOverrideForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -109,7 +109,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, String countryId,
+    public static List<City> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, String countryId,
             List<String> cityNames, SelectionSet select) {
         return ctx
                 .select(
@@ -125,7 +125,7 @@ public class QueryDBQueries {
                 .orderBy(CITY.getIdFields())
                 .fetch(it -> it.into(City.class));
     }
-    public List<City> fieldInputConditionForQuery(DSLContext ctx, String countryId,
+    public static List<City> fieldInputConditionForQuery(DSLContext ctx, String countryId,
             CityInput cityInput, SelectionSet select) {
         return ctx
                 .select(

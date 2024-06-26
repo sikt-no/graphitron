@@ -8,7 +8,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class EditCustomerIterableDBQueries {
-    public int editCustomerIterable(DSLContext ctx, List<String> id,
+    public static int editCustomerIterable(DSLContext ctx, List<String> id,
             List<CustomerRecord> inRecordList) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);

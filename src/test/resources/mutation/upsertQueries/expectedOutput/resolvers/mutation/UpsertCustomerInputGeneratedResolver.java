@@ -17,9 +17,6 @@ public class UpsertCustomerInputGeneratedResolver implements UpsertCustomerInput
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private UpsertCustomerInputDBQueries upsertCustomerInputDBQueries;
-
     @Override
     public CompletableFuture<String> upsertCustomerInput(UpsertInput input,
             DataFetchingEnvironment env) throws Exception {
@@ -29,7 +26,7 @@ public class UpsertCustomerInputGeneratedResolver implements UpsertCustomerInput
 
         var inputRecord = transform.upsertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = upsertCustomerInputDBQueries.upsertCustomerInput(ctx, inputRecord);
+        var rowsUpdated = UpsertCustomerInputDBQueries.upsertCustomerInput(ctx, inputRecord);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

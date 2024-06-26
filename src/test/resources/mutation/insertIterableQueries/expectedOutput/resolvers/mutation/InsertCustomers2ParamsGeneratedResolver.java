@@ -19,9 +19,6 @@ public class InsertCustomers2ParamsGeneratedResolver implements InsertCustomers2
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private InsertCustomers2ParamsDBQueries insertCustomers2ParamsDBQueries;
-
     @Override
     public CompletableFuture<List<String>> insertCustomers2Params(List<InsertInput> input,
             String lastName, DataFetchingEnvironment env) throws Exception {
@@ -31,7 +28,7 @@ public class InsertCustomers2ParamsGeneratedResolver implements InsertCustomers2
 
         var inputRecordList = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = insertCustomers2ParamsDBQueries.insertCustomers2Params(ctx, inputRecordList, lastName);
+        var rowsUpdated = InsertCustomers2ParamsDBQueries.insertCustomers2Params(ctx, inputRecordList, lastName);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

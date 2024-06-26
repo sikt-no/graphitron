@@ -15,7 +15,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Film> filmsForQuery(DSLContext ctx, List<String> ids, SelectionSet select) {
+    public static List<Film> filmsForQuery(DSLContext ctx, List<String> ids, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

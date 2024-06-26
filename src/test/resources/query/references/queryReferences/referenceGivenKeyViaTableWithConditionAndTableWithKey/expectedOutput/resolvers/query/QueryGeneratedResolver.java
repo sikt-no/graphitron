@@ -16,12 +16,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<Store> store(String id, DataFetchingEnvironment env) throws
             Exception {
-        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.storeForQuery(ctx, id, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> QueryDBQueries.storeForQuery(ctx, id, selectionSet));
     }
 }

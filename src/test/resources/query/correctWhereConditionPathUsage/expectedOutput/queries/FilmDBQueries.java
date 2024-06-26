@@ -16,7 +16,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
-    public Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIds,
+    public static Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIds,
                                                         List<String> s, SelectionSet select) {
         return ctx
                 .select(
@@ -32,7 +32,7 @@ public class FilmDBQueries {
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
-    public Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIds,
+    public static Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIds,
                                                              In s, SelectionSet select) {
         return ctx
                 .select(

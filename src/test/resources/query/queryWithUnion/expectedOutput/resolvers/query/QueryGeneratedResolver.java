@@ -23,17 +23,14 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<FilmConnection> films(Integer first, String after,
                                                    DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx),
+                (ctx, selectionSet) -> QueryDBQueries.filmsForQuery(ctx, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countFilmsForQuery(ctx),
                 (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> FilmConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
@@ -50,8 +47,8 @@ public class QueryGeneratedResolver implements QueryResolver {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.inventoryForQuery(ctx, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countInventoryForQuery(ctx),
+                (ctx, selectionSet) -> QueryDBQueries.inventoryForQuery(ctx, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countInventoryForQuery(ctx),
                 (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> InventoryConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());

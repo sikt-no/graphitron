@@ -17,18 +17,15 @@ public class InventoryGeneratedResolver implements InventoryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private InventoryDBQueries inventoryDBQueries;
-
     @Override
     public CompletableFuture<Store> store(Inventory inventory, DataFetchingEnvironment env) throws
             Exception {
-        return new DataFetcher(env, this.ctx).load("storeForInventory", inventory.getId(), (ctx, ids, selectionSet) -> inventoryDBQueries.storeForInventory(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("storeForInventory", inventory.getId(), (ctx, ids, selectionSet) -> InventoryDBQueries.storeForInventory(ctx, ids, selectionSet));
     }
 
     @Override
     public CompletableFuture<Film> film(Inventory inventory, DataFetchingEnvironment env) throws
             Exception {
-        return new DataFetcher(env, this.ctx).load("filmForInventory", inventory.getId(), (ctx, ids, selectionSet) -> inventoryDBQueries.filmForInventory(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("filmForInventory", inventory.getId(), (ctx, ids, selectionSet) -> InventoryDBQueries.filmForInventory(ctx, ids, selectionSet));
     }
 }

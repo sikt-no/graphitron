@@ -9,7 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Customer> customersForQuery(DSLContext ctx, List<String> storeIds,
+    public static List<Customer> customersForQuery(DSLContext ctx, List<String> storeIds,
             SelectionSet select) {
         return ctx
                 .select(

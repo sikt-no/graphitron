@@ -17,12 +17,9 @@ public class InventoryGeneratedResolver implements InventoryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private InventoryDBQueries inventoryDBQueries;
-
     @Override
     public CompletableFuture<List<Actor>> mainActors(Inventory inventory,
             DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).loadNonNullable("mainActorsForInventory", inventory.getId(), (ctx, ids, selectionSet) -> inventoryDBQueries.mainActorsForInventory(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).loadNonNullable("mainActorsForInventory", inventory.getId(), (ctx, ids, selectionSet) -> InventoryDBQueries.mainActorsForInventory(ctx, ids, selectionSet));
     }
 }

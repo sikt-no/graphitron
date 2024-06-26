@@ -9,7 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Address> addressForQuery(DSLContext ctx, String cityID, SelectionSet select) {
+    public static List<Address> addressForQuery(DSLContext ctx, String cityID, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

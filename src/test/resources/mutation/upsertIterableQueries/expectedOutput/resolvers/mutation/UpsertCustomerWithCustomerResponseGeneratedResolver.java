@@ -26,12 +26,6 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private UpsertCustomerWithCustomerResponseDBQueries upsertCustomerWithCustomerResponseDBQueries;
-
     @Override
     public CompletableFuture<List<UpsertResponseWithCustomer>> upsertCustomerWithCustomerResponse(
             List<UpsertInput> input, DataFetchingEnvironment env) throws Exception {
@@ -42,7 +36,7 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
 
         var inputRecordList = transform.upsertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = upsertCustomerWithCustomerResponseDBQueries.upsertCustomerWithCustomerResponse(ctx, inputRecordList);
+        var rowsUpdated = UpsertCustomerWithCustomerResponseDBQueries.upsertCustomerWithCustomerResponse(ctx, inputRecordList);
         var inputRecordCustomer = getUpsertResponseWithCustomerCustomer(ctx, inputRecordList, select);
 
         var upsertResponseWithCustomerList = new ArrayList<UpsertResponseWithCustomer>();
@@ -61,6 +55,6 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
             return Map.of();
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

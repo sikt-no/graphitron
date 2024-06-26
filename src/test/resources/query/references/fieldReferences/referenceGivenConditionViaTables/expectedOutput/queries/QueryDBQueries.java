@@ -8,7 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Rental rentalForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static Rental rentalForQuery(DSLContext ctx, String id, SelectionSet select) {
         var rental_inventory_film_film_filmactor_film_actor = FILM_ACTOR.as("rental_4209375040");
         return ctx
                 .select(

@@ -197,7 +197,6 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         }
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
-        registerQueryDependencies(mapperContext);
         return CodeBlock
                 .builder()
                 .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, context.hasErrorsToHandle(), context.getService(), processedSchema))

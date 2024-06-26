@@ -16,8 +16,6 @@ public class EditCustomerResponse4TypeMapper {
         var select = transform.getSelect();
         var editCustomerResponse4List = new ArrayList<EditCustomerResponse4>();
 
-        var paymentDBQueries = new PaymentDBQueries();
-
         if (editCustomerResponse4 != null) {
             for (var itEditCustomerResponse4 : editCustomerResponse4) {
                 if (itEditCustomerResponse4 == null) continue;
@@ -28,7 +26,7 @@ public class EditCustomerResponse4TypeMapper {
 
                 var payment4 = itEditCustomerResponse4.getPayment4();
                 if (payment4 != null && select.contains(pathHere + "payment")) {
-                    editCustomerResponse4.setPayment(paymentDBQueries.loadPaymentByIdsAsNode(ctx, Set.of(payment4.getId()), select.withPrefix(pathHere + "payment")).values().stream().findFirst().orElse(null));
+                    editCustomerResponse4.setPayment(PaymentDBQueries.loadPaymentByIdsAsNode(ctx, Set.of(payment4.getId()), select.withPrefix(pathHere + "payment")).values().stream().findFirst().orElse(null));
                 }
 
                 editCustomerResponse4List.add(editCustomerResponse4);

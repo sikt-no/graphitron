@@ -15,7 +15,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class CustomerDBQueries {
-    public Map<String, List<Address>> historicalAddressesForCustomer(DSLContext ctx,
+    public static Map<String, List<Address>> historicalAddressesForCustomer(DSLContext ctx,
                                                                      Set<String> customerIds, SelectionSet select) {
         return ctx
                 .select(

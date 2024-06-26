@@ -20,9 +20,6 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditCustomer1DBQueries editCustomer1DBQueries;
-
     @Override
     public CompletableFuture<EditResponse1> editCustomer1(List<String> id, List<EditInput> in,
             DataFetchingEnvironment env) throws Exception {
@@ -32,7 +29,7 @@ public class EditCustomer1GeneratedResolver implements EditCustomer1MutationReso
 
         var inRecordList = transform.editInputToJOOQRecord(in, "in");
 
-        var rowsUpdated = editCustomer1DBQueries.editCustomer1(ctx, id, inRecordList);
+        var rowsUpdated = EditCustomer1DBQueries.editCustomer1(ctx, id, inRecordList);
 
         var editResponse1 = new EditResponse1();
         editResponse1.setId1(id.stream().map(it -> it.getId()).collect(Collectors.toList()));

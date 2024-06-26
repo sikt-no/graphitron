@@ -26,12 +26,6 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private DeleteCustomerWithCustomerResponseDBQueries deleteCustomerWithCustomerResponseDBQueries;
-
     @Override
     public CompletableFuture<List<DeleteResponseWithCustomer>> deleteCustomerWithCustomerResponse(
             List<DeleteInput> input, DataFetchingEnvironment env) throws Exception {
@@ -42,7 +36,7 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
 
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = deleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(ctx, inputRecordList);
+        var rowsUpdated = DeleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(ctx, inputRecordList);
         var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(ctx, inputRecordList, select);
 
         var deleteResponseWithCustomerList = new ArrayList<DeleteResponseWithCustomer>();
@@ -61,6 +55,6 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
             return Map.of();
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

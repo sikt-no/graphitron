@@ -49,7 +49,6 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             } else if (innerContext.shouldUseStandardRecordFetch()) {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (innerContext.hasRecordReference()) {
-                registerQueryDependency(innerField.getTypeName());
                 var fetchCode = createIdFetch(innerField, varName, innerContext.getPath(), false);
                 if (innerContext.isIterable()) {
                     var tempName = asQueryNodeMethod(innerField.getTypeName());

@@ -18,9 +18,6 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditCustomerDBQueries editCustomerDBQueries;
-
     @Override
     public CompletableFuture<EditResponse> editCustomer(String id, EditInput in,
             DataFetchingEnvironment env) throws Exception {
@@ -32,7 +29,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
 
         transform.validate();
 
-        var rowsUpdated = editCustomerDBQueries.editCustomer(ctx, id, inRecord);
+        var rowsUpdated = EditCustomerDBQueries.editCustomer(ctx, id, inRecord);
 
         var editResponse = new EditResponse();
         editResponse.setId(id);

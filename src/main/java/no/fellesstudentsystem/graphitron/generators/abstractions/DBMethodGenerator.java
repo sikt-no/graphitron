@@ -19,6 +19,7 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Record1;
 
+import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -44,6 +45,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
         return super
                 .getDefaultSpecBuilder(methodName, returnType)
+                .addModifiers(Modifier.STATIC)
                 .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME);
     }
 

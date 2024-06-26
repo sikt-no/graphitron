@@ -15,7 +15,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public Map<String, Customer> customersForQuery(DSLContext ctx, List<String> storeIds,
+    public static Map<String, Customer> customersForQuery(DSLContext ctx, List<String> storeIds,
                                                    SelectionSet select) {
         return ctx
                 .select(
@@ -29,7 +29,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Country> countriesForQuery(DSLContext ctx, List<String> countryNames,
+    public static Map<String, Country> countriesForQuery(DSLContext ctx, List<String> countryNames,
                                                    SelectionSet select) {
         return ctx
                 .select(

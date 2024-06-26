@@ -14,7 +14,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
-    public Map<String, Film> sequelForFilm(DSLContext ctx, Set<String> filmIds,
+    public static Map<String, Film> sequelForFilm(DSLContext ctx, Set<String> filmIds,
                                            SelectionSet select) {
         return ctx
                 .select(

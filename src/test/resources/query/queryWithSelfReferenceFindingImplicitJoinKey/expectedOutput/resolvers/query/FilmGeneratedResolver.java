@@ -15,11 +15,8 @@ public class FilmGeneratedResolver implements FilmResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private FilmDBQueries filmDBQueries;
-
     @Override
     public CompletableFuture<Film> sequel(Film film, DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load("sequelForFilm", film.getId(), (ctx, ids, selectionSet) -> filmDBQueries.sequelForFilm(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("sequelForFilm", film.getId(), (ctx, ids, selectionSet) -> FilmDBQueries.sequelForFilm(ctx, ids, selectionSet));
     }
 }

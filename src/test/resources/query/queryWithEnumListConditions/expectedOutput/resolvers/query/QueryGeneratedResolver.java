@@ -20,15 +20,12 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
 
     @Override
     public CompletableFuture<List<Film>> listArgumentNoCondition(List<Rating> ratings,
             String releaseYear, DataFetchingEnvironment env) throws Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.listArgumentNoConditionForQuery(ctx, ratings, releaseYear, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.listArgumentNoConditionForQuery(ctx, ratings, releaseYear, selectionSet)
         );
     }
 
@@ -36,7 +33,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Film>> listArgumentCondition(List<Rating> ratings,
             String releaseYear, DataFetchingEnvironment env) throws Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.listArgumentConditionForQuery(ctx, ratings, releaseYear, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.listArgumentConditionForQuery(ctx, ratings, releaseYear, selectionSet)
         );
     }
 
@@ -44,7 +41,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Film>> listArgumentWithOverrideCondition(List<Rating> ratings,
             String releaseYear, DataFetchingEnvironment env) throws Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.listArgumentWithOverrideConditionForQuery(ctx, ratings, releaseYear, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.listArgumentWithOverrideConditionForQuery(ctx, ratings, releaseYear, selectionSet)
         );
     }
 
@@ -52,7 +49,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Film>> listArgumentAndFieldCondition(List<Rating> ratings,
             String releaseYear, DataFetchingEnvironment env) throws Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.listArgumentAndFieldConditionForQuery(ctx, ratings, releaseYear, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.listArgumentAndFieldConditionForQuery(ctx, ratings, releaseYear, selectionSet)
         );
     }
 
@@ -60,7 +57,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<List<Film>> inputArgumentContainingListCondition(
             RatingFilterInput filter, DataFetchingEnvironment env) throws Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.inputArgumentContainingListConditionForQuery(ctx, filter, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.inputArgumentContainingListConditionForQuery(ctx, filter, selectionSet)
         );
     }
 
@@ -69,7 +66,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<RatingReference> ratings, String releaseYear, DataFetchingEnvironment env) throws
             Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.listArgumentWithEnumDirectiveNoConditionForQuery(ctx, ratings, releaseYear, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.listArgumentWithEnumDirectiveNoConditionForQuery(ctx, ratings, releaseYear, selectionSet)
         );
     }
 
@@ -78,7 +75,7 @@ public class QueryGeneratedResolver implements QueryResolver {
             List<RatingReference> ratings, String releaseYear, DataFetchingEnvironment env) throws
             Exception {
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> queryDBQueries.listArgumentWithEnumDirectiveConditionForQuery(ctx, ratings, releaseYear, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.listArgumentWithEnumDirectiveConditionForQuery(ctx, ratings, releaseYear, selectionSet)
         );
     }
 }

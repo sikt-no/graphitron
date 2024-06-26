@@ -27,12 +27,6 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private DeleteCustomerWithCustomerIterableDBQueries deleteCustomerWithCustomerIterableDBQueries;
-
     @Override
     public CompletableFuture<ListedResponse> deleteCustomerWithCustomerIterable(
             List<EditInput> input, DataFetchingEnvironment env) throws Exception {
@@ -43,7 +37,7 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = deleteCustomerWithCustomerIterableDBQueries.deleteCustomerWithCustomerIterable(ctx, inputRecordList);
+        var rowsUpdated = DeleteCustomerWithCustomerIterableDBQueries.deleteCustomerWithCustomerIterable(ctx, inputRecordList);
         var inputRecordCustomer = getResultCustomer(ctx, inputRecordList, select);
 
         var listedResponse = new ListedResponse();
@@ -65,6 +59,6 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
             return Map.of();
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
     }
 }

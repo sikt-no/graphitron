@@ -15,7 +15,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class AddressDBQueries {
-    public Map<String, List<Store>> stores0ForAddress(DSLContext ctx, Set<String> addressIds,
+    public static Map<String, List<Store>> stores0ForAddress(DSLContext ctx, Set<String> addressIds,
                                                       SelectionSet select) {
         var address_customeraddressidfkey_customer_left = CUSTOMER.as("address_2097104879");
         return ctx
@@ -33,7 +33,7 @@ public class AddressDBQueries {
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
-    public Map<String, List<Store>> stores1ForAddress(DSLContext ctx, Set<String> addressIds,
+    public static Map<String, List<Store>> stores1ForAddress(DSLContext ctx, Set<String> addressIds,
                                                       SelectionSet select) {
         var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
         return ctx

@@ -8,7 +8,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class UpsertCustomer2ParamsDBQueries {
-    public int upsertCustomer2Params(DSLContext ctx, List<CustomerRecord> inputRecordList,
+    public static int upsertCustomer2Params(DSLContext ctx, List<CustomerRecord> inputRecordList,
             String lastName) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);

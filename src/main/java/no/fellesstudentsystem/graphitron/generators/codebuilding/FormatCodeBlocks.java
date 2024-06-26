@@ -12,6 +12,8 @@ import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -449,19 +451,23 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a count DB call.
      */
     @NotNull
-    public static CodeBlock countDBFunction(String queryLocation, String queryMethodName, String inputList, boolean includeContext) {
+    public static CodeBlock countFunction(String queryLocation, String queryMethodName, String inputList, boolean isService) {
         var params = new ArrayList<String>();
+
+        var includeContext = !isService;
         if (includeContext) {
             params.add(CONTEXT_NAME);
         }
         if (!inputList.isEmpty()) {
             params.add(inputList);
         }
+
+        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         return CodeBlock.of(
-                "($L$L) -> $N.count$L($L)",
+                isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
                 includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : empty(),
                 IDS_NAME,
-                uncapitalize(queryLocation),
+                isService ? uncapitalize(queryLocation) : queryClass,
                 capitalize(queryMethodName),
                 String.join(", ", params)
         );
@@ -471,7 +477,7 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryDBFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds, boolean isService) {
+    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds, boolean isService) {
         var inputs = new ArrayList<String>();
         var params = new ArrayList<String>();
         if (!isService) {
@@ -492,7 +498,13 @@ public class FormatCodeBlocks {
             params.add(SELECTION_SET_NAME);
         }
 
-        return CodeBlock.of("($L) -> $N.$L($L)", String.join(", ", inputs), uncapitalize(queryLocation), queryMethodName, String.join(", ", params));
+        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
+        return CodeBlock.of(
+                isService ? "($L) -> $N.$L($L)" : "($L) -> $T.$L($L)",
+                String.join(", ", inputs),
+                isService ? uncapitalize(queryLocation) : queryClass,
+                queryMethodName,
+                String.join(", ", params));
     }
 
     /**
@@ -551,9 +563,10 @@ public class FormatCodeBlocks {
     public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean useExtraGetLayer, boolean isIterable, boolean atResolver) {
         var typeName = field.getTypeName();
         var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForJOOQFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
+        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, asQueryClass(typeName));
         return CodeBlock.of(
-                "$N.$L($N, $L, $L.withPrefix($L))$L$L",
-                uncapitalize(asQueryClass(typeName)),
+                "$T.$L($N, $L, $L.withPrefix($L))$L$L",
+                queryClass,
                 asQueryNodeMethod(typeName),
                 CONTEXT_NAME,
                 isIterable ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),

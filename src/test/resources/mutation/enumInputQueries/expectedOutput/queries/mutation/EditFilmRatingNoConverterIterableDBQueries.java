@@ -7,7 +7,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class EditFilmRatingNoConverterIterableDBQueries {
-    public int editFilmRatingNoConverterIterable(DSLContext ctx, List<FilmRecord> inputRecordList) {
+    public static int editFilmRatingNoConverterIterable(DSLContext ctx, List<FilmRecord> inputRecordList) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);
             return Arrays.stream(transactionCtx.batchUpdate(inputRecordList).execute()).sum();

@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class KullDBQueries {
-    public Map<String, Kull> loadKullByIdsAsReferertNode(DSLContext ctx, Set<String> ids, SelectionSet select) {
+    public static Map<String, Kull> loadKullByIdsAsReferertNode(DSLContext ctx, Set<String> ids, SelectionSet select) {
         return ctx
                 .select(
                         KULL.getId(),

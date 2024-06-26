@@ -17,12 +17,9 @@ public class PaymentGeneratedResolver implements PaymentResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private PaymentDBQueries paymentDBQueries;
-
     @Override
     public CompletableFuture<Language> originalLanguage(Payment payment,
             DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load("originalLanguageForPayment", payment.getId(), (ctx, ids, selectionSet) -> paymentDBQueries.originalLanguageForPayment(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("originalLanguageForPayment", payment.getId(), (ctx, ids, selectionSet) -> PaymentDBQueries.originalLanguageForPayment(ctx, ids, selectionSet));
     }
 }

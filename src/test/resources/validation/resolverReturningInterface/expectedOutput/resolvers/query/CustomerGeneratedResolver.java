@@ -20,12 +20,6 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private AddressDBQueries addressDBQueries;
-
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
     @Override
     public CompletableFuture<Node> nodeRef(Customer customer, String id,
             DataFetchingEnvironment env) throws Exception {
@@ -33,10 +27,10 @@ public class CustomerGeneratedResolver implements CustomerResolver {
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.ADDRESS.getViewId().toString())) {
-            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> addressDBQueries.loadAddressByIdsAsNodeRef(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> AddressDBQueries.loadAddressByIdsAsNodeRef(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.CUSTOMER.getViewId().toString())) {
-            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> customerDBQueries.loadCustomerByIdsAsNodeRef(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> CustomerDBQueries.loadCustomerByIdsAsNodeRef(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }

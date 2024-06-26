@@ -19,9 +19,6 @@ public class EditCustomer2ParamsGeneratedResolver implements EditCustomer2Params
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditCustomer2ParamsDBQueries editCustomer2ParamsDBQueries;
-
     @Override
     public CompletableFuture<List<String>> editCustomer2Params(List<EditInput> input,
             String lastName, DataFetchingEnvironment env) throws Exception {
@@ -31,7 +28,7 @@ public class EditCustomer2ParamsGeneratedResolver implements EditCustomer2Params
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = editCustomer2ParamsDBQueries.editCustomer2Params(ctx, inputRecordList, lastName);
+        var rowsUpdated = EditCustomer2ParamsDBQueries.editCustomer2Params(ctx, inputRecordList, lastName);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

@@ -13,7 +13,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Customer customersNoPageForQuery(DSLContext ctx, String active, String storeId,
+    public static Customer customersNoPageForQuery(DSLContext ctx, String active, String storeId,
             CustomerInput pin, SelectionSet select) {
         return ctx
                 .select(
@@ -36,7 +36,7 @@ public class QueryDBQueries {
                 .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : DSL.noCondition())
                 .fetchOne(it -> it.into(Customer.class));
     }
-    public List<Customer> customersWithPageForQuery(DSLContext ctx, String active,
+    public static List<Customer> customersWithPageForQuery(DSLContext ctx, String active,
             List<Integer> storeIds, CustomerInput pin, Integer pageSize, String after,
             SelectionSet select) {
         return ctx
@@ -63,7 +63,7 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Customer.class));
     }
-    public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
+    public static List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
             String after, SelectionSet select) {
         return ctx
                 .select(
@@ -78,7 +78,7 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Film.class));
     }
-    public Integer countCustomersWithPageForQuery(DSLContext ctx, String active,
+    public static Integer countCustomersWithPageForQuery(DSLContext ctx, String active,
             List<Integer> storeIds, CustomerInput pin) {
         return ctx
                 .select(DSL.count().as("totalCount"))
@@ -91,7 +91,7 @@ public class QueryDBQueries {
                 .and(pin != null && pin.getEmail() != null ? CUSTOMER.EMAIL.eq(pin.getEmail().getWorkEmail()) : DSL.noCondition())
                 .fetchOne(0, Integer.class);
     }
-    public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
+    public static Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(DSL.count().as("totalCount"))
                 .from(FILM)

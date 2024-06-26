@@ -17,18 +17,15 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<List<Address>> address0(String cityID, String storeID,
                                                      DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.address0ForQuery(ctx, cityID, storeID, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> QueryDBQueries.address0ForQuery(ctx, cityID, storeID, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Address>> address1(String cityID, String storeID,
                                                      DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.address1ForQuery(ctx, cityID, storeID, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> QueryDBQueries.address1ForQuery(ctx, cityID, storeID, selectionSet));
     }
 }

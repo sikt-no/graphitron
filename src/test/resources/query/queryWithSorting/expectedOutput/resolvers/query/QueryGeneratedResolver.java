@@ -16,12 +16,9 @@ import org.jooq.DSLContext;
 public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<List<Inventory>> inventories(InventoryOrder order,
                                                           DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.inventoriesForQuery(ctx, order, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> QueryDBQueries.inventoriesForQuery(ctx, order, selectionSet));
     }
 }

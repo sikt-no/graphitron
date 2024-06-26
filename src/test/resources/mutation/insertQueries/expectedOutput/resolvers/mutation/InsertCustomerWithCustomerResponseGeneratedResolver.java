@@ -22,12 +22,6 @@ public class InsertCustomerWithCustomerResponseGeneratedResolver implements Inse
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private InsertCustomerWithCustomerResponseDBQueries insertCustomerWithCustomerResponseDBQueries;
-
     @Override
     public CompletableFuture<InsertResponseWithCustomer> insertCustomerWithCustomerResponse(
             InsertInput input, DataFetchingEnvironment env) throws Exception {
@@ -38,7 +32,7 @@ public class InsertCustomerWithCustomerResponseGeneratedResolver implements Inse
 
         var inputRecord = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = insertCustomerWithCustomerResponseDBQueries.insertCustomerWithCustomerResponse(ctx, inputRecord);
+        var rowsUpdated = InsertCustomerWithCustomerResponseDBQueries.insertCustomerWithCustomerResponse(ctx, inputRecord);
         var inputRecordCustomer = getInsertResponseWithCustomerCustomer(ctx, inputRecord, select);
 
         var insertResponseWithCustomer = new InsertResponseWithCustomer();
@@ -53,6 +47,6 @@ public class InsertCustomerWithCustomerResponseGeneratedResolver implements Inse
             return null;
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
     }
 }

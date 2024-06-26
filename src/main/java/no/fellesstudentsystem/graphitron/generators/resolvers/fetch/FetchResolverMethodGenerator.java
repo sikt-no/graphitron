@@ -80,13 +80,12 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     private CodeBlock queryMethodCalls(ObjectField target, ArrayList<String> allQueryInputs) {
         var localObject = getLocalObject();
         var queryLocation = asQueryClass(localObject.getName());
-        dependencySet.add(new QueryDependency(queryLocation, SAVE_DIRECTORY_NAME));
         var isRoot = localObject.isOperationRoot();
         var hasLookup = LookupHelpers.lookupExists(target, processedSchema);
 
         var inputString = String.join(", ", allQueryInputs);
         var queryMethodName = asQueryMethodName(target.getName(), localObject.getName());
-        var queryFunction = queryDBFunction(queryLocation, queryMethodName, inputString, !isRoot || hasLookup, !isRoot && !hasLookup, false);
+        var queryFunction = queryFunction(queryLocation, queryMethodName, inputString, !isRoot || hasLookup, !isRoot && !hasLookup, false);
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
                     .builder()

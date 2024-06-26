@@ -15,7 +15,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class CustomerDBQueries {
-    public Map<String, Customer> loadCustomerByIdsAsNodeRef(DSLContext ctx, Set<String> ids,
+    public static Map<String, Customer> loadCustomerByIdsAsNodeRef(DSLContext ctx, Set<String> ids,
             SelectionSet select) {
         return ctx
                 .select(

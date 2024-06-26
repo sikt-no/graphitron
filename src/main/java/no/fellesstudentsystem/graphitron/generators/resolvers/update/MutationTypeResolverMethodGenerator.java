@@ -1,10 +1,13 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers.update;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
@@ -25,7 +28,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.getResolverResultName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
-import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -65,12 +67,12 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
     protected CodeBlock generateUpdateMethodCall(ObjectField target) {
         var objectToCall = asQueryClass(target.getName());
-        dependencySet.add(new QueryDependency(capitalize(objectToCall), UpdateDBClassGenerator.SAVE_DIRECTORY_NAME));
 
+        var updateClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + UpdateDBClassGenerator.SAVE_DIRECTORY_NAME, objectToCall);
         return declare(
                 !context.hasService() ? VARIABLE_ROWS : asResultName(target.getUnprocessedFieldOverrideInput()),
-                CodeBlock.of("$N.$L($N, $L)",
-                        uncapitalize(objectToCall),
+                CodeBlock.of("$T.$L($N, $L)",
+                        updateClass,
                         target.getName(), // Method name is expected to be the field's name.
                         VariableNames.CONTEXT_NAME,
                         context.getServiceInputString()
@@ -270,7 +272,6 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      */
     @NotNull
     private CodeBlock createGetMethodCode(ObjectField field, String path, boolean returnTypeIsRecord, boolean isIterable) {
-        dependencySet.add(new QueryDependency(asQueryClass(field.getTypeName()), SAVE_DIRECTORY_NAME));
         var pathHere = path.isEmpty() ? field.getName() : path;
         return CodeBlock
                 .builder()

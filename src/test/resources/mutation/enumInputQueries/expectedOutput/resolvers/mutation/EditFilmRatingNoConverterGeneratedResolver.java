@@ -17,9 +17,6 @@ public class EditFilmRatingNoConverterGeneratedResolver implements EditFilmRatin
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditFilmRatingNoConverterDBQueries editFilmRatingNoConverterDBQueries;
-
     @Override
     public CompletableFuture<Response> editFilmRatingNoConverter(FilmInput1 input,
             DataFetchingEnvironment env) throws Exception {
@@ -29,7 +26,7 @@ public class EditFilmRatingNoConverterGeneratedResolver implements EditFilmRatin
 
         var inputRecord = transform.filmInput1ToJOOQRecord(input, "input");
 
-        var rowsUpdated = editFilmRatingNoConverterDBQueries.editFilmRatingNoConverter(ctx, inputRecord);
+        var rowsUpdated = EditFilmRatingNoConverterDBQueries.editFilmRatingNoConverter(ctx, inputRecord);
 
         var response = new Response();
         response.setId(inputRecord.getId());

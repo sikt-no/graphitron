@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class AddressDBQueries {
-    public Map<String, Address> loadAddressByIdsAsNodeRef(DSLContext ctx, Set<String> ids,
+    public static Map<String, Address> loadAddressByIdsAsNodeRef(DSLContext ctx, Set<String> ids,
             SelectionSet select) {
         return ctx
                 .select(

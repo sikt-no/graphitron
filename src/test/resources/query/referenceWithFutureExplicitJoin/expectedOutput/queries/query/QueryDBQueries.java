@@ -9,7 +9,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Customer customerForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static Customer customerForQuery(DSLContext ctx, String id, SelectionSet select) {
         var customer_address = ADDRESS.as("customer_785790245");
         var customer_customeraddressidfkey_customer = CUSTOMER.as("customer_178761320");
         return ctx

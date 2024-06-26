@@ -17,7 +17,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, List<Rental>> rentalsForInventory(DSLContext ctx, Set<String> inventoryIds,
+    public static Map<String, List<Rental>> rentalsForInventory(DSLContext ctx, Set<String> inventoryIds,
                                                          SelectionSet select) {
         var inventory_rentalinventoryidfkey_rental = RENTAL.as("inventory_1049504228");
         return ctx
@@ -35,7 +35,7 @@ public class InventoryDBQueries {
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Inventory> loadInventoryByIdsAsNode(DSLContext ctx, Set<String> ids,
+    public static Map<String, Inventory> loadInventoryByIdsAsNode(DSLContext ctx, Set<String> ids,
                                                            SelectionSet select) {
         return ctx
                 .select(

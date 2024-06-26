@@ -6,7 +6,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class DeleteCustomerWithCustomerResponseDBQueries {
-    public int deleteCustomerWithCustomerResponse(DSLContext ctx, CustomerRecord inputRecord) {
+    public static int deleteCustomerWithCustomerResponse(DSLContext ctx, CustomerRecord inputRecord) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);
             return Arrays.stream(transactionCtx.batchDelete(inputRecord).execute()).sum();

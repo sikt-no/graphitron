@@ -18,11 +18,8 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
     @Override
     public CompletableFuture<List<Address>> historicalAddresses(Customer customer, DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).loadNonNullable("historicalAddressesForCustomer", customer.getId(), (ctx, ids, selectionSet) -> customerDBQueries.historicalAddressesForCustomer(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).loadNonNullable("historicalAddressesForCustomer", customer.getId(), (ctx, ids, selectionSet) -> CustomerDBQueries.historicalAddressesForCustomer(ctx, ids, selectionSet));
     }
 }

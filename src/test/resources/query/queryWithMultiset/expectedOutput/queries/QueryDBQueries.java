@@ -11,7 +11,7 @@ import org.jooq.Functions;
 import org.jooq.Record1;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Inventory> inventoryForQuery(DSLContext ctx, SelectionSet select) {
+    public static List<Inventory> inventoryForQuery(DSLContext ctx, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

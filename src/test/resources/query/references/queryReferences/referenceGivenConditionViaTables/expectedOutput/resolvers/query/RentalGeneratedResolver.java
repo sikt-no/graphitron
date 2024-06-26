@@ -17,12 +17,9 @@ public class RentalGeneratedResolver implements RentalResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private RentalDBQueries rentalDBQueries;
-
     @Override
     public CompletableFuture<FilmActor> mainActor(Rental rental, DataFetchingEnvironment env) throws
             Exception {
-        return new DataFetcher(env, this.ctx).load("mainActorForRental", rental.getId(), (ctx, ids, selectionSet) -> rentalDBQueries.mainActorForRental(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("mainActorForRental", rental.getId(), (ctx, ids, selectionSet) -> RentalDBQueries.mainActorForRental(ctx, ids, selectionSet));
     }
 }

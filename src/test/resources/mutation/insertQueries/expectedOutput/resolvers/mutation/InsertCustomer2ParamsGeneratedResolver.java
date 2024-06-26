@@ -17,9 +17,6 @@ public class InsertCustomer2ParamsGeneratedResolver implements InsertCustomer2Pa
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private InsertCustomer2ParamsDBQueries insertCustomer2ParamsDBQueries;
-
     @Override
     public CompletableFuture<String> insertCustomer2Params(InsertInput input, String lastName,
             DataFetchingEnvironment env) throws Exception {
@@ -29,7 +26,7 @@ public class InsertCustomer2ParamsGeneratedResolver implements InsertCustomer2Pa
 
         var inputRecord = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = insertCustomer2ParamsDBQueries.insertCustomer2Params(ctx, inputRecord, lastName);
+        var rowsUpdated = InsertCustomer2ParamsDBQueries.insertCustomer2Params(ctx, inputRecord, lastName);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

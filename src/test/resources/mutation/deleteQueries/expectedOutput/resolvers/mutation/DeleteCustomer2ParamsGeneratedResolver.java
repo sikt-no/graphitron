@@ -17,9 +17,6 @@ public class DeleteCustomer2ParamsGeneratedResolver implements DeleteCustomer2Pa
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private DeleteCustomer2ParamsDBQueries deleteCustomer2ParamsDBQueries;
-
     @Override
     public CompletableFuture<String> deleteCustomer2Params(DeleteInput input, String lastName,
             DataFetchingEnvironment env) throws Exception {
@@ -29,7 +26,7 @@ public class DeleteCustomer2ParamsGeneratedResolver implements DeleteCustomer2Pa
 
         var inputRecord = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = deleteCustomer2ParamsDBQueries.deleteCustomer2Params(ctx, inputRecord, lastName);
+        var rowsUpdated = DeleteCustomer2ParamsDBQueries.deleteCustomer2Params(ctx, inputRecord, lastName);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

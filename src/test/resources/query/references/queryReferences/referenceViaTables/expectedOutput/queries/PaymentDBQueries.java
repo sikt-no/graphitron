@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
-    public Map<String, Film> filmForPayment(DSLContext ctx, Set<String> paymentIds,
+    public static Map<String, Film> filmForPayment(DSLContext ctx, Set<String> paymentIds,
                                             SelectionSet select) {
         return ctx
                 .select(

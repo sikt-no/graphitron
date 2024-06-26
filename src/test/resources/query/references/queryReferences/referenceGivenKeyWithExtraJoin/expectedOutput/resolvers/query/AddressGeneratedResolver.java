@@ -17,18 +17,15 @@ public class AddressGeneratedResolver implements AddressResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private AddressDBQueries addressDBQueries;
-
     @Override
     public CompletableFuture<List<Store>> stores0(Address address, DataFetchingEnvironment env)
             throws Exception {
-        return new DataFetcher(env, this.ctx).load("stores0ForAddress", address.getId(), (ctx, ids, selectionSet) -> addressDBQueries.stores0ForAddress(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("stores0ForAddress", address.getId(), (ctx, ids, selectionSet) -> AddressDBQueries.stores0ForAddress(ctx, ids, selectionSet));
     }
 
     @Override
     public CompletableFuture<List<Store>> stores1(Address address, DataFetchingEnvironment env)
             throws Exception {
-        return new DataFetcher(env, this.ctx).loadNonNullable("stores1ForAddress", address.getId(), (ctx, ids, selectionSet) -> addressDBQueries.stores1ForAddress(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).loadNonNullable("stores1ForAddress", address.getId(), (ctx, ids, selectionSet) -> AddressDBQueries.stores1ForAddress(ctx, ids, selectionSet));
     }
 }

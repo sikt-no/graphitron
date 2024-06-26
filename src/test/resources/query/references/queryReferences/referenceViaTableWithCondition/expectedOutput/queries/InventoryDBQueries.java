@@ -15,7 +15,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, List<Actor>> mainActorsForInventory(DSLContext ctx, Set<String> inventoryIds,
+    public static Map<String, List<Actor>> mainActorsForInventory(DSLContext ctx, Set<String> inventoryIds,
                                                            SelectionSet select) {
         var inventory_film_film_filmactor_film_actor = FILM_ACTOR.as("inventory_2747546302");
         return ctx

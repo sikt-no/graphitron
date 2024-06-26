@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class RentalDBQueries {
-    public Map<String, Rental> loadRentalByIdsAsNode(DSLContext ctx, Set<String> ids,
+    public static Map<String, Rental> loadRentalByIdsAsNode(DSLContext ctx, Set<String> ids,
             SelectionSet select) {
         return ctx
                 .select(

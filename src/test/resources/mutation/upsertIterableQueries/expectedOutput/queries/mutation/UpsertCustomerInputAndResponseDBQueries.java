@@ -7,7 +7,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class UpsertCustomerInputAndResponseDBQueries {
-    public int upsertCustomerInputAndResponse(DSLContext ctx,
+    public static int upsertCustomerInputAndResponse(DSLContext ctx,
             List<CustomerRecord> inputRecordList) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);

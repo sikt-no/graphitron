@@ -18,7 +18,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class InventoryDBQueries {
-    public Map<String, Store> storeForInventory(DSLContext ctx, Set<String> inventoryIds,
+    public static Map<String, Store> storeForInventory(DSLContext ctx, Set<String> inventoryIds,
                                                 SelectionSet select) {
         return ctx
                 .select(
@@ -45,7 +45,7 @@ public class InventoryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmForInventory(DSLContext ctx, Set<String> inventoryIds,
+    public static Map<String, Film> filmForInventory(DSLContext ctx, Set<String> inventoryIds,
                                               SelectionSet select) {
         return ctx
                 .select(

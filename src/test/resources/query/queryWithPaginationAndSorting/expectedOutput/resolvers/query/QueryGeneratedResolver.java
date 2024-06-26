@@ -29,17 +29,14 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<FilmConnection> films(String releaseYear, FilmOrder orderBy,
                                                    Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, orderBy, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx, releaseYear),
+                (ctx, selectionSet) -> QueryDBQueries.filmsForQuery(ctx, releaseYear, orderBy, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countFilmsForQuery(ctx, releaseYear),
                 (it) -> orderBy == null ? it.getId() :
                         Map.<String, Function<Film, String>>of(
                                 "LANGUAGE", type -> type.getNested().getNested2().getLanguageId(),
@@ -60,8 +57,8 @@ public class QueryGeneratedResolver implements QueryResolver {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.inventoriesForQuery(ctx, orderBy, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countInventoriesForQuery(ctx),
+                (ctx, selectionSet) -> QueryDBQueries.inventoriesForQuery(ctx, orderBy, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countInventoriesForQuery(ctx),
                 (it) -> orderBy == null ? it.getId() :
                         Map.<String, Function<Inventory, String>>of(
                                 "STORE_ID_FILM_ID", type -> type.getStoreId() + "," + type.getFilmId()

@@ -18,14 +18,11 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<List<Customer>> customer(String id, DataFetchingEnvironment env) throws
             Exception {
         var ctx = ResolverHelpers.selectContext(env, this.ctx);
         var selectionSet = new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));
-        return CompletableFuture.completedFuture(queryDBQueries.customerForQuery(ctx, id, selectionSet));
+        return CompletableFuture.completedFuture(QueryDBQueries.customerForQuery(ctx, id, selectionSet));
     }
 }

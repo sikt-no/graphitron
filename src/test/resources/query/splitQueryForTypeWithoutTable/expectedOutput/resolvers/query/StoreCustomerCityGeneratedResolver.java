@@ -16,12 +16,9 @@ public class StoreCustomerCityGeneratedResolver implements StoreCustomerCityReso
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private StoreCustomerCityDBQueries storeCustomerCityDBQueries;
-
     @Override
     public CompletableFuture<City> city(StoreCustomerCity storeCustomerCity,
                                         DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load("cityForStoreCustomerCity", storeCustomerCity.getId(), (ctx, ids, selectionSet) -> storeCustomerCityDBQueries.cityForStoreCustomerCity(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("cityForStoreCustomerCity", storeCustomerCity.getId(), (ctx, ids, selectionSet) -> StoreCustomerCityDBQueries.cityForStoreCustomerCity(ctx, ids, selectionSet));
     }
 }

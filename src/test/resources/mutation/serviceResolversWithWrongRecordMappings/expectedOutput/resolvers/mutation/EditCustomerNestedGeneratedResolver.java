@@ -19,9 +19,6 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
     @Override
     public CompletableFuture<EditCustomerResponse> editCustomerNested(EditInputLevel1 input,
                                                                       DataFetchingEnvironment env) throws Exception {
@@ -35,7 +32,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
         var editCustomerResponse = new EditCustomerResponse();
 
         if (editCustomerNested != null && transform.getSelect().contains("customer")) {
-            var loadCustomerByIdsAsNode = customerDBQueries.loadCustomerByIdsAsNode(ctx, editCustomerNested.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix("customer"));
+            var loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(ctx, editCustomerNested.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix("customer"));
             editCustomerResponse.setCustomer(editCustomerNested.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()));
         }
 

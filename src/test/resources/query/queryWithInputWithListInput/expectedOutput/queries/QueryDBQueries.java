@@ -11,7 +11,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Customer> customerForQuery(DSLContext ctx, CustomerFilter filter, String storeId,
+    public static List<Customer> customerForQuery(DSLContext ctx, CustomerFilter filter, String storeId,
             SelectionSet select) {
         return ctx
                 .select(

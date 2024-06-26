@@ -20,9 +20,6 @@ public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCu
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private DeleteCustomerInputAndResponseDBQueries deleteCustomerInputAndResponseDBQueries;
-
     @Override
     public CompletableFuture<List<DeleteResponse>> deleteCustomerInputAndResponse(
             List<DeleteInput> input, DataFetchingEnvironment env) throws Exception {
@@ -32,7 +29,7 @@ public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCu
 
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = deleteCustomerInputAndResponseDBQueries.deleteCustomerInputAndResponse(ctx, inputRecordList);
+        var rowsUpdated = DeleteCustomerInputAndResponseDBQueries.deleteCustomerInputAndResponse(ctx, inputRecordList);
 
         var deleteResponseList = new ArrayList<DeleteResponse>();
         for (var itInputRecordList : inputRecordList) {

@@ -10,7 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public City cityForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static City cityForQuery(DSLContext ctx, String id, SelectionSet select) {
         var city_addresscityidfkey_address_left = ADDRESS.as("city_639528019");
         var city_customeraddressidfkey_customer_left = CUSTOMER.as("city_1129650000");
         var city_addresscityidfkey_address = ADDRESS.as("city_3990159062");

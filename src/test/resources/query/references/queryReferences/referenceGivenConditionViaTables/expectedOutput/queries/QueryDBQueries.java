@@ -8,7 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Rental rentalForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static Rental rentalForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

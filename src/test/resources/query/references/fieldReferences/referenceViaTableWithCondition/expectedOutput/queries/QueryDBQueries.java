@@ -8,7 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Inventory inventoryForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static Inventory inventoryForQuery(DSLContext ctx, String id, SelectionSet select) {
         var inventory_film_film_filmactor_film_actor = FILM_ACTOR.as("inventory_2747546302");
         return ctx
                 .select(

@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
-    public Map<String, Language> originalLanguageForPayment(DSLContext ctx, Set<String> paymentIds,
+    public static Map<String, Language> originalLanguageForPayment(DSLContext ctx, Set<String> paymentIds,
                                                             SelectionSet select) {
         return ctx
                 .select(

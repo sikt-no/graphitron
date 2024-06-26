@@ -17,8 +17,6 @@ public class EditCustomerResponse2TypeMapper {
         var select = transform.getSelect();
         var editCustomerResponse2List = new ArrayList<EditCustomerResponse2>();
 
-        var customerDBQueries = new CustomerDBQueries();
-
         if (editCustomerResponse2 != null) {
             for (var itEditCustomerResponse2 : editCustomerResponse2) {
                 if (itEditCustomerResponse2 == null) continue;
@@ -29,12 +27,12 @@ public class EditCustomerResponse2TypeMapper {
 
                 var customer = itEditCustomerResponse2.getCustomer();
                 if (customer != null && select.contains(pathHere + "customer")) {
-                    editCustomerResponse2.setCustomer(customerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(customer.getId()), select.withPrefix(pathHere + "customer")).values().stream().findFirst().orElse(null));
+                    editCustomerResponse2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(customer.getId()), select.withPrefix(pathHere + "customer")).values().stream().findFirst().orElse(null));
                 }
 
                 var customerList = itEditCustomerResponse2.getCustomerList();
                 if (customerList != null && select.contains(pathHere + "customerList")) {
-                    var loadCustomerByIdsAsNode = customerDBQueries.loadCustomerByIdsAsNode(ctx, customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + "customerList"));
+                    var loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(ctx, customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + "customerList"));
                     editCustomerResponse2.setCustomerList(customerList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()));
                 }
 

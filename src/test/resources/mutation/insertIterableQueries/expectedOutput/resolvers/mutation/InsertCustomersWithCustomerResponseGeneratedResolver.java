@@ -26,12 +26,6 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private InsertCustomersWithCustomerResponseDBQueries insertCustomersWithCustomerResponseDBQueries;
-
     @Override
     public CompletableFuture<List<EditResponseWithCustomer>> insertCustomersWithCustomerResponse(
             List<InsertInput> input, DataFetchingEnvironment env) throws Exception {
@@ -42,7 +36,7 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
 
         var inputRecordList = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = insertCustomersWithCustomerResponseDBQueries.insertCustomersWithCustomerResponse(ctx, inputRecordList);
+        var rowsUpdated = InsertCustomersWithCustomerResponseDBQueries.insertCustomersWithCustomerResponse(ctx, inputRecordList);
         var inputRecordCustomer = getEditResponseWithCustomerCustomer(ctx, inputRecordList, select);
 
         var editResponseWithCustomerList = new ArrayList<EditResponseWithCustomer>();
@@ -61,6 +55,6 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
             return Map.of();
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

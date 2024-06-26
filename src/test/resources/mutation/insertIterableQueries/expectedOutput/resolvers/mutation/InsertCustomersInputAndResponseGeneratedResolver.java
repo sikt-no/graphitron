@@ -19,9 +19,6 @@ public class InsertCustomersInputAndResponseGeneratedResolver implements InsertC
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private InsertCustomersInputAndResponseDBQueries insertCustomersInputAndResponseDBQueries;
-
     @Override
     public CompletableFuture<List<EditResponse>> insertCustomersInputAndResponse(
             List<InsertInput> input, DataFetchingEnvironment env) throws Exception {
@@ -31,7 +28,7 @@ public class InsertCustomersInputAndResponseGeneratedResolver implements InsertC
 
         var inputRecordList = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = insertCustomersInputAndResponseDBQueries.insertCustomersInputAndResponse(ctx, inputRecordList);
+        var rowsUpdated = InsertCustomersInputAndResponseDBQueries.insertCustomersInputAndResponse(ctx, inputRecordList);
 
         var editResponseList = new ArrayList<EditResponse>();
         for (var itInputRecordList : inputRecordList) {

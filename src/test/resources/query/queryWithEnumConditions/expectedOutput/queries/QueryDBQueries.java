@@ -12,7 +12,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Film> paramConditionForQuery(DSLContext ctx, Rating rating, String releaseYear,
+    public static List<Film> paramConditionForQuery(DSLContext ctx, Rating rating, String releaseYear,
             SelectionSet select) {
         return ctx
                 .select(
@@ -28,7 +28,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> paramConditionOverrideForQuery(DSLContext ctx, Rating rating,
+    public static List<Film> paramConditionOverrideForQuery(DSLContext ctx, Rating rating,
             String releaseYear, SelectionSet select) {
         return ctx
                 .select(
@@ -43,7 +43,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> fieldConditionForQuery(DSLContext ctx, Rating rating, String releaseYear,
+    public static List<Film> fieldConditionForQuery(DSLContext ctx, Rating rating, String releaseYear,
             SelectionSet select) {
         return ctx
                 .select(
@@ -59,7 +59,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> fieldConditionOverrideForQuery(DSLContext ctx, Rating rating,
+    public static List<Film> fieldConditionOverrideForQuery(DSLContext ctx, Rating rating,
             String releaseYear, SelectionSet select) {
         return ctx
                 .select(
@@ -73,7 +73,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> fieldAndParamConditionForQuery(DSLContext ctx, Rating rating,
+    public static List<Film> fieldAndParamConditionForQuery(DSLContext ctx, Rating rating,
             String releaseYear, SelectionSet select) {
         return ctx
                 .select(
@@ -90,7 +90,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> fieldAndParamConditionOverrideForQuery(DSLContext ctx, Rating rating,
+    public static List<Film> fieldAndParamConditionOverrideForQuery(DSLContext ctx, Rating rating,
             String releaseYear, SelectionSet select) {
         return ctx
                 .select(
@@ -105,7 +105,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, Rating rating,
+    public static List<Film> fieldAndParamConditionOverrideBothForQuery(DSLContext ctx, Rating rating,
             String releaseYear, SelectionSet select) {
         return ctx
                 .select(
@@ -120,7 +120,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> fieldInputConditionForQuery(DSLContext ctx, FilmInput ratingIn,
+    public static List<Film> fieldInputConditionForQuery(DSLContext ctx, FilmInput ratingIn,
             String releaseYear, SelectionSet select) {
         return ctx
                 .select(

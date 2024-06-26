@@ -15,7 +15,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class ProgramStudierettDBQueries {
-    public Map<String, ProgramStudierett> loadProgramStudierettByIdsAsReferertNode(DSLContext ctx, Set<String> ids,
+    public static Map<String, ProgramStudierett> loadProgramStudierettByIdsAsReferertNode(DSLContext ctx, Set<String> ids,
             SelectionSet select) {
         return ctx
                 .select(

@@ -10,7 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Film> filmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
+    public static List<Film> filmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
@@ -28,7 +28,7 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Film> filmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
+    public static List<Film> filmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, String description, String title, Integer length,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
@@ -50,7 +50,7 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Film.class));
     }
-    public Integer countFilmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
+    public static Integer countFilmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID) {
         return ctx
                 .select(DSL.count().as("totalCount"))
@@ -59,7 +59,7 @@ public class QueryDBQueries {
                 .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : DSL.noCondition())
                 .fetchOne(0, Integer.class);
     }
-    public Integer countFilmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
+    public static Integer countFilmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, String description, String title, Integer length) {
         return ctx
                 .select(DSL.count().as("totalCount"))

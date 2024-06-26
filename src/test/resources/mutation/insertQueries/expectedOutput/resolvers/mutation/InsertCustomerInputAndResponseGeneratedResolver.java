@@ -18,9 +18,6 @@ public class InsertCustomerInputAndResponseGeneratedResolver implements InsertCu
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private InsertCustomerInputAndResponseDBQueries insertCustomerInputAndResponseDBQueries;
-
     @Override
     public CompletableFuture<InsertResponse> insertCustomerInputAndResponse(InsertInput input,
             DataFetchingEnvironment env) throws Exception {
@@ -30,7 +27,7 @@ public class InsertCustomerInputAndResponseGeneratedResolver implements InsertCu
 
         var inputRecord = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = insertCustomerInputAndResponseDBQueries.insertCustomerInputAndResponse(ctx, inputRecord);
+        var rowsUpdated = InsertCustomerInputAndResponseDBQueries.insertCustomerInputAndResponse(ctx, inputRecord);
 
         var insertResponse = new InsertResponse();
         insertResponse.setId(inputRecord.getId());

@@ -14,7 +14,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class AddressDBQueries {
-    public Map<String, Store> storeForAddress(DSLContext ctx, Set<String> addressIds, String id,
+    public static Map<String, Store> storeForAddress(DSLContext ctx, Set<String> addressIds, String id,
                                               SelectionSet select) {
         var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
         return ctx

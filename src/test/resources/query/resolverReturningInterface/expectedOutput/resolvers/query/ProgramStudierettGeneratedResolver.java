@@ -20,12 +20,6 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private KullDBQueries kullDBQueries;
-
-    @Inject
-    private ProgramStudierettDBQueries programStudierettDBQueries;
-
     @Override
     public CompletableFuture<Node> referertNode(ProgramStudierett programStudierett, String id,
             DataFetchingEnvironment env) throws Exception {
@@ -33,10 +27,10 @@ public class ProgramStudierettGeneratedResolver implements ProgramStudierettReso
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
         if (tablePartOfId.equals(Tables.KULL.getViewId().toString())) {
-            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> kullDBQueries.loadKullByIdsAsReferertNode(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> KullDBQueries.loadKullByIdsAsReferertNode(ctx, ids, selectionSet));
         }
         if (tablePartOfId.equals(Tables.STUDIERETT.getViewId().toString())) {
-            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> programStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, ids, selectionSet));
+            return DataFetcher.loadInterface(env, tablePartOfId, id, (ids, selectionSet) -> ProgramStudierettDBQueries.loadProgramStudierettByIdsAsReferertNode(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
     }

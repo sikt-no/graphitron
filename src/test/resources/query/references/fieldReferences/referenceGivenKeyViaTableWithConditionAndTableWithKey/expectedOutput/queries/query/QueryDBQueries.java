@@ -8,7 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Store storeForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static Store storeForQuery(DSLContext ctx, String id, SelectionSet select) {
         var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx
                 .select(

@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class StoreDBQueries {
-    public Map<String, City> cityOfMostValuableCustomerForStore(DSLContext ctx,
+    public static Map<String, City> cityOfMostValuableCustomerForStore(DSLContext ctx,
                                                                 Set<String> storeIds, SelectionSet select) {
         var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx

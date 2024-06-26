@@ -17,12 +17,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<List<Film>> film(Integer releaseYear, DataFetchingEnvironment env)
             throws Exception {
-        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.filmForQuery(ctx, releaseYear, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> QueryDBQueries.filmForQuery(ctx, releaseYear, selectionSet));
     }
 }

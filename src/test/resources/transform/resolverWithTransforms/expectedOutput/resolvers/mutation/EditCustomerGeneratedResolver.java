@@ -17,9 +17,6 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditCustomerDBQueries editCustomerDBQueries;
-
     @Override
     public CompletableFuture<String> editCustomer(EndreInput in, DataFetchingEnvironment env) throws
             Exception {
@@ -28,7 +25,7 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
 
         var inRecord = transform.endreInputToJOOQRecord(in, "in");
 
-        var rowsUpdated = editCustomerDBQueries.editCustomer(ctx, inRecord);
+        var rowsUpdated = EditCustomerDBQueries.editCustomer(ctx, inRecord);
 
         return CompletableFuture.completedFuture(inRecord.getId());
     }

@@ -14,7 +14,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class StoreCustomerDBQueries {
-    public Map<String, Customer> customerForStoreCustomer(DSLContext ctx,
+    public static Map<String, Customer> customerForStoreCustomer(DSLContext ctx,
                                                           Set<String> storeCustomerIds, SelectionSet select) {
         var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx

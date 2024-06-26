@@ -7,7 +7,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class EditFilmRatingWithConverterIterableDBQueries {
-    public int editFilmRatingWithConverterIterable(DSLContext ctx,
+    public static int editFilmRatingWithConverterIterable(DSLContext ctx,
             List<FilmRecord> inputRecordList) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);

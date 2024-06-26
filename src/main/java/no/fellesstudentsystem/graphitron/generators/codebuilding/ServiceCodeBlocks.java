@@ -15,6 +15,7 @@ import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -159,7 +160,7 @@ public class ServiceCodeBlocks {
                         target.getOrderField().map(AbstractField::getName).map(orderByField -> !orderByField.equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
         var inputsWithId = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
-        var countFunction = countDBFunction(objectToCall, method, inputsWithId, !isService);
+        var countFunction = countFunction(objectToCall, method, inputsWithId, isService);
         var connectionFunction = connectionFunction(schema.getConnectionObject(target), schema.getObject(CONNECTION_PAGE_INFO_NODE.getName()));
         return dataBlock
                 .add("$N, $L,\n$L,\n$L,\n$L$L,\n$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction(target, schema), transformWrap, connectionFunction)

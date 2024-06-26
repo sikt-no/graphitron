@@ -27,12 +27,6 @@ public class EditCustomerWithCustomerIterableGeneratedResolver implements EditCu
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private EditCustomerWithCustomerIterableDBQueries editCustomerWithCustomerIterableDBQueries;
-
     @Override
     public CompletableFuture<ListedResponse> editCustomerWithCustomerIterable(List<EditInput> input,
             DataFetchingEnvironment env) throws Exception {
@@ -43,7 +37,7 @@ public class EditCustomerWithCustomerIterableGeneratedResolver implements EditCu
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = editCustomerWithCustomerIterableDBQueries.editCustomerWithCustomerIterable(ctx, inputRecordList);
+        var rowsUpdated = EditCustomerWithCustomerIterableDBQueries.editCustomerWithCustomerIterable(ctx, inputRecordList);
         var inputRecordCustomer = getResultCustomer(ctx, inputRecordList, select);
 
         var listedResponse = new ListedResponse();
@@ -65,6 +59,6 @@ public class EditCustomerWithCustomerIterableGeneratedResolver implements EditCu
             return Map.of();
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
     }
 }

@@ -19,9 +19,6 @@ public class EditCustomerInputAndResponseGeneratedResolver implements EditCustom
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditCustomerInputAndResponseDBQueries editCustomerInputAndResponseDBQueries;
-
     @Override
     public CompletableFuture<List<EditResponse>> editCustomerInputAndResponse(List<EditInput> input,
             DataFetchingEnvironment env) throws Exception {
@@ -31,7 +28,7 @@ public class EditCustomerInputAndResponseGeneratedResolver implements EditCustom
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = editCustomerInputAndResponseDBQueries.editCustomerInputAndResponse(ctx, inputRecordList);
+        var rowsUpdated = EditCustomerInputAndResponseDBQueries.editCustomerInputAndResponse(ctx, inputRecordList);
 
         var editResponseList = new ArrayList<EditResponse>();
         for (var itInputRecordList : inputRecordList) {

@@ -21,9 +21,6 @@ public class EditCustomerIterableGeneratedResolver implements EditCustomerIterab
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditCustomerIterableDBQueries editCustomerIterableDBQueries;
-
     @Override
     public CompletableFuture<List<EditResponse>> editCustomerIterable(List<String> id,
             List<EditInput> in, DataFetchingEnvironment env) throws Exception {
@@ -35,7 +32,7 @@ public class EditCustomerIterableGeneratedResolver implements EditCustomerIterab
 
         transform.validate();
 
-        var rowsUpdated = editCustomerIterableDBQueries.editCustomerIterable(ctx, id, inRecordList);
+        var rowsUpdated = EditCustomerIterableDBQueries.editCustomerIterable(ctx, id, inRecordList);
 
         var editResponseList = new ArrayList<EditResponse>();
         for (var itInRecordList : inRecordList) {

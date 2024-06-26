@@ -26,13 +26,10 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<Customer> customersNoPage(String active, String storeId,
             CustomerInput pin, DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> queryDBQueries.customersNoPageForQuery(ctx, active, storeId, pin, selectionSet));
+        return new DataFetcher(env, this.ctx).load((ctx, selectionSet) -> QueryDBQueries.customersNoPageForQuery(ctx, active, storeId, pin, selectionSet));
     }
 
     @Override
@@ -42,8 +39,8 @@ public class QueryGeneratedResolver implements QueryResolver {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin),
+                (ctx, selectionSet) -> QueryDBQueries.customersWithPageForQuery(ctx, active, storeIds, pin, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countCustomersWithPageForQuery(ctx, active, storeIds, pin),
                 (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
@@ -60,8 +57,8 @@ public class QueryGeneratedResolver implements QueryResolver {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx, releaseYear),
+                (ctx, selectionSet) -> QueryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countFilmsForQuery(ctx, releaseYear),
                 (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> QueryFilmConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());

@@ -19,9 +19,6 @@ public class EditFilmRatingWithConverterIterableGeneratedResolver implements Edi
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private EditFilmRatingWithConverterIterableDBQueries editFilmRatingWithConverterIterableDBQueries;
-
     @Override
     public CompletableFuture<ListedResponse> editFilmRatingWithConverterIterable(
             List<FilmInput2> input, DataFetchingEnvironment env) throws Exception {
@@ -31,7 +28,7 @@ public class EditFilmRatingWithConverterIterableGeneratedResolver implements Edi
 
         var inputRecordList = transform.filmInput2ToJOOQRecord(input, "input");
 
-        var rowsUpdated = editFilmRatingWithConverterIterableDBQueries.editFilmRatingWithConverterIterable(ctx, inputRecordList);
+        var rowsUpdated = EditFilmRatingWithConverterIterableDBQueries.editFilmRatingWithConverterIterable(ctx, inputRecordList);
 
         var listedResponse = new ListedResponse();
         listedResponse.setIds(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));

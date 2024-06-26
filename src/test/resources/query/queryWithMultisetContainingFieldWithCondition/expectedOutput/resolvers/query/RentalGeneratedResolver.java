@@ -18,12 +18,9 @@ public class RentalGeneratedResolver implements RentalResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private RentalDBQueries rentalDBQueries;
-
     @Override
     public CompletableFuture<Inventory> inventory(Rental rental, DataFetchingEnvironment env) throws
             Exception {
-        return new DataFetcher(env, this.ctx).load("inventoryForRental", rental.getId(), (ctx, ids, selectionSet) -> rentalDBQueries.inventoryForRental(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("inventoryForRental", rental.getId(), (ctx, ids, selectionSet) -> RentalDBQueries.inventoryForRental(ctx, ids, selectionSet));
     }
 }

@@ -14,7 +14,7 @@ import org.jooq.impl.DSL;
 
 
 public class StoreCustomerCityDBQueries {
-    public Map<String, City> cityForStoreCustomerCity(DSLContext ctx,
+    public static Map<String, City> cityForStoreCustomerCity(DSLContext ctx,
                                                       Set<String> storeCustomerCityIds, SelectionSet select) {
         var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
         return ctx

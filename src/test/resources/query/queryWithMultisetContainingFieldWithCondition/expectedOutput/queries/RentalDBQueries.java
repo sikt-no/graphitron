@@ -17,7 +17,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class RentalDBQueries {
-    public Map<String, Inventory> inventoryForRental(DSLContext ctx, Set<String> rentalIds,
+    public static Map<String, Inventory> inventoryForRental(DSLContext ctx, Set<String> rentalIds,
                                                      SelectionSet select) {
         var film_filmactorfilmidfkey_film_actor = FILM_ACTOR.as("film_518717159");
         return ctx

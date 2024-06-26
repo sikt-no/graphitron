@@ -17,12 +17,9 @@ public class StoreGeneratedResolver implements StoreResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private StoreDBQueries storeDBQueries;
-
     @Override
     public CompletableFuture<City> cityOfMostValuableCustomer(Store store,
             DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load("cityOfMostValuableCustomerForStore", store.getId(), (ctx, ids, selectionSet) -> storeDBQueries.cityOfMostValuableCustomerForStore(ctx, ids, selectionSet));
+        return new DataFetcher(env, this.ctx).load("cityOfMostValuableCustomerForStore", store.getId(), (ctx, ids, selectionSet) -> StoreDBQueries.cityOfMostValuableCustomerForStore(ctx, ids, selectionSet));
     }
 }

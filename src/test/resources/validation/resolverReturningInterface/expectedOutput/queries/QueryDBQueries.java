@@ -13,7 +13,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public List<Customer> customerForQuery(DSLContext ctx, String id, SelectionSet select) {
+    public static List<Customer> customerForQuery(DSLContext ctx, String id, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

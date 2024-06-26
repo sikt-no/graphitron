@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class FilmDBQueries {
-    public Map<String, Film> loadFilmByIdsAsNode(DSLContext ctx, Set<String> ids,
+    public static Map<String, Film> loadFilmByIdsAsNode(DSLContext ctx, Set<String> ids,
             SelectionSet select) {
         return ctx
                 .select(
@@ -29,7 +29,7 @@ public class FilmDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> loadFilmByTitlesAsTitled(DSLContext ctx, Set<String> titles,
+    public static Map<String, Film> loadFilmByTitlesAsTitled(DSLContext ctx, Set<String> titles,
             SelectionSet select) {
         return ctx
                 .select(

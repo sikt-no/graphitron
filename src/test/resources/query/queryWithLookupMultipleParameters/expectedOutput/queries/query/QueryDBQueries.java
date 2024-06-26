@@ -24,7 +24,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public Map<String, Film> filmsForQuery(DSLContext ctx, List<String> titles,
+    public static Map<String, Film> filmsForQuery(DSLContext ctx, List<String> titles,
                                            List<String> releaseYears, List<Integer> durations, List<String> filmId,
                                            SelectionSet select) {
         return ctx
@@ -42,7 +42,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsInputKeysForQuery(DSLContext ctx, FilmWithListKeys in,
+    public static Map<String, Film> filmsInputKeysForQuery(DSLContext ctx, FilmWithListKeys in,
                                                     SelectionSet select) {
         return ctx
                 .select(
@@ -58,7 +58,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsListedInputForQuery(DSLContext ctx, List<FilmWithoutKeys> in,
+    public static Map<String, Film> filmsListedInputForQuery(DSLContext ctx, List<FilmWithoutKeys> in,
                                                       SelectionSet select) {
         return ctx
                 .select(
@@ -82,7 +82,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsInputForQuery(DSLContext ctx, FilmFields in,
+    public static Map<String, Film> filmsInputForQuery(DSLContext ctx, FilmFields in,
                                                 SelectionSet select) {
         return ctx
                 .select(
@@ -98,7 +98,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsNestedInputsForQuery(DSLContext ctx, FilmNestedNoKey in,
+    public static Map<String, Film> filmsNestedInputsForQuery(DSLContext ctx, FilmNestedNoKey in,
                                                        SelectionSet select) {
         return ctx
                 .select(
@@ -115,7 +115,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsNestedInputsAndKeysForQuery(DSLContext ctx, FilmNested in,
+    public static Map<String, Film> filmsNestedInputsAndKeysForQuery(DSLContext ctx, FilmNested in,
                                                               SelectionSet select) {
         return ctx
                 .select(
@@ -132,7 +132,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsNestedListForQuery(DSLContext ctx, FilmNestedList in,
+    public static Map<String, Film> filmsNestedListForQuery(DSLContext ctx, FilmNestedList in,
                                                      SelectionSet select) {
         return ctx
                 .select(
@@ -157,7 +157,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsNestedListWithKeysForQuery(DSLContext ctx,
+    public static Map<String, Film> filmsNestedListWithKeysForQuery(DSLContext ctx,
                                                              FilmNestedWithKeyList in, SelectionSet select) {
         return ctx
                 .select(
@@ -182,7 +182,7 @@ public class QueryDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public Map<String, Film> filmsNullableNestedListForQuery(DSLContext ctx,
+    public static Map<String, Film> filmsNullableNestedListForQuery(DSLContext ctx,
                                                              FilmNullableNestedList in, SelectionSet select) {
         return ctx
                 .select(

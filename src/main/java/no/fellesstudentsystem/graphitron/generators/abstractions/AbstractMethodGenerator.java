@@ -81,41 +81,4 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
 
         return wrapListIf(typeClass, field.isIterableWrapped());
     }
-
-    protected void registerQueryDependency(String fieldType) {
-        dependencySet.add(new QueryDependency(asQueryClass(fieldType), SAVE_DIRECTORY_NAME));
-    }
-
-    protected void registerQueryDependencies(MapperContext mapperContext) {
-        registerQueryDependencies(mapperContext, new HashSet<>(), 0);
-    }
-
-    protected void registerQueryDependencies(MapperContext mapperContext, HashSet<String> seenTypes, int recursion) {
-        recursionCheck(recursion);
-        if (!mapperContext.targetIsType() || seenTypes.contains(mapperContext.getTargetType().getName())) {
-            return;
-        }
-
-        seenTypes.add(mapperContext.getTargetType().getName());
-
-        mapperContext
-                .getTargetType()
-                .getFields()
-                .stream()
-                .filter(it -> !it.isExplicitlyNotGenerated())
-                .forEach(innerField -> {
-                    var innerContext = mapperContext.iterateContext(innerField);
-                    if (
-                            !innerContext.shouldUseException()
-                                    && !innerContext.getPreviousContext().hasRecordReference()
-                                    && innerContext.targetIsType()
-                                    && !innerContext.shouldUseStandardRecordFetch()
-                                    && innerContext.hasRecordReference()
-                    ) {
-                        registerQueryDependency(innerField.getTypeName());
-                    } else {
-                        registerQueryDependencies(innerContext, seenTypes, recursion + 1);
-                    }
-                });
-    }
 }

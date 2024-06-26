@@ -21,17 +21,14 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private QueryDBQueries queryDBQueries;
-
     @Override
     public CompletableFuture<FilmConnection> films(String releaseYear, Integer first, String after,
                                                    DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
         return new DataFetcher(env, this.ctx).loadPaginated(
                 pageSize, 1000,
-                (ctx, selectionSet) -> queryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet),
-                (ctx, ids) -> queryDBQueries.countFilmsForQuery(ctx, releaseYear),
+                (ctx, selectionSet) -> QueryDBQueries.filmsForQuery(ctx, releaseYear, pageSize, after, selectionSet),
+                (ctx, ids) -> QueryDBQueries.countFilmsForQuery(ctx, releaseYear),
                 (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> FilmConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());

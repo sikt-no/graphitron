@@ -10,7 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
+    public static List<Film> filmsForQuery(DSLContext ctx, String releaseYear, Integer pageSize,
             String after, SelectionSet select) {
         return ctx
                 .select(
@@ -26,7 +26,7 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Film.class));
     }
-    public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
+    public static Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(DSL.count().as("totalCount"))
                 .from(FILM)

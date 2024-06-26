@@ -23,12 +23,6 @@ public class EditCustomerWithCustomerGeneratedResolver implements EditCustomerWi
     @Inject
     DSLContext ctx;
 
-    @Inject
-    private CustomerDBQueries customerDBQueries;
-
-    @Inject
-    private EditCustomerWithCustomerDBQueries editCustomerWithCustomerDBQueries;
-
     @Override
     public CompletableFuture<Response> editCustomerWithCustomer(EditInput input,
             DataFetchingEnvironment env) throws Exception {
@@ -39,7 +33,7 @@ public class EditCustomerWithCustomerGeneratedResolver implements EditCustomerWi
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = editCustomerWithCustomerDBQueries.editCustomerWithCustomer(ctx, inputRecord);
+        var rowsUpdated = EditCustomerWithCustomerDBQueries.editCustomerWithCustomer(ctx, inputRecord);
         var inputRecordCustomer = getResultCustomer(ctx, inputRecord, select);
 
         var response = new Response();
@@ -57,6 +51,6 @@ public class EditCustomerWithCustomerGeneratedResolver implements EditCustomerWi
             return null;
         }
 
-        return customerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("results/customer")).values().stream().findFirst().orElse(null);
+        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("results/customer")).values().stream().findFirst().orElse(null);
     }
 }

@@ -19,7 +19,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public List<Film> filmsForQuery(DSLContext ctx, String releaseYear, FilmOrder orderBy,
+    public static List<Film> filmsForQuery(DSLContext ctx, String releaseYear, FilmOrder orderBy,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
@@ -52,7 +52,7 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Film.class));
     }
-    public List<Inventory> inventoriesForQuery(DSLContext ctx, InventoryOrder orderBy,
+    public static List<Inventory> inventoriesForQuery(DSLContext ctx, InventoryOrder orderBy,
             Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(
@@ -76,14 +76,14 @@ public class QueryDBQueries {
                 .limit(pageSize + 1)
                 .fetch(it -> it.into(Inventory.class));
     }
-    public Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
+    public static Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
                 .select(DSL.count().as("totalCount"))
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);
     }
-    public Integer countInventoriesForQuery(DSLContext ctx) {
+    public static Integer countInventoriesForQuery(DSLContext ctx) {
         return ctx
                 .select(DSL.count().as("totalCount"))
                 .from(INVENTORY)

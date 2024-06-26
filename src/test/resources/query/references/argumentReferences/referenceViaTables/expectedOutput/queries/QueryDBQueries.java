@@ -8,7 +8,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public Payment paymentForQuery(DSLContext ctx, String id, String title, SelectionSet select) {
+    public static Payment paymentForQuery(DSLContext ctx, String id, String title, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(

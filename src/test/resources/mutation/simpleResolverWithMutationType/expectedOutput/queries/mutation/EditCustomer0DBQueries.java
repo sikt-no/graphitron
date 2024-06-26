@@ -7,7 +7,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 public class EditCustomer0DBQueries {
-    public int editCustomer0(DSLContext ctx, String id, CustomerRecord inRecord) {
+    public static int editCustomer0(DSLContext ctx, String id, CustomerRecord inRecord) {
         return ctx.transactionResult(configuration ->  {
             DSLContext transactionCtx = DSL.using(configuration);
             return Arrays.stream(transactionCtx.batchUpdate(inRecord).execute()).sum();

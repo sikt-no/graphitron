@@ -88,7 +88,7 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
         var isRoot = localObject.isOperationRoot();
 
         var inputString = String.join(", ", allQueryInputs);
-        var queryFunction = queryDBFunction(objectToCall, serviceMethod, inputString, !isRoot, !isRoot, true);
+        var queryFunction = queryFunction(objectToCall, serviceMethod, inputString, !isRoot, !isRoot, true);
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = object != null
                 ? CodeBlock.of("($L, $L) -> $L", TRANSFORMER_NAME, RESPONSE_NAME, transformRecord(RESPONSE_NAME, object.getName(), "", object.hasJavaRecordReference()))
@@ -118,7 +118,6 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
         }
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
-        registerQueryDependencies(mapperContext);
         return code
                 .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, false, service, processedSchema)) // Errors not handled for fetch yet.
                 .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
@@ -149,4 +148,5 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
                 ? fieldStream.allMatch(GenerationField::isGeneratedWithResolver)
                 : fieldStream.filter(GenerationField::hasServiceReference).allMatch(f -> !f.isResolver() || f.isGeneratedWithResolver());
     }
+
 }
