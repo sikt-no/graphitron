@@ -6,6 +6,7 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Fake service for service tests. Does not need to return meaningful values as only the generated result is tested.
@@ -45,7 +46,7 @@ public class TestFetchCustomerService {
         return null;
     }
 
-    public List<AddressRecord> historicalAddresses(List<String> ids, int pageSize, String after) {
+    public Map<String, AddressRecord> historicalAddresses(List<String> ids, int pageSize, String after) {
         return null;
     }
 

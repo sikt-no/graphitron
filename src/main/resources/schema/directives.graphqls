@@ -11,8 +11,9 @@ directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_
 directive @table(name: String) on OBJECT | INPUT_OBJECT
 
 """
-The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ column in the related jOOQ table (set by @table).
-This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the table.
+The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ table record field
+in the related jOOQ table (set by @table), or a field in a Java record if that is used instead.
+This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the record.
 """
 directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
@@ -20,8 +21,8 @@ directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPU
 directive @enum(enumReference: ExternalCodeReference!) on ENUM
 
 """
-Use an external service to do the mutation operation.
-The signature of the method must match the inputs of the mutation.
+Use an external service to do the DB-operations.
+The signature of the method must match the inputs of the mutation or query.
 Available values are set in the plugin configuration.
 """
 directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
@@ -77,7 +78,7 @@ directive @orderBy on ARGUMENT_DEFINITION
 """Connect this enum value to an index with the given name"""
 directive @index(name: String) on ENUM_VALUE
 
-"""Wrap type in the given record."""
+"""Wrap type in the given Java record. Currently, this can only be used with services."""
 directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 
 """Temporary directive annotating that this object should be fetched by IDs rather than be set from user-defined records."""

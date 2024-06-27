@@ -581,14 +581,24 @@ that compiles, but will always fail when executed.
 Note that mutations need either the **mutationType** or the **service** directive set, but not both, in order to be generated.
 Mutations that should not be generated should have the **notGenerated** directive set.
 
-### Mutation services
+### Services
 More complex cases are supported through the **service** directive. It points to a class [entry](#code-references)
 in the POM XML. The method is either specified through the directive or assumed to be the same as the field name.
 The directive invokes the creation of code that calls the specified class, rather than generating a query automatically.
 This allows the use of multiple record types at once, more complex return types and a certain level of exception handling.
 
+Note that any directives that would usually alter the database operation (such as conditions) will be ignored for services.
+
 _Schema:_
 ```graphql
+type Query {
+  getCustomer: Customer! @service(service: {name: "SERVICE_CUSTOMER"})
+
+  fetchCustomer(
+    id: ID! # Input types are not yet supported here.
+  ): Customer! @service(service: {name: "SERVICE_CUSTOMER", method: "getCustomer"}) # Example of a case where the method name does not match the field name.
+}
+
 type Mutation {
   editCustomer1(
     # someValue: String # It is also allowed to put an extra input here when using services.
@@ -610,7 +620,8 @@ input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ t
 Multiple layers of input types are also supported, but comes with its own limitations.
 Most notably, all records are sent to the service as a flat list of unorganised parameters,
 meaning that all the hierarchy information is lost when reading them in the service.
-It is therefore recommended to avoid using this feature. The following example will illustrate this limitation.
+It is therefore recommended to avoid using this feature, and use [Java records](#input-types-with-java-records) instead.
+The following example will illustrate this limitation.
 
 _Schema_:
 ```graphql
@@ -622,6 +633,7 @@ input InputA @table {
 
 input InputB @table { ... }
 ```
+This is currently only supported for use with mutations.
 
 _Generated code_:
 ```java
@@ -647,6 +659,7 @@ input EditCustomerInput @record(record: {name: "JAVA_RECORD_CUSTOMER"}) { # @rec
   first: String @field(name: "FIRST_NAME") # We need a method with the name "setFirstName" in the record class. Overridden by @field.
 }
 ```
+This is currently only supported for use with mutations.
 
 _Required service code_:
 ```java
@@ -657,7 +670,7 @@ public class CustomerService {
 ```
 
 #### Response mapping
-By default, Graphitron inspects the return type of the service method to decide how it should be mapped to the
+By default, Graphitron inspects the return type of the service method for mutations to decide how it should be mapped to the
 schema response type.
 
 * If the mutation returns a node type and the method returns a jOOQ record, the ID assumed to be in the record is used
@@ -690,13 +703,65 @@ public class CustomerService {
 }
 ```
 
+When working with queries, this is somewhat more rigid and there are rules that services must follow.
+* If the query is a top level query in the Query type, one or a list of records corresponding to the fetched type is
+  expected as the return type. In other words, it is what one would expect from the schema definition.
+* Queries that are not top level must return a map. The map should use the record ID as key, and the value corresponds
+  to the return type in the previous point. In other words, wrap the top level case in a map.
+
+These rules vary slightly when using pagination.
+All paginated fields are treated as listed, but otherwise behave as the points above indicated.
+* For the top level queries, it should return a list.
+* If the query is not at the top level it should return a map with the ID as key and the value should be set to a list of records.
+
+In contrast with input types, output type mapping works for both queries and mutations.
+
+Schema pagination wrapping is handled automatically, but pagination parameters must be manually applied to any queries
+that are used in the service.
+
+_Schema:_
+```graphql
+type Query {
+  getCustomer(id: ID!): CustomerWrapper! @service(service: {name: "SERVICE_CUSTOMER"})
+  getCustomerPaginated(id: ID!, first: Int = 100, after: String): CustomerWrapperConnection! @service(service: {name: "SERVICE_CUSTOMER"})
+}
+
+type CustomerWrapperConnection { … }
+
+type CustomerWrapperConnectionEdge { … }
+
+type CustomerWrapper @record(record: {name: "JAVA_RECORD_CUSTOMER_WRAPPER"}) {
+  id: ID! # We need a method with the name "getId" in the record class.
+  first: String @field(name: "FIRST_NAME") # We need a method with the name "getFirstName" in the record class. Overridden by @field.
+  customer: Customer # Some node type.
+}
+```
+
+_Required service code_:
+```java
+public class CustomerService {
+    public JavaCustomerWrapper getCustomer(String id) { … }
+    public List<JavaCustomerWrapper> getCustomerPaginated(String id, int pageSize, String after) { … }
+}
+```
+
+If the queries were placed on a query not in the Query type:
+
+_Required service code_:
+```java
+public class CustomerService {
+    public Map<String, JavaCustomerWrapper> getCustomer(String id) { … }
+    public Map<String, List<JavaCustomerWrapper>> getCustomerPaginated(String id, int pageSize, String after) { … }
+}
+```
+
 Nesting of return types is also allowed.
 This example shows the more complex case, where two nested custom return record classes are used.
 Such a setup can also be applied to input types.
 
 _Schema_:
 ```graphql
-edit(id: ID!): ReturnA! @service(service: {name: "EDIT_SERVICE"})
+something(id: ID!): ReturnA! @service(service: {name: "SOMETHING_SERVICE"}) # Query or mutation.
 
 type ReturnA @record(record: {name: "RECORD_A"}) {
   returnB: ReturnB
@@ -709,8 +774,8 @@ type ReturnB @record(record: {name: "RECORD_B"}) {
 
 _Required service code_:
 ```java
-public class EditSomethingService {
-    public ReturnA edit(String id) { … } // The service method that should be called. Note that the 'id' here corresponds to the 'id' in the schema.
+public class SomethingService {
+    public ReturnA something(String id) { … } // The service method that should be called. Note that the 'id' here corresponds to the 'id' in the schema.
 }
 ```
 
