@@ -23,9 +23,11 @@ public class GraphQLGeneratorQueryServiceTest extends TestCommon {
     private final List<ExternalClassReference> references = List.of(
             new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
             new ExternalClassReference("TEST_FETCH_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestFetchCustomerService"),
+            new ExternalClassReference("TEST_FETCH_CITY", "no.fellesstudentsystem.graphitron.services.TestFetchCustomerService"),
             new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord"),
             new ExternalClassReference("TEST_ADDRESS_RECORD", "no.fellesstudentsystem.graphitron.records.TestAddressRecord"),
-            new ExternalClassReference("TEST_CITY_RECORD", "no.fellesstudentsystem.graphitron.records.TestCityRecord")
+            new ExternalClassReference("TEST_CITY_RECORD", "no.fellesstudentsystem.graphitron.records.TestCityRecord"),
+            new ExternalClassReference("TEST_ID_RECORD", "no.fellesstudentsystem.graphitron.records.TestIDRecord")
     );
 
     public GraphQLGeneratorQueryServiceTest() {
@@ -64,6 +66,11 @@ public class GraphQLGeneratorQueryServiceTest extends TestCommon {
     @Test
     void generate_queryWithService_shouldGenerateMappersAndCallSimpleServices() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithService");
+    }
+
+    @Test
+    void generate_queryWithService_shouldGenerateMappersForServicesInResolvers() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithServiceAndNestedResolvers");
     }
 
     @Test

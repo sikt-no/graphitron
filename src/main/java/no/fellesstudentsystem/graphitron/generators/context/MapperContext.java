@@ -295,7 +295,7 @@ public class MapperContext {
 
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
         var code = CodeBlock.builder();
-        if (isIterable) {
+        if (isIterable && hasSourceName()) {
             if (isResolver || isValidation) {
                 code.add(declare(asIterable(sourceName), CodeBlock.of("$N.get($N)", formatSourceForIndexLoop(), getIndexName())));
             }
@@ -321,13 +321,15 @@ public class MapperContext {
             return isIterable ? wrapForIndexed(sourceName, code.build()) : code.build();
         }
 
-        if (!isValidation && isIterable && (!mapsJavaRecord || hasRecordReference)) {
-            code.add(addToList(targetName));
-        } else if (isValidation && previousContext.isInitContext) {
-            code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VARIABLE_VALIDATION_ERRORS, RECORD_VALIDATOR.className, asIterableIf(sourceName, isIterable), VARIABLE_PATHS_FOR_PROPERTIES, VARIABLE_ENV);
+        if (hasSourceName()) {
+            if (!isValidation && isIterable && (!mapsJavaRecord || hasRecordReference)) {
+                code.add(addToList(targetName));
+            } else if (isValidation && previousContext.isInitContext) {
+                code.addStatement("$N.addAll($T.validatePropertiesAndGenerateGraphQLErrors($N, $N, $N))", VARIABLE_VALIDATION_ERRORS, RECORD_VALIDATOR.className, asIterableIf(sourceName, isIterable), VARIABLE_PATHS_FOR_PROPERTIES, VARIABLE_ENV);
+            }
         }
 
-        var forCode = CodeBlock.builder().add(isIterable ? (isValidation ? wrapForIndexed(asListedName(sourceName), code.build()): wrapFor(sourceName, code.build())) : code.build());
+        var forCode = CodeBlock.builder().add(isIterable && hasSourceName() ? (isValidation ? wrapForIndexed(asListedName(sourceName), code.build()): wrapFor(sourceName, code.build())) : code.build());
         if (isValidation || !previousContext.isInitContext && (toRecord || !mapsJavaRecord)) {
             return forCode.build();
         }
@@ -338,7 +340,7 @@ public class MapperContext {
 
         return CodeBlock
                 .builder()
-                .add(wrapNotNull(sourceName, forCode.build()))
+                .add(hasSourceName() ? wrapNotNull(sourceName, forCode.build()) : forCode.build())
                 .add(toRecord && !mapsJavaRecord ? applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS) : empty()) // Note: This is done after records are filled.
                 .build();
     }

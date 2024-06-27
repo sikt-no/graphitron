@@ -776,7 +776,6 @@ public class ProcessedSchema {
             query
                     .getFields()
                     .stream()
-                    .filter(GenerationField::hasServiceReference)
                     .flatMap(field -> findTransformableFields(field, false).stream())
                     .forEach(fields::add);
         }
@@ -835,7 +834,7 @@ public class ProcessedSchema {
                         seen,
                         isMutation,
                         canMapTableHere && !(hadTable || type.hasTable()),
-                        !canMapTableHere && (hadTable || type.hasTable()),
+                        !canMapTableHere && (hadTable || type.hasTable()) && !it.isResolver(),
                         recursion + 1
                 ).stream()).collect(Collectors.toList())
         );

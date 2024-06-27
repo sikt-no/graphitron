@@ -25,6 +25,6 @@ public class QueryDBQueries {
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .orderBy(FILM.getIdFields())
-                .fetch(0, Film.class);
+                 .fetch(it -> it.into(Film.class));
     }
 }

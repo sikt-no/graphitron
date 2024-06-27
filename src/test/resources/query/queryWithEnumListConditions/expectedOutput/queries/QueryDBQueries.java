@@ -1,6 +1,8 @@
 package fake.code.generated.queries.query;
+
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+
 import fake.graphql.example.model.Film;
 import fake.graphql.example.model.Rating;
 import fake.graphql.example.model.RatingFilterInput;
@@ -14,6 +16,7 @@ import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
+
 public class QueryDBQueries {
     public static List<Film> listArgumentNoConditionForQuery(DSLContext ctx, List<Rating> ratings,
             String releaseYear, SelectionSet select) {
@@ -30,6 +33,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
+
     public static List<Film> listArgumentConditionForQuery(DSLContext ctx, List<Rating> ratings,
             String releaseYear, SelectionSet select) {
         return ctx
@@ -46,6 +50,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
+
     public static List<Film> listArgumentWithOverrideConditionForQuery(DSLContext ctx,
             List<Rating> ratings, String releaseYear, SelectionSet select) {
         return ctx
@@ -61,6 +66,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
+
     public static List<Film> listArgumentAndFieldConditionForQuery(DSLContext ctx, List<Rating> ratings,
             String releaseYear, SelectionSet select) {
         return ctx
@@ -77,6 +83,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
+
     public static List<Film> inputArgumentContainingListConditionForQuery(DSLContext ctx,
             RatingFilterInput filter, SelectionSet select) {
         return ctx
@@ -92,6 +99,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
+
     public static List<Film> listArgumentWithEnumDirectiveNoConditionForQuery(DSLContext ctx,
             List<RatingReference> ratings, String releaseYear, SelectionSet select) {
         return ctx
@@ -107,6 +115,7 @@ public class QueryDBQueries {
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));
     }
+
     public static List<Film> listArgumentWithEnumDirectiveConditionForQuery(DSLContext ctx,
             List<RatingReference> ratings, String releaseYear, SelectionSet select) {
         return ctx

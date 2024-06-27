@@ -1,0 +1,44 @@
+type Query {
+  customersQuery: Customer
+}
+
+type Customer implements Node @table {
+  id: ID!
+  historicalAddresses: [Address!]! @splitQuery
+}
+
+type Address implements Node @table {
+  id: ID!
+  city: City @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
+  cityPaginated(first: String, after: Int): CityConnection @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
+  recordCity: RecordCity @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
+  recordCityPaginated(first: String, after: Int): RecordCityConnection @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
+}
+
+type CityConnection {
+  edges: [CityConnectionEdge]
+  nodes: [City!]!
+}
+
+type CityConnectionEdge {
+  cursor: String
+  node: City
+}
+
+type RecordCityConnection {
+  edges: [RecordCityConnectionEdge]
+  nodes: [RecordCity!]!
+}
+
+type RecordCityConnectionEdge {
+  cursor: String
+  node: RecordCity
+}
+
+type City implements Node @table {
+  id: ID!
+}
+
+type RecordCity @record(record: {name: "TEST_ID_RECORD"}) {
+  id: ID!
+}

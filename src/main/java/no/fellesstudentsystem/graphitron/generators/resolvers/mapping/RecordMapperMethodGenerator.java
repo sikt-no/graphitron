@@ -74,7 +74,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
             }
         }
 
-        return context.hasSourceName() ? context.wrapFields(fieldCode.build()) : fieldCode.build();
+        return context.wrapFields(fieldCode.build());
     }
 
     @Override

@@ -8,7 +8,7 @@ import org.jooq.DSLContext;
 import java.util.List;
 
 /**
- * Fake service for mutation tests. Does not need to return meaningful values as only the generated result is tested.
+ * Fake service for service tests. Does not need to return meaningful values as only the generated result is tested.
  */
 public class TestFetchCustomerService {
     private final DSLContext context;
