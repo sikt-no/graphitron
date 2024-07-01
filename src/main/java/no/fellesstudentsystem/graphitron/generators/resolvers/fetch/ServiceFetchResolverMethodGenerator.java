@@ -119,7 +119,7 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
         return code
-                .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, false, service, processedSchema)) // Errors not handled for fetch yet.
+                .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, service, processedSchema))
                 .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
                 .build();
     }

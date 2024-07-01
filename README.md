@@ -827,12 +827,6 @@ In this instance, certain exceptions are mapped to be handled as _MyError_. The 
 - `matches` - Can be used to specify a string that the exception message must contain in order to be handled.
 - `description` - A description of the error to be returned to the user. If not provided, the exception message will be used instead.
 
-##### deprecated error handling for services
-The `@error` directive also supports an `error` parameter that can be used to specify an external code reference. 
-This is deprecated and will be replaced by an enhanced version of the handlers based method described above.
-The error reference must be in the response type to be automatically mapped, and it must refer to an [entry](#code-references)
-in the POM XML. Only the first error to be thrown will be returned, as this uses a try-catch to map which error should be returned.
-
 _Schema_:
 ```graphql
 type Mutation {

@@ -25,10 +25,15 @@ public class EditCustomerInput2GeneratedResolver implements EditCustomerInput2Mu
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input", "input");
 
+
         transform.validate();
         var editCustomerInput2 = testCustomerService.editCustomerInputAndResponse(inputRecord);
 
-        var editCustomerResponse2 = transform.editCustomerResponse2ToGraphType(editCustomerInput2, "");
+        var editCustomerResponse2 = new EditCustomerResponse2();
+
+        if (editCustomerInput2 != null && transform.getSelect().contains("id")) {
+            editCustomerResponse2.setId(editCustomerInput2);
+        }
 
         return CompletableFuture.completedFuture(editCustomerResponse2);
     }

@@ -7,7 +7,7 @@ type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
   errors: [ValidationErrorUnion!]
 }
 
-type EditCustomerResponse2 @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
+type EditCustomerResponse2 {  #not wrapped in record
   id: ID!
   errors: [ValidationErrorAndHandledError!]!
 }

@@ -32,7 +32,7 @@ The @error directive serves to map specific Java exceptions to GraphQL errors.
 This directive is applied to error types in the schema and accepts a list of
 handlers with parameters, specifying how various exceptions should be mapped.
 """
-directive @error(error: ExternalCodeReference, handlers: [ErrorHandler!]) on OBJECT
+directive @error(handlers: [ErrorHandler!]!) on OBJECT
 
 """
 Defines the handlers for the @error directive. Each handler has properties
