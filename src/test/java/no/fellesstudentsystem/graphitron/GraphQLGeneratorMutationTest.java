@@ -3,7 +3,9 @@ package no.fellesstudentsystem.graphitron;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
@@ -11,6 +13,9 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecord
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.records.*;
+import no.fellesstudentsystem.graphitron.services.TestCustomerService;
+import no.fellesstudentsystem.graphitron.services.TestFilmService;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -22,18 +27,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class GraphQLGeneratorMutationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "mutation";
-    private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
-            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
-            new ExternalClassReference("TEST_FILM", "no.fellesstudentsystem.graphitron.services.TestFilmService"),
-            new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord"),
-            new ExternalClassReference("TEST_CUSTOMER_INNER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerInnerRecord"),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE1", "no.fellesstudentsystem.graphitron.records.EditCustomerResponse1"),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE2", "no.fellesstudentsystem.graphitron.records.EditCustomerResponse2"),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE3", "no.fellesstudentsystem.graphitron.records.EditCustomerResponse3"),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE4", "no.fellesstudentsystem.graphitron.records.EditCustomerResponse4"),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS_RESPONSE", "no.fellesstudentsystem.graphitron.records.EditCustomerAddressResponse"),
-            new ExternalClassReference("TEST_FILM_RECORD", "no.fellesstudentsystem.graphitron.records.TestFilmRecord")
+    private final List<ExternalReference> references = List.of(
+            new ExternalClassReference("RATING_TEST", RatingTest.class),
+            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class),
+            new ExternalClassReference("TEST_FILM", TestFilmService.class),
+            new ExternalClassReference("TEST_CUSTOMER_RECORD", TestCustomerRecord.class),
+            new ExternalClassReference("TEST_CUSTOMER_INNER_RECORD", TestCustomerInnerRecord.class),
+            new ExternalClassReference("TEST_CUSTOMER_RESPONSE1", EditCustomerResponse1.class),
+            new ExternalClassReference("TEST_CUSTOMER_RESPONSE2", EditCustomerResponse2.class),
+            new ExternalClassReference("TEST_CUSTOMER_RESPONSE3", EditCustomerResponse3.class),
+            new ExternalClassReference("TEST_CUSTOMER_RESPONSE4", EditCustomerResponse4.class),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS_RESPONSE", EditCustomerAddressResponse.class),
+            new ExternalClassReference("TEST_FILM_RECORD", TestFilmRecord.class)
     );
 
     public GraphQLGeneratorMutationTest() {

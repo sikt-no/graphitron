@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
@@ -10,6 +11,7 @@ import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGener
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.transforms.SomeTransform;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -19,8 +21,8 @@ import java.util.Set;
 
 public class GraphQLGeneratorTransformTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "transform";
-    private final List<ExternalClassReference> references =
-            List.of(new ExternalClassReference("TEST_TRANSFORM", "no.fellesstudentsystem.graphitron.transforms.SomeTransform"));
+    private final List<ExternalReference> references =
+            List.of(new ExternalClassReference("TEST_TRANSFORM", SomeTransform.class));
 
     private final List<GlobalTransform> globalTransforms = List.of(
             new GlobalTransform("TEST_TRANSFORM", "someTransform", TransformScope.ALL_MUTATIONS)

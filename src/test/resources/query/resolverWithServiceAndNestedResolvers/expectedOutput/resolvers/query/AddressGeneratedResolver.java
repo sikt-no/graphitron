@@ -18,7 +18,7 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
+import no.fellesstudentsystem.graphitron.services.TestFetchCityService;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import org.jooq.DSLContext;
@@ -30,25 +30,24 @@ public class AddressGeneratedResolver implements AddressResolver {
     @Override
     public CompletableFuture<City> city(Address address, DataFetchingEnvironment env) throws
             Exception {
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var testFetchCityService = new TestFetchCityService(ResolverHelpers.selectContext(env, this.ctx));
 
         return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).load(
                 "cityForAddress", address.getId(),
-                (ids) -> testFetchCustomerService.city(ids),
-                (transform, response) -> transform.cityRecordToGraphType(response, "")
-        );
+                (ids) -> testFetchCityService.city(ids),
+                (transform, response) -> transform.cityRecordToGraphType(response, ""));
     }
 
     @Override
     public CompletableFuture<CityConnection> cityPaginated(Address address, Integer first,
                                                            String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var testFetchCityService = new TestFetchCityService(ResolverHelpers.selectContext(env, this.ctx));
 
         return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadPaginated(
                 "cityPaginatedForAddress", address.getId(), pageSize, 1000,
-                (ids) -> testFetchCustomerService.cityPaginated(ids, pageSize, after),
-                (ids) -> testFetchCustomerService.countCityPaginated(ids),
+                (ids) -> testFetchCityService.cityPaginated(ids, pageSize, after),
+                (ids) -> testFetchCityService.countCityPaginated(ids),
                 (it) -> it.getId(),
                 (transform, response) -> transform.cityRecordToGraphType(response, ""),
                 (connection) ->  {
@@ -63,25 +62,24 @@ public class AddressGeneratedResolver implements AddressResolver {
     @Override
     public CompletableFuture<RecordCity> recordCity(Address address, DataFetchingEnvironment env)
             throws Exception {
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var testFetchCityService = new TestFetchCityService(ResolverHelpers.selectContext(env, this.ctx));
 
         return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).load(
                 "recordCityForAddress", address.getId(),
-                (ids) -> testFetchCustomerService.recordCity(ids),
-                (transform, response) -> transform.recordCityToGraphType(response, "")
-        );
+                (ids) -> testFetchCityService.recordCity(ids),
+                (transform, response) -> transform.recordCityToGraphType(response, ""));
     }
 
     @Override
     public CompletableFuture<RecordCityConnection> recordCityPaginated(Address address,
                                                                        Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var testFetchCityService = new TestFetchCityService(ResolverHelpers.selectContext(env, this.ctx));
 
         return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadPaginated(
                 "recordCityPaginatedForAddress", address.getId(), pageSize, 1000,
-                (ids) -> testFetchCustomerService.recordCityPaginated(ids, pageSize, after),
-                (ids) -> testFetchCustomerService.countRecordCityPaginated(ids),
+                (ids) -> testFetchCityService.recordCityPaginated(ids, pageSize, after),
+                (ids) -> testFetchCityService.countRecordCityPaginated(ids),
                 (it) -> it.getId(),
                 (transform, response) -> transform.recordCityToGraphType(response, ""),
                 (connection) ->  {

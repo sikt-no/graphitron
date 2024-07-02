@@ -9,21 +9,13 @@ import java.util.stream.Stream;
 public class ExternalReferences {
     private final Map<String, Class<?>> classes;
 
-    public ExternalReferences(List<ExternalClassReference> references) {
+    public ExternalReferences(List<? extends ExternalReference> references) {
         if (references != null) {
             classes = references
                     .stream()
-                    .collect(Collectors.toMap(ExternalClassReference::getName, it -> getClassFromPath(it.getFullyQualifiedClassName())));
+                    .collect(Collectors.toMap(ExternalReference::getName, ExternalReference::getClassReference));
         } else {
             classes = Map.of();
-        }
-    }
-
-    private static Class<?> getClassFromPath(String path) {
-        try {
-            return Class.forName(path);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException("Could not find external class. ", e);
         }
     }
 

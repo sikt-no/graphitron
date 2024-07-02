@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron.generators.abstractions;
 
+import com.squareup.javapoet.TypeSpec;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -25,8 +26,12 @@ public abstract class AbstractMapperClassGenerator<T extends GenerationField> ex
                 .values()
                 .stream()
                 .map(this::generate)
-                .filter(it -> !it.methodSpecs.isEmpty())
+                .filter(this::typeSpecFilter)
                 .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath));
+    }
+
+    protected boolean typeSpecFilter(TypeSpec spec) {
+        return !spec.methodSpecs.isEmpty();
     }
 
     protected abstract boolean filterHasTableAndRecordProperties(GenerationField field);

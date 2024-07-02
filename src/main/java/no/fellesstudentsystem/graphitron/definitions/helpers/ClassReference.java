@@ -10,9 +10,12 @@ public class ClassReference {
 
     public ClassReference(CodeReference reference) {
         if (reference != null) {
-            var recordClass = GeneratorConfig.getExternalReferences().getClassFrom(reference);
-            classReference = recordClass;
-            className = ClassName.get(recordClass);
+            var referencedClass = GeneratorConfig.getExternalReferences().getClassFrom(reference);
+            if (referencedClass == null) {
+                throw new IllegalArgumentException("Invalid class reference: " + reference.getSchemaClassReference());
+            }
+            classReference = referencedClass;
+            className = ClassName.get(referencedClass);
         } else {
             classReference = null;
             className = null;

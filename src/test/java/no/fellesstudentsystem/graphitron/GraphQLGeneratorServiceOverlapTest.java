@@ -2,11 +2,15 @@ package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
+import no.fellesstudentsystem.graphitron.services.TestCustomerService;
+import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -17,10 +21,10 @@ import java.util.Set;
 public class GraphQLGeneratorServiceOverlapTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "serviceOverlap";
 
-    private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("TEST_FETCH_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestFetchCustomerService"),
-            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
-            new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord")
+    private final List<ExternalReference> references = List.of(
+            new ExternalClassReference("TEST_FETCH_CUSTOMER", TestFetchCustomerService.class),
+            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class),
+            new ExternalClassReference("TEST_CUSTOMER_RECORD", TestCustomerRecord.class)
     );
 
     public GraphQLGeneratorServiceOverlapTest() {

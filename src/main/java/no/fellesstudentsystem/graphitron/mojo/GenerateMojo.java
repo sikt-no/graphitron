@@ -3,7 +3,8 @@ package no.fellesstudentsystem.graphitron.mojo;
 import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalMojoClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -65,7 +66,7 @@ public class GenerateMojo extends AbstractMojo {
      */
     @Parameter(property = "generate.externalReferences")
     @SuppressWarnings("unused")
-    private List<ExternalClassReference> externalReferences;
+    private List<ExternalMojoClassReference> externalReferences;
 
     /**
      * Transforms that apply to all records, or a subset of records.
@@ -131,7 +132,7 @@ public class GenerateMojo extends AbstractMojo {
         this.schemaFiles = schemaFiles;
     }
 
-    public List<ExternalClassReference> getExternalReferences() {
+    public List<? extends ExternalReference> getExternalReferences() {
         return externalReferences;
     }
 

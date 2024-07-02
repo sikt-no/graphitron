@@ -2,8 +2,12 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import no.fellesstudentsystem.graphitron.conditions.*;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
+import no.fellesstudentsystem.graphitron.enums.RatingListTest;
+import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.junit.jupiter.api.Test;
@@ -20,14 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 public class GraphQLGeneratorQueryTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
 
-    private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("TEST_ENUM_RATING_LIST", "no.fellesstudentsystem.graphitron.enums.RatingListTest"),
-            new ExternalClassReference("TEST_CITY", "no.fellesstudentsystem.graphitron.conditions.CityTestConditions"),
-            new ExternalClassReference("TEST_FILM_ACTOR", "no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions"),
-            new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
-            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService")
+    private final List<ExternalReference> references = List.of(
+            new ExternalClassReference("TEST_ENUM_RATING_LIST", RatingListTest.class),
+            new ExternalClassReference("TEST_CITY", CityTestConditions.class),
+            new ExternalClassReference("TEST_FILM_ACTOR", FilmActorTestConditions.class),
+            new ExternalClassReference("TEST_FILM_RATING", RatingTestConditions.class),
+            new ExternalClassReference("TEST_STORE_CUSTOMER", StoreTestConditions.class),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
+            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class)
     );
 
     public GraphQLGeneratorQueryTest() {

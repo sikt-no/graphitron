@@ -2,9 +2,16 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions;
+import no.fellesstudentsystem.graphitron.conditions.RatingTestConditions;
+import no.fellesstudentsystem.graphitron.conditions.StoreTestConditions;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
+import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
+import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
+import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.junit.jupiter.api.Test;
@@ -18,13 +25,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class GraphQLGeneratorValidationTest extends TestCommon {
     public static final String SRC_TEST_RESOURCES_PATH = "validation";
-    private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
-            new ExternalClassReference("TEST_FILM_RATING", "no.fellesstudentsystem.graphitron.conditions.RatingTestConditions"),
-            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
-            new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord")
+    private final List<ExternalReference> references = List.of(
+            new ExternalClassReference("RATING_TEST", RatingTest.class),
+            new ExternalClassReference("TEST_FILM_RATING", RatingTestConditions.class),
+            new ExternalClassReference("TEST_STORE_CUSTOMER", StoreTestConditions.class),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
+            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class),
+            new ExternalClassReference("TEST_CUSTOMER_RECORD", TestCustomerRecord.class)
     );
     public GraphQLGeneratorValidationTest() {
         super(SRC_TEST_RESOURCES_PATH, false);

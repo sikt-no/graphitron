@@ -1,9 +1,6 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReferences;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.*;
 import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
 
 import java.io.File;
@@ -39,7 +36,7 @@ public class GeneratorConfig {
             String outputDir,
             String outputPkg,
             String jooqPkg,
-            List<ExternalClassReference> references,
+            List<ExternalReference> references,
             List<GlobalTransform> globalTransforms,
             List<Extension> extendedClasses
     ) {

@@ -1,21 +1,19 @@
 package no.fellesstudentsystem.graphitron.configuration.externalreferences;
 
-public class ExternalClassReference {
-    private String name;
-    private String fullyQualifiedClassName;
+public class ExternalClassReference implements ExternalReference {
+    private final String name;
+    private final Class<?> classReference;
 
-    public ExternalClassReference() {}
-
-    public ExternalClassReference(String name, String fullyQualifiedClassName) {
+    public ExternalClassReference(String name, Class<?> classReference) {
         this.name = name;
-        this.fullyQualifiedClassName = fullyQualifiedClassName;
+        this.classReference = classReference;
     }
 
     public String getName() {
         return name;
     }
 
-    public String getFullyQualifiedClassName() {
-        return fullyQualifiedClassName;
+    public Class<?> getClassReference() {
+        return classReference;
     }
 }

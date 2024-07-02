@@ -1,7 +1,11 @@
 package no.fellesstudentsystem.graphitron;
 
+import no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions;
+import no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions;
+import no.fellesstudentsystem.graphitron.conditions.StoreTestConditions;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -24,10 +28,10 @@ public class GraphQLGeneratorQueryReferenceTest extends TestCommon {
             "Given Key With Following Join Should Create Key Join Then Implicit Join,referenceGivenKeyWithExtraJoin"
     );
 
-    private final List<ExternalClassReference> references = List.of(
-            new ExternalClassReference("TEST_STORE_CUSTOMER", "no.fellesstudentsystem.graphitron.conditions.StoreTestConditions"),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", "no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions"),
-            new ExternalClassReference("TEST_FILM_ACTOR", "no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions")
+    private final List<ExternalReference> references = List.of(
+            new ExternalClassReference("TEST_STORE_CUSTOMER", StoreTestConditions.class),
+            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
+            new ExternalClassReference("TEST_FILM_ACTOR", FilmActorTestConditions.class)
     );
 
     public GraphQLGeneratorQueryReferenceTest() {
