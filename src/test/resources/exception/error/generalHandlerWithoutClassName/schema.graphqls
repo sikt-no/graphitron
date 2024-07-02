@@ -1,0 +1,27 @@
+input EditInput @table(name : "CUSTOMER") {
+  id: ID!
+  firstName: String @field(name : "FIRST_NAME")
+}
+
+type EditCustomerWithOtherErrorPayload {
+  customers: [Customer!]
+  errors: [OtherError!]
+}
+
+type Mutation {
+  editCustomerWithOtherError(input: [EditInput!]!): EditCustomerWithOtherErrorPayload! @mutation(typeName: UPDATE)
+}
+
+type Customer implements Node @table {
+  id: ID!
+  firstName: String! @field(name: "FIRST_NAME")
+}
+
+type OtherError implements Error @error(handlers:
+[
+  {handler: GENERIC,  matches: "bad word detected"} # Error: Missing required field 'className' in 'ErrorHandler' directive
+]) {
+  path: [String!]!
+  message: String!
+}
+

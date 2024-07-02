@@ -374,15 +374,6 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Map of all the exceptions in the schema by name. Only includes exceptions that have a mapping to the given exception class.
-     */
-    public Map<String, ExceptionDefinition> getExceptions(String exceptionClassName) {
-        return exceptions.entrySet().stream()
-                .filter(it -> it.getValue().getExceptionToErrorMappings().stream().anyMatch(mapping -> mapping.getExceptionClassName().equals(exceptionClassName)))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-    }
-
-    /**
      * @return Does this name belong to an exception type in the schema?
      */
     public boolean isException(String name) {

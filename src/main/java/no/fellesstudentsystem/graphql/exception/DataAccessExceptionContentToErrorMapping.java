@@ -2,9 +2,10 @@ package no.fellesstudentsystem.graphql.exception;
 
 import org.jooq.exception.DataAccessException;
 
+import java.io.Serializable;
 import java.util.List;
 
-public class DataAccessExceptionContentToErrorMapping {
+public class DataAccessExceptionContentToErrorMapping implements ExceptionContentToErrorMapping {
     final private DataAccessExceptionMappingContent dataAccessExceptionMapping;
     final private ErrorHandler errorHandler;
 
@@ -17,13 +18,8 @@ public class DataAccessExceptionContentToErrorMapping {
         return dataAccessExceptionMapping.matches(exception);
     }
 
-    public Object handleError(List<String> path) {
-        return errorHandler.handleError(path);
-    }
-
-    @FunctionalInterface
-    static
-    public interface ErrorHandler {
-        Object handleError(List<String> path);
+    @Override
+    public Serializable handleError(List<String> path, String defaultMessage) {
+        return errorHandler.handleError(path, defaultMessage);
     }
 }

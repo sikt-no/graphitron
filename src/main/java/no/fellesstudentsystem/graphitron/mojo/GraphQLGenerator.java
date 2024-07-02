@@ -5,7 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.exception.DataAccessExceptionToErrorMappingProviderGenerator;
+import no.fellesstudentsystem.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
@@ -51,7 +51,7 @@ public class GraphQLGenerator {
                 new JavaRecordMapperClassGenerator(processedSchema, true),
                 new JavaRecordMapperClassGenerator(processedSchema, false),
                 new MutationExceptionStrategyConfigurationGenerator(processedSchema),
-                new DataAccessExceptionToErrorMappingProviderGenerator(processedSchema)
+                new ExceptionToErrorMappingProviderGenerator(processedSchema)
         );
 
         generate(generators);

@@ -1,14 +1,13 @@
 package no.fellesstudentsystem.graphitron.definitions.objects;
 
-import graphql.language.ArrayValue;
-import graphql.language.ObjectTypeDefinition;
-import graphql.language.ObjectValue;
-import graphql.language.Value;
+import graphql.language.*;
+import no.fellesstudentsystem.graphitron.configuration.ErrorHandlerType;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
+import org.jooq.exception.DataAccessException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -61,10 +60,18 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
                 .filter(value -> value instanceof ObjectValue)
                 .map(value -> {
                     var objectFields = ((ObjectValue) value).getObjectFields();
+                    ErrorHandlerType handler = ErrorHandlerType.valueOf(((EnumValue) getObjectFieldByName(objectFields, HANDLER).getValue()).getName());
                     return new ExceptionToErrorMapping(
-                            stringValueOf(getObjectFieldByName(objectFields, CLASS_NAME)),
+                            handler,
+                            getOptionalObjectFieldByName(objectFields, CLASS_NAME).map(DirectiveHelpers::stringValueOf).orElseGet(
+                                    () -> {
+                                        if (handler == ErrorHandlerType.DATABASE) {
+                                            return DataAccessException.class.getName();
+                                        }
+                                        throw new IllegalArgumentException("'" + CLASS_NAME.getName() + "´ directive argument must be defined for error handler of type " + handler);
+                                    }),
                             objectDefinition.getName(),
-                            stringValueOf(getObjectFieldByName(objectFields, GenerationDirectiveParam.CODE)),
+                            getOptionalObjectFieldByName(objectFields, CODE).map(DirectiveHelpers::stringValueOf).orElse(null),
                             getOptionalObjectFieldByName(objectFields, MATCHES).map(DirectiveHelpers::stringValueOf).orElse(null),
                             getOptionalObjectFieldByName(objectFields, DESCRIPTION).map(DirectiveHelpers::stringValueOf).orElse(null)
                     );

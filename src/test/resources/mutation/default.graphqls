@@ -1,10 +1,5 @@
 # defines mutation default schema.
 
-interface Error {
-  path: [String!]!
-  message: String!
-}
-
 type Query {
   "Dummy query, since the schema insists that there must be at least one."
   i(id: ID): ID! @notGenerated

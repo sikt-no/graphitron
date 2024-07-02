@@ -12,3 +12,8 @@ enum OrderDirection {
   ASC
   DESC
 }
+
+interface Error {
+  path: [String!]!
+  message: String!
+}

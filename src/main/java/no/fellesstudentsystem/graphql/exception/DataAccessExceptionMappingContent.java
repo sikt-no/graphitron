@@ -3,15 +3,13 @@ package no.fellesstudentsystem.graphql.exception;
 import org.jooq.exception.DataAccessException;
 
 import java.sql.SQLException;
-import java.util.Optional;
 
-public class DataAccessExceptionMappingContent {
+public class DataAccessExceptionMappingContent extends GenericExceptionMappingContent {
     private final String errorCode;
-    private final String substringOfExceptionMessage;
 
     public DataAccessExceptionMappingContent(String errorCode, String substringOfExceptionMessage) {
+        super(DataAccessException.class.getName(), substringOfExceptionMessage);
         this.errorCode = errorCode;
-        this.substringOfExceptionMessage = substringOfExceptionMessage;
     }
 
     boolean matches(DataAccessException exception) {
@@ -21,9 +19,6 @@ public class DataAccessExceptionMappingContent {
             return false;
         }
 
-        return this.errorCode.equals(Integer.toString(sqlException.getErrorCode())) &&
-                Optional.ofNullable(this.substringOfExceptionMessage)
-                        .map(substring -> exception.getMessage().contains(substring))
-                        .orElse(true);
+        return this.errorCode.equals(Integer.toString(sqlException.getErrorCode())) && super.matches(exception);
     }
 }

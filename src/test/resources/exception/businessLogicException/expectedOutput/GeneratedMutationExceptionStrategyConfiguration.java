@@ -3,25 +3,24 @@ package fake.code.generated.exception;
 import fake.graphql.example.model.EditCustomerWithMultipleErrorPayloads;
 import fake.graphql.example.model.EditCustomerWithOtherErrorPayload;
 import fake.graphql.example.model.EditCustomerWithUnionErrorPayload;
-import fake.graphql.example.model.EditCustomerWithValidationErrorPayload;
 import fake.graphql.example.model.MyValidationError;
 import fake.graphql.example.model.OtherError;
 import fake.graphql.example.model.UnionOfErrors;
 import java.lang.Class;
-import java.lang.IllegalArgumentException;
 import java.lang.Override;
 import java.lang.String;
 import java.lang.Throwable;
+import java.lang.UnsupportedOperationException;
+import java.net.BindException;
+import java.security.GeneralSecurityException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import no.fellesstudentsystem.graphql.exception.MutationExceptionStrategyConfiguration;
-import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
-import org.jooq.exception.DataAccessException;
-
 import javax.inject.Singleton;
+import no.fellesstudentsystem.graphql.exception.MutationExceptionStrategyConfiguration;
+import org.jooq.exception.DataAccessException;
 
 @Singleton
 public class GeneratedMutationExceptionStrategyConfiguration implements MutationExceptionStrategyConfiguration {
@@ -32,9 +31,10 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
     public GeneratedMutationExceptionStrategyConfiguration() {
         mutationsForException = new HashMap<>();
         payloadForMutation = new HashMap<>();
-        mutationsForException.computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
-        mutationsForException.computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
+        mutationsForException.computeIfAbsent(UnsupportedOperationException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
+        mutationsForException.computeIfAbsent(BindException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
         mutationsForException.computeIfAbsent(DataAccessException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
+        mutationsForException.computeIfAbsent(GeneralSecurityException.class, k -> new HashSet<>()).add("editCustomerWithMultipleErrors");
         payloadForMutation.put("editCustomerWithMultipleErrors", errors -> {
             var payload = new EditCustomerWithMultipleErrorPayloads();
             payload.setErrors1((List<MyValidationError>) errors);
@@ -42,6 +42,8 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
             return payload;
         } );
 
+        mutationsForException.get(UnsupportedOperationException.class).add("editCustomerWithOtherError");
+        mutationsForException.get(BindException.class).add("editCustomerWithOtherError");
         mutationsForException.get(DataAccessException.class).add("editCustomerWithOtherError");
         payloadForMutation.put("editCustomerWithOtherError", errors -> {
             var payload = new EditCustomerWithOtherErrorPayload();
@@ -49,20 +51,13 @@ public class GeneratedMutationExceptionStrategyConfiguration implements Mutation
             return payload;
         } );
 
-        mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerWithUnionError");
-        mutationsForException.get(IllegalArgumentException.class).add("editCustomerWithUnionError");
+        mutationsForException.get(UnsupportedOperationException.class).add("editCustomerWithUnionError");
+        mutationsForException.get(BindException.class).add("editCustomerWithUnionError");
         mutationsForException.get(DataAccessException.class).add("editCustomerWithUnionError");
+        mutationsForException.get(GeneralSecurityException.class).add("editCustomerWithUnionError");
         payloadForMutation.put("editCustomerWithUnionError", errors -> {
             var payload = new EditCustomerWithUnionErrorPayload();
             payload.setErrors((List<UnionOfErrors>) errors);
-            return payload;
-        } );
-
-        mutationsForException.get(ValidationViolationGraphQLException.class).add("editCustomerWithValidationError");
-        mutationsForException.get(IllegalArgumentException.class).add("editCustomerWithValidationError");
-        payloadForMutation.put("editCustomerWithValidationError", errors -> {
-            var payload = new EditCustomerWithValidationErrorPayload();
-            payload.setErrors((List<MyValidationError>) errors);
             return payload;
         } );
 

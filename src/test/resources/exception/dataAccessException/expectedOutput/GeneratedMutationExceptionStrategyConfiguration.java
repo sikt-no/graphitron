@@ -18,6 +18,9 @@ import java.util.Set;
 import no.fellesstudentsystem.graphql.exception.MutationExceptionStrategyConfiguration;
 import org.jooq.exception.DataAccessException;
 
+import javax.inject.Singleton;
+
+@Singleton
 public class GeneratedMutationExceptionStrategyConfiguration implements MutationExceptionStrategyConfiguration {
     private final Map<Class<? extends Throwable>, Set<String>> mutationsForException;
 

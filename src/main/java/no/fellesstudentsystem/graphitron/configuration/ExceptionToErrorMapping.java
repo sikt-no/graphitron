@@ -6,14 +6,16 @@ import java.util.Optional;
 
 public class ExceptionToErrorMapping {
 
+    private final ErrorHandlerType handler;
     private final String exceptionClassName;
     private final String errorTypeName;
     private final String databaseErrorCode;
     private final String exceptionMessageContains;
     private final String errorDescription;
 
-    public ExceptionToErrorMapping(String exceptionClassName, String errorTypeName, String databaseErrorCode,
+    public ExceptionToErrorMapping(ErrorHandlerType handler, String exceptionClassName, String errorTypeName, String databaseErrorCode,
                                    @Nullable String exceptionMessageContains, @Nullable String errorDescription) {
+        this.handler = handler;
         this.exceptionClassName = exceptionClassName;
         this.errorTypeName = errorTypeName;
         this.databaseErrorCode = databaseErrorCode;
@@ -52,5 +54,9 @@ public class ExceptionToErrorMapping {
     @Override
     public int hashCode() {
         return Objects.hash(exceptionClassName, errorTypeName, databaseErrorCode, exceptionMessageContains, errorDescription);
+    }
+
+    public ErrorHandlerType getHandler() {
+        return handler;
     }
 }

@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
+import static no.fellesstudentsystem.graphitron.configuration.ErrorHandlerType.DATABASE;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
@@ -43,6 +44,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
     @Override
     public TypeSpec generate(ObjectDefinition target) {
         return getSpec("GeneratedMutationExceptionStrategyConfiguration", List.of())
+                .addAnnotation(SINGLETON.className)
                 .addMethod(createConstructor(target))
                 .build();
     }
@@ -73,11 +75,19 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
                     }
 
                     for (var errorField : ctx.getAllErrors()) {
-
                         for (var exc : ctx.getProcessedSchema().getExceptionDefinitions(errorField.getTypeName())) {
-                            if (!exc.getExceptionToErrorMappings().isEmpty()) {
-                                payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation, DATA_ACCESS_EXCEPTION.className));
-                            }
+
+                            exc.getExceptionToErrorMappings().forEach(mapping -> {
+                                try {
+                                    payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation,
+                                            mapping.getHandler() == DATABASE
+                                                    ? DATA_ACCESS_EXCEPTION.className
+                                                    : ClassName.get(Class.forName(mapping.getExceptionClassName()))));
+                                } catch (ClassNotFoundException e) {
+                                    throw new IllegalArgumentException("Unable to find exception className: " + mapping.getExceptionClassName() +
+                                            ", declared for mutation: " + mutation.getName(), e);
+                                }
+                            });
                         }
                     }
 

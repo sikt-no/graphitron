@@ -43,8 +43,9 @@ type MyValidationError implements Error {
 
 type OtherError implements Error @error(handlers:
 [
-  {handler: DATABASE, code: "20997", description: "This is an error"},
-  {handler: DATABASE, className: "org.jooq.exception.IntegrityConstraintViolationException" code: "20998", matches: "bad word detected"}
+  {handler: GENERIC, className: "java.lang.UnsupportedOperationException", description: "This is an error"},
+  {handler: GENERIC, className: "java.net.BindException",  matches: "bad word detected"},
+  {handler: DATABASE, code: "20997", description: "This is an error"}
 ]
 ) {
   path: [String!]!
@@ -52,7 +53,7 @@ type OtherError implements Error @error(handlers:
 }
 
 type YetAnotherError implements Error @error(handlers:
-[{handler: DATABASE, code: "1337", matches: "data error", description: "This is an error for the union type"}],
+[{handler: GENERIC, className: "java.security.GeneralSecurityException", matches: "data error", description: "This is an error for the union type"}]
 ) {
   path: [String!]!
   message: String!

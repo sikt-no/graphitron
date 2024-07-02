@@ -20,13 +20,7 @@ type EditResponseWithErrors  {
     errors: [SomeError!]!
 }
 
-
 type SomeError implements Error {
-    path: [String!]!
-    message: String!
-}
-
-interface Error {
     path: [String!]!
     message: String!
 }

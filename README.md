@@ -790,40 +790,42 @@ public class ReturnB {
 }
 ```
 
-#### Error handling (work in progress)
+#### Error handling 
 
 Graphitron allows for simple error handling. In the schema a type is an error type if it implements
 the _Error_ interface and has the error **directive** set. Unions of such types are also considered error types.
 
-The `@error` directive is used to map specific Java exceptions to GraphQL errors. 
-The directive is applied to the error types in the schema and takes a list of handlers with parameters that specify how to map the various exceptions.
+The `@error` directive serves to map specific Java exceptions to GraphQL errors. This directive is applied to error types 
+in the schema and accepts a list of handlers with parameters, specifying how various exceptions should be mapped.
+
+Here's an example of how the `@error` directive can be used:
 
 ```graphql
 type MyError implements Error @error(handlers:
 [
   {
-    handler: "ORA",
-    className: "org.jooq.exception.DataAccessException",
+    handler: DATABASE,
     code: "20997",
     description: "You are not allowed to do this like that"
   },
   {
-    handler: "ORA",
-    className: "org.jooq.exception.DataAccessException",
-    code: "20998",
-    matches: "bad word detected"
+    handler: GENERIC,
+    className: "org.example.YouAreNotAllowedException",
+    matches: "stop doing this",
+    description: "You are not allowed to do this like that"
   }
 ]) {
   path: [String!]!
   message: String!
 }
 ```
-In this example, the `MyError` type is mapped to handle certain `DataAccessException` exceptions from jOOQ.
-- `handler` - This is used to determine which error handler to use. Currently, only "ORA" is supported.
-- `className` - The fully qualified named of the exception class.
-- `code` - The error code, for the "ORA" handler this is the database error code associated with the exception.
-- `description` OPTIONAL. A description of the error to be returned to the user.
-- `matches` OPTIONAL. Can be used to specify a string that the exception message must contain in order to be handled.
+
+In this instance, certain exceptions are mapped to be handled as _MyError_. The parameters inside the handler object are explained as follows:
+- `handler` - Determines the error handler to use. Presently, there are two options available, DATABASE and GENERIC.
+- `className` -  Specifies the fully qualified name of the exception class. This field is required for the GENERIC handler and defaults to `org.jooq.exception.DataAccessException` if not provided for the DATABASE handler.
+- `code` - For the `DATABASE` handler this is the database error code associated with the exception. Not in use for the GENERIC handler.
+- `matches` - Can be used to specify a string that the exception message must contain in order to be handled.
+- `description` - A description of the error to be returned to the user. If not provided, the exception message will be used instead.
 
 ##### deprecated error handling for services
 The `@error` directive also supports an `error` parameter that can be used to specify an external code reference. 

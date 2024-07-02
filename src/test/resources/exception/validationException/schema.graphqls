@@ -37,11 +37,6 @@ type Customer implements Node @table {
   firstName: String! @field(name: "FIRST_NAME")
 }
 
-interface Error {
-  path: [String!]!
-  message: String!
-}
-
 type MyValidationError implements Error {
   path: [String!]!
   message: String!

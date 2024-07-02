@@ -28,18 +28,55 @@ Available values are set in the plugin configuration.
 directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
 
 """
-Map this type to a Java exception class.
-Only applicable on types that implement the Error interface.
-Work in progress, see readme.md for more information.
+The @error directive serves to map specific Java exceptions to GraphQL errors.
+This directive is applied to error types in the schema and accepts a list of
+handlers with parameters, specifying how various exceptions should be mapped.
 """
-directive @error(error: ExternalCodeReference, handlers: [Handler!]) on OBJECT
+directive @error(error: ExternalCodeReference, handlers: [ErrorHandler!]) on OBJECT
 
-input Handler {
-  handler: String!
-  className: String!
-  code: String!
+"""
+Defines the handlers for the @error directive. Each handler has properties
+which help to map exceptions to GraphQL errors.
+"""
+input ErrorHandler {
+  """
+  Determines which error handler to use. DATABASE and GENERIC are the two options
+  currently available.
+  """
+  handler: ErrorHandlerType!
+
+  """
+  Specifies the fully qualified name of the exception class. Required for the
+  GENERIC handler and defaults to org.jooq.exception.DataAccessException if not
+  provided for the DATABASE handler.
+  """
+  className: String
+
+  """
+  For the DATABASE handler, this is the database error code associated with the exception.
+  Not used for the GENERIC handler.
+  """
+  code: String
+
+  """
+  A string that the exception message must contain in order to be handled.
+  If not present, the handler will be used for all exceptions of the specified class.
+  """
   matches: String
+
+  """
+  Provides a description of the error to be returned to the user. If not provided,
+  the exception message will be used.
+  """
   description: String
+}
+
+"""
+Determines the type of the error handler to use.
+"""
+enum ErrorHandlerType {
+  GENERIC,
+  DATABASE
 }
 
 """
