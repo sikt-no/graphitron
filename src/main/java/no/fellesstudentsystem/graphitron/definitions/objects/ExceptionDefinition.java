@@ -3,16 +3,15 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 import graphql.language.*;
 import no.fellesstudentsystem.graphitron.configuration.ErrorHandlerType;
 import no.fellesstudentsystem.graphitron.configuration.ExceptionToErrorMapping;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphql.directives.DirectiveHelpers;
-import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import org.jooq.exception.DataAccessException;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.*;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getObjectFieldByName;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ERROR;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.*;
 
@@ -21,7 +20,6 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam
  */
 public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefinition, ObjectField> {
     private final boolean isGenerated;
-    private final CodeReference exceptionReference;
     private final List<ExceptionToErrorMapping> exceptionToErrorMappings;
 
     public ExceptionDefinition(ObjectTypeDefinition objectDefinition) {
@@ -30,25 +28,10 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
         isGenerated = getFields().stream().anyMatch(ObjectField::isGeneratedWithResolver);
 
         if (objectDefinition.hasDirective(ERROR.getName())) {
-
-            var exceptionReferenceArgument = getOptionalDirectiveArgumentObjectFields(objectDefinition, ERROR, GenerationDirectiveParam.ERROR);
-
-            if (exceptionReferenceArgument.isPresent()) {
-                this.exceptionReference = new CodeReference(objectDefinition, ERROR, GenerationDirectiveParam.ERROR, objectDefinition.getName());
-                exceptionToErrorMappings = List.of();
-            } else {
-                this.exceptionReference = null;
-                var refrenceDirective = objectDefinition.getDirectives(ERROR.getName()).get(0);
-                var handlersArgument = refrenceDirective.getArgument(HANDLERS.getName());
-
-                if (handlersArgument != null) {
-                    exceptionToErrorMappings = getErrorMappings(handlersArgument.getValue(), objectDefinition);
-                } else {
-                    throw new IllegalArgumentException(ERROR.getName() + " directive must have either an error or handlers argument.");
-                }
-            }
+            var refrenceDirective = objectDefinition.getDirectives(ERROR.getName()).get(0);
+            var handlersArgument = refrenceDirective.getArgument(HANDLERS.getName());
+            exceptionToErrorMappings = getErrorMappings(handlersArgument.getValue(), objectDefinition);
         } else {
-            exceptionReference = null;
             exceptionToErrorMappings = List.of();
         }
     }
@@ -86,20 +69,6 @@ public class ExceptionDefinition extends AbstractObjectDefinition<ObjectTypeDefi
 
     public boolean isGenerated() {
         return isGenerated;
-    }
-
-    /**
-     * @return The reference to the Java exception that this schema object is related to.
-     */
-    public CodeReference getExceptionReference() {
-        return exceptionReference;
-    }
-
-    /**
-     * @return Does this object have a reference to a java exception defined?
-     */
-    public boolean hasExceptionReference() {
-        return exceptionReference != null;
     }
 
     /**

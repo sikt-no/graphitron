@@ -15,7 +15,6 @@ import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -242,7 +241,7 @@ public class ServiceCodeBlocks {
     /**
      * @return Code for adding error types and calling transform methods.
      */
-    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, boolean hasErrors, ServiceWrapper service, ProcessedSchema schema) {
+    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, ServiceWrapper service, ProcessedSchema schema) {
         if (!mapperContext.targetIsType()) {
             return empty();
         }
@@ -258,14 +257,16 @@ public class ServiceCodeBlocks {
 
         for (var innerField : mapperContext.getTargetType().getFields()) {
             var innerContext = mapperContext.iterateContext(innerField);
+
+            if (innerContext.shouldUseException()) {
+                continue;
+            }
+
             var previousTarget = innerContext.getPreviousContext().getTarget();
 
             var innerCode = CodeBlock.builder();
-            if (innerContext.shouldUseException()) {
-                if (hasErrors) {
-                    innerCode.add(innerContext.getSetMappingBlock(asListedName(schema.getErrorTypeDefinition(innerField.getTypeName()).getName())));
-                }
-            } else if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
+
+            if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
                 if (!innerContext.targetIsType()) {
                     innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, service, schema)));
                 } else if (innerContext.shouldUseStandardRecordFetch()) {
@@ -281,7 +282,7 @@ public class ServiceCodeBlocks {
                         innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
                     }
                 } else {
-                    innerCode.add(generateSchemaOutputs(innerContext, hasErrors, service, schema));
+                    innerCode.add(generateSchemaOutputs(innerContext, service, schema));
                 }
             }
 

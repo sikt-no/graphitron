@@ -26,8 +26,6 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
             new ExternalClassReference("RATING_TEST", "no.fellesstudentsystem.graphitron.enums.RatingTest"),
             new ExternalClassReference("TEST_CUSTOMER", "no.fellesstudentsystem.graphitron.services.TestCustomerService"),
             new ExternalClassReference("TEST_FILM", "no.fellesstudentsystem.graphitron.services.TestFilmService"),
-            new ExternalClassReference("EXCEPTION_TEST", "no.fellesstudentsystem.graphitron.exceptions.TestException"),
-            new ExternalClassReference("EXCEPTION_TEST_CAUSE", "no.fellesstudentsystem.graphitron.exceptions.TestExceptionCause"),
             new ExternalClassReference("TEST_CUSTOMER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerRecord"),
             new ExternalClassReference("TEST_CUSTOMER_INNER_RECORD", "no.fellesstudentsystem.graphitron.records.TestCustomerInnerRecord"),
             new ExternalClassReference("TEST_CUSTOMER_RESPONSE1", "no.fellesstudentsystem.graphitron.records.EditCustomerResponse1"),
@@ -145,11 +143,6 @@ public class GraphQLGeneratorMutationTest extends TestCommon {
     @Test //TODO fjerne denne? Det er vel analogt case med det som blir generert til EditCustomerInputAndResponseGeneratedResolver. Mulig dette caset ga mer mening mot kjerneAPI
     void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mapIDsNotInDB");
-    }
-
-    @Test
-    void generate_serviceMutation_shouldGenerateResolversWithErrorHandling() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("exceptionServiceResolvers");
     }
 
     @Test

@@ -11,7 +11,6 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
@@ -269,16 +268,6 @@ public class ProcessedDefinitionsValidator {
                 .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e)));
-
-        schema
-                .getExceptions()
-                .values()
-                .stream()
-                .filter(ExceptionDefinition::hasExceptionReference)
-                .map(ExceptionDefinition::getExceptionReference)
-                .map(CodeReference::getSchemaClassReference)
-                .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> errorMessages.add(String.format("No exception with name '%s' found.", e)));
     }
 
     private void validateInterfaces() {
