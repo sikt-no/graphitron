@@ -2,51 +2,48 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions;
-import no.fellesstudentsystem.graphitron.conditions.RatingTestConditions;
-import no.fellesstudentsystem.graphitron.conditions.StoreTestConditions;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
-import no.fellesstudentsystem.graphitron.enums.RatingTest;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
-import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
-import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.TestReferenceSet.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class GraphQLGeneratorValidationTest extends TestCommon {
+public class GraphQLGeneratorValidationTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "validation";
-    private final List<ExternalReference> references = List.of(
-            new ExternalClassReference("RATING_TEST", RatingTest.class),
-            new ExternalClassReference("TEST_FILM_RATING", RatingTestConditions.class),
-            new ExternalClassReference("TEST_STORE_CUSTOMER", StoreTestConditions.class),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
-            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class),
-            new ExternalClassReference("TEST_CUSTOMER_RECORD", TestCustomerRecord.class)
-    );
+
     public GraphQLGeneratorValidationTest() {
-        super(SRC_TEST_RESOURCES_PATH, false);
+        super(
+                SRC_TEST_RESOURCES_PATH,
+                List.of(
+                        ENUM_RATING.get(),
+                        CONDITION_FILM_RATING.get(),
+                        CONDITION_STORE_CUSTOMER.get(),
+                        CONDITION_CUSTOMER_ADDRESS.get(),
+                        SERVICE_CUSTOMER.get(),
+                        RECORD_CUSTOMER.get()
+                ),
+                false
+        );
     }
 
     @Override
-    protected void setProperties() {
-        GeneratorConfig.setProperties(
-                Set.of(),
-                tempOutputDirectory.toString(),
-                DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE,
-                references,
-                List.of(),
-                List.of()
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(
+                new FetchDBClassGenerator(schema),
+                new FetchResolverClassGenerator(schema)
         );
     }
 

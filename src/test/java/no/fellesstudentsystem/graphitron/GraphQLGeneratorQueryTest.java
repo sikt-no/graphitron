@@ -2,52 +2,47 @@ package no.fellesstudentsystem.graphitron;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import no.fellesstudentsystem.graphitron.conditions.*;
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
-import no.fellesstudentsystem.graphitron.enums.RatingListTest;
-import no.fellesstudentsystem.graphitron.services.TestCustomerService;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.TestReferenceSet.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-public class GraphQLGeneratorQueryTest extends TestCommon {
+public class GraphQLGeneratorQueryTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
 
-    private final List<ExternalReference> references = List.of(
-            new ExternalClassReference("TEST_ENUM_RATING_LIST", RatingListTest.class),
-            new ExternalClassReference("TEST_CITY", CityTestConditions.class),
-            new ExternalClassReference("TEST_FILM_ACTOR", FilmActorTestConditions.class),
-            new ExternalClassReference("TEST_FILM_RATING", RatingTestConditions.class),
-            new ExternalClassReference("TEST_STORE_CUSTOMER", StoreTestConditions.class),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
-            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class)
-    );
-
     public GraphQLGeneratorQueryTest() {
-        super(SRC_TEST_RESOURCES_PATH);
+        super(
+                SRC_TEST_RESOURCES_PATH,
+                List.of(
+                        ENUM_RATING_LIST.get(),
+                        CONDITION_CITY.get(),
+                        CONDITION_FILM_ACTOR.get(),
+                        CONDITION_FILM_RATING.get(),
+                        CONDITION_STORE_CUSTOMER.get(),
+                        CONDITION_CUSTOMER_ADDRESS.get(),
+                        SERVICE_CUSTOMER.get()
+                )
+        );
     }
 
     @Override
-    protected void setProperties() {
-        GeneratorConfig.setProperties(
-                Set.of(),
-                tempOutputDirectory.toString(),
-                DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE,
-                references,
-                List.of(),
-                List.of()
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(
+                new FetchDBClassGenerator(schema),
+                new FetchResolverClassGenerator(schema)
         );
     }
 
@@ -59,33 +54,33 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test //jOOQ' støtter maks 22 type-safe records. Flere enn 22 er støttet, men uten type safety.
-    void generate_whenTypeHasMoreThan22Fields_shouldGenerateValidResolver() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("moreThan22Fields");
+    void generate_whenTypeHasMoreThan22Fields_shouldGenerateValidResolver() {
+        assertGeneratedContentMatches("moreThan22Fields");
     }
 
     @Test
-    void generate_manualResolver_shouldNotGenerateAnyResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("manualResolver");
+    void generate_manualResolver_shouldNotGenerateAnyResolvers() {
+        assertGeneratedContentMatches("manualResolver");
     }
 
     @Test
-    void generate_whenMixOfOptionalAndRequiredFieldsOnRequiredLeafNode_shouldGenerateQueryThatIncludesOneRequiredField() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mixOfOptionalAndRequiredFields");
+    void generate_whenMixOfOptionalAndRequiredFieldsOnRequiredLeafNode_shouldGenerateQueryThatIncludesOneRequiredField() {
+        assertGeneratedContentMatches("mixOfOptionalAndRequiredFields");
     }
 
     @Test
-    void generate_queryWithPagination_shouldCreateQueryResolverWithPaginationSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPagination");
+    void generate_queryWithPagination_shouldCreateQueryResolverWithPaginationSupport() {
+        assertGeneratedContentMatches("queryWithPagination");
     }
 
     @Test
-    void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithPaginationAndSorting");
+    void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() {
+        assertGeneratedContentMatches("queryWithPaginationAndSorting");
     }
 
     @Test
-    void generate_queryWithSorting_shouldCreateQueryResolverWithSortingSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithSorting");
+    void generate_queryWithSorting_shouldCreateQueryResolverWithSortingSupport() {
+        assertGeneratedContentMatches("queryWithSorting");
     }
 
     @Test
@@ -117,114 +112,114 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
-    void generate_queryWithResolverPagination_shouldCreateResolverWithPaginationOnResolver() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithResolverPagination");
+    void generate_queryWithResolverPagination_shouldCreateResolverWithPaginationOnResolver() {
+        assertGeneratedContentMatches("queryWithResolverPagination");
     }
 
     @Test
-    void generate_queryWithMultipleAndOptionalArguments_shouldCreateQueryResolverThatHandlesMultipleAndOptionalArguments() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultipleArguments");
+    void generate_queryWithMultipleAndOptionalArguments_shouldCreateQueryResolverThatHandlesMultipleAndOptionalArguments() {
+        assertGeneratedContentMatches("queryWithMultipleArguments");
     }
 
     @Test
-    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultiset");
+    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() {
+        assertGeneratedContentMatches("queryWithMultiset");
     }
 
     @Test
-    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultisetWhichContainsFieldWithCondition() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithMultisetContainingFieldWithCondition");
+    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultisetWhichContainsFieldWithCondition() {
+        assertGeneratedContentMatches("queryWithMultisetContainingFieldWithCondition");
     }
 
     @Test
-    void generate_queryWithArguments_shouldUseCorrectPathForWhere() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("correctWhereConditionPathUsage");
+    void generate_queryWithArguments_shouldUseCorrectPathForWhere() {
+        assertGeneratedContentMatches("correctWhereConditionPathUsage");
     }
 
     @Test
-    void generate_queryWithInputTypes_shouldCreateQueryResolverThatHandlesInputTypes() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithInputTypeArguments");
+    void generate_queryWithInputTypes_shouldCreateQueryResolverThatHandlesInputTypes() {
+        assertGeneratedContentMatches("queryWithInputTypeArguments");
     }
 
     @Test
-    void generate_queryWithInputWithListInput_shouldCreateQueryResolverThatHandlesInputWithListOfInputTypes() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithInputWithListInput");
+    void generate_queryWithInputWithListInput_shouldCreateQueryResolverThatHandlesInputWithListOfInputTypes() {
+        assertGeneratedContentMatches("queryWithInputWithListInput");
     }
 
     @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithConditions");
+    void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() {
+        assertGeneratedContentMatches("queryWithConditions");
     }
 
     @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithEnumConditionInputs() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumConditions");
+    void generate_queryWithConditions_shouldCreateQueriesWithEnumConditionInputs() {
+        assertGeneratedContentMatches("queryWithEnumConditions");
     }
 
     @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithEnumListConditionInputs() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithEnumListConditions");
+    void generate_queryWithConditions_shouldCreateQueriesWithEnumListConditionInputs() {
+        assertGeneratedContentMatches("queryWithEnumListConditions");
     }
 
     @Test
-    void generate_queryWithInputs_shouldCreateConditionsWithoutExtraNullChecksWhenIterable() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithLayeredAndListedChecks");
+    void generate_queryWithInputs_shouldCreateConditionsWithoutExtraNullChecksWhenIterable() {
+        assertGeneratedContentMatches("queryWithLayeredAndListedChecks");
     }
 
     @Test
-    void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("splitQueryForTypeWithoutTable");
+    void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() {
+        assertGeneratedContentMatches("splitQueryForTypeWithoutTable");
     }
 
     @Test
-    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceBackwards");
+    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() {
+        assertGeneratedContentMatches("referenceBackwards");
     }
 
     @Test
-    void generate_referenceViaTablesBackwardsAndJoin_shouldCreateJoinViaTablesBackwards() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceBackwardsWithExtraJoin");
+    void generate_referenceViaTablesBackwardsAndJoin_shouldCreateJoinViaTablesBackwards() {
+        assertGeneratedContentMatches("referenceBackwardsWithExtraJoin");
     }
 
     @Test
-    void generate_conditionOnReverseJoin_shouldFindAppropriateConditionSource() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceBackwardWithCondition");
+    void generate_conditionOnReverseJoin_shouldFindAppropriateConditionSource() {
+        assertGeneratedContentMatches("referenceBackwardWithCondition");
     }
 
     @Test
-    void generate_joinWhenFutureHasExplicitJoin_shouldCreateAppropriateJoinType() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("referenceWithFutureExplicitJoin");
+    void generate_joinWhenFutureHasExplicitJoin_shouldCreateAppropriateJoinType() {
+        assertGeneratedContentMatches("referenceWithFutureExplicitJoin");
     }
 
     @Test
-    void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("multipleAliasesForSameType");
+    void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() {
+        assertGeneratedContentMatches("multipleAliasesForSameType");
     }
 
     @Test
-    void generate_queryWithoutPagination_shouldCreateQueryAndQueryResolverWithoutPaginationSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithoutPagination");
+    void generate_queryWithoutPagination_shouldCreateQueryAndQueryResolverWithoutPaginationSupport() {
+        assertGeneratedContentMatches("queryWithoutPagination");
     }
 
     @Test
-    void generate_queryWithUnion_shouldCreateQueryAndQueryResolverWithUnionSupport() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithUnion");
+    void generate_queryWithUnion_shouldCreateQueryAndQueryResolverWithUnionSupport() {
+        assertGeneratedContentMatches("queryWithUnion");
     }
 
     @Test
-    void generate_queryWithLookup_shouldGenerateLookupResolverAndQuery() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithLookup");
+    void generate_queryWithLookup_shouldGenerateLookupResolverAndQuery() {
+        assertGeneratedContentMatches("queryWithLookup");
     }
 
     @Test
-    void generate_queryWithComplexLookup_shouldGenerateLookupResolversAndQueries() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithLookupMultipleParameters");
+    void generate_queryWithComplexLookup_shouldGenerateLookupResolversAndQueries() {
+        assertGeneratedContentMatches("queryWithLookupMultipleParameters");
     }
 
 
     @Test
-    void generate_queryThatReturnsInterface_shouldCreateResolver() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryReturningInterface");
+    void generate_queryThatReturnsInterface_shouldCreateResolver() {
+        assertGeneratedContentMatches("queryReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();
     }
 
@@ -240,12 +235,12 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
-    void generate_queryWithSelfReferenceHavingExplicitJoinKey() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithSelfReferenceHavingExplicitJoinKey");
+    void generate_queryWithSelfReferenceHavingExplicitJoinKey() {
+        assertGeneratedContentMatches("queryWithSelfReferenceHavingExplicitJoinKey");
     }
 
     @Test
-    void generate_queryWithSelfReferenceFindingImplicitJoinKey() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithSelfReferenceFindingImplicitJoinKey");
+    void generate_queryWithSelfReferenceFindingImplicitJoinKey() {
+        assertGeneratedContentMatches("queryWithSelfReferenceFindingImplicitJoinKey");
     }
 }

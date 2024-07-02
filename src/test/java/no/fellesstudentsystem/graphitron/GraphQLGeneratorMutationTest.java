@@ -2,10 +2,7 @@ package no.fellesstudentsystem.graphitron;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
-import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
@@ -13,214 +10,196 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecord
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.records.*;
-import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphitron.services.TestFilmService;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
+import static no.fellesstudentsystem.graphitron.TestReferenceSet.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class GraphQLGeneratorMutationTest extends TestCommon {
+public class GraphQLGeneratorMutationTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "mutation";
-    private final List<ExternalReference> references = List.of(
-            new ExternalClassReference("RATING_TEST", RatingTest.class),
-            new ExternalClassReference("TEST_CUSTOMER", TestCustomerService.class),
-            new ExternalClassReference("TEST_FILM", TestFilmService.class),
-            new ExternalClassReference("TEST_CUSTOMER_RECORD", TestCustomerRecord.class),
-            new ExternalClassReference("TEST_CUSTOMER_INNER_RECORD", TestCustomerInnerRecord.class),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE1", EditCustomerResponse1.class),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE2", EditCustomerResponse2.class),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE3", EditCustomerResponse3.class),
-            new ExternalClassReference("TEST_CUSTOMER_RESPONSE4", EditCustomerResponse4.class),
-            new ExternalClassReference("TEST_CUSTOMER_ADDRESS_RESPONSE", EditCustomerAddressResponse.class),
-            new ExternalClassReference("TEST_FILM_RECORD", TestFilmRecord.class)
-    );
 
     public GraphQLGeneratorMutationTest() {
-        super(SRC_TEST_RESOURCES_PATH);
-    }
-
-    @Override
-    protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
-        var processedSchema = getProcessedSchema(schemaParentFolder);
-        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new UpdateResolverClassGenerator(processedSchema),
-                new UpdateDBClassGenerator(processedSchema),
-                new MutationExceptionStrategyConfigurationGenerator(processedSchema),
-                new TransformerClassGenerator(processedSchema),
-                new RecordMapperClassGenerator(processedSchema, true),
-                new RecordMapperClassGenerator(processedSchema, false),
-                new JavaRecordMapperClassGenerator(processedSchema, true),
-                new JavaRecordMapperClassGenerator(processedSchema, false)
-        );
-
-        return generateFiles(generators);
-    }
-
-    @Override
-    protected void setProperties() {
-        GeneratorConfig.setProperties(
-                Set.of(),
-                tempOutputDirectory.toString(),
-                DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE,
-                references,
-                List.of(),
-                List.of()
+        super(
+                SRC_TEST_RESOURCES_PATH,
+                List.of(
+                        ENUM_RATING.get(),
+                        SERVICE_CUSTOMER.get(),
+                        SERVICE_FILM.get(),
+                        RECORD_CUSTOMER.get(),
+                        RECORD_CUSTOMER_INNER.get(),
+                        RECORD_CUSTOMER_RESPONSE_1.get(),
+                        RECORD_CUSTOMER_RESPONSE_2.get(),
+                        RECORD_CUSTOMER_RESPONSE_3.get(),
+                        RECORD_CUSTOMER_RESPONSE_4.get(),
+                        RECORD_ADDRESS_RESPONSE.get(),
+                        RECORD_FILM.get()
+                )
         );
     }
 
-    @Test
-    void generate_mutation_shouldGenerateResolversWithInputsAndResponseObjects() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("inputAndResponseResolvers");
+    @Override
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(
+                new UpdateResolverClassGenerator(schema),
+                new UpdateDBClassGenerator(schema),
+                new MutationExceptionStrategyConfigurationGenerator(schema),
+                new TransformerClassGenerator(schema),
+                new RecordMapperClassGenerator(schema, true),
+                new RecordMapperClassGenerator(schema, false),
+                new JavaRecordMapperClassGenerator(schema, true),
+                new JavaRecordMapperClassGenerator(schema, false)
+        );
     }
 
     @Test
-    void generate_mutation_shouldGenerateResolversWithSimpleInputsAndResponses() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("simpleResolverWithService");
+    void generate_mutation_shouldGenerateResolversWithInputsAndResponseObjects() {
+        assertGeneratedContentMatches("inputAndResponseResolvers");
     }
 
     @Test
-    void generate_mutation_shouldGenerateResolversAndQueriesWithSimpleInputsAndResponses() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("simpleResolverWithMutationType");
+    void generate_mutation_shouldGenerateResolversWithSimpleInputsAndResponses() {
+        assertGeneratedContentMatches("simpleResolverWithService");
     }
 
     @Test
-    void generate_mutationWithListFields_shouldGenerateResolversForLists() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("listResolvers");
+    void generate_mutation_shouldGenerateResolversAndQueriesWithSimpleInputsAndResponses() {
+        assertGeneratedContentMatches("simpleResolverWithMutationType");
     }
 
     @Test
-    void generate_serviceMutationWithNestedInputs_shouldGenerateResolversForNestedStructures() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedTypes");
+    void generate_mutationWithListFields_shouldGenerateResolversForLists() {
+        assertGeneratedContentMatches("listResolvers");
     }
 
     @Test
-    void generate_serviceMutationWithRecordInputs_shouldGenerateResolversForSimpleFields() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithSimpleFields");
+    void generate_serviceMutationWithNestedInputs_shouldGenerateResolversForNestedStructures() {
+        assertGeneratedContentMatches("serviceResolversWithNestedTypes");
     }
 
     @Test
-    void generate_serviceMutationWithNestedRecordInputs_shouldGenerateResolversForNestedRecordStructures() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedRecordTypes");
+    void generate_serviceMutationWithRecordInputs_shouldGenerateResolversForSimpleFields() {
+        assertGeneratedContentMatches("serviceResolversWithSimpleFields");
     }
 
     @Test
-    void generate_serviceMutationWithNestedSchemaTypes_shouldGenerateResolversForNestedOutputStructures() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedSchemaTypes");
+    void generate_serviceMutationWithNestedRecordInputs_shouldGenerateResolversForNestedRecordStructures() {
+        assertGeneratedContentMatches("serviceResolversWithNestedRecordTypes");
     }
 
     @Test
-    void generate_serviceMutationWithNestedRecordFieldMapping_shouldGenerateResolversForNestedStructures() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithNestedRecordFieldMapping");
+    void generate_serviceMutationWithNestedSchemaTypes_shouldGenerateResolversForNestedOutputStructures() {
+        assertGeneratedContentMatches("serviceResolversWithNestedSchemaTypes");
     }
 
     @Test
-    void generate_serviceMutationWithEnumInputMapping_shouldGenerateResolversWithEnums() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithEnumInputMapping");
+    void generate_serviceMutationWithNestedRecordFieldMapping_shouldGenerateResolversForNestedStructures() {
+        assertGeneratedContentMatches("serviceResolversWithNestedRecordFieldMapping");
     }
 
     @Test
-    void generate_serviceMutationWithEnumOutputMapping_shouldGenerateResolversWithEnums() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithEnumOutputMapping");
+    void generate_serviceMutationWithEnumInputMapping_shouldGenerateResolversWithEnums() {
+        assertGeneratedContentMatches("serviceResolversWithEnumInputMapping");
     }
 
     @Test
-    void generate_serviceMutationWithWrongMapping_shouldSkipIncorrectMappings() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithWrongRecordMappings");
+    void generate_serviceMutationWithEnumOutputMapping_shouldGenerateResolversWithEnums() {
+        assertGeneratedContentMatches("serviceResolversWithEnumOutputMapping");
     }
 
     @Test
-    void generate_serviceMutationWithoutTable_shouldGenerateResolverWithJavaRecordMapping() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithJavaRecordWithoutTable");
+    void generate_serviceMutationWithWrongMapping_shouldSkipIncorrectMappings() {
+        assertGeneratedContentMatches("serviceResolversWithWrongRecordMappings");
     }
 
     @Test
-    void generate_serviceMutationWithJavaRecordResponse_shouldGenerateResolverWithTypeMapping() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceResolversWithJavaRecordReturnType");
+    void generate_serviceMutationWithoutTable_shouldGenerateResolverWithJavaRecordMapping() {
+        assertGeneratedContentMatches("serviceResolversWithJavaRecordWithoutTable");
+    }
+
+    @Test
+    void generate_serviceMutationWithJavaRecordResponse_shouldGenerateResolverWithTypeMapping() {
+        assertGeneratedContentMatches("serviceResolversWithJavaRecordReturnType");
     }
 
     @Test //TODO fjerne denne? Det er vel analogt case med det som blir generert til EditCustomerInputAndResponseGeneratedResolver. Mulig dette caset ga mer mening mot kjerneAPI
-    void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mapIDsNotInDB");
+    void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() {
+        assertGeneratedContentMatches("mapIDsNotInDB");
     }
 
     @Test
-    void generate_mutation_shouldGenerateResolversWithValidationErrorHandling() throws IOException {
+    void generate_mutation_shouldGenerateResolversWithValidationErrorHandling() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("validationErrorHandling");
+        assertGeneratedContentMatches("validationErrorHandling");
     }
 
     @Test
-    void generate_serviceMutation_shouldGenerateResolversWithValidationErrorHandling() throws IOException {
+    void generate_serviceMutation_shouldGenerateResolversWithValidationErrorHandling() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceValidationErrorHandling");
+        assertGeneratedContentMatches("serviceValidationErrorHandling");
     }
 
     @Test
-    void generate_serviceMutation_shouldGenerateResolversWithoutErrorHandlingForErrorsMappedByExceptionHandler() throws IOException {
+    void generate_serviceMutation_shouldGenerateResolversWithoutErrorHandlingForErrorsMappedByExceptionHandler() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, "MyValidationError"));
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("serviceValidationErrorHandlingWhenExceptionsHandledElsewhere");
+        assertGeneratedContentMatches("serviceValidationErrorHandlingWhenExceptionsHandledElsewhere");
     }
 
     @Test
-    void generate_whenHasSetUpdateType_shouldGenerateUpdateQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("updateQueries");
+    void generate_whenHasSetUpdateType_shouldGenerateUpdateQueriesAndResolvers() {
+        assertGeneratedContentMatches("updateQueries");
     }
 
     @Test
-    void generate_whenHasSetUpdateType_shouldGenerateIterableUpdateQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("updateIterableQueries");
+    void generate_whenHasSetUpdateType_shouldGenerateIterableUpdateQueriesAndResolvers() {
+        assertGeneratedContentMatches("updateIterableQueries");
     }
 
     @Test
-    void generate_whenHasSetInsertType_shouldGenerateInsertQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("insertQueries");
+    void generate_whenHasSetInsertType_shouldGenerateInsertQueriesAndResolvers() {
+        assertGeneratedContentMatches("insertQueries");
     }
 
     @Test
-    void generate_whenHasSetInsertType_shouldGenerateIterableInsertQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("insertIterableQueries");
+    void generate_whenHasSetInsertType_shouldGenerateIterableInsertQueriesAndResolvers() {
+        assertGeneratedContentMatches("insertIterableQueries");
     }
 
     @Test
-    void generate_whenHasSetUpsertType_shouldGenerateUpsertQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("upsertQueries");
+    void generate_whenHasSetUpsertType_shouldGenerateUpsertQueriesAndResolvers() {
+        assertGeneratedContentMatches("upsertQueries");
     }
 
     @Test
-    void generate_whenHasSetUpsertType_shouldGenerateIterableUpsertQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("upsertIterableQueries");
+    void generate_whenHasSetUpsertType_shouldGenerateIterableUpsertQueriesAndResolvers() {
+        assertGeneratedContentMatches("upsertIterableQueries");
     }
 
     @Test
-    void generate_whenHasSetDeleteType_shouldGenerateDeleteQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("deleteQueries");
+    void generate_whenHasSetDeleteType_shouldGenerateDeleteQueriesAndResolvers() {
+        assertGeneratedContentMatches("deleteQueries");
     }
 
     @Test
-    void generate_whenHasSetDeleteType_shouldGenerateIterableDeleteQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("deleteIterableQueries");
+    void generate_whenHasSetDeleteType_shouldGenerateIterableDeleteQueriesAndResolvers() {
+        assertGeneratedContentMatches("deleteIterableQueries");
     }
 
     @Test
-    void generate_whenHasSetMutationType_shouldGenerateNestedQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mutationWithNestedResponse");
+    void generate_whenHasSetMutationType_shouldGenerateNestedQueriesAndResolvers() {
+        assertGeneratedContentMatches("mutationWithNestedResponse");
     }
 
     @Test
-    void generate_whenHasSetMutationType_shouldGenerateQueriesWithEnumInputs() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("enumInputQueries");
+    void generate_whenHasSetMutationType_shouldGenerateQueriesWithEnumInputs() {
+        assertGeneratedContentMatches("enumInputQueries");
     }
 
     @Test
-    void generate_whenHasSetMutationTypeWithMismatchedIterability_shouldGenerateAdjustedNestedQueriesAndResolvers() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("mismatchedIterabilityQueries");
+    void generate_whenHasSetMutationTypeWithMismatchedIterability_shouldGenerateAdjustedNestedQueriesAndResolvers() {
+        assertGeneratedContentMatches("mismatchedIterabilityQueries");
     }
 
     @Test

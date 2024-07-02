@@ -6,18 +6,15 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class GraphQLGeneratorExceptionHandlingTest extends TestCommon {
-
+public class GraphQLGeneratorExceptionHandlingTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "exception";
 
     public GraphQLGeneratorExceptionHandlingTest() {
@@ -25,51 +22,37 @@ public class GraphQLGeneratorExceptionHandlingTest extends TestCommon {
     }
 
     @Override
-    protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
-        var processedSchema = getProcessedSchema(schemaParentFolder);
-        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new MutationExceptionStrategyConfigurationGenerator(processedSchema),
-                new ExceptionToErrorMappingProviderGenerator(processedSchema));
-        return generateFiles(generators);
-    }
-
-    @Override
-    protected void setProperties() {
-        GeneratorConfig.setProperties(
-                Set.of(),
-                tempOutputDirectory.toString(),
-                DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE,
-                List.of(),
-                List.of(),
-                List.of()
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(
+                new MutationExceptionStrategyConfigurationGenerator(schema),
+                new ExceptionToErrorMappingProviderGenerator(schema)
         );
     }
 
     @Test
     @DisplayName("Test generation of exception strategy supporting 'constraint validation violation' exceptions")
-    void testValidationExceptionGeneration() throws IOException {
+    void testValidationExceptionGeneration() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, "MyValidationError"));
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("validationException");
+        assertGeneratedContentMatches("validationException");
     }
 
     @Test
     @DisplayName("Test generation of exception strategy supporting 'data access' exceptions")
-    void testDataAccessExceptionGeneration() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("dataAccessException");
+    void testDataAccessExceptionGeneration() {
+        assertGeneratedContentMatches("dataAccessException");
     }
 
     @Test
     @DisplayName("Test generation of exception strategy supporting both 'data access' and 'constraint validation violation' exceptions")
-    void testDataAccessExceptionAndValidationGeneration() throws IOException {
+    void testDataAccessExceptionAndValidationGeneration() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, "MyValidationError"));
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("dataAccessException", "validationAndDataAccessException");
+        assertGeneratedContentMatches("dataAccessException", "validationAndDataAccessException");
     }
 
     @Test
     @DisplayName("Test generation of exception strategy supporting 'business logic' exceptions")
-    void testBusinessLogicExceptionGeneration() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("businessLogicException");
+    void testBusinessLogicExceptionGeneration() {
+        assertGeneratedContentMatches("businessLogicException");
     }
 
     @Test

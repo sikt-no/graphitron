@@ -1,8 +1,5 @@
 package no.fellesstudentsystem.graphitron;
 
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
@@ -11,55 +8,37 @@ import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGener
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.transforms.SomeTransform;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
-public class GraphQLGeneratorTransformTest extends TestCommon {
+import static no.fellesstudentsystem.graphitron.TestReferenceSet.TRANSFORM_0;
+
+public class GraphQLGeneratorTransformTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "transform";
-    private final List<ExternalReference> references =
-            List.of(new ExternalClassReference("TEST_TRANSFORM", SomeTransform.class));
-
-    private final List<GlobalTransform> globalTransforms = List.of(
-            new GlobalTransform("TEST_TRANSFORM", "someTransform", TransformScope.ALL_MUTATIONS)
-    );
 
     public GraphQLGeneratorTransformTest() {
-        super(SRC_TEST_RESOURCES_PATH);
-    }
-
-    @Override
-    protected Map<String, List<String>> generateFiles(String schemaParentFolder) throws IOException {
-        var processedSchema = getProcessedSchema(schemaParentFolder);
-        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
-                new UpdateResolverClassGenerator(processedSchema),
-                new UpdateDBClassGenerator(processedSchema),
-                new TransformerClassGenerator(processedSchema),
-                new RecordMapperClassGenerator(processedSchema, true)
-        );
-
-        return generateFiles(generators);
-    }
-
-    @Override
-    protected void setProperties() {
-        GeneratorConfig.setProperties(
-                Set.of(),
-                tempOutputDirectory.toString(),
-                DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE,
-                references,
-                globalTransforms,
+        super(
+                SRC_TEST_RESOURCES_PATH,
+                List.of(TRANSFORM_0.get()),
+                List.of(new GlobalTransform("TEST_TRANSFORM", "someTransform", TransformScope.ALL_MUTATIONS)),
                 List.of()
         );
     }
 
+    @Override
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(
+                new UpdateResolverClassGenerator(schema),
+                new UpdateDBClassGenerator(schema),
+                new TransformerClassGenerator(schema),
+                new RecordMapperClassGenerator(schema, true)
+        );
+    }
+
     @Test
-    void generate_mutation_shouldGenerateResolversWithTransform() throws IOException {
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("resolverWithTransforms");
+    void generate_mutation_shouldGenerateResolversWithTransform() {
+        assertGeneratedContentMatches("resolverWithTransforms");
     }
 }

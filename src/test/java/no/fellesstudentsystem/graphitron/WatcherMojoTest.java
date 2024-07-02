@@ -15,7 +15,7 @@ import java.nio.file.Path;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.TestCommon.*;
+import static no.fellesstudentsystem.graphitron.GeneratorTest.*;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,7 +46,7 @@ public class WatcherMojoTest {
         var watcherThread = initiateWatcherThread(getMojo(schemaCopyPath.toString(), tempCodeOutputDirectory));
 
         waitForThread(watcherThread); // Wait until the thread finishes the initial writing of the files.
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder( testPath + "before", readGeneratedFiles(tempCodeOutputDirectory));
+        assertGeneratedContentMatches( testPath + "before", readGeneratedFiles(tempCodeOutputDirectory));
 
         // Edit the graph file by removing a field.
         var newFileLines = readFileAsStrings(schemaCopyPath)
@@ -56,7 +56,7 @@ public class WatcherMojoTest {
         Files.write(schemaCopyPath, newFileLines);
 
         waitForThread(watcherThread); // Wait until the thread notices the changes and regenerates the code.
-        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(testPath + "after", readGeneratedFiles(tempCodeOutputDirectory));
+        assertGeneratedContentMatches(testPath + "after", readGeneratedFiles(tempCodeOutputDirectory));
 
         assertFalse(watcherThread.isInterrupted()); // Thread shouldn't crash while watching files.
         assertTrue(watcherThread.isAlive());
