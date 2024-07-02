@@ -1,0 +1,17 @@
+type Query {
+  city(cityInput: CityInput1): [City]
+}
+
+type City @table {
+  id: ID!
+}
+
+input CityInput1 {
+  cityId: String! @field(name: "CITY_ID")
+  cityInput2: [CityInput2]
+}
+
+input CityInput2 {
+  cityId: String @field(name: "CITY_ID")
+  name: String @field(name: "CITY")
+}

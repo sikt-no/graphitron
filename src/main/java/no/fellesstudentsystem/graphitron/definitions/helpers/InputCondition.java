@@ -3,28 +3,26 @@ package no.fellesstudentsystem.graphitron.definitions.helpers;
 import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.stream.Collectors;
 
 public class InputCondition {
     private final InputField input;
     private final String namePath;
-    private HashSet<String> nullChecks;
+    private final LinkedHashSet<String> nullChecks;
+    private final boolean pastWasIterable;
 
-    private InputCondition(InputField input, String namePath, HashSet<String> nullChecks) {
+    private InputCondition(InputField input, String namePath, LinkedHashSet<String> nullChecks, boolean pastWasIterable) {
         this.input = input;
         this.namePath = namePath;
-        this.nullChecks = new HashSet<>(nullChecks);
+        this.nullChecks = new LinkedHashSet<>(nullChecks);
+        this.pastWasIterable = pastWasIterable;
 
         inferAdditionalChecks(input);
     }
 
     public InputCondition(InputField input) {
-        this.input = input;
-        namePath = "";
-        nullChecks = new HashSet<>();
-
-        inferAdditionalChecks(input);
+        this(input, "",  new LinkedHashSet<>(), false);
     }
 
     public InputField getInput() {
@@ -33,7 +31,7 @@ public class InputCondition {
 
     private void inferAdditionalChecks(InputField input) {
         var name = getNameWithPathString();
-        if (input.isNullable()) {
+        if (!pastWasIterable && input.isNullable()) {
             this.nullChecks.add(name + " != null");
         }
 
@@ -59,10 +57,10 @@ public class InputCondition {
     }
 
     public InputCondition iterate(InputField input) {
-        return new InputCondition(input, getNameWithPathString(), nullChecks);
+        return new InputCondition(input, getNameWithPathString(), nullChecks, pastWasIterable || this.input.isIterableWrapped());
     }
 
     public InputCondition applyTo(InputField input) {
-        return new InputCondition(input, namePath, nullChecks);
+        return new InputCondition(input, namePath, nullChecks, pastWasIterable || this.input.isIterableWrapped());
     }
 }

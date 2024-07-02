@@ -163,6 +163,11 @@ public class GraphQLGeneratorQueryTest extends TestCommon {
     }
 
     @Test
+    void generate_queryWithInputs_shouldCreateConditionsWithoutExtraNullChecksWhenIterable() throws IOException {
+        assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("queryWithLayeredAndListedChecks");
+    }
+
+    @Test
     void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() throws IOException {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder("splitQueryForTypeWithoutTable");
     }
