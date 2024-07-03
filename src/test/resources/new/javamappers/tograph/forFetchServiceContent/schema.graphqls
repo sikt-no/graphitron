@@ -1,0 +1,35 @@
+type Query {
+  customersQuery: [Customer] @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  customersQueryWrapped: OuterWrapper @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+}
+
+type OuterWrapper @record(record: {name: "MAPPER_RECORD_CUSTOMER"}) {
+  customer: Customer @field(name: "record")
+}
+
+type Customer implements Node @table {
+  id: ID!
+  historicalAddresses: [Address!]! @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+}
+
+type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
+  id: ID!
+  postalCode: String!
+  inner: InnerWrapper
+
+  # Nested records, mapper should handle these as well.
+  city: AddressCity0
+  cityRecord: AddressCity1
+}
+
+type InnerWrapper {
+  postalCode: String!
+}
+
+type AddressCity0 @table(name: "City") {
+  city: String!
+}
+
+type AddressCity1 @record(record: {name: "MAPPER_RECORD_CITY"}) {
+  city: String! @field(name: "cityName")
+}

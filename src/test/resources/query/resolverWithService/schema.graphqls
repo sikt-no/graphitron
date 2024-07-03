@@ -1,6 +1,5 @@
 type Query {
   customersQuery(ids: [ID!]! @field(name: "CUSTOMER_ID")): [Customer] @service(service : {name: "TEST_FETCH_CUSTOMER"})
-  films: [Film] # Irrelevant other query, should not generate mapper for this.
 }
 
 type Customer implements Node @table {
@@ -11,9 +10,4 @@ type Customer implements Node @table {
 type Address implements Node @table {
   id: ID!
   postalCode: String!
-}
-
-type Film implements Node @table {
-  id: ID!
-  title: String!
 }

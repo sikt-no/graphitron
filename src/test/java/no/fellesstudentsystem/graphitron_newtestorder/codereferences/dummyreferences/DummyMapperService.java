@@ -1,0 +1,6 @@
+package no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences;
+
+/**
+ * Fake service for mapper tests. Does not need to contain anything, mappers do not use this for anything. Only service class reference is checked here.
+ */
+public class DummyMapperService {}

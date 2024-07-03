@@ -4,8 +4,6 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
@@ -38,11 +36,7 @@ public class GraphQLGeneratorQueryServiceTest extends GeneratorTest {
         return List.of(
                 new FetchDBClassGenerator(schema), // Need to test that queries are NOT generated.
                 new FetchResolverClassGenerator(schema),
-                new TransformerClassGenerator(schema),
-                new RecordMapperClassGenerator(schema, true),
-                new RecordMapperClassGenerator(schema, false),
-                new JavaRecordMapperClassGenerator(schema, true),
-                new JavaRecordMapperClassGenerator(schema, false)
+                new TransformerClassGenerator(schema)
         );
     }
 

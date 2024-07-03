@@ -1,0 +1,41 @@
+type Query {
+  customersQuery: Customer @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  customersQueryList: [Customer] @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  films: [Film] # Irrelevant other query, should not generate mapper for this.
+}
+
+type Film implements Node @table @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+  id: ID!
+}
+
+type Customer implements Node @table {
+  id: ID!
+  wrapper: Wrapper
+  historicalAddresses: [Address!]! @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+}
+
+type Wrapper {
+  historicalAddressesWrapped: [AddressWrapped!]! @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+}
+
+type Address @table {
+  id: ID!
+
+  city: AddressCity0 # This should not produce anything.
+  cityRecord: AddressCity1 # Table ignores record directive.
+}
+
+type AddressWrapped @table {
+  id: ID!
+
+  city: AddressCity0 # This should not produce anything.
+  cityRecord: AddressCity1 # Table ignores record directive.
+}
+
+type AddressCity0 @table(name: "CITY") {
+  city: String!
+}
+
+type AddressCity1 @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+  city: String!
+}

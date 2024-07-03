@@ -1,0 +1,41 @@
+type Query {
+  customersQuery: Customer @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  customersQueryList: [Customer] @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+
+  # Need this one here as well as this invokes special mapping logic due to the mapping source being less clear.
+  customersQueryOuterWrapper: OuterWrapper @service(service: {name: "MAPPER_FETCH_CUSTOMER_SERVICE", method: "customersQuery"})
+}
+
+type OuterWrapper {
+  customers: [CustomerOuterWrapped]
+}
+
+type CustomerOuterWrapped implements Node @table(name: "CUSTOMER") {
+  id: ID!
+}
+
+type Customer implements Node @table {
+  id: ID!
+  historicalAddresses: [Address!]! @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+}
+
+type Address @table {
+  id: ID!
+  postalCode: String!
+  inner: InnerWrapper
+
+  city: AddressCity0 # This should not produce anything.
+  cityRecord: AddressCity1 # Table ignores record directive.
+}
+
+type InnerWrapper {
+  postalCode: String!
+}
+
+type AddressCity0 @table(name: "CITY") {
+  city: String!
+}
+
+type AddressCity1 @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+  city: String!
+}
