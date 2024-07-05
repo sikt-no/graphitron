@@ -4,10 +4,9 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
 import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
-import org.jooq.impl.TableImpl;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
@@ -25,20 +24,18 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
  */
 public class TableReflection {
-    private final static Set<Field> TABLE_FIELDS = Set.of(GeneratorConfig.getGeneratedJooqTablesClass().getFields());
-    private final static Map<String, Field> POSSIBLE_TABLE_FIELDS = TABLE_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
-    private final static Set<Field> KEY_FIELDS = Set.of(GeneratorConfig.getGeneratedJooqKeysClass().getFields());
-    private final static Map<String, Field> POSSIBLE_KEY_FIELDS = KEY_FIELDS.stream().collect(Collectors.toMap(Field::getName, Function.identity()));
+    private final static Map<String, Table<?>> TABLES_BY_JAVA_FIELD_NAME = getTablesByJavaFieldName();
+    private final static Map<String, ForeignKey<?, ?>> FOREIGN_KEYS_BY_JAVA_FIELD_NAME = getForeignKeysByJavaFieldName();
 
     /**
      * @return The implicit key between these two tables.
      */
     public static Optional<String> findImplicitKey(String leftTableName, String rightTableName) {
-        var leftTableOptional = getTableObject(leftTableName);
+        var leftTableOptional = getTable(leftTableName);
         if (leftTableOptional.isEmpty()) {
             return Optional.empty();
         }
-        var rightTableOptional = getTableObject(rightTableName);
+        var rightTableOptional = getTable(rightTableName);
         if (rightTableOptional.isEmpty()) {
             return Optional.empty();
         }
@@ -53,6 +50,7 @@ public class TableReflection {
         if (reverseKeys.size() == 1) {
             return Optional.of(getFixedKeyName(reverseKeys.get(0)));
         }
+
         return Optional.empty();
     }
 
@@ -60,11 +58,11 @@ public class TableReflection {
      * @return The kind of relation that is present between these tables.
      */
     public static TableRelationType inferRelationType(String leftTableName, String rightTableName, JOOQMapping preferredKey) {
-        var leftTable = getTableObject(leftTableName);
+        var leftTable = getTable(leftTableName);
         if (leftTable.isEmpty()) {
             return TableRelationType.NONE;
         }
-        var rightTable = getTableObject(rightTableName);
+        var rightTable = getTable(rightTableName);
         if (rightTable.isEmpty()) {
             return TableRelationType.NONE;
         }
@@ -116,35 +114,35 @@ public class TableReflection {
      * @return Does this table exist in the generated jOOQ code?
      */
     public static boolean tableExists(String tableName) {
-        return POSSIBLE_TABLE_FIELDS.containsKey(tableName);
+        return TABLES_BY_JAVA_FIELD_NAME.containsKey(tableName);
     }
 
     /**
      * @return Does this key exist in the generated jOOQ code?
      */
     public static boolean keyExists(String keyName) {
-        return POSSIBLE_KEY_FIELDS.containsKey(keyName);
+        return FOREIGN_KEYS_BY_JAVA_FIELD_NAME.containsKey(keyName);
     }
 
     /**
      * @return Does this table or key exist in the generated jOOQ code?
      */
     public static boolean tableOrKeyExists(String name) {
-        return POSSIBLE_KEY_FIELDS.containsKey(name) || POSSIBLE_TABLE_FIELDS.containsKey(name);
+        return tableExists(name) || keyExists(name);
     }
 
     /**
      * @return Which table does this key point to?
      */
     public static Optional<String> getKeyTargetTable(String keyName) {
-        return getKeyObject(keyName).map(it -> it.getKey().getTable().getName().toUpperCase());
+        return getForeignKey(keyName).map(it -> it.getKey().getTable().getName().toUpperCase());
     }
 
     /**
      * @return Which table does this key belong to?
      */
     public static Optional<String> getKeySourceTable(String keyName) {
-        return getKeyObject(keyName).map(it -> it.getTable().getName().toUpperCase());
+        return getForeignKey(keyName).map(it -> it.getTable().getName().toUpperCase());
     }
 
     public static Optional<Map<TableField<?, ?>, TableField<?, ?>>> getKeyFields(JOOQMapping key) {
@@ -153,8 +151,8 @@ public class TableReflection {
         }
 
         var keyName = key.getMappingName();
-        var fromColumns = getKeyObject(keyName).map(Key::getFields);
-        var toColumns = getKeyObject(keyName).map(ForeignKey::getKeyFields);
+        var fromColumns = getForeignKey(keyName).map(Key::getFields);
+        var toColumns = getForeignKey(keyName).map(ForeignKey::getKeyFields);
 
         if(fromColumns.isEmpty() || toColumns.isEmpty()) {
             return Optional.empty();
@@ -173,59 +171,32 @@ public class TableReflection {
      * @return Set of the names for all the fields that are set as required in the jOOQ table.
      */
     public static Set<String> getRequiredFields(String tableName) {
-        var field = getTablesField(tableName);
-        if (field.isEmpty()) {
-            return Set.of();
-        }
-
-        try {
-            return Arrays
-                    .stream(((TableImpl<?>) field.get().get(null)).fields()) // 'Tables' contains only records.
-                    .filter(it -> !it.getDataType().nullable())
-                    .map(org.jooq.Field::getName)
-                    .collect(Collectors.toSet());
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
+        return getTable(tableName)
+                .map(table -> table.fieldStream()
+                        .filter(field -> !field.getDataType().nullable())
+                        .map(Field::getName)
+                        .collect(Collectors.toSet()))
+                .orElse(Set.of());
     }
 
     /**
      * @return Is this field nullable in the jOOQ table?.
      */
     public static Optional<Boolean> fieldIsNullable(String tableName, String fieldName) {
-        var field = getTablesField(tableName);
-        if (field.isEmpty()) {
-            return Optional.empty();
-        }
-
-        try {
-            return Optional.of(
-                    Arrays
-                            .stream(((TableImpl<?>) field.get().get(null)).fields())
-                            .filter(it -> it.getName().equalsIgnoreCase(fieldName))
-                            .anyMatch(it -> it.getDataType().nullable())
-            );
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
+        return getTable(tableName)
+                .map(table -> table
+                        .fieldStream()
+                        .filter(it -> it.getName().equalsIgnoreCase(fieldName))
+                        .anyMatch(it -> it.getDataType().nullable()));
     }
 
     /**
      * @return Does this field have a default value in this jOOQ table? Does not work for views.
      */
     public static boolean tableFieldHasDefaultValue(String tableName, String fieldName) {
-        return getTableObject(tableName)
+        return getTable(tableName)
                 .flatMap(value -> Arrays.stream(value.fields()).filter(it -> it.getName().equalsIgnoreCase(fieldName)).findFirst())
                 .map(it -> it.getDataType().defaulted()) // This does not work for views.
-                .orElse(false);
-    }
-
-    /**
-     * @return Does this jOOQ table contain this method name?
-     */
-    public static boolean tableHasMethod(String tableName, String methodName) {
-        return getTablesField(tableName)
-                .map(value -> Stream.of(value.getType().getMethods()).map(Method::getName).anyMatch(m -> m.equals(methodName)))
                 .orElse(false);
     }
 
@@ -241,15 +212,10 @@ public class TableReflection {
     }
 
     public static Optional<Index> getIndex(String tableName, String indexName) {
-        return getTablesField(tableName)
-                .map(tableField -> {
-                    try {
-                        return ((TableImpl<?>) tableField.get(null)).getIndexes().stream()
-                                .filter(index -> index.getName().equalsIgnoreCase(indexName))
-                                .findFirst();
-                    } catch (IllegalAccessException e) {
-                        throw new RuntimeException(e);
-                    }}).orElse(Optional.empty());
+        return getTable(tableName)
+                .flatMap(table -> table.getIndexes().stream()
+                        .filter(index -> index.getName().equalsIgnoreCase(indexName))
+                        .findFirst());
     }
 
     /**
@@ -259,22 +225,32 @@ public class TableReflection {
      * @return The name of a method that matches the provided name if it exists.
      */
     public static Optional<String> searchTableForMethodWithName(String tableName, String name) {
-        var keyMethod = searchTableForKeyMethodName(tableName, name);
-        if (keyMethod.isPresent()) {
-            return keyMethod;
-        }
-
-        var field = getTablesField(tableName);
-        if (field.isEmpty()) {
-            return Optional.empty();
-        }
-
         var adjustedName = name.replace("_", "");
-        return Stream
-                .of(field.get().getType().getMethods())
-                .map(Method::getName)
-                .filter(m -> m.replace("_", "").equalsIgnoreCase(adjustedName))
-                .findFirst();
+        return searchTableForKeyMethodName(tableName, name)
+                .or(() -> getMethodName(tableName, name))
+                .or(() -> getMethodName(tableName, name.toLowerCase()))
+                .or(() -> getMethodName(tableName, adjustedName));
+    }
+
+    @NotNull
+    private static Optional<String> getMethodName(String tableName, String name) {
+        return getMethod(tableName, name)
+                .map(Method::getName);
+    }
+
+    @NotNull
+    /***
+     * @deprecated Denne metoden skal ikke lenger være public.
+     */
+    public static Optional<Method> getMethod(String tableName, String name) {
+        return getTable(tableName)
+                .flatMap(table -> {
+                    try {
+                        return Optional.of(table.getClass().getMethod(name));
+                    } catch (NoSuchMethodException e) {
+                        return Optional.empty();
+                    }
+                });
     }
 
     /**
@@ -283,7 +259,7 @@ public class TableReflection {
      * @return The name of a method that matches a key between the tables if exists.
      */
     public static Optional<String> searchTableForKeyMethodName(String table, String key) {
-        return getTableObject(table).flatMap(value -> value
+        return getTable(table).flatMap(value -> value
                 .getReferences()
                 .stream()
                 .map(it -> matchName(key, it))
@@ -311,73 +287,23 @@ public class TableReflection {
         return Optional.of(uncapitalize(splitDouble));
     }
 
-    private static Optional<Table<?>> getTableObject(String table) {
-        var field = getTablesField(table);
-        if (field.isEmpty()) {
-            return Optional.empty();
-        }
-
-        try {
-            return Optional.of(((Table<?>) field.get().get(null)));
-        } catch (IllegalAccessException e) {
-            return Optional.empty();
-        }
+    private static Optional<Table<?>> getTable(String name) {
+        return Optional.ofNullable(TABLES_BY_JAVA_FIELD_NAME.get(name));
     }
 
-    private static Table<?> getTableObjectOrException(String table) {
-        var field = getTablesField(table);
-        if (field.isEmpty()) {
-            throw new IllegalArgumentException("Table " + table + " does not exist.");
-        }
-
-        try {
-            return (Table<?>) field.get().get(null);
-        } catch (IllegalAccessException e) {
-            throw new IllegalArgumentException("Table " + table + " does not exist.");
-        }
-    }
-
-    private static Optional<ForeignKey<?, ?>> getKeyObject(String key) {
-        var field = getKeysField(key);
-        if (field.isEmpty()) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(((ForeignKey<?, ?>) field.get().get(null)));
-        } catch (IllegalAccessException e) {
-            return Optional.empty();
-        }
+    private static Optional<ForeignKey<?, ?>> getForeignKey(String name) {
+        return Optional.ofNullable(FOREIGN_KEYS_BY_JAVA_FIELD_NAME.get(name));
     }
 
     /**
      * @return Set of field names for this table.
      */
-    public static Set<String> getFieldNamesForTable(String tableName) {
-        return getTablesField(tableName)
-                .map(value -> Stream.of(value.getType().getFields()).map(Field::getName).collect(Collectors.toSet()))
+    public static Set<String> getJavaFieldNamesForTable(String tableName) {
+        return getTable(tableName)
+                .map(table -> Arrays.stream(table.getClass().getFields())
+                        .map(TableReflection::getJavaFieldName)
+                        .collect(Collectors.toSet()))
                 .orElse(Set.of());
-    }
-
-    /**
-     * @return Find this table as a field in jOOQs Tables class through reflection.
-     */
-    public static Optional<Field> getTablesField(String tableName) {
-        if (!tableExists(tableName)) {
-            return Optional.empty();
-        }
-
-        return Optional.of(POSSIBLE_TABLE_FIELDS.get(tableName));
-    }
-
-    /**
-     * @return Find this key as a field in jOOQs Keys class through reflection.
-     */
-    public static Optional<Field> getKeysField(String keyName) {
-        if (!keyExists(keyName)) {
-            return Optional.empty();
-        }
-
-        return Optional.of(POSSIBLE_KEY_FIELDS.get(keyName));
     }
 
     private static String getFixedKeyName(ForeignKey<?, ?> key) { // TODO: Remove this hack.
@@ -388,5 +314,70 @@ public class TableReflection {
 
         var split = unquoted.split("\\.");
         return split[split.length - 1];
+    }
+
+    protected static Map<String, Table<?>> getTablesByJavaFieldName() {
+        return getDefaultCatalog()
+                .schemaStream()
+                .flatMap(getFieldsFromSchemaClass("Tables"))
+                .filter(it -> Table.class.isAssignableFrom(it.getType()))
+                .collect(Collectors.toMap(
+                        TableReflection::getJavaFieldName,
+                        it -> (Table<?>) getJavaFieldValue(it)));
+    }
+
+    protected static Map<String, ForeignKey<?, ?>> getForeignKeysByJavaFieldName() {
+        return getDefaultCatalog()
+                .schemaStream()
+                .flatMap(getFieldsFromSchemaClass("Keys"))
+                .filter(it -> ForeignKey.class.isAssignableFrom(it.getType()))
+                .collect(Collectors.toMap(
+                        TableReflection::getJavaFieldName,
+                        it -> (ForeignKey<?, ?>) getJavaFieldValue(it)));
+    }
+
+    private static Function<Schema, Stream<java.lang.reflect.Field>> getFieldsFromSchemaClass(String className) {
+        return getClassFromSchemaPackage(className)
+                .andThen(it -> Arrays.stream(it.getFields()));
+    }
+
+    @NotNull
+    private static Function<Schema, Class<?>> getClassFromSchemaPackage(String className) {
+        return schema -> {
+            var packageName = schema.getClass().getPackageName();
+            try {
+                return Class.forName(packageName + "." + className);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(packageName + " did not contain a Keys class. Inconceivable.", e);
+            }
+        };
+    }
+
+    private static String getJavaFieldName(java.lang.reflect.Field field) {
+        return field.getName();
+    }
+
+    private static Object getJavaFieldValue(java.lang.reflect.Field field) {
+        try {
+            return field.get(null);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Catalog getDefaultCatalog() {
+        var generatedJooqPackage = GeneratorConfig.getGeneratedJooqPackage();
+
+        try {
+            var defaultCatalogClass = Class.forName(generatedJooqPackage + ".DefaultCatalog");
+            var defaultCatalogField = defaultCatalogClass.getField("DEFAULT_CATALOG");
+            return (Catalog) defaultCatalogField.get(null);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(generatedJooqPackage + " did not contain a DefaultCatalog class. This is probably a configuration error.", e);
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException(generatedJooqPackage + ".DefaultCatalog did not contain the DEFAULT_CATALOG field. Inconceivable.", e);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Could not get " + generatedJooqPackage + ".DefaultCatalog.DEFAULT_CATALOG. Inconceivable.", e);
+        }
     }
 }

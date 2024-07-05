@@ -100,7 +100,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> TableReflection.tableOrKeyExists(it.getKey()))
                 .forEach(entry -> {
                     var tableName = entry.getKey();
-                    var allFieldNames = TableReflection.getFieldNamesForTable(tableName);
+                    var allFieldNames = TableReflection.getJavaFieldNamesForTable(tableName);
                     var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).collect(Collectors.toList());
                     var missingElements = nonFieldElements
                             .stream()
