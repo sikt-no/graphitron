@@ -787,20 +787,34 @@ public class ProcessedSchema {
      * @return List of fields that points to a type with the table or record directive set.
      */
     private List<GenerationField> findTransformableFields(ObjectField field, boolean isMutation) {
+        // Note, do not check for conditions in this variable, it should not apply to object fields. Conditions should not affect return type mapping!
         var canMapTable = isMutation || field.hasServiceReference();
-        var objects = field.isGenerated() ? findTransformableFields(field, new HashSet<>(), isMutation, canMapTable, false, 0).stream() : Stream.<ObjectField>of();
-        var inputs = field.getArguments().stream().flatMap(it -> findTransformableFields(it, new HashSet<>(), isMutation, canMapTable, false, 0).stream());
+
+        var objects = field.isGenerated() ? findTransformableFields(field, new HashSet<>(), isMutation, canMapTable, false, false, 0).stream() : Stream.<ObjectField>of();
+        var inputs = field
+                .getArguments()
+                .stream()
+                .flatMap(it -> findTransformableFields(it, new HashSet<>(), isMutation, canMapTable, false, field.hasCondition(), 0).stream());
         return Stream.concat(objects, inputs).collect(Collectors.toList());
     }
 
-    private List<GenerationField> findTransformableFields(GenerationField field, HashSet<GenerationField> seen, boolean isMutation, boolean canMapTable, boolean hadTable, int recursion) {
+    private List<GenerationField> findTransformableFields(
+            GenerationField field,
+            HashSet<GenerationField> seen,
+            boolean isMutation,
+            boolean canMapTable,
+            boolean hadTable,
+            boolean hadMappableInputConfiguration,
+            int recursion
+    ) {
         recursionCheck(recursion);
-        if (seen.contains(field)) {
+        if (seen.contains(field) || field.isExplicitlyNotGenerated()) {
             return List.of();
         }
         seen.add(field);
 
         var hasService = field.hasServiceReference();
+        var hasCondition = field.hasCondition();
         if (!field.isInput()) {
             var objectField = (ObjectField) field;
             if (objectField.hasMutationType() || objectField.isFetchByID() || (recursion > 0 && isMutation && hasService)) {
@@ -813,12 +827,27 @@ public class ProcessedSchema {
             return List.of();
         }
 
-        var canMapTableHere = isMutation || (hasService || type.hasJavaRecordReference() || canMapTable);
-        var alreadyWrappedInTable = hadTable && type.hasTable();
+        var canMapTableHere = isMutation || hasService || hasCondition && field.isInput() || type.hasJavaRecordReference() || canMapTable || hadMappableInputConfiguration;
+        var notAlreadyWrappedInTable = !hadTable || !type.hasTable() || hadMappableInputConfiguration;
         var array = new ArrayList<GenerationField>();
-        if ((type.hasRecordReference() || hasService && !isMutation) && !field.isExplicitlyNotGenerated() && !alreadyWrappedInTable && canMapTableHere) {
+        if ((type.hasRecordReference() || hasService && !isMutation) && !field.isExplicitlyNotGenerated() && notAlreadyWrappedInTable && canMapTableHere) {
             array.add(field);
         }
+
+        if (!field.isInput() && (hasService || hasCondition) && !isMutation && !field.isExplicitlyNotGenerated()) {
+            array.addAll(((ObjectField) field).getArguments().stream().flatMap(it ->
+                    findTransformableFields(
+                            it,
+                            seen,
+                            false,
+                            !(hadTable || type.hasTable()),
+                            hadTable || type.hasTable(),
+                            true,
+                            recursion + 1
+                    ).stream()).collect(Collectors.toList())
+            );
+        }
+
         array.addAll(type.getFields().stream().flatMap(it ->
                 findTransformableFields(
                         it,
@@ -826,6 +855,7 @@ public class ProcessedSchema {
                         isMutation,
                         canMapTableHere && !(hadTable || type.hasTable()),
                         !canMapTableHere && (hadTable || type.hasTable()) && !it.isResolver(),
+                        false,
                         recursion + 1
                 ).stream()).collect(Collectors.toList())
         );

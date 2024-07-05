@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron_newtestorder;
 
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyMapperCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyMapperRecord;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyMapperService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperAddressJavaRecord;
@@ -16,6 +17,9 @@ public enum ReferenceTestSet {
 
     // Dummy record.
     MAPPER_DUMMY_RECORD("MAPPER_DUMMY_RECORD", DummyMapperRecord.class),
+
+    // Dummy condition.
+    MAPPER_DUMMY_CONDITION("MAPPER_DUMMY_CONDITION", DummyMapperCondition.class),
 
     // Mapping services.
     MAPPER_FETCH_CUSTOMER_SERVICE("MAPPER_FETCH_CUSTOMER_SERVICE", MapperFetchCustomerService.class),

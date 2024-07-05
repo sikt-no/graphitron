@@ -187,12 +187,8 @@ public abstract class GeneratorTest {
         assertGeneratedContentMatches(resourceRootFolder, resourceRootFolder);
     }
 
-    protected void assertGeneratedFilesMatch(String schemaFolder, String expectedOutputFolder) {
-        assertGeneratedContentMatches(sourceTestPath + expectedOutputFolder, generateFiles(schemaFolder));
-    }
-
-    protected void assertGeneratedFilesMatch(String resourceRootFolder) {
-        assertGeneratedContentMatches(resourceRootFolder, resourceRootFolder);
+    protected void assertFilesAreGenerated(Set<String> expectedFiles, String schemaFolder) {
+        assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(expectedFiles);
     }
 
     private void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
