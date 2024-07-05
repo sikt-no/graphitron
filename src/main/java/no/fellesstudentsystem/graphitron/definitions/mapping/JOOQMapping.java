@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.mapping;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.JoinElement;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Objects;
@@ -93,5 +95,17 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
     @Override
     public int hashCode() {
         return Objects.hash(name);
+    }
+
+    public Class<?> getTableClass() {
+        // FIXME: Dersom skjema refererer til en tabell som ikke finnes burde vi stoppe genereringen (FSP-538)
+        return TableReflection.getTableClass(name)
+                .orElse(Object.class);
+    }
+
+    public Class<?> getRecordClass() {
+        // FIXME: Dersom skjema refererer til en tabell som ikke finnes burde vi stoppe genereringen (FSP-538)
+        return TableReflection.getRecordClass(name)
+                .orElse(Object.class);
     }
 }

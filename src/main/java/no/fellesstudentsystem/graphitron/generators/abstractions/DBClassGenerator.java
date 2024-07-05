@@ -3,14 +3,14 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
-
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.KEYS;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.TABLES;
+import java.util.Set;
 
 /**
  * Superclass for any select query generator classes.
@@ -34,14 +34,22 @@ abstract public class DBClassGenerator<T extends GenerationTarget> extends Abstr
         return spec;
     }
 
+    protected Set<Class<?>> getStaticImports() {
+        var union = new HashSet<Class<?>>();
+        union.addAll(TableReflection.getClassFromSchemas("Tables"));
+        union.addAll(TableReflection.getClassFromSchemas("Keys"));
+        return union;
+    }
+
     @Override
     public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
-        var file = JavaFile
+        var fileBuilder = JavaFile
                 .builder(packagePath + "." + directoryOverride, generatedClass)
-                .addStaticImport(TABLES.className, "*")
-                .addStaticImport(KEYS.className, "*")
-                .indent("    ")
-                .build();
+                .indent("    ");
+
+        getStaticImports().forEach(it -> fileBuilder.addStaticImport(it, "*"));
+
+        var file = fileBuilder.build();
         try {
             file.writeTo(new File(path));
         } catch (IOException e) {

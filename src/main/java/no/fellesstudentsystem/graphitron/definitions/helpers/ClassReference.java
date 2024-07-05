@@ -35,6 +35,11 @@ public class ClassReference {
                 : ClassName.get(packageSource, typeName); // TODO: Remove special else case (should be just null). In our test the objects do not exist and this class lookup will fail. When the graphql-codegen is integrated in this module this will be redundant.
     }
 
+    public ClassReference(Class<?> reference) {
+        classReference = reference;
+        className = ClassName.get(reference);
+    }
+
     public Class<?> getReferenceClass() {
         return classReference;
     }

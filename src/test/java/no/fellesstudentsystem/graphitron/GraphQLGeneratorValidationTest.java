@@ -134,7 +134,7 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
     void generate_whenUnknownNodeTable_shouldLogWarning() {
         getProcessedSchema("warning/unknownNodeTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table or key with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys"
+                "No table or key with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata"
         );
     }
 
@@ -142,7 +142,7 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
     void generate_whenUnknownResourceTable_shouldLogWarning() {
         getProcessedSchema("warning/unknownResourceTable");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table or key with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys"
+                "No table or key with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata"
         );
     }
 
@@ -248,8 +248,8 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
         assertThat(getLogMessagesWithLevelWarn()).containsOnly("Problems have been found that MAY prevent code generation:\n" +
                 "No field(s) or method(s) with name(s) 'NOT_A_KEY' found in table 'ADDRESS'" + "\n" +
                 "No field(s) or method(s) with name(s) 'FAKE_KEY' found in table 'CUSTOMER'",
-                "No table or key with name 'FAKE_KEY' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys",
-                "No table or key with name 'NOT_A_KEY' found in no.sikt.graphitron.jooq.generated.testdata.Tables or no.sikt.graphitron.jooq.generated.testdata.Keys"
+                "No table or key with name 'FAKE_KEY' found in no.sikt.graphitron.jooq.generated.testdata",
+                "No table or key with name 'NOT_A_KEY' found in no.sikt.graphitron.jooq.generated.testdata"
         );
     }
 

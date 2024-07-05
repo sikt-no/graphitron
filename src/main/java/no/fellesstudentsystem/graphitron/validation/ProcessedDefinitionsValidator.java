@@ -87,10 +87,9 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> !TableReflection.tableOrKeyExists(it))
                 .forEach(it ->
                         LOGGER.warn(
-                                "No table or key with name '{}' found in {} or {}",
+                                "No table or key with name '{}' found in {}",
                                 it,
-                                GeneratorConfig.getGeneratedJooqTablesClass().getName(),
-                                GeneratorConfig.getGeneratedJooqKeysClass().getName()
+                                GeneratorConfig.getGeneratedJooqPackage()
                         )
                 );
 

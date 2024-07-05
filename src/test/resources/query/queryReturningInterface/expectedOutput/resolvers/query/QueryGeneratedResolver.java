@@ -15,7 +15,9 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import no.sikt.graphitron.jooq.generated.testdata.Tables;
+import no.sikt.graphitron.jooq.generated.testdata.tables.Film;
+import no.sikt.graphitron.jooq.generated.testdata.tables.Inventory;
+import no.sikt.graphitron.jooq.generated.testdata.tables.Rental;
 import org.jooq.DSLContext;
 
 public abstract class QueryGeneratedResolver implements QueryResolver {
@@ -26,13 +28,13 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<Node> node(String id, DataFetchingEnvironment env) throws Exception {
         String tablePartOfId = FieldHelperHack.getTablePartOf(id);
 
-        if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
+        if (tablePartOfId.equals(Film.FILM.getViewId().toString())) {
             return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, id, (ctx, ids, selectionSet) -> FilmDBQueries.loadFilmByIdsAsNode(ctx, ids, selectionSet));
         }
-        if (tablePartOfId.equals(Tables.INVENTORY.getViewId().toString())) {
+        if (tablePartOfId.equals(Inventory.INVENTORY.getViewId().toString())) {
             return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, id, (ctx, ids, selectionSet) -> InventoryDBQueries.loadInventoryByIdsAsNode(ctx, ids, selectionSet));
         }
-        if (tablePartOfId.equals(Tables.RENTAL.getViewId().toString())) {
+        if (tablePartOfId.equals(Rental.RENTAL.getViewId().toString())) {
             return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, id, (ctx, ids, selectionSet) -> RentalDBQueries.loadRentalByIdsAsNode(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for id with prefix " + tablePartOfId);
@@ -43,7 +45,7 @@ public abstract class QueryGeneratedResolver implements QueryResolver {
             Exception {
         String tablePartOfId = FieldHelperHack.getTablePartOf(title);
 
-        if (tablePartOfId.equals(Tables.FILM.getViewId().toString())) {
+        if (tablePartOfId.equals(Film.FILM.getViewId().toString())) {
             return new DataFetcher(env, this.ctx).loadInterface(tablePartOfId, title, (ctx, ids, selectionSet) -> FilmDBQueries.loadFilmByTitlesAsTitled(ctx, ids, selectionSet));
         }
         throw new IllegalArgumentException("Could not find dataloader for title with prefix " + tablePartOfId);

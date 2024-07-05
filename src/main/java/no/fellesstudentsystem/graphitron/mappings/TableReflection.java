@@ -8,10 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
 
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -316,6 +313,13 @@ public class TableReflection {
         return split[split.length - 1];
     }
 
+    public static Set<Class<?>> getClassFromSchemas(String className) {
+        return getDefaultCatalog()
+                .schemaStream()
+                .map(getClassFromSchemaPackage(className))
+                .collect(Collectors.toSet());
+    }
+
     protected static Map<String, Table<?>> getTablesByJavaFieldName() {
         return getDefaultCatalog()
                 .schemaStream()
@@ -348,7 +352,7 @@ public class TableReflection {
             try {
                 return Class.forName(packageName + "." + className);
             } catch (ClassNotFoundException e) {
-                throw new RuntimeException(packageName + " did not contain a Keys class. Inconceivable.", e);
+                throw new RuntimeException(packageName + " did not contain a " + className + " class. Inconceivable.", e);
             }
         };
     }
@@ -379,5 +383,13 @@ public class TableReflection {
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Could not get " + generatedJooqPackage + ".DefaultCatalog.DEFAULT_CATALOG. Inconceivable.", e);
         }
+    }
+
+    public static Optional<Class<?>> getTableClass(String name) {
+        return getTable(name).map(Object::getClass);
+    }
+
+    public static Optional<Class<?>> getRecordClass(String name) {
+        return getTable(name).map(Table::getRecordType);
     }
 }

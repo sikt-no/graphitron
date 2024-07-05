@@ -17,9 +17,6 @@ import java.util.stream.Collectors;
 public class GeneratorConfig {
     private static final String
             PLUGIN_OUTPUT_PATH = "graphitron",
-            PACKAGE_RECORDS = "tables.records",
-            CLASS_TABLES = "Tables",
-            CLASS_KEYS = "Keys",
             TEMP_GRAPHQL_GENERATED_PACKAGE = "fake.graphql.example", // Once codegen is fully contained in this module, this will be redundant.
             DEFAULT_API_SUFFIX = ".api",
             DEFAULT_MODEL_SUFFIX = ".model";
@@ -47,12 +44,7 @@ public class GeneratorConfig {
         generatedSchemaResolversPackage = TEMP_GRAPHQL_GENERATED_PACKAGE + DEFAULT_API_SUFFIX;
         generatedSchemaModelsPackage = TEMP_GRAPHQL_GENERATED_PACKAGE + DEFAULT_MODEL_SUFFIX;
         generatedJooqPackage = jooqPkg;
-        generatedJooqTablesPackage = generatedJooqPackage + "." + CLASS_TABLES;
-        generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
-        generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
         maxAllowedPageSize = 1000;
-
-        setJOOQClasses();
 
         externalReferences = new ExternalReferences(references);
 
@@ -83,34 +75,14 @@ public class GeneratorConfig {
         generatedSchemaResolversPackage = graphQLGeneratedPackage + DEFAULT_API_SUFFIX; // Once codegen is fully contained in this module, this will be redundant.
         generatedSchemaModelsPackage = graphQLGeneratedPackage + DEFAULT_MODEL_SUFFIX;
         generatedJooqPackage = mojo.getJooqGeneratedPackage();
-        generatedJooqTablesPackage = generatedJooqPackage + "." + CLASS_TABLES;
-        generatedJooqKeysPackage = generatedJooqPackage + "." + CLASS_KEYS;
-        generatedJooqRecordsPackage = generatedJooqPackage + "." + PACKAGE_RECORDS;
         maxAllowedPageSize = mojo.getMaxAllowedPageSize();
 
-        setJOOQClasses();
         externalReferences = new ExternalReferences(mojo.getExternalReferences());
 
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
         isFSKeyFormat = true;
-    }
-
-    /**
-     * Use reflection to find the tables and keys classes in jOOQ.
-     */
-    private static void setJOOQClasses() {
-        try {
-            TABLES_CLASS = Class.forName(generatedJooqTablesPackage);
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException("Unable to find jOOQ generated tables class. ", e);
-        }
-        try {
-            KEYS_CLASS = Class.forName(generatedJooqKeysPackage);
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException("Unable to find jOOQ generated keys class. ", e);
-        }
     }
 
     /**
@@ -123,13 +95,8 @@ public class GeneratorConfig {
         generatedSchemaResolversPackage = null;
         generatedSchemaModelsPackage = null;
         generatedJooqPackage = null;
-        generatedJooqTablesPackage = null;
-        generatedJooqKeysPackage = null;
-        generatedJooqRecordsPackage = null;
         externalReferences = new ExternalReferences(List.of());
         globalTransforms = List.of();
-        TABLES_CLASS = null;
-        KEYS_CLASS = null;
         recordValidation = new RecordValidation();
     }
 
@@ -140,14 +107,9 @@ public class GeneratorConfig {
             outputPackage,
             generatedSchemaResolversPackage,
             generatedSchemaModelsPackage,
-            generatedJooqPackage,
-            generatedJooqTablesPackage,
-            generatedJooqKeysPackage,
-            generatedJooqRecordsPackage;
+            generatedJooqPackage;
 
     private static int maxAllowedPageSize;
-
-    public static Class<?> TABLES_CLASS, KEYS_CLASS;
 
     private static ExternalReferences externalReferences;
     private static List<GlobalTransform> globalTransforms;
@@ -178,26 +140,6 @@ public class GeneratorConfig {
 
     public static String getGeneratedJooqPackage() {
         return generatedJooqPackage;
-    }
-
-    public static String getGeneratedJooqTablesPackage() {
-        return generatedJooqTablesPackage;
-    }
-
-    public static String getGeneratedJooqKeysPackage() {
-        return generatedJooqKeysPackage;
-    }
-
-    public static Class<?> getGeneratedJooqTablesClass() {
-        return TABLES_CLASS;
-    }
-
-    public static Class<?> getGeneratedJooqKeysClass() {
-        return KEYS_CLASS;
-    }
-
-    public static String getGeneratedJooqRecordsPackage() {
-        return generatedJooqRecordsPackage;
     }
 
     public static ExternalReferences getExternalReferences() {

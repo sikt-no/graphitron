@@ -53,7 +53,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         if (usesJavaRecord) {
             classReference = new ClassReference(new CodeReference(objectDefinition, RECORD, GenerationDirectiveParam.RECORD, objectDefinition.getName()));
         } else if (hasTable) {
-            classReference = new ClassReference(asRecordClassName(toCamelCase(table.getMappingName())), GeneratorConfig.getGeneratedJooqRecordsPackage());
+            classReference = new ClassReference(table.getRecordClass());
         } else {
             classReference = null;
         }

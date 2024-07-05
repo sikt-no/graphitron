@@ -87,7 +87,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
         return CodeBlock
                 .builder()
-                .beginControlFlow("if ($N.equals($T.$N.getViewId().toString()))", TABLE_OF_ID, TABLES.className, implementation.getTable().getMappingName())
+                .beginControlFlow("if ($N.equals($T.$N.getViewId().toString()))", TABLE_OF_ID, implementation.getTable().getTableClass(), implementation.getTable().getMappingName())
                 .addStatement("return $L.$L($N, $N, $L)", newDataFetcher(), "loadInterface", TABLE_OF_ID, inputFieldName, dbFunction)
                 .endControlFlow()
                 .build();
