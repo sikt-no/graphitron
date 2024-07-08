@@ -41,13 +41,10 @@ public class FormatCodeBlocks {
                     VARIABLE_ENV,
                     CONTEXT_NAME
             ),
-            DECLARE_CONTEXT_VARIABLE = declare(CONTEXT_NAME, SELECT_CONTEXT),
             NEW_TRANSFORM = CodeBlock.of("new $T($N, this.$N)", RECORD_TRANSFORMER.className, VARIABLE_ENV, CONTEXT_NAME),
             DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
             NEW_DATA_FETCHER = CodeBlock.of("new $T($N, this.$N)", DATA_FETCHER.className, VARIABLE_ENV, CONTEXT_NAME),
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($L)", DATA_SERVICE_FETCHER.className, NEW_TRANSFORM),
-            RESOLVER_HELPERS_GET_SELECT = CodeBlock.of("$T.getSelectionSet($N)", RESOLVER_HELPERS.className, VARIABLE_ENV),
-            NEW_SELECTION = CodeBlock.of("new $T($N.getSelectionSet())", SELECTION_SET.className, VARIABLE_ENV),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
@@ -384,14 +381,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that declares a resolver context variable with a check for null.
-     */
-    @NotNull
-    public static CodeBlock declareContextVariable() {
-        return DECLARE_CONTEXT_VARIABLE;
-    }
-
-    /**
      * @return CodeBlock that creates a resolver transformer.
      */
     @NotNull
@@ -421,22 +410,6 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock declareTransform() {
         return DECLARE_TRANSFORM;
-    }
-
-    /**
-     * @return CodeBlock that calls a helper class to extract the selection set from an environment.
-     */
-    @NotNull
-    public static CodeBlock getHelperSelectionSet() {
-        return RESOLVER_HELPERS_GET_SELECT;
-    }
-
-    /**
-     * @return CodeBlock that declares a new selection set from an environment.
-     */
-    @NotNull
-    public static CodeBlock newSelectionSetConstructor() {
-        return NEW_SELECTION;
     }
 
     /**

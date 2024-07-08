@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class InsertCustomersInputAndResponseGeneratedResolver implements InsertCustomersInputAndResponseMutationResolver {
@@ -22,13 +21,11 @@ public class InsertCustomersInputAndResponseGeneratedResolver implements InsertC
     @Override
     public CompletableFuture<List<EditResponse>> insertCustomersInputAndResponse(
             List<InsertInput> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = InsertCustomersInputAndResponseDBQueries.insertCustomersInputAndResponse(ctx, inputRecordList);
+        var rowsUpdated = InsertCustomersInputAndResponseDBQueries.insertCustomersInputAndResponse(transform.getCtx(), inputRecordList);
 
         var editResponseList = new ArrayList<EditResponse>();
         for (var itInputRecordList : inputRecordList) {

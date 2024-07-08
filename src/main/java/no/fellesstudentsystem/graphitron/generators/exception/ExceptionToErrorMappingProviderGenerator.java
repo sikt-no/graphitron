@@ -9,7 +9,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -144,13 +144,13 @@ public class ExceptionToErrorMappingProviderGenerator implements ClassGenerator<
 
     private class MutationProcessor {
         private static final String MSG_VARIABLE_NAME = "msg";
-        private final UpdateContext ctx;
+        private final List<ObjectField> errors;
         private final String mutationName;
         private boolean databaseMappingIsCreatedForMutation = false;
         private boolean genericMappingIsCreatedForMutation = false;
 
         MutationProcessor(ObjectField mutation) {
-            this.ctx = new UpdateContext(mutation, processedSchema);
+            this.errors = new InputParser(mutation, processedSchema).getAllErrors();
             this.mutationName = mutation.getName();
         }
 
@@ -159,8 +159,8 @@ public class ExceptionToErrorMappingProviderGenerator implements ClassGenerator<
             var databaseListName = asListedName(mutationName + DATABASE.toCamelCaseString());
             var genericListName = asListedName(mutationName + GENERIC.toCamelCaseString());
 
-            for (var errorField : ctx.getAllErrors()) {
-                List<ExceptionDefinition> exceptionDefinitions = ctx.getProcessedSchema().getExceptionDefinitions(errorField.getTypeName());
+            for (var errorField : errors) {
+                List<ExceptionDefinition> exceptionDefinitions = processedSchema.getExceptionDefinitions(errorField.getTypeName());
 
                 var databaseMappingVariablesBlock = createMappingVariablesBlock(exceptionDefinitions, DATABASE, exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks);
                 var genericMappingVariablesBlock = createMappingVariablesBlock(exceptionDefinitions, GENERIC, exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks);

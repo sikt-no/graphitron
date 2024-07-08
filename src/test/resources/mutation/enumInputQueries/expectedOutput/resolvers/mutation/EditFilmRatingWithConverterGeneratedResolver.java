@@ -10,7 +10,6 @@ import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditFilmRatingWithConverterGeneratedResolver implements EditFilmRatingWithConverterMutationResolver {
@@ -20,13 +19,11 @@ public class EditFilmRatingWithConverterGeneratedResolver implements EditFilmRat
     @Override
     public CompletableFuture<Response> editFilmRatingWithConverter(FilmInput2 input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.filmInput2ToJOOQRecord(input, "input");
 
-        var rowsUpdated = EditFilmRatingWithConverterDBQueries.editFilmRatingWithConverter(ctx, inputRecord);
+        var rowsUpdated = EditFilmRatingWithConverterDBQueries.editFilmRatingWithConverter(transform.getCtx(), inputRecord);
 
         var response = new Response();
         response.setId(inputRecord.getId());

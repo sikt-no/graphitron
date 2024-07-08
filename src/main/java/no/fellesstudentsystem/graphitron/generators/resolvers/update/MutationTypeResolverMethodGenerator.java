@@ -3,15 +3,12 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.update;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -25,13 +22,15 @@ import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursio
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMapIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.getResolverResultName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.getResolverResultName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
+import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
+import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_SELECT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
-import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -41,16 +40,11 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     private static final String
             VARIABLE_ROWS = "rowsUpdated",
             VARIABLE_GET_PARAM = "idContainer";
+    private final boolean mutationReturnsNodes;
 
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
-    }
-
-    @Override
-    public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
-        return super
-                .getDefaultSpecBuilder(methodName, returnType)
-                .addCode(declareContextVariable());
+        mutationReturnsNodes = processedSchema.containsNodeField(localField);
     }
 
     /**
@@ -58,7 +52,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      */
     @NotNull
     protected CodeBlock transformInputs(List<? extends InputField> specInputs) {
-        if (context.getTableInputs().isEmpty()) {
+        if (!parser.hasJOOQRecords()) {
             throw new UnsupportedOperationException("Must have at least one table reference when generating resolvers with queries. Mutation '" + localField.getName() + "' has no tables attached.");
         }
 
@@ -70,12 +64,12 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
         var updateClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + UpdateDBClassGenerator.SAVE_DIRECTORY_NAME, objectToCall);
         return declare(
-                !context.hasService() ? VARIABLE_ROWS : asResultName(target.getUnprocessedFieldOverrideInput()),
-                CodeBlock.of("$T.$L($N, $L)",
+                !localField.hasServiceReference() ? VARIABLE_ROWS : asResultName(target.getUnprocessedFieldOverrideInput()),
+                CodeBlock.of("$T.$L($L, $L)",
                         updateClass,
                         target.getName(), // Method name is expected to be the field's name.
-                        VariableNames.CONTEXT_NAME,
-                        context.getServiceInputString()
+                        asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
+                        parser.getServiceInputString()
                 )
         );
     }
@@ -125,7 +119,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         if (responseObject.implementsInterface(NODE_TYPE.getName())) {
             return declare(
                     asGetMethodVariableName(variableName, target.getName()),
-                    CodeBlock.of("$N($N, $N, $N)", asGetMethodName(previous.getTypeName(), target.getName()), VariableNames.CONTEXT_NAME, argumentName, VARIABLE_SELECT)
+                    CodeBlock.of("$N($L, $N, $L)", asGetMethodName(previous.getTypeName(), target.getName()), asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME), argumentName, asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME))
             );
         }
 
@@ -250,10 +244,11 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         }
 
         var type = processedSchema.getObject(target);
-        var previousIsIterable = previousIsIterable(target, previous);
-        var methodCode = createGetMethodCode(target, path, !processedSchema.isJavaRecordType(previous), previousIsIterable);
+        var matchingInput = findMatchingInputRecord(processedSchema.getObject(target).getTable().getMappingName());
+        var isIterable = matchingInput.isIterableWrapped();
+        var methodCode = createGetMethodCode(target, path, !processedSchema.isJavaRecordType(previous), isIterable);
 
-        var methodParameter = wrapListIf(processedSchema.getInputType(findMatchingInputRecord(type.getTable().getMappingName())).getRecordClassName(), previousIsIterable);
+        var methodParameter = wrapListIf(processedSchema.getInputType(matchingInput).getRecordClassName(), isIterable);
         return List.of(
                 MethodSpec
                         .methodBuilder(asGetMethodName(previous.getTypeName(), target.getName()))
@@ -261,7 +256,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                         .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME)
                         .addParameter(methodParameter, VARIABLE_GET_PARAM)
                         .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
-                        .returns(wrapStringMapIf(type.getGraphClassName(), previousIsIterable))
+                        .returns(wrapStringMapIf(type.getGraphClassName(), isIterable))
                         .addCode(methodCode)
                         .build()
         );
@@ -282,15 +277,6 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                 .build();
     }
 
-    private boolean previousIsIterable(ObjectField target, ObjectField previous) {
-        if (context.hasService()) {
-            var service = context.getService();
-            return previous.isIterableWrapped() || previous == localField && !service.returnsJavaRecord() && target.isIterableWrapped();
-        } else {
-            return findMatchingInputRecord(processedSchema.getObject(target).getTable().getMappingName()).isIterableWrapped();
-        }
-    }
-
     private CodeBlock getSetCallContent(ObjectField field, ObjectField previousField) {
         if (processedSchema.implementsNode(field)) {
             return getNodeSetContent(field);
@@ -300,7 +286,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             return getIterableMapCode(field);
         }
 
-        if (!context.mutationReturnsNodes() && field.isID()) {
+        if (!mutationReturnsNodes && field.isID()) {
             return getIDMappingCode(field, previousField);
         }
 
@@ -323,8 +309,8 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             shouldMap = isIterable || processedSchema.isInputType(source);
             idSource = source.getName();
         } else {
-            var recordSource = context
-                    .getTableInputs()
+            var recordSource = parser
+                    .getJOOQRecords()
                     .entrySet()
                     .stream()
                     .filter(it -> processedSchema.getInputType(it.getValue()).getFields().stream().anyMatch(InputField::isID))
@@ -347,7 +333,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
     @NotNull
     private CodeBlock getIterableMapCode(ObjectField field) {
-        var recordInputs = context.getTableInputs();
+        var recordInputs = parser.getJOOQRecords();
         var fieldObject = processedSchema.getObject(field);
         var recordIterable = recordInputs.size() == 1 && recordInputs.entrySet().stream().findFirst().get().getValue().isIterableWrapped(); // In practice this supports only one record type at once. Can't map to types that are not records.
 
@@ -383,8 +369,8 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         var responseObject = processedSchema.getObject(target);
         return responseObject.hasTable()
                 ? findMatchingInputRecord(responseObject.getTable().getMappingName())
-                : context
-                .getTableInputs()
+                : parser
+                .getJOOQRecords()
                 .entrySet()
                 .stream()
                 .findFirst()
@@ -397,8 +383,8 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
      * @return The best input record match for this response field.
      */
     private InputField findMatchingInputRecord(String responseFieldTableName) {
-        return context
-                .getTableInputs()
+        return parser
+                .getJOOQRecords()
                 .values()
                 .stream()
                 .filter(it -> processedSchema.getInputType(it).getTable().getMappingName().equals(responseFieldTableName))
@@ -416,7 +402,6 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
             return List.of();
         }
 
-        context = new UpdateContext(target, processedSchema);
         return generateGetMethod(target, target, "");
     }
 

@@ -12,8 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCustomerInputAndResponseMutationResolver {
@@ -23,13 +21,11 @@ public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCu
     @Override
     public CompletableFuture<List<DeleteResponse>> deleteCustomerInputAndResponse(
             List<DeleteInput> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = DeleteCustomerInputAndResponseDBQueries.deleteCustomerInputAndResponse(ctx, inputRecordList);
+        var rowsUpdated = DeleteCustomerInputAndResponseDBQueries.deleteCustomerInputAndResponse(transform.getCtx(), inputRecordList);
 
         var deleteResponseList = new ArrayList<DeleteResponse>();
         for (var itInputRecordList : inputRecordList) {

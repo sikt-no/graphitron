@@ -9,7 +9,7 @@ import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.Mutat
 import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -37,7 +37,6 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     private static final String VARIABLE_RECORD_LIST = "recordList";
 
     private final ObjectField localField;
-    private UpdateContext context;
 
     public UpdateDBMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(processedSchema.getMutationType(), processedSchema);
@@ -52,7 +51,6 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        context = new UpdateContext(target, processedSchema);
         var recordMethod = mutationConverter.get(target.getMutationType());
         if (recordMethod == null) {
             return MethodSpec.methodBuilder(target.getName()).build();
@@ -60,7 +58,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
         var spec = getDefaultSpecBuilder(target.getName(), TypeName.INT);
 
-        var inputs = context.getMutationInputs();
+        var inputs = new InputParser(target, processedSchema).getMethodInputs();
         inputs.forEach((inputName, inputType) -> spec.addParameter(getParamTypeName(inputType), inputName));
 
         var recordInputs = inputs

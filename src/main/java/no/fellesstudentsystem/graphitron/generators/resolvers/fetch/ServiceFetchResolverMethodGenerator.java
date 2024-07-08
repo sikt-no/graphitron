@@ -8,7 +8,7 @@ import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
-import no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks;
+import no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks;
 import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -21,8 +21,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.RECORD_NAME_SUFFIX;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -31,7 +33,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGenerator {
     private static final String RESPONSE_NAME = "response";
-    private ServiceWrapper service;
+    private boolean serviceReturnEndsWithRecord;
 
     public ServiceFetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -39,11 +41,12 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        service = target.hasServiceReference() ? new ServiceWrapper(target, processedSchema) : null;
-        if (LookupHelpers.lookupExists(target, processedSchema) || service == null) {
+        if (LookupHelpers.lookupExists(target, processedSchema) || !target.hasServiceReference()) {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
 
+        var service = new ServiceWrapper(target, processedSchema);
+        serviceReturnEndsWithRecord = service.getReturnType().getName().endsWith(RECORD_NAME_SUFFIX);
         var dependency = new ServiceDependency(service.getServiceClassName());
         dependencySet.add(dependency);
         var spec = getDefaultSpecBuilder(target.getName(), getReturnTypeName(target));
@@ -119,7 +122,7 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
         return code
-                .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, service, processedSchema))
+                .add(MappingCodeBlocks.generateSchemaOutputs(mapperContext, serviceReturnEndsWithRecord, processedSchema))
                 .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
                 .build();
     }

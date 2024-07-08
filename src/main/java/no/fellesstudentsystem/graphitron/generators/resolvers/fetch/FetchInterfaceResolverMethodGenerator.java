@@ -11,7 +11,6 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.Comparator;
@@ -21,7 +20,6 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.newDataFetcher;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
-import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;

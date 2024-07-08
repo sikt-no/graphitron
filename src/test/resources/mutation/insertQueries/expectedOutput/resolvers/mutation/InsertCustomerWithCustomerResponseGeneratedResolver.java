@@ -14,7 +14,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -25,15 +24,12 @@ public class InsertCustomerWithCustomerResponseGeneratedResolver implements Inse
     @Override
     public CompletableFuture<InsertResponseWithCustomer> insertCustomerWithCustomerResponse(
             InsertInput input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var select = new SelectionSet(env.getSelectionSet());
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.insertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = InsertCustomerWithCustomerResponseDBQueries.insertCustomerWithCustomerResponse(ctx, inputRecord);
-        var inputRecordCustomer = getInsertResponseWithCustomerCustomer(ctx, inputRecord, select);
+        var rowsUpdated = InsertCustomerWithCustomerResponseDBQueries.insertCustomerWithCustomerResponse(transform.getCtx(), inputRecord);
+        var inputRecordCustomer = getInsertResponseWithCustomerCustomer(transform.getCtx(), inputRecord, transform.getSelect());
 
         var insertResponseWithCustomer = new InsertResponseWithCustomer();
         insertResponseWithCustomer.setCustomer(inputRecordCustomer);

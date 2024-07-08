@@ -18,7 +18,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -29,15 +28,12 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
     @Override
     public CompletableFuture<ListedNodeResponse> editCustomerWithCustomerIterable2(
             List<EditInput> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var select = new SelectionSet(env.getSelectionSet());
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = EditCustomerWithCustomerIterable2DBQueries.editCustomerWithCustomerIterable2(ctx, inputRecordList);
-        var inputRecordCustomers = getListedNodeResponseCustomers(ctx, inputRecordList, select);
+        var rowsUpdated = EditCustomerWithCustomerIterable2DBQueries.editCustomerWithCustomerIterable2(transform.getCtx(), inputRecordList);
+        var inputRecordCustomers = getListedNodeResponseCustomers(transform.getCtx(), inputRecordList, transform.getSelect());
 
         var listedNodeResponse = new ListedNodeResponse();
 

@@ -11,7 +11,6 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomerGeneratedResolver implements EditCustomerMutationResolver {
@@ -21,15 +20,13 @@ public class EditCustomerGeneratedResolver implements EditCustomerMutationResolv
     @Override
     public CompletableFuture<EditResponse> editCustomer(String id, EditInput in,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inRecord = transform.editInputToJOOQRecord(in, "in", "in");
 
         transform.validate();
 
-        var rowsUpdated = EditCustomerDBQueries.editCustomer(ctx, id, inRecord);
+        var rowsUpdated = EditCustomerDBQueries.editCustomer(transform.getCtx(), id, inRecord);
 
         var editResponse = new EditResponse();
         editResponse.setId(id);

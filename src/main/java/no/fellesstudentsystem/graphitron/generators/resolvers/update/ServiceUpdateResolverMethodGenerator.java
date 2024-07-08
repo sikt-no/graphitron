@@ -3,7 +3,8 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.update;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks;
+import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
+import no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks;
 import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -13,21 +14,28 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.getResolverResultName;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.RECORD_NAME_SUFFIX;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asResultName;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.getResolverResultName;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class generates the resolvers for update queries with the {@link GenerationDirective#SERVICE} directive set.
  */
 public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGenerator {
+    private boolean serviceReturnEndsWithRecord;
 
     public ServiceUpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
     }
 
     protected CodeBlock generateUpdateMethodCall(ObjectField target) {
-        var service = context.getService();
+        if (!target.hasServiceReference()) {
+            return empty();
+        }
+
+        var service = new ServiceWrapper(target, processedSchema);
+        serviceReturnEndsWithRecord = service.getReturnType().getName().endsWith(RECORD_NAME_SUFFIX);
         var dependency = new ServiceDependency(service.getServiceClassName());
         dependencySet.add(dependency);
 
@@ -40,7 +48,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     @NotNull
     private CodeBlock generateServiceCall(String methodName, String serviceObjectName) {
-        return CodeBlock.of("$N.$L($L)", serviceObjectName, methodName, context.getServiceInputString());
+        return CodeBlock.of("$N.$L($L)", serviceObjectName, methodName, parser.getServiceInputString());
     }
 
     /**
@@ -54,7 +62,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
         return CodeBlock
                 .builder()
-                .add(ServiceCodeBlocks.generateSchemaOutputs(mapperContext, context.getService(), processedSchema))
+                .add(MappingCodeBlocks.generateSchemaOutputs(mapperContext, serviceReturnEndsWithRecord, processedSchema))
                 .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
                 .build();
     }

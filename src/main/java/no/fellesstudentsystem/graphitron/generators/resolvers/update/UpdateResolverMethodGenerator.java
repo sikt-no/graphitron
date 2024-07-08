@@ -5,17 +5,17 @@ import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.inputTransform;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareTransform;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 
 /**
@@ -23,30 +23,23 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_
  */
 public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     protected final ObjectField localField;
-    protected UpdateContext context;
+    protected InputParser parser;
 
-    public UpdateResolverMethodGenerator(
-            ObjectField localField,
-            ProcessedSchema processedSchema
-    ) {
+    public UpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(processedSchema.getMutationType(), processedSchema);
         this.localField = localField;
     }
 
     @Override
     public MethodSpec generate(ObjectField target) {
+        parser = new InputParser(target, processedSchema);
         var spec = getDefaultSpecBuilder(target.getName(), iterableWrap(target));
 
         var specInputs = target.getArguments();
         specInputs.forEach(input -> spec.addParameter(iterableWrap(input), input.getName()));
 
-        context = new UpdateContext(target, processedSchema);
-        var code = CodeBlock.builder();
-        if (context.mutationReturnsNodes() && localField.hasMutationType()) {
-            code.add(declare(VARIABLE_SELECT, newSelectionSetConstructor())).add("\n");
-        }
-
-        code
+        var code = CodeBlock
+                .builder()
                 .add(declareTransform())
                 .add("\n")
                 .add(transformInputs(specInputs))
@@ -81,7 +74,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
      */
     @NotNull
     protected CodeBlock transformInputs(List<? extends InputField> specInputs) {
-        if (context.getRecordInputs().isEmpty()) {
+        if (!parser.hasRecords()) {
             return empty();
         }
 

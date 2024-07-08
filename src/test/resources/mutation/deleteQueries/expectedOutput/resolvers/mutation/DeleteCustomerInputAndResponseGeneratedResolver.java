@@ -10,7 +10,6 @@ import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCustomerInputAndResponseMutationResolver {
@@ -20,13 +19,11 @@ public class DeleteCustomerInputAndResponseGeneratedResolver implements DeleteCu
     @Override
     public CompletableFuture<DeleteResponse> deleteCustomerInputAndResponse(DeleteInput input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = DeleteCustomerInputAndResponseDBQueries.deleteCustomerInputAndResponse(ctx, inputRecord);
+        var rowsUpdated = DeleteCustomerInputAndResponseDBQueries.deleteCustomerInputAndResponse(transform.getCtx(), inputRecord);
 
         var deleteResponse = new DeleteResponse();
         deleteResponse.setId(inputRecord.getId());

@@ -11,9 +11,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.createIdFetch;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryNodeMethod;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ServiceCodeBlocks.createIdFetch;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {

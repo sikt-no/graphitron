@@ -14,7 +14,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -25,15 +24,12 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
     @Override
     public CompletableFuture<DeleteResponseWithCustomer> deleteCustomerWithCustomerResponse(
             DeleteInput input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var select = new SelectionSet(env.getSelectionSet());
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = DeleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(ctx, inputRecord);
-        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(ctx, inputRecord, select);
+        var rowsUpdated = DeleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(transform.getCtx(), inputRecord);
+        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(transform.getCtx(), inputRecord, transform.getSelect());
 
         var deleteResponseWithCustomer = new DeleteResponseWithCustomer();
         deleteResponseWithCustomer.setCustomer(inputRecordCustomer);

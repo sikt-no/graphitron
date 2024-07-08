@@ -6,7 +6,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -66,7 +66,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
         mutationTypeDefinition.getFields().stream()
                 .sorted(Comparator.comparing(ObjectField::getName))
                 .forEach(mutation -> {
-                    var ctx = new UpdateContext(mutation, processedSchema);
+                    var ctx = new InputParser(mutation, processedSchema);
                     var payloadBlockBuilder = CodeBlock.builder();
 
                     if (ctx.getValidationErrorException().isPresent()) {
@@ -75,7 +75,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
                     }
 
                     for (var errorField : ctx.getAllErrors()) {
-                        for (var exc : ctx.getProcessedSchema().getExceptionDefinitions(errorField.getTypeName())) {
+                        for (var exc : processedSchema.getExceptionDefinitions(errorField.getTypeName())) {
 
                             exc.getExceptionToErrorMappings().forEach(mapping -> {
                                 try {
@@ -118,7 +118,7 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
         return codeBlock.build();
     }
 
-    private CodeBlock createPayloadForMutationBlock(ObjectField mutation, UpdateContext ctx) {
+    private CodeBlock createPayloadForMutationBlock(ObjectField mutation, InputParser ctx) {
         var codeBuilder = CodeBlock
                 .builder()
                 .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())

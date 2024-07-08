@@ -10,7 +10,6 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomer2ParamsGeneratedResolver implements EditCustomer2ParamsMutationResolver {
@@ -20,13 +19,11 @@ public class EditCustomer2ParamsGeneratedResolver implements EditCustomer2Params
     @Override
     public CompletableFuture<String> editCustomer2Params(EditInput input, String lastName,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = EditCustomer2ParamsDBQueries.editCustomer2Params(ctx, inputRecord, lastName);
+        var rowsUpdated = EditCustomer2ParamsDBQueries.editCustomer2Params(transform.getCtx(), inputRecord, lastName);
 
         return CompletableFuture.completedFuture(inputRecord.getId());
     }

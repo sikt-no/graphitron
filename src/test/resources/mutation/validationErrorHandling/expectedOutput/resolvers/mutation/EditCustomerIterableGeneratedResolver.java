@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomerIterableGeneratedResolver implements EditCustomerIterableMutationResolver {
@@ -24,15 +23,13 @@ public class EditCustomerIterableGeneratedResolver implements EditCustomerIterab
     @Override
     public CompletableFuture<List<EditResponse>> editCustomerIterable(List<String> id,
             List<EditInput> in, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inRecordList = transform.editInputToJOOQRecord(in, "in", "in");
 
         transform.validate();
 
-        var rowsUpdated = EditCustomerIterableDBQueries.editCustomerIterable(ctx, id, inRecordList);
+        var rowsUpdated = EditCustomerIterableDBQueries.editCustomerIterable(transform.getCtx(), id, inRecordList);
 
         var editResponseList = new ArrayList<EditResponse>();
         for (var itInRecordList : inRecordList) {

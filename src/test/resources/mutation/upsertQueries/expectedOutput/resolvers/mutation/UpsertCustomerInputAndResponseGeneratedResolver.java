@@ -10,7 +10,6 @@ import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class UpsertCustomerInputAndResponseGeneratedResolver implements UpsertCustomerInputAndResponseMutationResolver {
@@ -20,13 +19,11 @@ public class UpsertCustomerInputAndResponseGeneratedResolver implements UpsertCu
     @Override
     public CompletableFuture<UpsertResponse> upsertCustomerInputAndResponse(UpsertInput input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.upsertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = UpsertCustomerInputAndResponseDBQueries.upsertCustomerInputAndResponse(ctx, inputRecord);
+        var rowsUpdated = UpsertCustomerInputAndResponseDBQueries.upsertCustomerInputAndResponse(transform.getCtx(), inputRecord);
 
         var upsertResponse = new UpsertResponse();
         upsertResponse.setId(inputRecord.getId());

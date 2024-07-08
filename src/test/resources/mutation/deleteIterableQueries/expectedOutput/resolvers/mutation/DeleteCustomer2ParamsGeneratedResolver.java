@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class DeleteCustomer2ParamsGeneratedResolver implements DeleteCustomer2ParamsMutationResolver {
@@ -23,13 +21,11 @@ public class DeleteCustomer2ParamsGeneratedResolver implements DeleteCustomer2Pa
     @Override
     public CompletableFuture<List<String>> deleteCustomer2Params(List<DeleteInput> input,
             String lastName, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = DeleteCustomer2ParamsDBQueries.deleteCustomer2Params(ctx, inputRecordList, lastName);
+        var rowsUpdated = DeleteCustomer2ParamsDBQueries.deleteCustomer2Params(transform.getCtx(), inputRecordList, lastName);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

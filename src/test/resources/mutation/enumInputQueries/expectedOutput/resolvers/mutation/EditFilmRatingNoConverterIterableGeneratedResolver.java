@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditFilmRatingNoConverterIterableGeneratedResolver implements EditFilmRatingNoConverterIterableMutationResolver {
@@ -22,13 +21,11 @@ public class EditFilmRatingNoConverterIterableGeneratedResolver implements EditF
     @Override
     public CompletableFuture<ListedResponse> editFilmRatingNoConverterIterable(
             List<FilmInput1> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.filmInput1ToJOOQRecord(input, "input");
 
-        var rowsUpdated = EditFilmRatingNoConverterIterableDBQueries.editFilmRatingNoConverterIterable(ctx, inputRecordList);
+        var rowsUpdated = EditFilmRatingNoConverterIterableDBQueries.editFilmRatingNoConverterIterable(transform.getCtx(), inputRecordList);
 
         var listedResponse = new ListedResponse();
         listedResponse.setIds(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));

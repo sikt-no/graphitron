@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class UpsertCustomer2ParamsGeneratedResolver implements UpsertCustomer2ParamsMutationResolver {
@@ -22,13 +21,11 @@ public class UpsertCustomer2ParamsGeneratedResolver implements UpsertCustomer2Pa
     @Override
     public CompletableFuture<List<String>> upsertCustomer2Params(List<UpsertInput> input,
             String lastName, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.upsertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = UpsertCustomer2ParamsDBQueries.upsertCustomer2Params(ctx, inputRecordList, lastName);
+        var rowsUpdated = UpsertCustomer2ParamsDBQueries.upsertCustomer2Params(transform.getCtx(), inputRecordList, lastName);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

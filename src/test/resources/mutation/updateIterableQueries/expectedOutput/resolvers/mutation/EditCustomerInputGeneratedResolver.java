@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomerInputGeneratedResolver implements EditCustomerInputMutationResolver {
@@ -22,13 +21,11 @@ public class EditCustomerInputGeneratedResolver implements EditCustomerInputMuta
     @Override
     public CompletableFuture<List<String>> editCustomerInput(List<EditInput> input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = EditCustomerInputDBQueries.editCustomerInput(ctx, inputRecordList);
+        var rowsUpdated = EditCustomerInputDBQueries.editCustomerInput(transform.getCtx(), inputRecordList);
 
         return CompletableFuture.completedFuture(inputRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()));
     }

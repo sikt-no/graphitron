@@ -8,8 +8,9 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asRecordMapperClass;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PATH_INDEX_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.STRING;
 
 public class TransformerListMethodGenerator extends TransformerMethodGenerator {

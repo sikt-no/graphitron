@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -687,70 +686,6 @@ public class ProcessedSchema {
                 .stream()
                 .map(this::getException)
                 .collect(Collectors.toList());
-    }
-
-    public Map<String, String> getAllNestedInputFieldMappingsWithPaths(List<? extends InputField> targets, String path) {
-        var fields = new HashMap<String, String>();
-        var pathIteration = path.isEmpty() ? path : path + ".";
-        for (var field : targets) {
-            if (!isInputType(field)) {
-                fields.put(field.getUpperCaseName(), pathIteration + field.getName());
-            } else {
-                var inputType = getInputType(field);
-                fields.putAll(getAllNestedInputFieldMappingsWithPaths(inputType.getFields(), pathIteration + inputType.getName()));
-            }
-        }
-        return fields;
-    }
-
-    /**
-     * @return Comma separated list of field names with paths that may be the cause of an error for the inputs of this field.
-     */
-    @NotNull
-    public String getFieldErrorNameSets(ObjectField target) {
-        return getAllNestedInputFieldMappingsWithPaths(target.getArguments(), "")
-                .entrySet()
-                .stream()
-                .flatMap(it -> Stream.of(it.getKey(), it.getValue()))
-                .collect(Collectors.joining("\", \"", "\"", "\""));
-    }
-
-    /**
-     * @return Map of variable names and types for the declared records.
-     */
-    @NotNull
-    public Map<String, InputField> parseInputs(InputField target, int recursion) {
-        recursionCheck(recursion);
-
-        var serviceInputs = new LinkedHashMap<String, InputField>();
-        serviceInputs.put(asListedRecordNameIf(target.getName(), target.isIterableWrapped()), target);
-        getInputType(target)
-                .getFields()
-                .stream()
-                .filter(this::isTableInputType)
-                .flatMap(in -> parseInputs(in, recursion + 1).entrySet().stream())
-                .forEach(it -> serviceInputs.put(it.getKey(), it.getValue()));
-        return serviceInputs;
-    }
-
-    /**
-     * @return Map of variable names and types for the declared and fully set records.
-     */
-    @NotNull
-    public Map<String, InputField> parseInputs(List<? extends InputField> specInputs) {
-        var serviceInputs = new LinkedHashMap<String, InputField>();
-
-        for (var in : specInputs) {
-            var inType = getInputType(in);
-            if (inType != null && inType.hasTable() && !inType.hasJavaRecordReference()) {
-                serviceInputs.putAll(parseInputs(in, 0));
-            } else if (inType != null && inType.hasJavaRecordReference()) {
-                serviceInputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);
-            } else {
-                serviceInputs.put(in.getName(), in);
-            }
-        }
-        return serviceInputs;
     }
 
     /**

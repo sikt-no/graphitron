@@ -14,7 +14,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -25,15 +24,12 @@ public class EditCustomerWithCustomer2GeneratedResolver implements EditCustomerW
     @Override
     public CompletableFuture<Result> editCustomerWithCustomer2(EditInput input,
             DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var select = new SelectionSet(env.getSelectionSet());
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = EditCustomerWithCustomer2DBQueries.editCustomerWithCustomer2(ctx, inputRecord);
-        var inputRecordCustomer = getResultCustomer(ctx, inputRecord, select);
+        var rowsUpdated = EditCustomerWithCustomer2DBQueries.editCustomerWithCustomer2(transform.getCtx(), inputRecord);
+        var inputRecordCustomer = getResultCustomer(transform.getCtx(), inputRecord, transform.getSelect());
 
         var result = new Result();
         result.setCustomer(inputRecordCustomer);

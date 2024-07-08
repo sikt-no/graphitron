@@ -13,7 +13,7 @@ import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefin
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
-import no.fellesstudentsystem.graphitron.generators.context.UpdateContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -410,7 +410,6 @@ public class ProcessedDefinitionsValidator {
     private void validateMutationRequiredFields() {
         var mutation = schema.getMutationType();
         if (mutation != null) {
-
             mutation
                     .getFields()
                     .stream()
@@ -418,7 +417,7 @@ public class ProcessedDefinitionsValidator {
                     .filter(ObjectField::hasMutationType)
                     .forEach(target -> {
                         validateRecordRequiredFields(target);
-                        new UpdateContext(target, schema).getTableInputs().values().forEach(inputField -> checkMutationIOFields(inputField, target));
+                        new InputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
                     });
         }
     }
@@ -464,7 +463,7 @@ public class ProcessedDefinitionsValidator {
         if(!schema.isObject(objectField))
             return;
 
-        var objectFieldErrors = new UpdateContext(objectField, schema).getAllErrors();
+        var objectFieldErrors = new InputParser(objectField, schema).getAllErrors();
         var payloadContainsIterableField = objectField.isIterableWrapped() ||
                 schema.getObject(objectField)
                         .getFields()
@@ -488,7 +487,7 @@ public class ProcessedDefinitionsValidator {
     private void validateRecordRequiredFields(ObjectField target) {
         var mutationType = target.getMutationType();
         if (mutationType.equals(MutationType.INSERT) || mutationType.equals(MutationType.UPSERT)) {
-            var recordInputs = new UpdateContext(target, schema).getTableInputs().values();
+            var recordInputs = new InputParser(target, schema).getJOOQRecords().values();
             if (recordInputs.isEmpty()) {
                 throw new IllegalArgumentException(
                         "Mutation "

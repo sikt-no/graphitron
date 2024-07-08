@@ -18,7 +18,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -29,15 +28,12 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
     @Override
     public CompletableFuture<List<UpsertResponseWithCustomer>> upsertCustomerWithCustomerResponse(
             List<UpsertInput> input, DataFetchingEnvironment env) throws Exception {
-        var ctx = ResolverHelpers.selectContext(env, this.ctx);
-        var select = new SelectionSet(env.getSelectionSet());
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.upsertInputToJOOQRecord(input, "input");
 
-        var rowsUpdated = UpsertCustomerWithCustomerResponseDBQueries.upsertCustomerWithCustomerResponse(ctx, inputRecordList);
-        var inputRecordCustomer = getUpsertResponseWithCustomerCustomer(ctx, inputRecordList, select);
+        var rowsUpdated = UpsertCustomerWithCustomerResponseDBQueries.upsertCustomerWithCustomerResponse(transform.getCtx(), inputRecordList);
+        var inputRecordCustomer = getUpsertResponseWithCustomerCustomer(transform.getCtx(), inputRecordList, transform.getSelect());
 
         var upsertResponseWithCustomerList = new ArrayList<UpsertResponseWithCustomer>();
         for (var itInputRecordList : inputRecordList) {

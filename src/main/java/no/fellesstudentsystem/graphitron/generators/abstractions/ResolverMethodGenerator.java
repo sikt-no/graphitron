@@ -9,7 +9,8 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapFuture;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.EXCEPTION;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.OVERRIDE;
 
 /**
  * This class contains common information and operations shared by resolver method generators.

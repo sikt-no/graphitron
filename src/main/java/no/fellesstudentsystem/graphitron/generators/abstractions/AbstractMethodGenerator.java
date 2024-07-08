@@ -6,9 +6,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
-import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.dependencies.Dependency;
-import no.fellesstudentsystem.graphitron.generators.dependencies.QueryDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -16,10 +14,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryClass;
-import static no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator.SAVE_DIRECTORY_NAME;
 
 /**
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.

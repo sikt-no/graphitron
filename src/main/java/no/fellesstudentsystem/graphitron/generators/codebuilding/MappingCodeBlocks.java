@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.OrderByEnumField;
-import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
@@ -31,7 +30,7 @@ import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATI
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-public class ServiceCodeBlocks {
+public class MappingCodeBlocks {
     public static CodeBlock inputTransform(List<? extends InputField> specInputs, ProcessedSchema schema) {
         var code = CodeBlock.builder();
         var recordCode = CodeBlock.builder();
@@ -241,7 +240,7 @@ public class ServiceCodeBlocks {
     /**
      * @return Code for adding error types and calling transform methods.
      */
-    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, ServiceWrapper service, ProcessedSchema schema) {
+    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, boolean serviceReturnsRecord, ProcessedSchema schema) {
         if (!mapperContext.targetIsType()) {
             return empty();
         }
@@ -268,7 +267,7 @@ public class ServiceCodeBlocks {
 
             if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
                 if (!innerContext.targetIsType()) {
-                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, service, schema)));
+                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, serviceReturnsRecord, schema)));
                 } else if (innerContext.shouldUseStandardRecordFetch()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else if (innerContext.hasRecordReference()) {
@@ -282,7 +281,7 @@ public class ServiceCodeBlocks {
                         innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
                     }
                 } else {
-                    innerCode.add(generateSchemaOutputs(innerContext, service, schema));
+                    innerCode.add(generateSchemaOutputs(innerContext, serviceReturnsRecord, schema));
                 }
             }
 
@@ -302,10 +301,9 @@ public class ServiceCodeBlocks {
         return getNodeQueryCallBlock(field, varName, !atResolver ? CodeBlock.of("$N + $S", PATH_HERE_NAME, path) : CodeBlock.of("$S", path), false, field.isIterableWrapped(), atResolver);
     }
 
-    private static CodeBlock getFieldSetContent(ObjectField field, ObjectField previousField, ServiceWrapper service, ProcessedSchema schema) {
+    private static CodeBlock getFieldSetContent(ObjectField field, ObjectField previousField, boolean serviceReturnsRecord, ProcessedSchema schema) {
         var resultName = asIterableResultNameIf(previousField.getUnprocessedFieldOverrideInput(), previousField.isIterableWrapped());
-        var returnIsMappable = service.getReturnType().getName().endsWith(RECORD_NAME_SUFFIX) || service.returnsJavaRecord();
-        if (schema.isObject(previousField) && returnIsMappable) {
+        if (schema.isObject(previousField) && (serviceReturnsRecord || schema.isRecordType(field))) {
             var getMapping = field.getMappingForJOOQFieldOverride();
             var extractValue = field.isIterableWrapped() && !previousField.isIterableWrapped();
             if (extractValue) {
