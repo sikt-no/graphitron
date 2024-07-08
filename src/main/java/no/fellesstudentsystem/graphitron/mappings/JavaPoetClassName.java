@@ -12,7 +12,7 @@ import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
-import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
+import no.sikt.graphitron.validation.RecordValidator;
 import org.jooq.exception.DataAccessException;
 
 /**

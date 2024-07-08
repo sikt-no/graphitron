@@ -9,7 +9,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import no.fellesstudentsystem.graphql.helpers.validation.RecordValidator;
+import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 
 public class EditInputLevel2AJOOQMapper {
