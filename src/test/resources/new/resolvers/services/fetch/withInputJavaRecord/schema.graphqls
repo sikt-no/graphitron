@@ -1,0 +1,18 @@
+type Query {
+  customers(
+    id: ID! # Some other input that should not be mapped.
+    in: CustomerInput
+  ): Customer @service(service: {name: "JAVA_RECORD_FETCH_SERVICE"})
+
+  customersListed(in: [CustomerInput]): [Customer] @service(service: {name: "JAVA_RECORD_FETCH_SERVICE"})
+}
+
+input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+}
+
+type Customer @table {
+  id: ID!
+}

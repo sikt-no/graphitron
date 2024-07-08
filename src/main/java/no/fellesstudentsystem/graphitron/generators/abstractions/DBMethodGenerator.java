@@ -23,12 +23,12 @@ import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.toJOOQEnumConverter;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeyFields;
-import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
  * Generic select query generation functionality is contained within this class.
@@ -150,23 +150,17 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         context.setMultisetObjectFields(fieldsOfTypeListWithoutSplitting);
 
-        var rowContentCode = CodeBlock.builder().indent().indent();
-
+        var rowElements = new ArrayList<CodeBlock>();
         for (int i = 0; i < fieldsWithoutSplittingSize; i++) {
             var field = fieldsWithoutSplitting.get(i);
-            if(field.isIterableWrapped() && processedSchema.isObject(field)) {
-                var multisetContext = context.nextContext(field);
-                var multisetContent = generateMultisetSelectRow(multisetContext);
-                rowContentCode.add(multisetContent)
-                .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
+            if (field.isIterableWrapped() && processedSchema.isObject(field)) {
+                rowElements.add(generateMultisetSelectRow(context.nextContext(field)));
                 continue;
             }
             var innerRowCode = processedSchema.isObject(field)
                     ? generateSelectRow(context.nextContext(field))
                     : (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
-            rowContentCode
-                    .add(innerRowCode)
-                    .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
+            rowElements.add(innerRowCode);
         }
 
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
@@ -177,15 +171,12 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
 
         var useSpecialMapping = !fieldsOfTypeListWithoutSplitting.isEmpty();
 
-        rowContentCode
-                .unindent()
-                .unindent()
-                .add(").mapping(")
-                .add(useSpecialMapping ? generateMultisetMapping(context, fieldsWithoutSplitting) : maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting) : regularMappingFunction);
-
         return CodeBlock
                 .builder()
-                .add("$T.row(\n$L)", DSL.className, rowContentCode.build())
+                .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
+                .add(".mapping(")
+                .add(useSpecialMapping ? generateMultisetMapping(context, fieldsWithoutSplitting) : maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting) : regularMappingFunction)
+                .add(")")
                 .build();
     }
 
@@ -460,7 +451,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     private CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.iterateJoinSequenceFor(field).render();
         if (field.isID()) {
-            return CodeBlock.of("$L.get$L()", renderedSource, capitalize(field.getMappingFromFieldOverride().getName()));
+            return CodeBlock.of("$L$L", renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
         var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, false, processedSchema));
         return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
@@ -492,7 +483,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         var flatInputs = new ArrayList<InputCondition>();
         var inputBuffer = inputFields
                 .stream()
-                .map(InputCondition::new)
+                .map(it -> new InputCondition(it, inferFieldNamingConvention(it), processedSchema.hasRecord(it)))
                 .collect(Collectors.toCollection(LinkedList::new));
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
             var inputCondition = inputBuffer.poll();
@@ -512,7 +503,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                                 .map(inputCondition::iterate)
                                 .collect(Collectors.toList())
                 );
-            } else {
+            }
+            if (!processedSchema.isInputType(inputField) || processedSchema.hasRecord(inputField)) {
                 flatInputs.add(inputCondition.applyTo(inputField));
             }
         }
@@ -531,5 +523,20 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                         .filter(condition -> condition.getNamePath().startsWith(s))
                         .collect(Collectors.toList())
                 )).collect(Collectors.toList());
+    }
+
+    /**
+     * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
+     */
+    @Override
+    protected TypeName iterableWrapType(GenerationField field) {
+        return wrapListIf(inferFieldTypeName(field, true), field.isIterableWrapped());
+    }
+
+    protected String inferFieldNamingConvention(GenerationField field) {
+        if (processedSchema.hasRecord(field)) {
+            return asListedRecordNameIf(field.getName(), field.isIterableWrapped());
+        }
+        return field.getName();
     }
 }

@@ -521,7 +521,7 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean useExtraGetLayer, boolean isIterable, boolean atResolver) {
         var typeName = field.getTypeName();
-        var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForJOOQFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
+        var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForRecordFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
         var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, asQueryClass(typeName));
         return CodeBlock.of(
                 "$T.$L($N, $L, $L.withPrefix($L))$L$L",
@@ -588,6 +588,51 @@ public class FormatCodeBlocks {
                 .beginControlFlow("for (int $L = 0; $N < $N.size(); $N++)", indexName, indexName, variable, indexName)
                 .add(code)
                 .endControlFlow()
+                .build();
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock in a jOOQ row.
+     */
+    @NotNull
+    public static CodeBlock wrapRow(CodeBlock code) {
+        if (code.isEmpty()) {
+            return empty();
+        }
+
+        return CodeBlock.of("$T.row($L)", DSL.className, indentIfMultiline(code));
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock in a jOOQ inline.
+     */
+    @NotNull
+    public static CodeBlock inline(CodeBlock code) {
+        if (code.isEmpty()) {
+            return empty();
+        }
+
+        return CodeBlock.of("$T.inline($L)", DSL.className, code);
+    }
+
+    /**
+     * @return Add appropriate indentation if this code has multiple lines.
+     */
+    @NotNull
+    public static CodeBlock indentIfMultiline(CodeBlock code) {
+        if (!code.toString().contains("\n")) {
+            return code;
+        }
+
+        return CodeBlock
+                .builder()
+                .add("\n")
+                .indent()
+                .indent()
+                .add(code)
+                .add("\n")
+                .unindent()
+                .unindent()
                 .build();
     }
 

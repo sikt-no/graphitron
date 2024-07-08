@@ -38,8 +38,7 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
                 target.getName(),
                 List.of(
                         new FetchResolverMethodGenerator(target, processedSchema),
-                        new FetchInterfaceResolverMethodGenerator(target, processedSchema),
-                        new ServiceFetchResolverMethodGenerator(target, processedSchema)
+                        new FetchInterfaceResolverMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

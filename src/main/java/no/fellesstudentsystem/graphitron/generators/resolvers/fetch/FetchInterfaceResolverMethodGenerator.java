@@ -48,7 +48,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         var inputField = target.getArguments().get(0);
         String inputFieldName = inputField.getName();
         spec
-                .addParameter(iterableWrap(inputField), inputFieldName)
+                .addParameter(iterableWrapType(inputField), inputFieldName)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
                 .addStatement("$T $L = $T.getTablePartOf($N)", STRING.className, TABLE_OF_ID, FIELD_HELPERS.className, inputFieldName)
                 .addCode("\n");

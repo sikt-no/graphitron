@@ -101,7 +101,7 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
             return currentSource;
         }
 
-        return ClassName.get(new ServiceWrapper(target, processedSchema).getMethod().getGenericReturnType());
+        return new ServiceWrapper(target, processedSchema.getObject(target)).getGenericReturnType();
     }
 
     protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {

@@ -1,9 +1,0 @@
-type Query {
-  customersQuery(
-    ids: [ID!]! # TODO: Complex input record patterns.
-  ): [Customer] @service(service: {name: "TEST_FETCH_CUSTOMER"})
-}
-
-type Customer implements Node @table {
-  id: ID!
-}

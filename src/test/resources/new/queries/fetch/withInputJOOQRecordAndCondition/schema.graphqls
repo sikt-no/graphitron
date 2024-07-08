@@ -1,0 +1,13 @@
+type Query {
+  customers(in: CustomerInput): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecord"})
+  customersListed(in: [CustomerInput]): [Customer] @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"})
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+  id: ID!
+  first: String! @field(name: "FIRST_NAME") @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerString"})
+}
+
+type Customer @table {
+  id: ID!
+}

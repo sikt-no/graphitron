@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerat
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -63,11 +62,5 @@ public class GraphQLGeneratorQueryServiceTest extends GeneratorTest {
     @Test
     void generate_queryWithService_shouldGenerateMappersAndCallServicesWithJavaRecordOutputs() {
         assertGeneratedContentMatches("resolverWithServiceJavaRecordOutputs");
-    }
-
-    @Disabled // TODO: Support records for fetch services.
-    @Test
-    void generate_queryWithService_shouldGenerateMappersAndCallServicesWithJavaRecordInputs() {
-        assertGeneratedContentMatches("resolverWithServiceJavaRecordInputs");
     }
 }

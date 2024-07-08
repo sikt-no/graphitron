@@ -1,7 +1,7 @@
 type Query {
   # When setting service.
-  service1(cityInput: CityInput1): ID @service(service: {name: "MAPPER_DUMMY_SERVICE"})
-  service2(cityInput: CityInput3): ID @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  service1(cityInput: CityInput1): ID @service(service: {name: "DUMMY_SERVICE"})
+  service2(cityInput: CityInput3): ID @service(service: {name: "DUMMY_SERVICE"})
 
   # Nested case, service in a resolver.
   serviceResolver: Store
@@ -13,24 +13,24 @@ input CityInput1 {
   city: CityInput2
 }
 
-input CityInput2 @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+input CityInput2 @record(record: {name: "DUMMY_RECORD"}) {
   cityId: String! @field(name: "CITY_ID")
 }
 
-input CityInput3 @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+input CityInput3 @record(record: {name: "DUMMY_RECORD"}) {
   city: CityInput4
 }
 
-input CityInput4 @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+input CityInput4 @record(record: {name: "DUMMY_RECORD"}) {
   cityId: String! @field(name: "CITY_ID")
 }
 
 type Store @table {
   id: ID!
-  address(input: AddressInput): Address @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  address(input: AddressInput): Address @splitQuery @service(service: {name: "DUMMY_SERVICE"})
 }
 
-input AddressInput @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+input AddressInput @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
 }
 

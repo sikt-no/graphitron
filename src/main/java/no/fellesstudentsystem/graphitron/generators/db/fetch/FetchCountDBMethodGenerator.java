@@ -18,7 +18,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNam
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.INTEGER;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_TOTAL_COUNT;
 
 /**
  * Generator that creates methods for counting all available elements for a type.
@@ -71,7 +70,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         referenceField
                 .getNonReservedArguments()
-                .forEach(it -> spec.addParameter(iterableWrap(it), it.getName()));
+                .forEach(it -> spec.addParameter(iterableWrapType(it), it.getName()));
 
         return spec;
     }

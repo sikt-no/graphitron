@@ -1,7 +1,7 @@
 type Query {
   # When setting service.
-  service1(cityInput: CityInput1): ID @service(service: {name: "MAPPER_DUMMY_SERVICE"})
-  service2(cityInput: CityInput3): ID @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  service1(cityInput: CityInput1): ID @service(service: {name: "DUMMY_SERVICE"})
+  service2(cityInput: CityInput3): ID @service(service: {name: "DUMMY_SERVICE"})
 
   # Nested case, service in a resolver.
   serviceResolver: Store
@@ -27,7 +27,7 @@ input CityInput4 @table(name: "CITY") { # Will not find this. Two tables in a ro
 
 type Store @table {
   id: ID!
-  address(input: AddressInput): Address @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  address(input: AddressInput): Address @splitQuery @service(service: {name: "DUMMY_SERVICE"})
 }
 
 input AddressInput @table(name: "ADDRESS") {

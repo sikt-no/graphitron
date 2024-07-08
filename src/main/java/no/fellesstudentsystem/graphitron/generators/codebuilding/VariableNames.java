@@ -17,5 +17,6 @@ public class VariableNames {
             VARIABLE_SELECT = "select",
             VARIABLE_VALIDATION_ERRORS = "validationErrors",
             VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties",
-            VARIABLE_TYPE_NAME = "type";
+            VARIABLE_TYPE_NAME = "type",
+            VARIABLE_INTERNAL_ITERATION = "internal_it_"; // To avoid conflicts with potential schema names.
 }

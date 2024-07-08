@@ -28,9 +28,9 @@ public class QueryDBQueries {
                         DSL.row(
                                 CUSTOMER.FIRST_NAME,
                                 CUSTOMER.LAST_NAME
-                        ).in(filter.getName().stream().map(input -> DSL.row(
-                                input.getFirstName(),
-                                input.getLastName())
+                        ).in(filter.getName().stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getFirstName()),
+                                DSL.inline(internal_it_.getLastName()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .orderBy(CUSTOMER.getIdFields())

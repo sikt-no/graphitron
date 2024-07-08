@@ -409,23 +409,37 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Does this name point to a type that has a table set?
+     */
+    public boolean hasJOOQRecord(String name) {
+        return tableTypesWithTable.contains(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
+    }
+
+    /**
+     * @return Does this field point to a type that has a table set?
+     */
+    public boolean hasJOOQRecord(GenerationField field) {
+        return hasJOOQRecord(field.getTypeName());
+    }
+
+    /**
      * @return Does this field point to an input type with a table set in the schema?
      */
-    public boolean isTableInputType(GenerationField field) {
+    public boolean hasInputJOOQRecord(GenerationField field) {
         return Optional.ofNullable(getInputType(field)).map(InputDefinition::hasTable).orElse(false);
     }
 
     /**
      * @return Does this field point to an input type with a Java record set in the schema?
      */
-    public boolean isJavaRecordType(GenerationField field) {
+    public boolean hasJavaRecord(GenerationField field) {
         return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
     }
 
     /**
      * @return Does this field point to an input type with a record set in the schema?
      */
-    public boolean hasRecordObject(GenerationField field) {
+    public boolean hasRecord(GenerationField field) {
         return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
     }
 
@@ -524,35 +538,21 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this name point to a type that may have a table set?
+     * @return Does this name point to a type that may have a record set?
      */
     public boolean isRecordType(String name) {
         return recordTypes.containsKey(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
     }
 
     /**
-     * @return Does this field point to a type that may have a table set?
+     * @return Does this field point to a type that may have a record set?
      */
     public boolean isRecordType(FieldSpecification field) {
         return isRecordType(field.getTypeName());
     }
 
     /**
-     * @return Does this name point to a type that has a table set?
-     */
-    public boolean hasTable(String name) {
-        return tableTypesWithTable.contains(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
-    }
-
-    /**
-     * @return Does this field point to a type that has a table set?
-     */
-    public boolean hasTable(FieldSpecification field) {
-        return hasTable(field.getTypeName());
-    }
-
-    /**
-     * @return Get a type for this name.
+     * @return Find the type this field refers to.
      */
     public RecordObjectSpecification<?> getRecordType(String name) {
         return recordTypes.get(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);

@@ -8,12 +8,14 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerat
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -51,7 +53,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
 
-        for (var inputCondition : flatInputs) {
+        var inputsWithoutRecord = flatInputs.stream().filter(it -> !processedSchema.hasRecord(it.getInput())).collect(Collectors.toList());
+        for (var inputCondition : inputsWithoutRecord) {
             var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
@@ -82,15 +85,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        for (var conditionTuple : inputConditions.getConditionTuples()) {
-            codeBlockBuilder.add(createTupleCondition(context, hasWhere, conditionTuple.getPath(), conditionTuple.getConditions()));
-            hasWhere = true;
+        if (!referenceField.hasOverridingCondition()) {
+            for (var conditionTuple : inputConditions.getConditionTuples()) {
+                codeBlockBuilder.add(createTupleCondition(context, hasWhere, conditionTuple.getPath(), conditionTuple.getConditions()));
+                hasWhere = true;
+            }
         }
 
         if (referenceField.hasCondition()) {
+            var inputsWithRecords = flatInputs.stream().filter(it -> processedSchema.hasRecord(it.getInput())).collect(Collectors.toList());
             var inputs = Stream.concat(
                     Stream.of(context.getCurrentJoinSequence().render()),
-                    flatInputs.stream().map(this::getCheckedNameWithPath)
+                    Stream.concat(
+                            inputsWithRecords.stream().map(this::getCheckedNameWithPath),
+                            inputsWithoutRecord
+                                    .stream()
+                                    .filter(c1 -> inputsWithRecords.stream().noneMatch(c2 -> c1.getNamePath().startsWith(c2.getNamePath())))
+                                    .map(this::getCheckedNameWithPath)
+                    )
             ).collect(Collectors.toList());
             codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs), hasWhere));
         }
@@ -108,49 +120,66 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     private CodeBlock createTupleCondition(FetchContext context, boolean hasWhere, String argumentInputFieldName, List<InputCondition> conditions) {
-        var codeBlockBuilder = CodeBlock.builder();
-
         var checks = String.join(" && ", conditions.stream().map(InputCondition::getChecksAsSequence).collect(Collectors.toSet()));
 
-        codeBlockBuilder
-                .add(hasWhere ? ".and(" : "")
-                .add(checks.isEmpty() ? "" : "$L ?\n", checks)
-                .indent().indent()
-                .add("$T.row(\n", DSL.className)
-                .indent().indent();
-
-        for (int i = 0; i < conditions.size(); i++) {
-            var field = conditions.get(i).getInput();
+        var tupleFieldBlocks = new ArrayList<CodeBlock>();
+        var tupleVariableBlocks = new ArrayList<CodeBlock>();
+        for (var condition : conditions) {
+            var field = condition.getInput();
             var fieldSequence = context.iterateJoinSequenceFor(field).render();
+            var unpacked = CodeBlock.of(VARIABLE_INTERNAL_ITERATION + condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
 
-            codeBlockBuilder
-                    .add("$L.$N", fieldSequence, field.getUpperCaseName())
-                    .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), false, processedSchema))
-                    .add(i < conditions.size()-1 ? ",\n" : "");
+            if (!field.hasOverridingCondition()) {
+                var enumHandling = toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), false, processedSchema);
+                tupleFieldBlocks.add(CodeBlock.of("$L.$N$L", fieldSequence, field.getUpperCaseName(), enumHandling));
+                tupleVariableBlocks.add(inline(unpacked));
+            }
+
+            if (field.hasCondition()) {
+                tupleFieldBlocks.add(CodeBlock.of("$T.trueCondition()", DSL.className));
+
+                var conditionInputs = List.of(fieldSequence, unpacked);
+                tupleVariableBlocks.add(field.getCondition().formatToString(conditionInputs));
+            }
         }
-        codeBlockBuilder
-                .unindent().unindent()
-                .add("\n)")
-                .add(".in($N.stream().map(input -> $T.row(\n", argumentInputFieldName, DSL.className)
-                .indent().indent()
-                .add(conditions.stream()
-                        .map(it -> "input" + it.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""))
-                        .collect(Collectors.joining(",\n")))
-                .unindent().unindent()
-                .add(")\n)")
-                .add(collectToList())
-                .add(") :\n")
-                .add("$T.noCondition()", DSL.className)
-                .unindent().unindent()
-                .add(")\n");
 
-        return codeBlockBuilder.build();
+        return wrapCondition(
+                CodeBlock
+                        .builder()
+                        .add(checks.isEmpty() ? "" : "$L ?\n", checks)
+                        .indent()
+                        .indent()
+                        .add(wrapRow(CodeBlock.join(tupleFieldBlocks, ",\n")))
+                        .add(".in(\n")
+                        .indent()
+                        .indent()
+                        .add("$N.stream().map($L ->\n", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
+                        .indent()
+                        .indent()
+                        .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
+                        .unindent()
+                        .unindent()
+                        .add("\n)")
+                        .unindent()
+                        .unindent()
+                        .add("$L\n) : $T.noCondition()", collectToList(), DSL.className)
+                        .unindent()
+                        .unindent()
+                        .build(),
+                hasWhere
+        );
     }
 
     private CodeBlock wrapCondition(CodeBlock condition, boolean hasWhere) {
-        if (!condition.isEmpty()) {
-            return CodeBlock.of((hasWhere ? ".and(" : "") + "$L)\n", condition);
+        if (condition.isEmpty()) {
+            return empty();
         }
-        return condition;
+
+        return CodeBlock
+                .builder()
+                .add((hasWhere ? ".and(" : ""))
+                .add(indentIfMultiline(condition))
+                .add(")\n")
+                .build();
     }
 }

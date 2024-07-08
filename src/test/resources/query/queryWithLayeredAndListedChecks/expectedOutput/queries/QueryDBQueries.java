@@ -27,9 +27,9 @@ public class QueryDBQueries {
                         DSL.row(
                                 CITY.CITY_ID,
                                 CITY.CITY
-                        ).in(cityInput.getCityInput2().stream().map(input -> DSL.row(
-                                input.getCityId(),
-                                input.getName())
+                        ).in(cityInput.getCityInput2().stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getCityId()),
+                                DSL.inline(internal_it_.getName()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .orderBy(CITY.getIdFields())

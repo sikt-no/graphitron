@@ -1,7 +1,7 @@
 type Query {
   # When setting condition we want to find the mappable records. This is tested to ensure the filtering for record generation accounts for these as well.
-  condition1(cityInput: CityInput1): ID @condition(condition: {name: "MAPPER_DUMMY_CONDITION"})
-  condition2(cityInput: CityInput3): ID @condition(condition: {name: "MAPPER_DUMMY_CONDITION"})
+  condition1(cityInput: CityInput1): ID @condition(condition: {name: "DUMMY_CONDITION"})
+  condition2(cityInput: CityInput3): ID @condition(condition: {name: "DUMMY_CONDITION"})
 
   # Nested case, condition in a resolver.
   conditionResolver: Store
@@ -25,7 +25,7 @@ input CityInput4 @table(name: "CITY") { # Will not find this. Two tables in a ro
 
 type Store @table {
   id: ID!
-  address(input: AddressInput): Address @splitQuery @condition(condition: {name: "MAPPER_DUMMY_CONDITION"})
+  address(input: AddressInput): Address @splitQuery @condition(condition: {name: "DUMMY_CONDITION"})
 }
 
 input AddressInput @table(name: "ADDRESS") {

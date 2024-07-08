@@ -3,18 +3,23 @@ package no.fellesstudentsystem.graphitron.mappings;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
+import no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
 
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.isFSKeyFormat;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -235,10 +240,10 @@ public class TableReflection {
                 .map(Method::getName);
     }
 
-    @NotNull
-    /***
+    /**
      * @deprecated Denne metoden skal ikke lenger være public.
      */
+    @NotNull
     public static Optional<Method> getMethod(String tableName, String name) {
         return getTable(tableName)
                 .flatMap(table -> {
@@ -272,13 +277,12 @@ public class TableReflection {
         }
 
         if (!isFSKeyFormat()) { // TODO: Remove this hack.
-            return Optional.of(uncapitalize(Arrays.stream(referenceKey.getName().split("_")).map(StringUtils::capitalize).collect(Collectors.joining())));
+            return Optional.of(toCamelCase(referenceKey.getName()));
         }
 
         var splitDouble = Arrays
                 .stream(referenceKey.getName().split("__"))
-                .map(String::toLowerCase)
-                .map(it -> Arrays.stream(it.split("_")).map(StringUtils::capitalize).collect(Collectors.joining()))
+                .map(NameFormat::toCamelCase)
                 .map(StringUtils::capitalize)
                 .collect(Collectors.joining("_"));
         return Optional.of(uncapitalize(splitDouble));

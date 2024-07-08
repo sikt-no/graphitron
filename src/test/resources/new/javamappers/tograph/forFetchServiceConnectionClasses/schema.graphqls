@@ -1,8 +1,8 @@
 type Query {
-  customersQueryConnection(first: Int = 100, after: String): CustomerConnection @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  customersQueryConnection(first: Int = 100, after: String): CustomerConnection @service(service : {name: "DUMMY_SERVICE"})
 
   # We expect only one mapper despite this.
-  customersQueryDirect: Customer @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  customersQueryDirect: Customer @service(service : {name: "DUMMY_SERVICE"})
 }
 
 type CustomerConnection {
@@ -15,9 +15,9 @@ type CustomerConnectionEdge {
   node: Customer
 }
 
-type Customer @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+type Customer @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
-  historicalAddresses(first: Int = 10, after: String): AddressConnection @splitQuery @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  historicalAddresses(first: Int = 10, after: String): AddressConnection @splitQuery @service(service : {name: "DUMMY_SERVICE"})
 }
 
 type AddressConnection {
@@ -30,16 +30,16 @@ type AddressConnectionEdge {
   node: Address
 }
 
-type Address @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+type Address @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
 
   # Should be able to find these.
-  recordCity: RecordCity @splitQuery @service(service : {name: "MAPPER_DUMMY_SERVICE"})
-  recordCityPaginated(first: String, after: Int): RecordCityConnection @splitQuery @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  recordCity: RecordCity @splitQuery @service(service : {name: "DUMMY_SERVICE"})
+  recordCityPaginated(first: String, after: Int): RecordCityConnection @splitQuery @service(service : {name: "DUMMY_SERVICE"})
 
   # Test that those do NOT generate any mappings, since they do not belong to this mapper.
-  city: City @splitQuery @service(service : {name: "MAPPER_DUMMY_SERVICE"})
-  cityPaginated(first: String, after: Int): CityConnection @splitQuery @service(service : {name: "MAPPER_DUMMY_SERVICE"})
+  city: City @splitQuery @service(service : {name: "DUMMY_SERVICE"})
+  cityPaginated(first: String, after: Int): CityConnection @splitQuery @service(service : {name: "DUMMY_SERVICE"})
 }
 
 type CityConnection {
@@ -66,6 +66,6 @@ type City implements Node @table {
   id: ID!
 }
 
-type RecordCity @record(record: {name: "MAPPER_DUMMY_RECORD"}) {
+type RecordCity @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
 }

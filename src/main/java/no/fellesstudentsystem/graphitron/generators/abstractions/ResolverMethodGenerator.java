@@ -3,8 +3,11 @@ package no.fellesstudentsystem.graphitron.generators.abstractions;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
+import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapFuture;
@@ -35,5 +38,11 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
             return wrapListIf(processedSchema.getObject(referenceField).getGraphClassName(), referenceField.isIterableWrapped());
         }
         return processedSchema.getConnectionObject(referenceField).getGraphClassName();
+    }
+
+    protected ServiceDependency createServiceDependency(GenerationField target) {
+        var dependency = new ServiceDependency(new ServiceWrapper(target, processedSchema.getObject(target)));
+        dependencySet.add(dependency);
+        return dependency;
     }
 }

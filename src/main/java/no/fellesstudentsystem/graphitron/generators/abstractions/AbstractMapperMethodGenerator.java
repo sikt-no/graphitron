@@ -69,7 +69,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
             return currentSource;
         }
 
-        return ClassName.get(new ServiceWrapper(target, processedSchema).getMethod().getGenericReturnType());
+        return new ServiceWrapper(target, processedSchema.getObject(target)).getGenericReturnType();
     }
 
     @Override

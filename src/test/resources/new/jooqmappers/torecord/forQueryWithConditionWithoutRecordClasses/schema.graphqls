@@ -1,0 +1,37 @@
+type Query {
+  # When setting condition we want to find the mappable records. This is tested to ensure the filtering for record generation accounts for these as well.
+  condition1(cityInput: CityInput1): ID @condition(condition: {name: "DUMMY_CONDITION"})
+  condition2(cityInput: CityInput3): ID @condition(condition: {name: "DUMMY_CONDITION"})
+
+  # Nested case, condition in a resolver.
+  conditionResolver: Store
+}
+
+input CityInput1 { # Layer without record.
+  city: CityInput2
+}
+
+input CityInput2 {
+  cityId: String! @field(name: "CITY_ID")
+}
+
+input CityInput3 { # Will not find this. Two tables in a row do not make sense.
+  city: CityInput4
+}
+
+input CityInput4 { # Will not find this. Two tables in a row do not make sense.
+  cityId: String! @field(name: "CITY_ID")
+}
+
+type Store @table {
+  id: ID!
+  address(input: AddressInput): Address @splitQuery @condition(condition: {name: "DUMMY_CONDITION"})
+}
+
+input AddressInput {
+  id: ID!
+}
+
+type Address @table {
+  id: ID!
+}

@@ -66,14 +66,31 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
     /**
      * @return Get the javapoet TypeName for this field's type, and wrap it in a list ParameterizedTypeName if it is iterable.
      */
-    protected TypeName iterableWrap(GenerationField field) {
-        var typeClass = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getGraphClassName() : field.getTypeClass();
-        if (typeClass == null && processedSchema.isEnum(field)) {
-            typeClass = processedSchema.getEnum(field).getGraphClassName();
+    protected TypeName iterableWrapType(GenerationField field) {
+        return wrapListIf(inferFieldTypeName(field, false), field.isIterableWrapped());
+    }
+
+    /**
+     * @return Get the javapoet TypeName for this field's type.
+     */
+    protected TypeName inferFieldTypeName(GenerationField field, boolean checkRecordReferences) {
+        if (processedSchema.isRecordType(field)) {
+            var type = processedSchema.getRecordType(field);
+            if (!checkRecordReferences || !type.hasRecordReference()) {
+                return type.getGraphClassName();
+            }
+            return type.getRecordClassName();
         }
 
-        // TODO: Throw error if typeClass is null, return types will fail with nullpointer after this.
+        if (processedSchema.isEnum(field)) {
+            return processedSchema.getEnum(field).getGraphClassName();
+        }
 
-        return wrapListIf(typeClass, field.isIterableWrapped());
+        var typeClass = field.getTypeClass();
+        if (typeClass == null) {
+            throw new IllegalStateException("Field \"" + field.getName() + "\" has a type \"" + field.getTypeName() + "\" that can not be resolved.");
+        }
+
+        return typeClass;
     }
 }

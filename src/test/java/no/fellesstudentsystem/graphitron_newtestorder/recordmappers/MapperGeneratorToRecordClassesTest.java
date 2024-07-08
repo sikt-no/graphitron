@@ -18,7 +18,7 @@ public class MapperGeneratorToRecordClassesTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/torecord";
 
     public MapperGeneratorToRecordClassesTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of(MAPPER_DUMMY_SERVICE.get(), MAPPER_DUMMY_RECORD.get(), MAPPER_DUMMY_CONDITION.get()));
+        super(SRC_TEST_RESOURCES_PATH, List.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_CONDITION.get()));
     }
 
     @Override
@@ -27,8 +27,8 @@ public class MapperGeneratorToRecordClassesTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Mapper content for fetch conditions")
-    void forQueryWithConditionClasses() { // TODO: Cases where query has condition but should not make records.
+    @DisplayName("Mapper classes for fetch conditions")
+    void forQueryWithConditionClasses() {
         assertFilesAreGenerated(
                 Set.of(
                         "AddressInputJOOQMapper.java",
@@ -40,7 +40,16 @@ public class MapperGeneratorToRecordClassesTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Mapper content for fetch service inputs")
+    @DisplayName("No mappers classes when there are no records")
+    void forQueryWithConditionWithoutRecordClasses() {
+        assertFilesAreGenerated(
+                Set.of(),
+                "forQueryWithConditionWithoutRecordClasses"
+        );
+    }
+
+    @Test
+    @DisplayName("Mapper classes for fetch service inputs")
     void forQueryWithServiceInputClasses() {
         assertFilesAreGenerated(
                 Set.of(

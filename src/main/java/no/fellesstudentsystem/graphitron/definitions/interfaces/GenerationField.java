@@ -40,12 +40,12 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     CodeReference getServiceReference();
 
     /**
-     * @return jOOQ record-side name mapping based on the name of the field or the {@link GenerationDirective#FIELD} directive set on this type.
+     * @return Record-side name mapping based on the name of the field or the {@link GenerationDirective#FIELD} directive set on this type.
      */
-    String getFieldJOOQMappingName();
+    String getFieldRecordMappingName();
 
     /**
-     * @return jOOQ record-side method mapping based on the name of the field or the directive {@link GenerationDirective#FIELD} set on this type.
+     * @return Record-side method mapping based on the name of the field or the directive {@link GenerationDirective#FIELD} set on this type.
      */
-    MethodMapping getMappingForJOOQFieldOverride();
+    MethodMapping getMappingForRecordFieldOverride();
 }

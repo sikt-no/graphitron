@@ -14,8 +14,11 @@ directive @table(name: String) on OBJECT | INPUT_OBJECT
 The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ table record field
 in the related jOOQ table (set by @table), or a field in a Java record if that is used instead.
 This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the record.
+
+The second parameter is used exclusively for Java records, and is kept separate to support cases where Java and jOOQ records need to interact.
+It defaults to the value of the first parameter.
 """
-directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
 directive @enum(enumReference: ExternalCodeReference!) on ENUM

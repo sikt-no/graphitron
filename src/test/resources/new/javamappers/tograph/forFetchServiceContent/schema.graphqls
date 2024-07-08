@@ -1,6 +1,6 @@
 type Query {
-  customersQuery: [Customer] @service(service : {name: "MAPPER_DUMMY_SERVICE"})
-  customersQueryWrapped: OuterWrapper @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  customersQuery: [Customer] @service(service : {name: "DUMMY_SERVICE"})
+  customersQueryWrapped: OuterWrapper @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type OuterWrapper @record(record: {name: "MAPPER_RECORD_CUSTOMER"}) {
@@ -9,7 +9,7 @@ type OuterWrapper @record(record: {name: "MAPPER_RECORD_CUSTOMER"}) {
 
 type Customer implements Node @table {
   id: ID!
-  historicalAddresses: [Address!]! @splitQuery @service(service: {name: "MAPPER_DUMMY_SERVICE"})
+  historicalAddresses: [Address!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {

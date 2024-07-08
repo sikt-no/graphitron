@@ -3,10 +3,8 @@ package no.fellesstudentsystem.graphitron.generators.db.update;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
-import no.fellesstudentsystem.graphitron.definitions.objects.InputDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.InputParser;
@@ -15,10 +13,8 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
@@ -59,12 +55,12 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         var spec = getDefaultSpecBuilder(target.getName(), TypeName.INT);
 
         var inputs = new InputParser(target, processedSchema).getMethodInputs();
-        inputs.forEach((inputName, inputType) -> spec.addParameter(getParamTypeName(inputType), inputName));
+        inputs.forEach((inputName, inputType) -> spec.addParameter(iterableWrapType(inputType), inputName));
 
         var recordInputs = inputs
                 .entrySet()
                 .stream()
-                .filter(it -> processedSchema.isTableInputType(it.getValue()))
+                .filter(it -> processedSchema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
         var code = CodeBlock.builder();
@@ -93,15 +89,6 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         return spec
                 .addCode(code.build())
                 .build();
-    }
-
-    private TypeName getParamTypeName(InputField inputType) {
-        var inputObject = processedSchema.getInputType(inputType.getTypeName());
-        if (Optional.ofNullable(inputObject).map(InputDefinition::hasTable).orElse(false)) {
-            return wrapListIf(inputObject.getRecordClassName(), inputType.isIterableWrapped());
-        } else {
-            return iterableWrap(inputType);
-        }
     }
 
     @Override

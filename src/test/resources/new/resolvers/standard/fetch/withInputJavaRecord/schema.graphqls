@@ -1,0 +1,14 @@
+type Query {
+  customers(in: CustomerInput): Customer
+  customersListed(in: [CustomerInput]): [Customer]
+}
+
+input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+  firstName: String! @field(name: "FIRST_NAME")
+  lastName: String! @field(name: "LAST_NAME")
+}
+
+type Customer @table {
+  id: ID!
+}

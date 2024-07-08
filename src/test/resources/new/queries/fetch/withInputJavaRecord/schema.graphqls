@@ -1,0 +1,13 @@
+type Query {
+  customers(in: CustomerInput): Customer
+  customersListed(in: [CustomerInput]): [Customer]
+}
+
+input CustomerInput @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {
+  id: ID! @field(name: "ID", javaName: "someID")
+  first: String! @field(name: "FIRST_NAME", javaName: "name")
+}
+
+type Customer @table {
+  id: ID!
+}

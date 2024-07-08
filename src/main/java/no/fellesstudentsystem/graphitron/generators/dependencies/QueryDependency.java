@@ -25,6 +25,7 @@ public class QueryDependency extends NamedDependency {
         return declare(uncapitalize(getName()), CodeBlock.of("new $T()", getTypeName()));
     }
 
+    @Override
     public FieldSpec getSpec() {
         return FieldSpec
                 .builder(getTypeName(), uncapitalize(getName()), Modifier.PRIVATE)

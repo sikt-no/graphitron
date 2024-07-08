@@ -59,9 +59,9 @@ public class FilmDBQueries {
                         DSL.row(
                                 film_filmcategoryfilmidfkey_film_category.LAST_UPDATED,
                                 film_filmcategoryfilmidfkey_film_category.category().NAME
-                        ).in(categoryInList.stream().map(input -> DSL.row(
-                                input.getLastUpdated(),
-                                input.getName())
+                        ).in(categoryInList.stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getLastUpdated()),
+                                DSL.inline(internal_it_.getName()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
@@ -90,9 +90,9 @@ public class FilmDBQueries {
                         DSL.row(
                                 film_filmcategoryfilmidfkey_film_category.LAST_UPDATED,
                                 film_filmcategoryfilmidfkey_film_category.category().NAME
-                        ).in(categoryInList.stream().map(input -> DSL.row(
-                                input.getLastUpdated(),
-                                input.getName())
+                        ).in(categoryInList.stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getLastUpdated()),
+                                DSL.inline(internal_it_.getName()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
@@ -118,8 +118,8 @@ public class FilmDBQueries {
                 .and(categoryInListOneField != null && categoryInListOneField.size() > 0 ?
                         DSL.row(
                                 film_filmcategoryfilmidfkey_film_category.LAST_UPDATED
-                        ).in(categoryInListOneField.stream().map(input -> DSL.row(
-                                input.getLastUpdated())
+                        ).in(categoryInListOneField.stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getLastUpdated()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())
@@ -146,9 +146,9 @@ public class FilmDBQueries {
                         DSL.row(
                                 film_filmcategoryfilmidfkey_film_category.LAST_UPDATED,
                                 film_filmcategoryfilmidfkey_film_category.category().NAME
-                        ).in(categoryInListNestedField.stream().map(input -> DSL.row(
-                                input.getOriginalCategoryField().getLastUpdated(),
-                                input.getName())
+                        ).in(categoryInListNestedField.stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getOriginalCategoryField().getLastUpdated()),
+                                DSL.inline(internal_it_.getName()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .orderBy(film_filmcategoryfilmidfkey_film_category.getIdFields())

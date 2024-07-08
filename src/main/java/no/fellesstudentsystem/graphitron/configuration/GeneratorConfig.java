@@ -1,6 +1,9 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.*;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReferences;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
 import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
 
 import java.io.File;

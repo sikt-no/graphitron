@@ -33,7 +33,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
     @Override
     public MethodSpec generate(GenerationField target) {
         var methodName = recordValidateMethod();
-        if (!processedSchema.isTableInputType(target) || !getRecordValidation().isEnabled()) {
+        if (!processedSchema.hasInputJOOQRecord(target) || !getRecordValidation().isEnabled()) {
             return MethodSpec.methodBuilder(methodName).build();
         }
 
@@ -62,7 +62,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
                 .getTargetType()
                 .getInputsSortedByNullability()
                 .stream()
-                .filter(it -> !processedSchema.isTableInputType(it))
+                .filter(it -> !processedSchema.hasInputJOOQRecord(it))
                 .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
                 .collect(Collectors.toList());
         for (var innerField : containedInputs) {
@@ -72,7 +72,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
             } else {
                 fieldCode
                         .beginControlFlow("if ($L)", selectionSetLookup(innerContext.getIndexPath().replaceAll("(.*?)\"/", ""), false, true))
-                        .addStatement("$N.put($S, $N + $L\")", VARIABLE_PATHS_FOR_PROPERTIES, uncapitalize(innerField.getFieldJOOQMappingName()), PATH_HERE_NAME, innerContext.getIndexPath())
+                        .addStatement("$N.put($S, $N + $L\")", VARIABLE_PATHS_FOR_PROPERTIES, uncapitalize(innerField.getFieldRecordMappingName()), PATH_HERE_NAME, innerContext.getIndexPath())
                         .endControlFlow();
             }
         }
@@ -96,7 +96,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
     @Override
     public boolean generatesAll() {
-        return (getLocalObject() == null || !recordValidationEnabled() || !getLocalObject().isExplicitlyNotGenerated()) && processedSchema.isTableInputType(getLocalField());
+        return (getLocalObject() == null || !recordValidationEnabled() || !getLocalObject().isExplicitlyNotGenerated()) && processedSchema.hasInputJOOQRecord(getLocalField());
     }
 
     @Override

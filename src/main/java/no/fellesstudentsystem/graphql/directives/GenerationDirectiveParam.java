@@ -7,6 +7,7 @@ package no.fellesstudentsystem.graphql.directives;
 public enum GenerationDirectiveParam {
     KEY("key"),
     NAME("name"),
+    JAVA_NAME("javaName"),
     TABLE("table"),
     CONDITION("condition"),
     OVERRIDE("override"),

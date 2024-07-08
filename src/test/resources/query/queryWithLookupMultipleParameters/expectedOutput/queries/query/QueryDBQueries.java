@@ -73,10 +73,10 @@ public class QueryDBQueries {
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
                                 FILM.LENGTH
-                        ).in(in.stream().map(input -> DSL.row(
-                                input.getTitle(),
-                                input.getReleaseYear(),
-                                input.getDuration())
+                        ).in(in.stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getTitle()),
+                                DSL.inline(internal_it_.getReleaseYear()),
+                                DSL.inline(internal_it_.getDuration()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .fetchMap(Record2::value1, Record2::value2);
@@ -148,10 +148,10 @@ public class QueryDBQueries {
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
                                 FILM.LENGTH
-                        ).in(in.getFields().stream().map(input -> DSL.row(
-                                input.getTitle(),
-                                input.getReleaseYear(),
-                                input.getDuration())
+                        ).in(in.getFields().stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getTitle()),
+                                DSL.inline(internal_it_.getReleaseYear()),
+                                DSL.inline(internal_it_.getDuration()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .fetchMap(Record2::value1, Record2::value2);
@@ -173,10 +173,10 @@ public class QueryDBQueries {
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
                                 FILM.LENGTH
-                        ).in(in.getFields().stream().map(input -> DSL.row(
-                                input.getTitle(),
-                                input.getReleaseYear(),
-                                input.getDuration())
+                        ).in(in.getFields().stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getTitle()),
+                                DSL.inline(internal_it_.getReleaseYear()),
+                                DSL.inline(internal_it_.getDuration()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .fetchMap(Record2::value1, Record2::value2);
@@ -197,10 +197,10 @@ public class QueryDBQueries {
                                 FILM.TITLE,
                                 FILM.RELEASE_YEAR,
                                 FILM.LENGTH
-                        ).in(in.getFields().stream().map(input -> DSL.row(
-                                input.getTitle(),
-                                input.getReleaseYear(),
-                                input.getDuration())
+                        ).in(in.getFields().stream().map(internal_it_ -> DSL.row(
+                                DSL.inline(internal_it_.getTitle()),
+                                DSL.inline(internal_it_.getReleaseYear()),
+                                DSL.inline(internal_it_.getDuration()))
                         ).collect(Collectors.toList())) :
                         DSL.noCondition())
                 .fetchMap(Record2::value1, Record2::value2);

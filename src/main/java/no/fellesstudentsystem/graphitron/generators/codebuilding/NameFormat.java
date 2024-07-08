@@ -229,9 +229,11 @@ public class NameFormat {
      * Camel case conversion with special handling for numbers.
      */
     public static String toCamelCase(String name) {
-        return Stream
+        return uncapitalize(
+                Stream
                 .of(name.toLowerCase().split("_(?![0-9_]+)"))
                 .map(StringUtils::capitalize)
-                .collect(Collectors.joining(""));
+                .collect(Collectors.joining())
+        );
     }
 }

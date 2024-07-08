@@ -8,7 +8,9 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecificati
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
+import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.FIELD;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.JAVA_NAME;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 
 /**
@@ -16,7 +18,7 @@ import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam
  */
 public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer<T>> implements FieldSpecification {
     private final FieldType fieldType;
-    private final String name, upperCaseName, unprocessedFieldOverrideInput, containerType;
+    private final String name, javaName, upperCaseName, unprocessedFieldOverrideInput, containerType;
     private final MethodMapping mappingFromSchemaName, mappingFromFieldOverride;
     private final boolean hasSetFieldOverride;
 
@@ -32,9 +34,12 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
             var columnValue = getDirectiveArgumentString(field, FIELD, NAME);
             unprocessedFieldOverrideInput = columnValue;
             upperCaseName = columnValue.toUpperCase();
+            var javaColumnValue = getOptionalDirectiveArgumentString(field, FIELD, JAVA_NAME);
+            javaName = javaColumnValue.orElse("");
         } else {
             unprocessedFieldOverrideInput = name;
             upperCaseName = name.toUpperCase();
+            javaName = "";
         }
 
         this.fieldType = fieldType;
@@ -88,6 +93,10 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
     @Override
     public String getName() {
         return name;
+    }
+
+    public String getJavaName() {
+        return javaName;
     }
 
     @Override

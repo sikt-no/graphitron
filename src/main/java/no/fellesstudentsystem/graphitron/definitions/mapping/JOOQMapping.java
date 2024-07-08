@@ -1,14 +1,12 @@
 package no.fellesstudentsystem.graphitron.definitions.mapping;
 
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.JoinElement;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.Objects;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeySourceTable;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForKeyMethodName;
 
@@ -50,10 +48,7 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
     }
 
     public static JOOQMapping fromTable(String tableName) {
-        var codeNameUpper = Stream
-            .of(tableName.toLowerCase().split("_"))
-            .map(StringUtils::capitalize)
-            .collect(Collectors.joining(""));
+        var codeNameUpper = toCamelCase(tableName);
         return new JOOQMapping(tableName.toUpperCase(), StringUtils.uncapitalize(codeNameUpper));
     }
 

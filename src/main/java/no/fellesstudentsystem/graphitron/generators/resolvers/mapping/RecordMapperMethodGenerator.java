@@ -33,7 +33,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
 
         var fieldCode = CodeBlock.builder();
         var type = context.getTargetType();
-        var fields = (toRecord ? type.getInputsSortedByNullability().stream().filter(it -> !processedSchema.isTableInputType(it)).collect(Collectors.toList()) : type.getFields())
+        var fields = (toRecord ? type.getInputsSortedByNullability().stream().filter(it -> !processedSchema.hasJOOQRecord(it)).collect(Collectors.toList()) : type.getFields())
                 .stream()
                 .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
                 .collect(Collectors.toList());

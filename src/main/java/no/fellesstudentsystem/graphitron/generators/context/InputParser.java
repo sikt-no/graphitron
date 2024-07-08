@@ -8,14 +8,14 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
 
 /**
  * A helper class for handling input type data for services and mutations.
@@ -31,12 +31,12 @@ public class InputParser {
         recordInputs = methodInputs
                 .entrySet()
                 .stream()
-                .filter(it -> schema.isRecordType(it.getValue()) && schema.getRecordType(it.getValue()).hasRecordReference())
+                .filter(it -> schema.hasRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         jOOQInputs = recordInputs
                 .entrySet()
                 .stream()
-                .filter(it -> schema.isTableInputType(it.getValue()))
+                .filter(it -> schema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         var inputsJoined = String.join(", ", methodInputs.keySet());
         if (target.hasForwardPagination()) {
@@ -94,7 +94,7 @@ public class InputParser {
                 .getInputType(target)
                 .getFields()
                 .stream()
-                .filter(schema::isTableInputType)
+                .filter(schema::hasJOOQRecord)
                 .flatMap(in -> parseInputs(in, schema, recursion + 1).entrySet().stream())
                 .forEach(it -> serviceInputs.put(it.getKey(), it.getValue()));
         return serviceInputs;

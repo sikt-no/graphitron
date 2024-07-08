@@ -10,6 +10,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
@@ -54,33 +56,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         var code = CodeBlock
                 .builder()
-                .add(declareAliasesAndSetInitialCode(context))
-                .add(selectCode)
-                .add("\n")
-                .unindent()
-                .unindent()
-                .add(")\n")
-                .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
+                .add(createSelectAliases(context.getJoinSet()))
+                .add("return $N\n", VariableNames.CONTEXT_NAME)
+                .indent()
+                .indent()
+                .add(".select(")
+                .add(indentIfMultiline(CodeBlock.of("$L$L", getInitialID(context), selectCode)))
+                .add(")\n.from($L)\n", context.renderQuerySource(getLocalTable()))
                 .add(createSelectJoins(context))
                 .add(where)
                 .add(createSelectConditions(context))
                 .add(setPaginationAndFetch(target, context.getCurrentJoinSequence().render().toString()));
 
-        return getSpecBuilder(target, context.getReferenceObject().getGraphClassName())
+        var parser = new InputParser(target, processedSchema);
+        return getSpecBuilder(target, context.getReferenceObject().getGraphClassName(), parser)
                 .addCode(code.build())
                 .build();
     }
 
-    private CodeBlock declareAliasesAndSetInitialCode(FetchContext context) {
-        var code = CodeBlock
-                .builder()
-                .add(createSelectAliases(context.getJoinSet()))
-                .add("return $N\n", VariableNames.CONTEXT_NAME)
-                .indent()
-                .indent()
-                .add(".select(\n")
-                .indent()
-                .indent();
+    private CodeBlock getInitialID(FetchContext context) {
+        var code = CodeBlock.builder();
 
         var ref = (ObjectField) context.getReferenceObjectField();
         var table = context.renderQuerySource(getLocalTable());
@@ -98,7 +93,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     @NotNull
-    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName) {
+    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName, InputParser parser) {
         var spec = getDefaultSpecBuilder(
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
@@ -107,13 +102,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
-        referenceField
-                .getNonReservedArgumentsWithOrderField()
-                .forEach(i -> spec.addParameter(iterableWrap(i), i.getName()));
+        parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
 
         if (referenceField.hasForwardPagination()) {
-            spec.addParameter(INTEGER.className, PAGE_SIZE_NAME);
-            spec.addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
+            spec
+                    .addParameter(INTEGER.className, PAGE_SIZE_NAME)
+                    .addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
         }
         return spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
     }

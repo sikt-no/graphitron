@@ -18,7 +18,7 @@ public class JavaMapperGeneratorToRecordClassesTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "javamappers/torecord";
 
     public JavaMapperGeneratorToRecordClassesTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of(MAPPER_DUMMY_SERVICE.get(), MAPPER_DUMMY_RECORD.get(), MAPPER_DUMMY_CONDITION.get()));
+        super(SRC_TEST_RESOURCES_PATH, List.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_CONDITION.get()));
     }
 
     @Override
@@ -27,7 +27,7 @@ public class JavaMapperGeneratorToRecordClassesTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Mapper content for fetch conditions")
+    @DisplayName("Mapper classes for fetch conditions")
     void forQueryWithConditionClasses() {
         assertFilesAreGenerated(
                 Set.of(
@@ -41,7 +41,16 @@ public class JavaMapperGeneratorToRecordClassesTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Mapper content for fetch service inputs")
+    @DisplayName("No mappers classes when there are no records")
+    void forQueryWithConditionWithoutRecordClasses() {
+        assertFilesAreGenerated(
+                Set.of(),
+                "forQueryWithConditionWithoutRecordClasses"
+        );
+    }
+
+    @Test
+    @DisplayName("Mapper classes for fetch service inputs")
     void forQueryWithServiceInputClasses() {
         assertFilesAreGenerated(
                 Set.of(

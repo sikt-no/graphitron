@@ -8,21 +8,27 @@ import java.util.stream.Collectors;
 
 public class InputCondition {
     private final InputField input;
-    private final String namePath;
+    private final String namePath, startName;
     private final LinkedHashSet<String> nullChecks;
-    private final boolean pastWasIterable;
+    private final boolean pastWasIterable, hasRecord;
 
-    private InputCondition(InputField input, String namePath, LinkedHashSet<String> nullChecks, boolean pastWasIterable) {
+    private InputCondition(InputField input, String startName, String namePath, LinkedHashSet<String> nullChecks, boolean pastWasIterable, boolean hasRecord) {
         this.input = input;
         this.namePath = namePath;
         this.nullChecks = new LinkedHashSet<>(nullChecks);
         this.pastWasIterable = pastWasIterable;
+        this.startName = startName;
+        this.hasRecord = hasRecord;
 
         inferAdditionalChecks(input);
     }
 
-    public InputCondition(InputField input) {
-        this(input, "",  new LinkedHashSet<>(), false);
+    public InputCondition(InputField input, String startName, boolean hasRecord) {
+        this(input, startName, "",  new LinkedHashSet<>(), false, hasRecord);
+    }
+
+    public InputCondition(InputField input, boolean hasRecord) {
+        this(input, "", "",  new LinkedHashSet<>(), false, hasRecord);
     }
 
     public InputField getInput() {
@@ -49,7 +55,9 @@ public class InputCondition {
     }
 
     public String getNameWithPathString() {
-        return namePath.isEmpty() ? input.getName() : namePath + input.getMappingFromSchemaName().asGetCall().toString();
+        return namePath.isEmpty()
+                ? (startName.isEmpty() ? input.getName() : startName)
+                : (namePath + (hasRecord ? input.getMappingForRecordFieldOverride().asGetCall() : input.getMappingFromSchemaName().asGetCall()).toString());
     }
 
     public String getChecksAsSequence() {
@@ -57,10 +65,10 @@ public class InputCondition {
     }
 
     public InputCondition iterate(InputField input) {
-        return new InputCondition(input, getNameWithPathString(), nullChecks, pastWasIterable || this.input.isIterableWrapped());
+        return new InputCondition(input, startName, getNameWithPathString(), nullChecks, pastWasIterable || this.input.isIterableWrapped(), hasRecord);
     }
 
     public InputCondition applyTo(InputField input) {
-        return new InputCondition(input, namePath, nullChecks, pastWasIterable || this.input.isIterableWrapped());
+        return new InputCondition(input, startName, namePath, nullChecks, pastWasIterable || this.input.isIterableWrapped(), hasRecord);
     }
 }

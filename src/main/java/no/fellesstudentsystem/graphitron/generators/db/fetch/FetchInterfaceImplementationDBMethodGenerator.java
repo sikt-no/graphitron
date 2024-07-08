@@ -22,10 +22,10 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.RECORD2;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
 
 /**
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
@@ -67,15 +67,9 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .add(".select(\n")
-                .indent()
-                .indent()
-                .add("$L.getId(),\n", querySource)
-                .add(selectCode)
-                .unindent()
-                .unindent()
-                .add(")\n")
-                .add(".from($L)\n", querySource)
+                .add(".select(")
+                .add(indentIfMultiline(CodeBlock.of("$L.getId(),\n$L", querySource, selectCode)))
+                .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context))
                 .add(".where($L.has$N($N))\n",
                         querySource,

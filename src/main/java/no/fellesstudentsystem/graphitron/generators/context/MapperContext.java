@@ -113,7 +113,7 @@ public class MapperContext {
             return previousContext.lastRecordMapping;
         }
 
-        return mapsJavaRecord ? target.getMappingFromFieldOverride() : target.getMappingForJOOQFieldOverride();
+        return mapsJavaRecord ? target.getMappingFromFieldOverride() : target.getMappingForRecordFieldOverride();
     }
 
     private String getSchemaNameToUse() {

@@ -17,7 +17,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/tograph";
 
     public MapperGeneratorToGraphTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of(MAPPER_DUMMY_SERVICE.get(), MAPPER_DUMMY_RECORD.get(), MAPPER_FETCH_SERVICE.get()));
+        super(SRC_TEST_RESOURCES_PATH, List.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), MAPPER_FETCH_SERVICE.get()));
     }
 
     @Override

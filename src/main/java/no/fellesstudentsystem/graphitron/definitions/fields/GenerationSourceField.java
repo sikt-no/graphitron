@@ -32,7 +32,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     private final boolean isGenerated, isResolver, isGeneratedAsResolver;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
-    private final MethodMapping mappingForJOOQFieldOverride;
+    private final MethodMapping mappingForRecordFieldOverride;
     private final CodeReference serviceReference;
 
     public GenerationSourceField(T field, FieldType fieldType, String container) {
@@ -62,7 +62,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         }
 
         serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
-        mappingForJOOQFieldOverride = field.hasDirective(FIELD.getName()) ? new MethodMapping(toCamelCase(getUpperCaseName())) : getMappingFromFieldOverride();
+        if (field.hasDirective(FIELD.getName())) {
+            mappingForRecordFieldOverride = getJavaName().isEmpty() ? new MethodMapping(toCamelCase(getUpperCaseName())) : new MethodMapping(getJavaName());
+        } else {
+            mappingForRecordFieldOverride = getMappingFromFieldOverride();
+        }
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName());
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
@@ -109,13 +113,13 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     @Override
-    public MethodMapping getMappingForJOOQFieldOverride() {
-        return mappingForJOOQFieldOverride;
+    public MethodMapping getMappingForRecordFieldOverride() {
+        return mappingForRecordFieldOverride;
     }
 
     @Override
-    public String getFieldJOOQMappingName() {
-        return mappingForJOOQFieldOverride.getName();
+    public String getFieldRecordMappingName() {
+        return mappingForRecordFieldOverride.getName();
     }
 
     @Override

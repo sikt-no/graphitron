@@ -2,7 +2,6 @@ package no.fellesstudentsystem.graphitron.definitions.objects;
 
 import com.squareup.javapoet.ClassName;
 import graphql.language.TypeDefinition;
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.helpers.ClassReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
@@ -21,8 +20,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asRecordClassName;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getRequiredFields;
 import static no.fellesstudentsystem.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.NOT_GENERATED;

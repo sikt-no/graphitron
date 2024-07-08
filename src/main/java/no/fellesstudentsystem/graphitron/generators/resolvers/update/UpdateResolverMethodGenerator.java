@@ -14,6 +14,8 @@ import java.util.List;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareTransform;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedNameIf;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asResultName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 
@@ -32,10 +34,10 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     @Override
     public MethodSpec generate(ObjectField target) {
         parser = new InputParser(target, processedSchema);
-        var spec = getDefaultSpecBuilder(target.getName(), iterableWrap(target));
+        var spec = getDefaultSpecBuilder(target.getName(), iterableWrapType(target));
 
         var specInputs = target.getArguments();
-        specInputs.forEach(input -> spec.addParameter(iterableWrap(input), input.getName()));
+        specInputs.forEach(input -> spec.addParameter(iterableWrapType(input), input.getName()));
 
         var methodCall = generateUpdateMethodCall(target); // Must happen before service declaration checks the found dependencies.
         var code = CodeBlock
@@ -77,6 +79,17 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         }
 
         return inputTransform(specInputs, processedSchema);
+    }
+
+    /**
+     * @return This field's name formatted as a method call result.
+     */
+    protected static String getResolverResultName(ObjectField target, ProcessedSchema schema) {
+        if (!schema.isObject(target)) {
+            return asResultName(target.getUnprocessedFieldOverrideInput());
+        }
+
+        return asListedNameIf(target.getTypeName(), target.isIterableWrapped());
     }
 
     @Override

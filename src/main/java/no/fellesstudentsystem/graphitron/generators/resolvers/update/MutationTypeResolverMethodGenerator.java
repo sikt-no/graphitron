@@ -22,7 +22,6 @@ import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursio
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMapIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.getResolverResultName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
@@ -246,7 +245,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         var type = processedSchema.getObject(target);
         var matchingInput = findMatchingInputRecord(processedSchema.getObject(target).getTable().getMappingName());
         var isIterable = matchingInput.isIterableWrapped();
-        var methodCode = createGetMethodCode(target, path, !processedSchema.isJavaRecordType(previous), isIterable);
+        var methodCode = createGetMethodCode(target, path, !processedSchema.hasJavaRecord(previous), isIterable);
 
         var methodParameter = wrapListIf(processedSchema.getInputType(matchingInput).getRecordClassName(), isIterable);
         return List.of(

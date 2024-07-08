@@ -2,26 +2,24 @@ package no.fellesstudentsystem.graphitron_newtestorder;
 
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyMapperCondition;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyMapperRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyMapperService;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperAddressJavaRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperCityJavaRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperCustomerInnerJavaRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperCustomerJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyCondition;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyService;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.*;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.JOOQRecordInputFetchService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.JavaRecordInputFetchService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.MapperFetchService;
 
 public enum ReferenceTestSet {
     // Dummy service.
-    MAPPER_DUMMY_SERVICE("MAPPER_DUMMY_SERVICE", DummyMapperService.class),
+    DUMMY_SERVICE("DUMMY_SERVICE", DummyService.class),
 
     // Dummy record.
-    MAPPER_DUMMY_RECORD("MAPPER_DUMMY_RECORD", DummyMapperRecord.class),
+    DUMMY_RECORD("DUMMY_RECORD", DummyRecord.class),
 
     // Dummy condition.
-    MAPPER_DUMMY_CONDITION("MAPPER_DUMMY_CONDITION", DummyMapperCondition.class),
+    DUMMY_CONDITION("DUMMY_CONDITION", DummyCondition.class),
 
     // Mapping services.
     MAPPER_FETCH_SERVICE("MAPPER_FETCH_SERVICE", MapperFetchService.class),
@@ -34,7 +32,11 @@ public enum ReferenceTestSet {
 
     // Input record services.
     JAVA_RECORD_FETCH_SERVICE("JAVA_RECORD_FETCH_SERVICE", JavaRecordInputFetchService.class),
-    JOOQ_RECORD_FETCH_SERVICE("JOOQ_RECORD_FETCH_SERVICE", JOOQRecordInputFetchService.class);
+    JOOQ_RECORD_FETCH_SERVICE("JOOQ_RECORD_FETCH_SERVICE", JOOQRecordInputFetchService.class),
+    JAVA_RECORD_FETCH_QUERY("JAVA_RECORD_FETCH_QUERY", QueryCustomerJavaRecord.class),
+
+    // Input record conditions.
+    RECORD_FETCH_CONDITION("RECORD_FETCH_CONDITION", QueryCustomerCondition.class);
 
     private final ExternalReference reference;
 

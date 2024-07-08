@@ -85,6 +85,6 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
     @Override
     public boolean generatesAll() {
-        return processedSchema.isJavaRecordType(getLocalField());
+        return processedSchema.hasJavaRecord(getLocalField());
     }
 }
