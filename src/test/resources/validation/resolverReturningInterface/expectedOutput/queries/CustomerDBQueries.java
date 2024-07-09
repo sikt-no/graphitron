@@ -21,11 +21,11 @@ public class CustomerDBQueries {
                 .select(
                         CUSTOMER.getId(),
                         DSL.row(
-                                CUSTOMER.getId().as("id"),
+                                CUSTOMER.getId(),
                                 DSL.row(
-                                        CUSTOMER.address().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Address::new)).as("address")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("id")
+                                        CUSTOMER.address().getId()
+                                ).mapping(Functions.nullOnAllNull(Address::new))
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.hasIds(ids))

@@ -45,7 +45,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .add(".select($T.count().as($S))\n", DSL.className, CONNECTION_TOTAL_COUNT.getName())
+                .add(".select($T.count())\n", DSL.className)
                 .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
                 .add(createSelectJoins(context))
                 .add(where)

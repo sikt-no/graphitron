@@ -13,9 +13,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                STORE.getId().as("id"),
-                                select.optional("cityNameOfMostValuableCustomer", store_customerstoreidfkey_customer.address().city().NAME).as("cityNameOfMostValuableCustomer")
-                        ).mapping(Functions.nullOnAllNull(Store::new)).as("store")
+                                STORE.getId(),
+                                select.optional("cityNameOfMostValuableCustomer", store_customerstoreidfkey_customer.address().city().NAME)
+                        ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(STORE)
                 .join(store_customerstoreidfkey_customer)

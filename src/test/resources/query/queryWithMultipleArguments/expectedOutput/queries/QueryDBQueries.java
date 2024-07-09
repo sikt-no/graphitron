@@ -15,10 +15,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title"),
-                                select.optional("description", FILM.DESCRIPTION).as("description")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmTwoArguments")
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE),
+                                select.optional("description", FILM.DESCRIPTION)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -34,10 +34,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title"),
-                                select.optional("description", FILM.DESCRIPTION).as("description")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmFiveArguments")
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE),
+                                select.optional("description", FILM.DESCRIPTION)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -53,7 +53,7 @@ public class QueryDBQueries {
     public static Integer countFilmTwoArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : DSL.noCondition())
@@ -62,7 +62,7 @@ public class QueryDBQueries {
     public static Integer countFilmFiveArgumentsForQuery(DSLContext ctx, String releaseYear,
             List<Integer> languageID, String description, String title, Integer length) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .and(languageID != null && languageID.size() > 0 ? FILM.LANGUAGE_ID.in(languageID) : DSL.noCondition())

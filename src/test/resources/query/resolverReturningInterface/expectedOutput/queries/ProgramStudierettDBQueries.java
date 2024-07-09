@@ -21,11 +21,11 @@ public class ProgramStudierettDBQueries {
                 .select(
                         STUDIERETT.getId(),
                         DSL.row(
-                                STUDIERETT.getId().as("id"),
+                                STUDIERETT.getId(),
                                 DSL.row(
-                                        STUDIERETT.kull().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Kull::new)).as("kull")
-                        ).mapping(Functions.nullOnAllNull(ProgramStudierett::new)).as("id")
+                                        STUDIERETT.kull().getId()
+                                ).mapping(Functions.nullOnAllNull(Kull::new))
+                        ).mapping(Functions.nullOnAllNull(ProgramStudierett::new))
                 )
                 .from(STUDIERETT)
                 .where(STUDIERETT.hasIds(ids))

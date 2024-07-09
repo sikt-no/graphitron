@@ -18,14 +18,14 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CUSTOMER.getId().as("id"),
-                                select.optional("firstName", CUSTOMER.FIRST_NAME).as("firstName"),
-                                select.optional("lastName", CUSTOMER.LAST_NAME).as("lastName"),
+                                CUSTOMER.getId(),
+                                select.optional("firstName", CUSTOMER.FIRST_NAME),
+                                select.optional("lastName", CUSTOMER.LAST_NAME),
                                 DSL.row(
-                                        select.optional("email/privateEmail", CUSTOMER.EMAIL).as("privateEmail"),
-                                        select.optional("email/workEmail", CUSTOMER.EMAIL).as("workEmail")
-                                ).mapping(Functions.nullOnAllNull(CustomerEmail::new)).as("email")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customersNoPage")
+                                        select.optional("email/privateEmail", CUSTOMER.EMAIL),
+                                        select.optional("email/workEmail", CUSTOMER.EMAIL)
+                                ).mapping(Functions.nullOnAllNull(CustomerEmail::new))
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ACTIVE.eq(active))
@@ -42,14 +42,14 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CUSTOMER.getId().as("id"),
-                                select.optional("firstName", CUSTOMER.FIRST_NAME).as("firstName"),
-                                select.optional("lastName", CUSTOMER.LAST_NAME).as("lastName"),
+                                CUSTOMER.getId(),
+                                select.optional("firstName", CUSTOMER.FIRST_NAME),
+                                select.optional("lastName", CUSTOMER.LAST_NAME),
                                 DSL.row(
-                                        select.optional("email/privateEmail", CUSTOMER.EMAIL).as("privateEmail"),
-                                        select.optional("email/workEmail", CUSTOMER.EMAIL).as("workEmail")
-                                ).mapping(Functions.nullOnAllNull(CustomerEmail::new)).as("email")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customersWithPage")
+                                        select.optional("email/privateEmail", CUSTOMER.EMAIL),
+                                        select.optional("email/workEmail", CUSTOMER.EMAIL)
+                                ).mapping(Functions.nullOnAllNull(CustomerEmail::new))
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ACTIVE.eq(active))
@@ -68,8 +68,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -81,7 +81,7 @@ public class QueryDBQueries {
     public static Integer countCustomersWithPageForQuery(DSLContext ctx, String active,
             List<Integer> storeIds, CustomerInput pin) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(CUSTOMER)
                 .where(CUSTOMER.ACTIVE.eq(active))
                 .and(storeIds != null && storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : DSL.noCondition())
@@ -93,7 +93,7 @@ public class QueryDBQueries {
     }
     public static Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);

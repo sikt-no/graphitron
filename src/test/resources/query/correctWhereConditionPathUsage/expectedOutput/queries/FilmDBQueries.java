@@ -22,8 +22,8 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.filmLanguageIdFkey().getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Language::new)).as("languages")
+                                FILM.filmLanguageIdFkey().getId()
+                        ).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(FILM)
                 .where(FILM.hasIds(filmIds))
@@ -38,8 +38,8 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.filmLanguageIdFkey().getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Language::new)).as("languagesInput")
+                                FILM.filmLanguageIdFkey().getId()
+                        ).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(FILM)
                 .where(FILM.hasIds(filmIds))

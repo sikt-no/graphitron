@@ -19,8 +19,8 @@ public class KullDBQueries {
                 .select(
                         KULL.getId(),
                         DSL.row(
-                                KULL.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Kull::new)).as("id")
+                                KULL.getId()
+                        ).mapping(Functions.nullOnAllNull(Kull::new))
                 )
                 .from(KULL)
                 .where(KULL.hasIds(ids))

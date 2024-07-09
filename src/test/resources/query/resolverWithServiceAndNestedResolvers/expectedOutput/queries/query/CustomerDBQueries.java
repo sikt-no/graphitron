@@ -21,8 +21,8 @@ public class CustomerDBQueries {
                 .select(
                         CUSTOMER.getId(),
                         DSL.row(
-                                CUSTOMER.address().getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("historicalAddresses")
+                                CUSTOMER.address().getId()
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.hasIds(customerIds))

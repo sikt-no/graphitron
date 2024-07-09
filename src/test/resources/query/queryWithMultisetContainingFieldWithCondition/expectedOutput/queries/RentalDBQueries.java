@@ -24,7 +24,7 @@ public class RentalDBQueries {
                 .select(
                         RENTAL.getId(),
                         DSL.row(
-                                RENTAL.inventory().getId().as("id"),
+                                RENTAL.inventory().getId(),
                                 DSL.multiset(
                                         DSL.select(
                                                         DSL.row(
@@ -41,7 +41,7 @@ public class RentalDBQueries {
                                                 .where(INVENTORY.FILM_ID.eq(RENTAL.inventory().film().FILM_ID))
                                                 .and(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(FILM, film_filmactorfilmidfkey_film_actor))
                                 )
-                        ).mapping((a0, a1) -> new Inventory(a0, a1.map(Record1::value1))).as("inventory")
+                        ).mapping((a0, a1) -> new Inventory(a0, a1.map(Record1::value1)))
                 )
                 .from(RENTAL)
                 .where(RENTAL.hasIds(rentalIds))

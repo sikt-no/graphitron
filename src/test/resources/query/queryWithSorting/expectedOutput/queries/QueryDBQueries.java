@@ -16,10 +16,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                INVENTORY.getId().as("id"),
-                                INVENTORY.STORE_ID.as("storeId"),
-                                INVENTORY.FILM_ID.as("filmId")
-                        ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventories")
+                                INVENTORY.getId(),
+                                INVENTORY.STORE_ID,
+                                INVENTORY.FILM_ID
+                        ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(INVENTORY)
                 .orderBy(

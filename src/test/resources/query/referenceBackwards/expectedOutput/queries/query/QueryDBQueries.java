@@ -15,11 +15,11 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
+                                CITY.getId(),
                                 DSL.row(
-                                        city_customeraddressidfkey_customer.store().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Store::new)).as("store")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("city")
+                                        city_customeraddressidfkey_customer.store().getId()
+                                ).mapping(Functions.nullOnAllNull(Store::new))
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .join(city_addresscityidfkey_address)

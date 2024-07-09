@@ -15,8 +15,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                ADDRESS.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address0")
+                                ADDRESS.getId()
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
                 .leftJoin(address_customeraddressidfkey_customer_left)
@@ -32,8 +32,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                ADDRESS.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address1")
+                                ADDRESS.getId()
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
                 .join(address_customeraddressidfkey_customer)

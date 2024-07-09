@@ -17,11 +17,11 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                STUDIERETT.getId().as("id"),
+                                STUDIERETT.getId(),
                                 DSL.row(
-                                        STUDIERETT.kull().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Kull::new)).as("kull")
-                        ).mapping(Functions.nullOnAllNull(ProgramStudierett::new)).as("programStudierett")
+                                        STUDIERETT.kull().getId()
+                                ).mapping(Functions.nullOnAllNull(Kull::new))
+                        ).mapping(Functions.nullOnAllNull(ProgramStudierett::new))
                 )
                 .from(STUDIERETT)
                 .where(STUDIERETT.ID.eq(id))

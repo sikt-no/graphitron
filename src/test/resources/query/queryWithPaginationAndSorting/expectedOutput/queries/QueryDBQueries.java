@@ -24,17 +24,17 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                FILM.TITLE.as("title"),
+                                FILM.getId(),
+                                FILM.TITLE,
                                 DSL.row(
                                         DSL.row(
-                                                FILM.LANGUAGE_ID.as("languageId"),
+                                                FILM.LANGUAGE_ID,
                                                 DSL.row(
-                                                        FILM.DESCRIPTION.as("description")
-                                                ).mapping(Functions.nullOnAllNull(NestedNestedNested::new)).as("nested3")
-                                        ).mapping(Functions.nullOnAllNull(NestedNested::new)).as("nested2")
-                                ).mapping(Functions.nullOnAllNull(Nested::new)).as("nested")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
+                                                        FILM.DESCRIPTION
+                                                ).mapping(Functions.nullOnAllNull(NestedNestedNested::new))
+                                        ).mapping(Functions.nullOnAllNull(NestedNested::new))
+                                ).mapping(Functions.nullOnAllNull(Nested::new))
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -57,10 +57,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                INVENTORY.getId().as("id"),
-                                INVENTORY.STORE_ID.as("storeId"),
-                                INVENTORY.FILM_ID.as("filmId")
-                        ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventories")
+                                INVENTORY.getId(),
+                                INVENTORY.STORE_ID,
+                                INVENTORY.FILM_ID
+                        ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(INVENTORY)
                 .orderBy(
@@ -78,14 +78,14 @@ public class QueryDBQueries {
     }
     public static Integer countFilmsForQuery(DSLContext ctx, String releaseYear) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);
     }
     public static Integer countInventoriesForQuery(DSLContext ctx) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(INVENTORY)
                 .fetchOne(0, Integer.class);
     }

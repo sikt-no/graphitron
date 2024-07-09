@@ -15,8 +15,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                ADDRESS.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address")
+                                ADDRESS.getId()
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
                 .leftJoin(address_customeraddressidfkey_customer_left)

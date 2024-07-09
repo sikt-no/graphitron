@@ -12,8 +12,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                INVENTORY.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventory")
+                                INVENTORY.getId()
+                        ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(INVENTORY)
                 .where(INVENTORY.INVENTORY_ID.eq(id))

@@ -24,8 +24,8 @@ public class InventoryDBQueries {
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                inventory_rentalinventoryidfkey_rental.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Rental::new)).as("rentals")
+                                inventory_rentalinventoryidfkey_rental.getId()
+                        ).mapping(Functions.nullOnAllNull(Rental::new))
                 )
                 .from(INVENTORY)
                 .join(inventory_rentalinventoryidfkey_rental)
@@ -41,12 +41,12 @@ public class InventoryDBQueries {
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                INVENTORY.getId().as("id"),
+                                INVENTORY.getId(),
                                 DSL.row(
-                                        INVENTORY.film().getId().as("id"),
-                                        select.optional("film/title", INVENTORY.film().TITLE).as("title")
-                                ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
-                        ).mapping(Functions.nullOnAllNull(Inventory::new)).as("id")
+                                        INVENTORY.film().getId(),
+                                        select.optional("film/title", INVENTORY.film().TITLE)
+                                ).mapping(Functions.nullOnAllNull(Film::new))
+                        ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(INVENTORY)
                 .where(INVENTORY.hasIds(ids))

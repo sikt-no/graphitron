@@ -16,10 +16,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CUSTOMER.getId().as("id"),
-                                select.optional("firstName", CUSTOMER.FIRST_NAME).as("firstName"),
-                                select.optional("lastName", CUSTOMER.LAST_NAME).as("lastName")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customer")
+                                CUSTOMER.getId(),
+                                select.optional("firstName", CUSTOMER.FIRST_NAME),
+                                select.optional("lastName", CUSTOMER.LAST_NAME)
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ACTIVEBOOL.eq(filter.getActivebool()))

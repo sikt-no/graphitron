@@ -26,28 +26,28 @@ public class InventoryDBQueries {
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                INVENTORY.film().getId().as("id"),
+                                INVENTORY.film().getId(),
                                 DSL.row(
-                                        INVENTORY.film().DESCRIPTION.as("description")
-                                ).mapping(Functions.nullOnAllNull(FilmDataA::new)).as("filmDetailsA"),
+                                        INVENTORY.film().DESCRIPTION
+                                ).mapping(Functions.nullOnAllNull(FilmDataA::new)),
                                 DSL.row(
-                                        INVENTORY.film().LENGTH.as("length")
-                                ).mapping(Functions.nullOnAllNull(FilmDataB::new)).as("filmDetailsA"),
+                                        INVENTORY.film().LENGTH
+                                ).mapping(Functions.nullOnAllNull(FilmDataB::new)),
                                 DSL.row(
-                                        INVENTORY.film().RELEASE_YEAR.as("releaseYear")
-                                ).mapping(Functions.nullOnAllNull(FilmDataC::new)).as("filmDetailsA"),
+                                        INVENTORY.film().RELEASE_YEAR
+                                ).mapping(Functions.nullOnAllNull(FilmDataC::new)),
                                 DSL.row(
-                                        INVENTORY.film().RELEASE_YEAR.as("releaseYear")
-                                ).mapping(Functions.nullOnAllNull(FilmDataC::new)).as("filmDetailsB"),
+                                        INVENTORY.film().RELEASE_YEAR
+                                ).mapping(Functions.nullOnAllNull(FilmDataC::new)),
                                 DSL.row(
-                                        INVENTORY.film().RATING.as("rating")
-                                ).mapping(Functions.nullOnAllNull(FilmDataD::new)).as("filmDetailsB"),
+                                        INVENTORY.film().RATING
+                                ).mapping(Functions.nullOnAllNull(FilmDataD::new)),
                                 DSL.row(
-                                        select.optional("extra/title", INVENTORY.film().TITLE).as("title"),
-                                        select.optional("extra/description", INVENTORY.film().DESCRIPTION).as("description"),
-                                        select.optional("extra/length", INVENTORY.film().LENGTH).as("length")
-                                ).mapping(Extra::new).as("extra")
-                        ).mapping((a0, a1_0, a1_1, a1_2, a2_0, a2_1, a3) -> a0 == null && a1_0 != null && a1_1 != null && a1_2 != null && a2_0 != null && a2_1 != null && (a3 == null || new Extra().equals(a3)) ? null : new Film2(a0, a1_0 != null ? a1_0 : a1_1 != null ? a1_1 : a1_2, a2_0 != null ? a2_0 : a2_1, a3)).as("films")
+                                        select.optional("extra/title", INVENTORY.film().TITLE),
+                                        select.optional("extra/description", INVENTORY.film().DESCRIPTION),
+                                        select.optional("extra/length", INVENTORY.film().LENGTH)
+                                ).mapping(Extra::new)
+                        ).mapping((a0, a1_0, a1_1, a1_2, a2_0, a2_1, a3) -> a0 == null && a1_0 != null && a1_1 != null && a1_2 != null && a2_0 != null && a2_1 != null && (a3 == null || new Extra().equals(a3)) ? null : new Film2(a0, a1_0 != null ? a1_0 : a1_1 != null ? a1_1 : a1_2, a2_0 != null ? a2_0 : a2_1, a3))
                 )
                 .from(INVENTORY)
                 .where(INVENTORY.hasIds(inventoryIds))

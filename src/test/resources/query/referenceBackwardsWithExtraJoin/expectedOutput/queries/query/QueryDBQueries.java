@@ -18,26 +18,26 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
+                                CITY.getId(),
                                 DSL.row(
-                                        city_customeraddressidfkey_customer_left.store().getId().as("id"),
+                                        city_customeraddressidfkey_customer_left.store().getId(),
                                         DSL.row(
-                                                city_customeraddressidfkey_customer_left.store().address().getId().as("id")
-                                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address0"),
+                                                city_customeraddressidfkey_customer_left.store().address().getId()
+                                        ).mapping(Functions.nullOnAllNull(Address::new)),
                                         DSL.row(
-                                                city_customeraddressidfkey_customer_left.store().address().getId().as("id")
-                                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address1")
-                                ).mapping(Functions.nullOnAllNull(Store::new)).as("store0"),
+                                                city_customeraddressidfkey_customer_left.store().address().getId()
+                                        ).mapping(Functions.nullOnAllNull(Address::new))
+                                ).mapping(Functions.nullOnAllNull(Store::new)),
                                 DSL.row(
-                                        city_customeraddressidfkey_customer.store().getId().as("id"),
+                                        city_customeraddressidfkey_customer.store().getId(),
                                         DSL.row(
-                                                city_customeraddressidfkey_customer.store().address().getId().as("id")
-                                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address0"),
+                                                city_customeraddressidfkey_customer.store().address().getId()
+                                        ).mapping(Functions.nullOnAllNull(Address::new)),
                                         DSL.row(
-                                                city_customeraddressidfkey_customer.store().address().getId().as("id")
-                                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address1")
-                                ).mapping(Functions.nullOnAllNull(Store::new)).as("store1")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("city")
+                                                city_customeraddressidfkey_customer.store().address().getId()
+                                        ).mapping(Functions.nullOnAllNull(Address::new))
+                                ).mapping(Functions.nullOnAllNull(Store::new))
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .leftJoin(city_addresscityidfkey_address_left)

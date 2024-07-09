@@ -22,8 +22,8 @@ public class AddressDBQueries {
                 .select(
                         ADDRESS.getId(),
                         DSL.row(
-                                address_customeraddressidfkey_customer_left.store().getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Store::new)).as("stores0")
+                                address_customeraddressidfkey_customer_left.store().getId()
+                        ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(ADDRESS)
                 .leftJoin(address_customeraddressidfkey_customer_left)
@@ -40,8 +40,8 @@ public class AddressDBQueries {
                 .select(
                         ADDRESS.getId(),
                         DSL.row(
-                                address_customeraddressidfkey_customer.store().getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Store::new)).as("stores1")
+                                address_customeraddressidfkey_customer.store().getId()
+                        ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(ADDRESS)
                 .join(address_customeraddressidfkey_customer)

@@ -18,8 +18,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("city")
+                                CITY.getId()
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(cityInput != null ? CITY.CITY_ID.eq(cityInput.getCityId()) : DSL.noCondition())

@@ -20,9 +20,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("id")
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.hasIds(ids))
@@ -35,9 +35,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("id")
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.hasTitles(titles))

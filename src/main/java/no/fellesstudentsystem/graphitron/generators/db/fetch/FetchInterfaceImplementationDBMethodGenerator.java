@@ -73,7 +73,6 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .add("$L.getId(),\n", querySource)
                 .add(selectCode)
                 .unindent()
-                .add(".as($S)\n", NODE_ID.getName())
                 .unindent()
                 .add(")\n")
                 .add(".from($L)\n", querySource)

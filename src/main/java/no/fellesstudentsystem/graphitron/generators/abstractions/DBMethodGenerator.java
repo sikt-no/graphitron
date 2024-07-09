@@ -164,12 +164,9 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             var innerRowCode = processedSchema.isObject(field)
                     ? generateSelectRow(context.nextContext(field))
                     : (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
-            if(context.requiresAlias()) {
-                rowContentCode.add("$L.as($S)", innerRowCode, field.getName());
-            } else {
-                rowContentCode.add("$L", innerRowCode);
-            }
-            rowContentCode.add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
+            rowContentCode
+                    .add(innerRowCode)
+                    .add((i < fieldsWithoutSplittingSize - 1) ? ",\n" : "\n");
         }
 
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
@@ -481,8 +478,8 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
             var object = processedSchema.getObject(fieldObject).getName();
             var objectField = new ObjectField(new FieldDefinition(object, new graphql.language.TypeName(object)), object);
             codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
-            if(counter + 1 < unionField.getFieldTypeNames().size()) {
-                codeBlock.add(".as($S),\n", field.getName());
+            if (counter + 1 < unionField.getFieldTypeNames().size()) {
+                codeBlock.add(",\n");
             }
             counter++;
         }

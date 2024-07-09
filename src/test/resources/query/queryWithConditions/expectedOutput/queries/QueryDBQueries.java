@@ -15,10 +15,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("paramCondition")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(CITY.COUNTRY_ID.eq(countryId))
@@ -32,10 +32,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("paramConditionOverride")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(CITY.COUNTRY_ID.eq(countryId))
@@ -48,10 +48,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("fieldCondition")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(CITY.COUNTRY_ID.eq(countryId))
@@ -65,10 +65,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("fieldConditionOverride")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityAll(CITY, countryId, cityNames))
@@ -80,10 +80,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("fieldAndParamCondition")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(CITY.COUNTRY_ID.eq(countryId))
@@ -98,10 +98,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("fieldAndParamConditionOverride")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
@@ -114,10 +114,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("fieldAndParamConditionOverrideBoth")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(no.fellesstudentsystem.graphitron.conditions.CityTestConditions.cityNames(CITY, cityNames))
@@ -130,10 +130,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CITY.getId().as("id"),
-                                select.optional("name", CITY.CITY).as("name"),
-                                select.optional("lastUpdate", CITY.LAST_UPDATE).as("lastUpdate")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("fieldInputCondition")
+                                CITY.getId(),
+                                select.optional("name", CITY.CITY),
+                                select.optional("lastUpdate", CITY.LAST_UPDATE)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
                 .where(CITY.COUNTRY_ID.eq(countryId))

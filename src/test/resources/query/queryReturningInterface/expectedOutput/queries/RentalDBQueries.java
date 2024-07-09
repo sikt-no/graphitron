@@ -20,8 +20,8 @@ public class RentalDBQueries {
                 .select(
                         RENTAL.getId(),
                         DSL.row(
-                                RENTAL.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Rental::new)).as("id")
+                                RENTAL.getId()
+                        ).mapping(Functions.nullOnAllNull(Rental::new))
                 )
                 .from(RENTAL)
                 .where(RENTAL.hasIds(ids))

@@ -18,9 +18,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null))).as("rating")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
+                                FILM.getId(),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG-13", Rating.PG_13, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG_13, "PG-13", Rating.R, "R").getOrDefault(s, null)))
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))

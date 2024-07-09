@@ -23,9 +23,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_inventoryfilmidfkey_inventory_left.getId().as("id"),
-                                select.optional("storeId", film_inventoryfilmidfkey_inventory_left.STORE_ID).as("storeId")
-                        ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventory")
+                                film_inventoryfilmidfkey_inventory_left.getId(),
+                                select.optional("storeId", film_inventoryfilmidfkey_inventory_left.STORE_ID)
+                        ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(FILM)
                 .leftJoin(film_inventoryfilmidfkey_inventory_left)
@@ -40,7 +40,7 @@ public class FilmDBQueries {
     public static Integer countInventoryForFilm(DSLContext ctx, Set<String> filmIds) {
         var film_inventoryfilmidfkey_inventory_left = INVENTORY.as("film_2576628581");
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(FILM)
                 .leftJoin(film_inventoryfilmidfkey_inventory_left)
                 .onKey(INVENTORY__INVENTORY_FILM_ID_FKEY)

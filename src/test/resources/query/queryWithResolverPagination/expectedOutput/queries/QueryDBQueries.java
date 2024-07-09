@@ -15,9 +15,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -30,9 +30,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film2")
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
@@ -41,7 +41,7 @@ public class QueryDBQueries {
     }
     public static Integer countFilmForQuery(DSLContext ctx, String releaseYear) {
         return ctx
-                .select(DSL.count().as("totalCount"))
+                .select(DSL.count())
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
                 .fetchOne(0, Integer.class);

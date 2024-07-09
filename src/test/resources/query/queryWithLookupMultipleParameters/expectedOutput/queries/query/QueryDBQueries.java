@@ -31,8 +31,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH), DSL.inline(","), DSL.inlined(FILM.FILM_ID)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(titles.size() > 0 ? FILM.TITLE.in(titles) : DSL.noCondition())
@@ -48,8 +48,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsInputKeys")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getTitles().size() > 0 ? FILM.TITLE.in(in.getTitles()) : DSL.noCondition())
@@ -64,8 +64,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsListedInput")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in.size() > 0 ?
@@ -88,8 +88,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsInput")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getTitles().size() > 0 ? FILM.TITLE.in(in.getTitles()) : DSL.noCondition())
@@ -104,8 +104,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedInputs")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getFields() != null && in.getFields().getTitles().size() > 0 ? FILM.TITLE.in(in.getFields().getTitles()) : DSL.noCondition())
@@ -121,8 +121,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedInputsAndKeys")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getFields() != null && in.getFields().getTitles().size() > 0 ? FILM.TITLE.in(in.getFields().getTitles()) : DSL.noCondition())
@@ -138,8 +138,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedList")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getFilmIds().size() > 0 ? FILM.FILM_ID.in(in.getFilmIds()) : DSL.noCondition())
@@ -163,8 +163,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.FILM_ID), DSL.inline(","), DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNestedListWithKeys")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getFilmIds().size() > 0 ? FILM.FILM_ID.in(in.getFilmIds()) : DSL.noCondition())
@@ -188,8 +188,8 @@ public class QueryDBQueries {
                 .select(
                         DSL.concat(DSL.inlined(FILM.TITLE), DSL.inline(","), DSL.inlined(FILM.RELEASE_YEAR), DSL.inline(","), DSL.inlined(FILM.LENGTH)),
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("filmsNullableNestedList")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(in != null && in.getFields() != null && in.getFields().size() > 0 ?

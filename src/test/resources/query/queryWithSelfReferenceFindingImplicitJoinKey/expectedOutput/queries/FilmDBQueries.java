@@ -21,11 +21,11 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.film().getId().as("id"),
+                                FILM.film().getId(),
                                 DSL.row(
-                                        select.optional("title/title", FILM.film().TITLE).as("title")
-                                ).mapping(Functions.nullOnAllNull(FilmTitle::new)).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("sequel")
+                                        select.optional("title/title", FILM.film().TITLE)
+                                ).mapping(Functions.nullOnAllNull(FilmTitle::new))
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.hasIds(filmIds))

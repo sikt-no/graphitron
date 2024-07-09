@@ -13,11 +13,11 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
+                                FILM.getId(),
                                 DSL.row(
-                                        select.optional("title/title", FILM.TITLE).as("title")
-                                ).mapping(Functions.nullOnAllNull(FilmTitle::new)).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
+                                        select.optional("title/title", FILM.TITLE)
+                                ).mapping(Functions.nullOnAllNull(FilmTitle::new))
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .orderBy(FILM.getIdFields())

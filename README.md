@@ -278,15 +278,15 @@ type Payment @table {
 First, Graphitron defines a few aliases for these joins. Currently, this creates one alias per step.
 
 ```java
-var payment_rental = PAYMENT.rental().as("…");
-var payment_rental_inventory = payment_rental.inventory().as("…");
-var payment_rental_inventory_film = payment_rental_inventory.film().as("…");
+var payment_rental = PAYMENT.rental();
+var payment_rental_inventory = payment_rental.inventory();
+var payment_rental_inventory_film = payment_rental_inventory.film();
 ```
 
 Then, the alias is applied where necessary. This line is taken from the generated query.
 
 ```java
-select.optional("title", payment_rental_inventory_film.TITLE).as("title")
+select.optional("title", payment_rental_inventory_film.TITLE)
 ```
 
 ### Query conditions

@@ -15,7 +15,7 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                INVENTORY.getId().as("id"),
+                                INVENTORY.getId(),
                                 DSL.multiset(
                                     DSL.select(
                                         DSL.row(
@@ -35,7 +35,7 @@ public class QueryDBQueries {
                                     .from(FILM)
                                     .where(INVENTORY.FILM_ID.eq(INVENTORY.film().FILM_ID))
                                 )
-                        ).mapping((a0, a1) -> new Inventory(a0, a1.map(Record1::value1))).as("inventory")
+                        ).mapping((a0, a1) -> new Inventory(a0, a1.map(Record1::value1)))
                 )
                 .from(INVENTORY)
                 .orderBy(INVENTORY.getIdFields())

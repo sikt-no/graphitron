@@ -20,8 +20,8 @@ public class AddressDBQueries {
                 .select(
                         ADDRESS.getId(),
                         DSL.row(
-                                ADDRESS.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("id")
+                                ADDRESS.getId()
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
                 .where(ADDRESS.hasIds(ids))

@@ -21,8 +21,8 @@ public class StoreCustomerDBQueries {
                 .select(
                         STORE.getId(),
                         DSL.row(
-                                store_customerstoreidfkey_customer.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customer")
+                                store_customerstoreidfkey_customer.getId()
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(STORE)
                 .join(store_customerstoreidfkey_customer)

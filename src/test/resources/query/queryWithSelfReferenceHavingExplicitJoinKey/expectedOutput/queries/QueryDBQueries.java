@@ -12,8 +12,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("films")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .orderBy(FILM.getIdFields())

@@ -20,8 +20,8 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.film().getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("sequel")
+                                FILM.film().getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.hasIds(filmIds))

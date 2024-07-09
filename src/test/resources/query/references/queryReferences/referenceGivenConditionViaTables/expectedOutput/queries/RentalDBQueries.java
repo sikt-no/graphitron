@@ -22,12 +22,12 @@ public class RentalDBQueries {
                 .select(
                         RENTAL.getId(),
                         DSL.row(
-                                rental_inventory_film_film_filmactor_film_actor.getId().as("id"),
+                                rental_inventory_film_film_filmactor_film_actor.getId(),
                                 DSL.row(
-                                        rental_inventory_film_film_filmactor_film_actor.actor().getId().as("id"),
-                                        select.optional("actor/lastName", rental_inventory_film_film_filmactor_film_actor.actor().LAST_NAME).as("lastName")
-                                ).mapping(Functions.nullOnAllNull(Actor::new)).as("actor")
-                        ).mapping(Functions.nullOnAllNull(FilmActor::new)).as("mainActor")
+                                        rental_inventory_film_film_filmactor_film_actor.actor().getId(),
+                                        select.optional("actor/lastName", rental_inventory_film_film_filmactor_film_actor.actor().LAST_NAME)
+                                ).mapping(Functions.nullOnAllNull(Actor::new))
+                        ).mapping(Functions.nullOnAllNull(FilmActor::new))
                 )
                 .from(RENTAL)
                 .join(rental_inventory_film_film_filmactor_film_actor)

@@ -12,9 +12,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                PAYMENT.getId().as("id"),
-                                select.optional("originalLanguageName", PAYMENT.rental().inventory().film().filmOriginalLanguageIdFkey().NAME).as("originalLanguageName")
-                        ).mapping(Functions.nullOnAllNull(Payment::new)).as("payment")
+                                PAYMENT.getId(),
+                                select.optional("originalLanguageName", PAYMENT.rental().inventory().film().filmOriginalLanguageIdFkey().NAME)
+                        ).mapping(Functions.nullOnAllNull(Payment::new))
                 )
                 .from(PAYMENT)
                 .where(PAYMENT.ID.eq(id))

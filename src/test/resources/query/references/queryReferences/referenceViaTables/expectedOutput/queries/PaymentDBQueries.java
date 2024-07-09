@@ -20,9 +20,9 @@ public class PaymentDBQueries {
                 .select(
                         PAYMENT.getId(),
                         DSL.row(
-                                PAYMENT.rental().inventory().film().getId().as("id"),
-                                select.optional("title", PAYMENT.rental().inventory().film().TITLE).as("title")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
+                                PAYMENT.rental().inventory().film().getId(),
+                                select.optional("title", PAYMENT.rental().inventory().film().TITLE)
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(PAYMENT)
                 .where(PAYMENT.hasIds(paymentIds))

@@ -11,8 +11,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
+                                FILM.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .fetchOne(it -> it.into(Film.class));

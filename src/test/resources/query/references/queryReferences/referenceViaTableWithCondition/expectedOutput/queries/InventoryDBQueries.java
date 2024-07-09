@@ -22,9 +22,9 @@ public class InventoryDBQueries {
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                inventory_film_film_filmactor_film_actor.actor().getId().as("id"),
-                                select.optional("lastName", inventory_film_film_filmactor_film_actor.actor().LAST_NAME).as("lastName")
-                        ).mapping(Functions.nullOnAllNull(Actor::new)).as("mainActors")
+                                inventory_film_film_filmactor_film_actor.actor().getId(),
+                                select.optional("lastName", inventory_film_film_filmactor_film_actor.actor().LAST_NAME)
+                        ).mapping(Functions.nullOnAllNull(Actor::new))
                 )
                 .from(INVENTORY)
                 .join(inventory_film_film_filmactor_film_actor)

@@ -12,9 +12,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CUSTOMER.getId().as("id"),
-                                select.optional("historicalAddressesAddress", CUSTOMER.address().ADDRESS).as("historicalAddressesAddress")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customer")
+                                CUSTOMER.getId(),
+                                select.optional("historicalAddressesAddress", CUSTOMER.address().ADDRESS)
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ID.eq(id))

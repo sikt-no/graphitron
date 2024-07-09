@@ -13,14 +13,14 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
+                                FILM.getId(),
                                 DSL.row(
-                                        FILM.filmLanguageIdFkey().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Language::new)).as("filmLanguage"),
+                                        FILM.filmLanguageIdFkey().getId()
+                                ).mapping(Functions.nullOnAllNull(Language::new)),
                                 DSL.row(
-                                        FILM.filmOriginalLanguageIdFkey().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Language::new)).as("originalLanguage")
-                        ).mapping(Functions.nullOnAllNull(Film::new)).as("film")
+                                        FILM.filmOriginalLanguageIdFkey().getId()
+                                ).mapping(Functions.nullOnAllNull(Language::new))
+                        ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
                 .where(FILM.ID.eq(id))

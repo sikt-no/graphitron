@@ -19,58 +19,58 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId().as("id"),
-                                select.optional("title", FILM.TITLE).as("title"),
-                                select.optional("title2", FILM.TITLE).as("title2"),
-                                select.optional("title3", FILM.TITLE).as("title3"),
-                                select.optional("title4", FILM.TITLE).as("title4"),
-                                select.optional("title5", FILM.TITLE).as("title5"),
-                                select.optional("title6", FILM.TITLE).as("title6"),
-                                select.optional("title7", FILM.TITLE).as("title7"),
-                                select.optional("title8", FILM.TITLE).as("title8"),
-                                select.optional("title9", FILM.TITLE).as("title9"),
-                                select.optional("title10", FILM.TITLE).as("title10"),
-                                select.optional("title11", FILM.TITLE).as("title11"),
-                                select.optional("title12", FILM.TITLE).as("title12"),
-                                select.optional("title13", FILM.TITLE).as("title13"),
-                                select.optional("title14", FILM.TITLE).as("title14"),
-                                select.optional("title15", FILM.TITLE).as("title15"),
-                                select.optional("title16", FILM.TITLE).as("title16"),
-                                select.optional("title17", FILM.TITLE).as("title17"),
-                                select.optional("title18", FILM.TITLE).as("title18"),
-                                select.optional("title19", FILM.TITLE).as("title19"),
-                                select.optional("title20", FILM.TITLE).as("title20"),
-                                select.optional("description", FILM.DESCRIPTION).as("description"),
-                                select.optional("length", FILM.LENGTH).as("length"),
+                                FILM.getId(),
+                                select.optional("title", FILM.TITLE),
+                                select.optional("title2", FILM.TITLE),
+                                select.optional("title3", FILM.TITLE),
+                                select.optional("title4", FILM.TITLE),
+                                select.optional("title5", FILM.TITLE),
+                                select.optional("title6", FILM.TITLE),
+                                select.optional("title7", FILM.TITLE),
+                                select.optional("title8", FILM.TITLE),
+                                select.optional("title9", FILM.TITLE),
+                                select.optional("title10", FILM.TITLE),
+                                select.optional("title11", FILM.TITLE),
+                                select.optional("title12", FILM.TITLE),
+                                select.optional("title13", FILM.TITLE),
+                                select.optional("title14", FILM.TITLE),
+                                select.optional("title15", FILM.TITLE),
+                                select.optional("title16", FILM.TITLE),
+                                select.optional("title17", FILM.TITLE),
+                                select.optional("title18", FILM.TITLE),
+                                select.optional("title19", FILM.TITLE),
+                                select.optional("title20", FILM.TITLE),
+                                select.optional("description", FILM.DESCRIPTION),
+                                select.optional("length", FILM.LENGTH),
                                 DSL.row(
-                                        select.optional("duration1/duration", FILM.RENTAL_DURATION).as("duration")
-                                ).mapping(Functions.nullOnAllNull(Duration1::new)).as("duration1"),
+                                        select.optional("duration1/duration", FILM.RENTAL_DURATION)
+                                ).mapping(Functions.nullOnAllNull(Duration1::new)),
                                 DSL.row(
-                                        select.optional("duration2/duration", FILM.RENTAL_DURATION).as("duration"),
-                                        select.optional("duration2/duration2", FILM.RENTAL_DURATION).as("duration2"),
-                                        select.optional("duration2/duration3", FILM.RENTAL_DURATION).as("duration3"),
-                                        select.optional("duration2/duration4", FILM.RENTAL_DURATION).as("duration4"),
-                                        select.optional("duration2/duration5", FILM.RENTAL_DURATION).as("duration5"),
-                                        select.optional("duration2/duration6", FILM.RENTAL_DURATION).as("duration6"),
-                                        select.optional("duration2/duration7", FILM.RENTAL_DURATION).as("duration7"),
-                                        select.optional("duration2/duration8", FILM.RENTAL_DURATION).as("duration8"),
-                                        select.optional("duration2/duration9", FILM.RENTAL_DURATION).as("duration9"),
-                                        select.optional("duration2/duration10", FILM.RENTAL_DURATION).as("duration10"),
-                                        select.optional("duration2/duration11", FILM.RENTAL_DURATION).as("duration11"),
-                                        select.optional("duration2/duration12", FILM.RENTAL_DURATION).as("duration12"),
-                                        select.optional("duration2/duration13", FILM.RENTAL_DURATION).as("duration13"),
-                                        select.optional("duration2/duration14", FILM.RENTAL_DURATION).as("duration14"),
-                                        select.optional("duration2/duration15", FILM.RENTAL_DURATION).as("duration15"),
-                                        select.optional("duration2/duration16", FILM.RENTAL_DURATION).as("duration16"),
-                                        select.optional("duration2/duration17", FILM.RENTAL_DURATION).as("duration17"),
-                                        select.optional("duration2/duration18", FILM.RENTAL_DURATION).as("duration18"),
-                                        select.optional("duration2/duration19", FILM.RENTAL_DURATION).as("duration19"),
-                                        select.optional("duration2/duration20", FILM.RENTAL_DURATION).as("duration20"),
-                                        select.optional("duration2/duration21", FILM.RENTAL_DURATION).as("duration21"),
-                                        select.optional("duration2/duration22", FILM.RENTAL_DURATION).as("duration22"),
-                                        select.optional("duration2/duration23", FILM.RENTAL_DURATION).as("duration23"),
-                                        select.optional("duration2/duration24", FILM.RENTAL_DURATION).as("duration24"),
-                                        select.optional("duration2/duration25", FILM.RENTAL_DURATION).as("duration25")
+                                        select.optional("duration2/duration", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration2", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration3", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration4", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration5", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration6", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration7", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration8", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration9", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration10", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration11", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration12", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration13", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration14", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration15", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration16", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration17", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration18", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration19", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration20", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration21", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration22", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration23", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration24", FILM.RENTAL_DURATION),
+                                        select.optional("duration2/duration25", FILM.RENTAL_DURATION)
                                 ).mapping(Duration2.class, r ->
                                         Arrays.stream(r).allMatch(Objects::isNull) ? null : new Duration2(
                                                 FILM.RENTAL_DURATION.getDataType().convert(r[0]),
@@ -99,10 +99,10 @@ public class QueryDBQueries {
                                                 FILM.RENTAL_DURATION.getDataType().convert(r[23]),
                                                 FILM.RENTAL_DURATION.getDataType().convert(r[24])
                                         )
-                                ).as("duration2"),
-                                select.optional("rate", FILM.RENTAL_RATE).as("rate"),
-                                select.optional("languageName", FILM.filmLanguageIdFkey().NAME).as("languageName"),
-                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG", Rating.PG, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG, "PG", Rating.R, "R").getOrDefault(s, null))).as("rating")
+                                ),
+                                select.optional("rate", FILM.RENTAL_RATE),
+                                select.optional("languageName", FILM.filmLanguageIdFkey().NAME),
+                                select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG", Rating.PG, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG, "PG", Rating.R, "R").getOrDefault(s, null)))
                         ).mapping(Film.class, r ->
                                 Arrays.stream(r).allMatch(Objects::isNull) ? null : new Film(
                                         (String) r[0],
@@ -134,7 +134,7 @@ public class QueryDBQueries {
                                         FILM.filmLanguageIdFkey().NAME.getDataType().convert(r[26]),
                                         (Rating) r[27]
                                 )
-                        ).as("films")
+                        )
                 )
                 .from(FILM)
                 .where(ids.size() > 0 ? FILM.FILM_ID.in(ids) : DSL.noCondition())

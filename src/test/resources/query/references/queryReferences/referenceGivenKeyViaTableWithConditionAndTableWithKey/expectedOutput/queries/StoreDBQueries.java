@@ -21,9 +21,9 @@ public class StoreDBQueries {
                 .select(
                         STORE.getId(),
                         DSL.row(
-                                store_customerstoreidfkey_customer.address().city().getId().as("id"),
-                                select.optional("name", store_customerstoreidfkey_customer.address().city().CITY).as("name")
-                        ).mapping(Functions.nullOnAllNull(City::new)).as("cityOfMostValuableCustomer")
+                                store_customerstoreidfkey_customer.address().city().getId(),
+                                select.optional("name", store_customerstoreidfkey_customer.address().city().CITY)
+                        ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(STORE)
                 .join(store_customerstoreidfkey_customer)

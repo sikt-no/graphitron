@@ -13,8 +13,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                ADDRESS.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address")
+                                ADDRESS.getId()
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
                 .where(ADDRESS.CITY_ID.eq(cityID))

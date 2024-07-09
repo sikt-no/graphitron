@@ -12,8 +12,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                RENTAL.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Rental::new)).as("rental")
+                                RENTAL.getId()
+                        ).mapping(Functions.nullOnAllNull(Rental::new))
                 )
                 .from(RENTAL)
                 .where(RENTAL.ID.eq(id))

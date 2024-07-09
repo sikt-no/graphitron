@@ -15,10 +15,10 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                ADDRESS.getId().as("id"),
-                                select.optional("customerStores0", address_customeraddressidfkey_customer_left.store().STORE_ID).as("customerStores0"),
-                                select.optional("customerStores1", address_customeraddressidfkey_customer.store().STORE_ID).as("customerStores1")
-                        ).mapping(Functions.nullOnAllNull(Address::new)).as("address")
+                                ADDRESS.getId(),
+                                select.optional("customerStores0", address_customeraddressidfkey_customer_left.store().STORE_ID),
+                                select.optional("customerStores1", address_customeraddressidfkey_customer.store().STORE_ID)
+                        ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
                 .leftJoin(address_customeraddressidfkey_customer_left)

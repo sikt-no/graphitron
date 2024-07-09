@@ -56,7 +56,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .builder()
                 .add(declareAliasesAndSetInitialCode(context))
                 .add(selectCode)
-                .add(".as($S)\n", target.getName())
+                .add("\n")
                 .unindent()
                 .unindent()
                 .add(")\n")

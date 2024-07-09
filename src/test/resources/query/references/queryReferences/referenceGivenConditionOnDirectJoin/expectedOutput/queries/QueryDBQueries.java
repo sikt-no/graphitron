@@ -12,8 +12,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CUSTOMER.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customer")
+                                CUSTOMER.getId()
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ID.eq(id))

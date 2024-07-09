@@ -21,8 +21,8 @@ public class QueryDBQueries {
                 .select(
                         CUSTOMER.STORE_ID,
                         DSL.row(
-                                CUSTOMER.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customers")
+                                CUSTOMER.getId()
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(storeIds.size() > 0 ? CUSTOMER.STORE_ID.in(storeIds) : DSL.noCondition())
@@ -35,8 +35,8 @@ public class QueryDBQueries {
                 .select(
                         COUNTRY.COUNTRY,
                         DSL.row(
-                                COUNTRY.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Country::new)).as("countries")
+                                COUNTRY.getId()
+                        ).mapping(Functions.nullOnAllNull(Country::new))
                 )
                 .from(COUNTRY)
                 .where(countryNames.size() > 0 ? COUNTRY.COUNTRY.in(countryNames) : DSL.noCondition())

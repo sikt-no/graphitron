@@ -26,9 +26,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
-                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
-                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categories")
+                                film_filmcategoryfilmidfkey_film_category.getId(),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME)
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new))
                 )
                 .from(FILM)
                 .join(film_filmcategoryfilmidfkey_film_category)
@@ -47,9 +47,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
-                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
-                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputList")
+                                film_filmcategoryfilmidfkey_film_category.getId(),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME)
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new))
                 )
                 .from(FILM)
                 .join(film_filmcategoryfilmidfkey_film_category)
@@ -76,9 +76,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
-                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
-                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForMixOfListAndSingleInput")
+                                film_filmcategoryfilmidfkey_film_category.getId(),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME)
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new))
                 )
                 .from(FILM)
                 .join(film_filmcategoryfilmidfkey_film_category)
@@ -107,9 +107,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
-                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
-                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithOneFieldList")
+                                film_filmcategoryfilmidfkey_film_category.getId(),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME)
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new))
                 )
                 .from(FILM)
                 .join(film_filmcategoryfilmidfkey_film_category)
@@ -134,9 +134,9 @@ public class FilmDBQueries {
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_filmcategoryfilmidfkey_film_category.getId().as("id"),
-                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME).as("name")
-                        ).mapping(Functions.nullOnAllNull(FilmCategory::new)).as("categoriesForInputWithNestedFieldList")
+                                film_filmcategoryfilmidfkey_film_category.getId(),
+                                select.optional("name", film_filmcategoryfilmidfkey_film_category.category().NAME)
+                        ).mapping(Functions.nullOnAllNull(FilmCategory::new))
                 )
                 .from(FILM)
                 .join(film_filmcategoryfilmidfkey_film_category)

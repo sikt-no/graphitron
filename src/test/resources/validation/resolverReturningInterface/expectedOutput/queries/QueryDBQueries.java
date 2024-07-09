@@ -17,11 +17,11 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                CUSTOMER.getId().as("id"),
+                                CUSTOMER.getId(),
                                 DSL.row(
-                                        CUSTOMER.address().getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(Address::new)).as("address")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customer")
+                                        CUSTOMER.address().getId()
+                                ).mapping(Functions.nullOnAllNull(Address::new))
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
                 .where(CUSTOMER.ID.eq(id))

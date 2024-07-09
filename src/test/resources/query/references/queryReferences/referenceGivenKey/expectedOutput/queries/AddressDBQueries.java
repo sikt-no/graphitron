@@ -22,8 +22,8 @@ public class AddressDBQueries {
                 .select(
                         ADDRESS.getId(),
                         DSL.row(
-                                address_customeraddressidfkey_customer.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Customer::new)).as("customers")
+                                address_customeraddressidfkey_customer.getId()
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(ADDRESS)
                 .join(address_customeraddressidfkey_customer)

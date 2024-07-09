@@ -12,8 +12,8 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                STORE.getId().as("id")
-                        ).mapping(Functions.nullOnAllNull(Store::new)).as("store")
+                                STORE.getId()
+                        ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(STORE)
                 .where(STORE.ID.eq(id))

@@ -13,9 +13,9 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                INVENTORY.getId().as("id"),
-                                select.optional("mainActorLastNames", inventory_film_film_filmactor_film_actor.actor().LAST_NAME).as("mainActorLastNames")
-                        ).mapping(Functions.nullOnAllNull(Inventory::new)).as("inventory")
+                                INVENTORY.getId(),
+                                select.optional("mainActorLastNames", inventory_film_film_filmactor_film_actor.actor().LAST_NAME)
+                        ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(INVENTORY)
                 .join(inventory_film_film_filmactor_film_actor)

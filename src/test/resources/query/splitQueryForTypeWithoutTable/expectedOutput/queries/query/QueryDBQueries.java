@@ -14,14 +14,14 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         DSL.row(
-                                STORE.getId().as("id"),
+                                STORE.getId(),
                                 DSL.row(
-                                        STORE.getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(StoreCustomer::new)).as("storeCustomer"),
+                                        STORE.getId()
+                                ).mapping(Functions.nullOnAllNull(StoreCustomer::new)),
                                 DSL.row(
-                                        STORE.getId().as("id")
-                                ).mapping(Functions.nullOnAllNull(StoreCustomerCity::new)).as("storeCustomerCity")
-                        ).mapping(Functions.nullOnAllNull(Store::new)).as("store")
+                                        STORE.getId()
+                                ).mapping(Functions.nullOnAllNull(StoreCustomerCity::new))
+                        ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(STORE)
                 .where(STORE.ID.eq(id))
