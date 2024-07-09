@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomerListInputAndResponseGeneratedResolver implements EditCustomerListInputAndResponseMutationResolver {
@@ -21,11 +20,11 @@ public class EditCustomerListInputAndResponseGeneratedResolver implements EditCu
     @Override
     public CompletableFuture<List<EditResponse>> editCustomerListInputAndResponse(
             List<EditInput> input, DataFetchingEnvironment env) throws Exception {
-        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
-
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
+
+        var testCustomerService = new TestCustomerService(transform.getCtx());
 
         var editCustomerListInputAndResponse = testCustomerService.editCustomerListInputAndResponse(inputRecordList);
 

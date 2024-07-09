@@ -27,9 +27,10 @@ public class CustomerGeneratedResolver implements CustomerResolver {
     public CompletableFuture<AddressConnection> historicalAddresses(Customer customer,
                                                                     Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 10);
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var transform = new RecordTransformer(env, this.ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(transform.getCtx());
 
-        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadPaginated(
+        return new ServiceDataFetcher<>(transform).loadPaginated(
                 "historicalAddressesForCustomer", customer.getId(), pageSize, 1000,
                 (ids) -> testFetchCustomerService.historicalAddresses(ids, pageSize, after),
                 (ids) -> testFetchCustomerService.countHistoricalAddresses(ids),

@@ -13,7 +13,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declareTransform;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
@@ -38,18 +37,17 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
         var specInputs = target.getArguments();
         specInputs.forEach(input -> spec.addParameter(iterableWrap(input), input.getName()));
 
+        var methodCall = generateUpdateMethodCall(target); // Must happen before service declaration checks the found dependencies.
         var code = CodeBlock
                 .builder()
-                .add(declareTransform())
-                .add("\n")
                 .add(transformInputs(specInputs))
-                .add(generateUpdateMethodCall(target))
+                .add(declareAllServiceClasses())
+                .add(methodCall)
                 .add("\n")
                 .add(generateSchemaOutputs(target));
 
         return spec
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addCode(declareAllServiceClasses())
                 .addCode(code.build())
                 .build();
     }
@@ -75,7 +73,7 @@ public abstract class UpdateResolverMethodGenerator extends ResolverMethodGenera
     @NotNull
     protected CodeBlock transformInputs(List<? extends InputField> specInputs) {
         if (!parser.hasRecords()) {
-            return empty();
+            return declareTransform();
         }
 
         return inputTransform(specInputs, processedSchema);

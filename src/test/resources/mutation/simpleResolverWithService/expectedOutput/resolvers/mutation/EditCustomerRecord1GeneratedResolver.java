@@ -12,7 +12,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomerRecord1GeneratedResolver implements EditCustomerRecord1MutationResolver {
@@ -22,9 +21,9 @@ public class EditCustomerRecord1GeneratedResolver implements EditCustomerRecord1
     @Override
     public CompletableFuture<EditResponse1> editCustomerRecord1(List<String> id,
             DataFetchingEnvironment env) throws Exception {
-        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
+        var testCustomerService = new TestCustomerService(transform.getCtx());
         var editCustomerRecord1 = testCustomerService.editCustomerRecord1(id);
 
         var editResponse1 = new EditResponse1();

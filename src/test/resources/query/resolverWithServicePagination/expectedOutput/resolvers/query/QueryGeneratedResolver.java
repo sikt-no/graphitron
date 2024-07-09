@@ -28,9 +28,10 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<CustomerConnection> customersQueryConnection(List<String> ids,
                                                                           Integer first, String after, DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var transform = new RecordTransformer(env, this.ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(transform.getCtx());
 
-        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadPaginated(
+        return new ServiceDataFetcher<>(transform).loadPaginated(
                 pageSize, 1000,
                 () -> testFetchCustomerService.customersQuery0(ids, pageSize, after),
                 (ids) -> testFetchCustomerService.countCustomersQuery0(ids),
@@ -48,9 +49,10 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<Customer> customersQueryDirect(String id, DataFetchingEnvironment env)
             throws Exception {
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var transform = new RecordTransformer(env, this.ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(transform.getCtx());
 
-        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).load(
+        return new ServiceDataFetcher<>(transform).load(
                 () -> testFetchCustomerService.customersQuery1(id),
                 (transform, response) -> transform.customerRecordToGraphType(response, "")
         );

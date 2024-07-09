@@ -8,14 +8,14 @@ import java.util.List;
 /**
  * Fake service for mapper tests. Does not need to return meaningful values as only the generated result is tested.
  */
-public class MapperFetchCustomerService {
+public class JavaRecordInputFetchService {
     private final DSLContext context;
 
-    public MapperFetchCustomerService(DSLContext context) {
+    public JavaRecordInputFetchService(DSLContext context) {
         this.context = context;
     }
 
-    public List<CustomerRecord> customersQuery() {
+    public List<CustomerRecord> customers() {
         return null;
     }
 }

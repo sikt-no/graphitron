@@ -69,7 +69,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                         updateClass,
                         target.getName(), // Method name is expected to be the field's name.
                         asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                        parser.getServiceInputString()
+                        parser.getInputParamString()
                 )
         );
     }

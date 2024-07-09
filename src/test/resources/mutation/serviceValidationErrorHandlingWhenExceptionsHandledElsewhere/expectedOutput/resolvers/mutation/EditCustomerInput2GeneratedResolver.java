@@ -10,7 +10,6 @@ import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditCustomerInput2GeneratedResolver implements EditCustomerInput2MutationResolver {
@@ -20,13 +19,13 @@ public class EditCustomerInput2GeneratedResolver implements EditCustomerInput2Mu
     @Override
     public CompletableFuture<EditCustomerResponse2> editCustomerInput2(EditInput input,
                                                                        DataFetchingEnvironment env) throws Exception {
-        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputToJOOQRecord(input, "input", "input");
 
 
         transform.validate();
+        var testCustomerService = new TestCustomerService(transform.getCtx());
         var editCustomerInput2 = testCustomerService.editCustomerInputAndResponse(inputRecord);
 
         var editCustomerResponse2 = new EditCustomerResponse2();

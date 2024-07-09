@@ -10,6 +10,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
@@ -32,7 +33,10 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class MappingCodeBlocks {
     public static CodeBlock inputTransform(List<? extends InputField> specInputs, ProcessedSchema schema) {
-        var code = CodeBlock.builder();
+        var code = CodeBlock
+                .builder()
+                .add(declareTransform())
+                .add("\n");
         var recordCode = CodeBlock.builder();
 
         var inputObjects = specInputs.stream().filter(schema::isInputType).collect(Collectors.toList());
@@ -133,7 +137,7 @@ public class MappingCodeBlocks {
     }
 
     // Does not actually belong here since it does not only deal with services.
-    public static CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, ArrayList<String> allQueryInputs, RecordObjectSpecification<?> localObject, CodeBlock queryFunction, CodeBlock transformFunction, boolean isService, ProcessedSchema schema) {
+    public static CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, RecordObjectSpecification<?> localObject, CodeBlock queryFunction, CodeBlock transformFunction, boolean isService, ProcessedSchema schema) {
         var queryMethodName = asQueryMethodName(target.getName(), localObject.getName());
         var dataBlock = CodeBlock
                 .builder()
@@ -152,10 +156,12 @@ public class MappingCodeBlocks {
                     .build();
         }
 
-        var filteredInputs = allQueryInputs
+        var orderField = target.getOrderField().map(AbstractField::getName);
+        var filteredInputs = parser
+                .getMethodInputs()
+                .keySet()
                 .stream()
-                .filter(it -> !it.equals(PAGE_SIZE_NAME) && !it.equals(PAGINATION_AFTER.getName()) && !it.equals(SELECTION_SET_NAME) &&
-                        target.getOrderField().map(AbstractField::getName).map(orderByField -> !orderByField.equals(it)).orElse(true))
+                .filter(it -> orderField.map(orderByField -> !orderByField.equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
         var inputsWithId = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
         var countFunction = countFunction(objectToCall, method, inputsWithId, isService);

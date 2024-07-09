@@ -8,12 +8,14 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_TYPE;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.*;
 
 /**
  * A helper class for handling input type data for services and mutations.
@@ -24,28 +26,33 @@ public class InputParser {
     private final List<ObjectField> allErrors;
     private final ExceptionDefinition validationErrorException;
 
-    public InputParser(ObjectField target, ProcessedSchema processedSchema) {
-        methodInputs = parseInputs(target.getArguments(), processedSchema);
+    public InputParser(ObjectField target, ProcessedSchema schema) {
+        methodInputs = parseInputs(target.getNonReservedArgumentsWithOrderField(), schema);
         recordInputs = methodInputs
                 .entrySet()
                 .stream()
-                .filter(it -> processedSchema.isRecordType(it.getValue()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                .filter(it -> schema.isRecordType(it.getValue()) && schema.getRecordType(it.getValue()).hasRecordReference())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         jOOQInputs = recordInputs
                 .entrySet()
                 .stream()
-                .filter(it -> processedSchema.isTableInputType(it.getValue()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        serviceInputString = String.join(", ", methodInputs.keySet());
-        if (processedSchema.isObject(target) && processedSchema.isInterface(ERROR_TYPE.getName())) {
-            allErrors = processedSchema.getAllErrors(target.getTypeName());
+                .filter(it -> schema.isTableInputType(it.getValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
+        var inputsJoined = String.join(", ", methodInputs.keySet());
+        if (target.hasForwardPagination()) {
+            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + "," + PAGINATION_AFTER.getName();
+        } else {
+            serviceInputString = inputsJoined;
+        }
+        if (schema.isObject(target) && schema.isInterface(ERROR_TYPE.getName())) {
+            allErrors = schema.getAllErrors(target.getTypeName());
         } else {
             allErrors = List.of();
         }
 
         validationErrorException = !recordValidationEnabled() ? null : getRecordValidation().getSchemaErrorType().flatMap(errorTypeName ->
                 allErrors.stream()
-                        .map(it -> processedSchema.getExceptionDefinitions(it.getTypeName()))
+                        .map(it -> schema.getExceptionDefinitions(it.getTypeName()))
                         .flatMap(Collection::stream)
                         .filter(it -> errorTypeName.equals(it.getName()))
                         .findFirst()
@@ -67,6 +74,8 @@ public class InputParser {
                 serviceInputs.putAll(parseInputs(in, schema, 0));
             } else if (inType.hasJavaRecordReference()) {
                 serviceInputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);
+            } else {
+                serviceInputs.put(in.getName(), in);
             }
         }
         return serviceInputs;
@@ -129,7 +138,7 @@ public class InputParser {
     /**
      * @return The inputs this service will require formatted as a comma separated string.
      */
-    public String getServiceInputString() {
+    public String getInputParamString() {
         return serviceInputString;
     }
 

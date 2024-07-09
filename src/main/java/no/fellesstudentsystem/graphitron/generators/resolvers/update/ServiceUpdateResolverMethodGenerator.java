@@ -48,7 +48,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     @NotNull
     private CodeBlock generateServiceCall(String methodName, String serviceObjectName) {
-        return CodeBlock.of("$N.$L($L)", serviceObjectName, methodName, parser.getServiceInputString());
+        return CodeBlock.of("$N.$L($L)", serviceObjectName, methodName, parser.getInputParamString());
     }
 
     /**

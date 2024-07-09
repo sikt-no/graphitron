@@ -2,14 +2,11 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.fetch;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
-import no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks;
-import no.fellesstudentsystem.graphitron.generators.context.MapperContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
@@ -21,8 +18,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.RECORD_NAME_SUFFIX;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.callQueryBlock;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
@@ -33,7 +29,6 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGenerator {
     private static final String RESPONSE_NAME = "response";
-    private boolean serviceReturnEndsWithRecord;
 
     public ServiceFetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -41,32 +36,25 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
 
     @Override
     public MethodSpec generate(ObjectField target) {
+        parser = new InputParser(target, processedSchema);
         if (LookupHelpers.lookupExists(target, processedSchema) || !target.hasServiceReference()) {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
 
         var service = new ServiceWrapper(target, processedSchema);
-        serviceReturnEndsWithRecord = service.getReturnType().getName().endsWith(RECORD_NAME_SUFFIX);
         var dependency = new ServiceDependency(service.getServiceClassName());
         dependencySet.add(dependency);
-        var spec = getDefaultSpecBuilder(target.getName(), getReturnTypeName(target));
-
-        var localObject = getLocalObject();
-        if (!localObject.isOperationRoot()) {
-            spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
-        }
+        var spec = getSpecWithParams(target);
 
         var objectToCall = uncapitalize(dependency.getName());
         var serviceMethod = service.getMethod();
         var methodName = uncapitalize(serviceMethod != null ? serviceMethod.getName() : target.getName());
 
-        var allQueryInputs = getQueryInputs(spec, target);
         return spec
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
+                .addCode(transformInputs(target))
                 .addCode(declareAllServiceClasses())
-                .addCode("\n")
-                .addCode(transformInputs(target.getNonReservedArgumentsWithOrderField()))
-                .addCode(queryMethodCalls(target, objectToCall, methodName, allQueryInputs))
+                .addCode(queryMethodCalls(target, objectToCall, methodName))
                 .build();
     }
 
@@ -86,45 +74,16 @@ public class ServiceFetchResolverMethodGenerator extends FetchResolverMethodGene
     }
 
     @NotNull
-    private CodeBlock queryMethodCalls(ObjectField target, String objectToCall, String serviceMethod, ArrayList<String> allQueryInputs) {
+    private CodeBlock queryMethodCalls(ObjectField target, String objectToCall, String serviceMethod) {
         var localObject = getLocalObject();
         var isRoot = localObject.isOperationRoot();
 
-        var inputString = String.join(", ", allQueryInputs);
-        var queryFunction = queryFunction(objectToCall, serviceMethod, inputString, !isRoot, !isRoot, true);
+        var queryFunction = queryFunction(objectToCall, serviceMethod, parser.getInputParamString(), !isRoot, !isRoot, true);
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = object != null
                 ? CodeBlock.of("($L, $L) -> $L", TRANSFORMER_NAME, RESPONSE_NAME, transformRecord(RESPONSE_NAME, object.getName(), "", object.hasJavaRecordReference()))
                 : empty();
-        return callQueryBlock(target, objectToCall, serviceMethod, allQueryInputs, localObject, queryFunction, transformFunction, true, processedSchema);
-    }
-
-    /**
-     * @return CodeBlock for declaring the transformer class and calling it on each record input.
-     */
-    @NotNull
-    protected CodeBlock transformInputs(List<? extends InputField> specInputs) {
-        if (specInputs.stream().filter(processedSchema::isInputType).map(processedSchema::getInputType).anyMatch(RecordObjectDefinition::hasTable)) {
-            return empty();
-        }
-
-        return inputTransform(specInputs, processedSchema);
-    }
-
-    /**
-     * @return Code that both fetches record data and creates the appropriate response objects.
-     */
-    protected CodeBlock generateSchemaOutputs(ObjectField target) {
-        var code = CodeBlock.builder();
-        if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
-            return code.build();
-        }
-
-        var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
-        return code
-                .add(MappingCodeBlocks.generateSchemaOutputs(mapperContext, serviceReturnEndsWithRecord, processedSchema))
-                .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
-                .build();
+        return callQueryBlock(target, objectToCall, serviceMethod, parser, localObject, queryFunction, transformFunction, true, processedSchema);
     }
 
     @Override

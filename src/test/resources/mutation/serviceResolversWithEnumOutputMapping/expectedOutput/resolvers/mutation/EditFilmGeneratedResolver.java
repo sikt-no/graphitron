@@ -10,7 +10,6 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestFilmService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class EditFilmGeneratedResolver implements EditFilmMutationResolver {
@@ -20,9 +19,9 @@ public class EditFilmGeneratedResolver implements EditFilmMutationResolver {
     @Override
     public CompletableFuture<EditFilmResponseLevel1> editFilm(String id,
                                                               DataFetchingEnvironment env) throws Exception {
-        var testFilmService = new TestFilmService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
+        var testFilmService = new TestFilmService(transform.getCtx());
         var editFilm = testFilmService.editFilm(id);
 
         var editFilmResponseLevel1 = transform.editFilmResponseLevel1ToGraphType(editFilm, "");

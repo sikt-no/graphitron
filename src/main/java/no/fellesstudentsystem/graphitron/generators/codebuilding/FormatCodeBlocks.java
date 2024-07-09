@@ -35,16 +35,10 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class FormatCodeBlocks {
     private final static CodeBlock
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
-            SELECT_CONTEXT = CodeBlock.of(
-                    "$T.selectContext($N, this.$N)",
-                    RESOLVER_HELPERS.className,
-                    VARIABLE_ENV,
-                    CONTEXT_NAME
-            ),
             NEW_TRANSFORM = CodeBlock.of("new $T($N, this.$N)", RECORD_TRANSFORMER.className, VARIABLE_ENV, CONTEXT_NAME),
             DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
             NEW_DATA_FETCHER = CodeBlock.of("new $T($N, this.$N)", DATA_FETCHER.className, VARIABLE_ENV, CONTEXT_NAME),
-            NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($L)", DATA_SERVICE_FETCHER.className, NEW_TRANSFORM),
+            NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
@@ -370,14 +364,6 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock getValue(String container, MethodMapping mapping) {
         return CodeBlock.of("$N$L", uncapitalize(container), mapping.asGetCall());
-    }
-
-    /**
-     * @return CodeBlock that selects a resolver context variable with a check for null.
-     */
-    @NotNull
-    public static CodeBlock selectContext() {
-        return SELECT_CONTEXT;
     }
 
     /**

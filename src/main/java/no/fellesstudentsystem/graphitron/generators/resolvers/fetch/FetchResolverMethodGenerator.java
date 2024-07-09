@@ -6,8 +6,8 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
-import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -17,12 +17,11 @@ import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.callQueryBlock;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -30,6 +29,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class FetchResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     private static final String LOOKUP_KEYS_NAME = "keys";
+    protected InputParser parser;
 
     public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -37,6 +37,17 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
     @Override
     public MethodSpec generate(ObjectField target) {
+        parser = new InputParser(target, processedSchema);
+        var spec = getSpecWithParams(target);
+
+        return spec
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
+                .addCode(transformInputs(target))
+                .addCode(queryMethodCalls(target))
+                .build();
+    }
+
+    protected MethodSpec.Builder getSpecWithParams(ObjectField target) {
         var spec = getDefaultSpecBuilder(target.getName(), getReturnTypeName(target));
 
         var localObject = getLocalObject();
@@ -44,46 +55,38 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
         }
 
-        var allQueryInputs = getQueryInputs(spec, target);
-        return spec
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addCode(queryMethodCalls(target, allQueryInputs))
-                .build();
-    }
-
-    @NotNull
-    protected ArrayList<String> getQueryInputs(MethodSpec.Builder spec, ObjectField referenceField) {
-        var allQueryInputs = new ArrayList<String>();
-
-        referenceField
-                .getNonReservedArgumentsWithOrderField()
-                .forEach(it -> {
-                    var name = it.getName();
-                    spec.addParameter(iterableWrap(it), name);
-                    allQueryInputs.add(name);
-                });
-
-        if (referenceField.hasForwardPagination()) {
-            spec
-                    .addParameter(INTEGER.className, GraphQLReservedName.PAGINATION_FIRST.getName())
-                    .addParameter(STRING.className, PAGINATION_AFTER.getName())
-                    .addCode(declarePageSize(referenceField.getFirstDefault()));
-            allQueryInputs.add(PAGE_SIZE_NAME);
-            allQueryInputs.add(PAGINATION_AFTER.getName());
+        target.getArguments().forEach(input -> spec.addParameter(iterableWrap(input), input.getName()));
+        if (target.hasForwardPagination()) {
+            spec.addCode(declarePageSize(target.getFirstDefault()));
         }
-        return allQueryInputs;
+        return spec;
+    }
+
+    /**
+     * @return CodeBlock for declaring the transformer class and calling it on each record input.
+     */
+    @NotNull
+    protected CodeBlock transformInputs(ObjectField field) {
+        if (!parser.hasRecords()) {
+            if (field.hasServiceReference()) {
+                return declareTransform();
+            }
+
+            return empty();
+        }
+
+        return inputTransform(field.getNonReservedArguments(), processedSchema);
     }
 
     @NotNull
-    private CodeBlock queryMethodCalls(ObjectField target, ArrayList<String> allQueryInputs) {
+    private CodeBlock queryMethodCalls(ObjectField target) {
         var localObject = getLocalObject();
         var queryLocation = asQueryClass(localObject.getName());
         var isRoot = localObject.isOperationRoot();
         var hasLookup = LookupHelpers.lookupExists(target, processedSchema);
 
-        var inputString = String.join(", ", allQueryInputs);
         var queryMethodName = asQueryMethodName(target.getName(), localObject.getName());
-        var queryFunction = queryFunction(queryLocation, queryMethodName, inputString, !isRoot || hasLookup, !isRoot && !hasLookup, false);
+        var queryFunction = queryFunction(queryLocation, queryMethodName, parser.getInputParamString(), !isRoot || hasLookup, !isRoot && !hasLookup, false);
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
                     .builder()
@@ -91,7 +94,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                     .addStatement("return $L.$L($N, $L)", newDataFetcher(), "loadLookup", LOOKUP_KEYS_NAME, queryFunction)
                     .build();
         }
-        return callQueryBlock(target, queryLocation, queryMethodName, allQueryInputs, localObject, queryFunction, empty(), false, processedSchema);
+        return callQueryBlock(target, queryLocation, queryMethodName, parser, localObject, queryFunction, empty(), false, processedSchema);
     }
 
     @Override

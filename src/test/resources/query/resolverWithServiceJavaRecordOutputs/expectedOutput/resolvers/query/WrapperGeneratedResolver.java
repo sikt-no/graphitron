@@ -12,7 +12,6 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import org.jooq.DSLContext;
 
 public class WrapperGeneratedResolver implements WrapperResolver {
@@ -22,9 +21,10 @@ public class WrapperGeneratedResolver implements WrapperResolver {
     @Override
     public CompletableFuture<List<Address>> historicalAddresses(Wrapper wrapper,
                                                                 DataFetchingEnvironment env) throws Exception {
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
+        var transform = new RecordTransformer(env, this.ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(transform.getCtx());
 
-        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).loadNonNullable(
+        return new ServiceDataFetcher<>(transform).loadNonNullable(
                 "historicalAddressesForWrapper", wrapper.getId(),
                 (ids) -> testFetchCustomerService.historicalAddresses(ids),
                 (transform, response) -> transform.addressToGraphType(response, "")

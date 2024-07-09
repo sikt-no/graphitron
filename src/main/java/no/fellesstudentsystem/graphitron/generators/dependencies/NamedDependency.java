@@ -8,8 +8,10 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.selectContext;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
+import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 
 /**
  * An abstract dependency on a class somewhere in the codebase.
@@ -50,7 +52,7 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return declare(getName(), CodeBlock.of("new $T($L)", getTypeName(), selectContext()));
+        return declare(getName(), CodeBlock.of("new $T($L)", getTypeName(), asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)));
     }
 
     @Override

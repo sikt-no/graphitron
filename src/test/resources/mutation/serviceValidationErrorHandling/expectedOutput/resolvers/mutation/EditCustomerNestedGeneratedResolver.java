@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -22,7 +21,6 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
     @Override
     public CompletableFuture<EditCustomerResponse> editCustomerNested(EditInputLevel1 input,
             DataFetchingEnvironment env) throws Exception {
-        var testCustomerService = new TestCustomerService(ResolverHelpers.selectContext(env, this.ctx));
         var transform = new RecordTransformer(env, this.ctx);
 
         var inputRecord = transform.editInputLevel1ToJOOQRecord(input, "input", "input");
@@ -58,6 +56,7 @@ public class EditCustomerNestedGeneratedResolver implements EditCustomerNestedMu
 
         transform.validate();
 
+        var testCustomerService = new TestCustomerService(transform.getCtx());
         var editCustomerNested = testCustomerService.editCustomerNested(inputRecord, editA1Record, editA2Record, editBRecord, edit3RecordList, edit4RecordList);
 
         var editCustomerResponse = transform.editCustomerResponseToGraphType(editCustomerNested, "");

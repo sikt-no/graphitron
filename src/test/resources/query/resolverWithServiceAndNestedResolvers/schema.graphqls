@@ -10,9 +10,9 @@ type Customer implements Node @table {
 type Address implements Node @table {
   id: ID!
   city: City @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
-  cityPaginated(first: String, after: Int): CityConnection @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
+  cityPaginated(first: Int, after: String): CityConnection @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
   recordCity: RecordCity @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
-  recordCityPaginated(first: String, after: Int): RecordCityConnection @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
+  recordCityPaginated(first: Int, after: String): RecordCityConnection @splitQuery @service(service : {name: "TEST_FETCH_CITY"})
 }
 
 type CityConnection {

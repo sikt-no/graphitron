@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import org.jooq.DSLContext;
 
@@ -22,8 +21,9 @@ public class QueryGeneratedResolver implements QueryResolver {
     @Override
     public CompletableFuture<List<Customer>> customersQuery(List<String> ids,
                                                             DataFetchingEnvironment env) throws Exception {
-        var testFetchCustomerService = new TestFetchCustomerService(ResolverHelpers.selectContext(env, this.ctx));
-        return new ServiceDataFetcher<>(new RecordTransformer(env, this.ctx)).load(
+        var transform = new RecordTransformer(env, this.ctx);
+        var testFetchCustomerService = new TestFetchCustomerService(transform.getCtx());
+        return new ServiceDataFetcher<>(transform).load(
                 () -> testFetchCustomerService.customersQuery(ids),
                 (transform, response) -> transform.customerRecordToGraphType(response, "")
         );
