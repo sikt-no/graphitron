@@ -85,7 +85,7 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
-        isFSKeyFormat = true;
+        isFSKeyFormat = mojo.isFSKeyFormat();
     }
 
     /**
