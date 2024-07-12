@@ -8,7 +8,7 @@ import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import no.fellesstudentsystem.graphitron.enums.RatingTest;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyEnum;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 
 public class FilmTypeMapper {
@@ -22,16 +22,12 @@ public class FilmTypeMapper {
             for (var itFilmRecord : filmRecord) {
                 if (itFilmRecord == null) continue;
                 var film = new Film();
-                if (select.contains(pathHere + "id")) {
-                    film.setId(itFilmRecord.getId());
-                }
-
                 if (select.contains(pathHere + "rating1")) {
-                    film.setRating1(itFilmRecord.getRating() == null ? null : Map.of("G", RatingNoConverter.G, "PG", RatingNoConverter.PG, "R", RatingNoConverter.R).getOrDefault(itFilmRecord.getRating(), null));
+                    film.setRating1(itFilmRecord.getRating() == null ? null : Map.of(DummyEnum.G, Rating.G, DummyEnum.PG, Rating.PG,  DummyEnum.R, Rating.R).getOrDefault(itFilmRecord.getRating(), null));
                 }
 
                 if (select.contains(pathHere + "rating2")) {
-                    film.setRating2(itFilmRecord.getRating() == null ? null : Map.of(RatingTest.G, Rating.G, RatingTest.PG, Rating.PG, RatingTest.R, Rating.R).getOrDefault(itFilmRecord.getRating(), null));
+                    film.setRating2(itFilmRecord.getRating() == null ? null : Map.of("G", RatingNoConverter.G, "PG", RatingNoConverter.PG, "R", RatingNoConverter.R).getOrDefault(itFilmRecord.getRating(), null));
                 }
 
                 filmList.add(film);

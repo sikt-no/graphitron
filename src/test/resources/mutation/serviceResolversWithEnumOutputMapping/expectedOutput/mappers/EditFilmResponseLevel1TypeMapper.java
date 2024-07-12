@@ -29,21 +29,21 @@ public class EditFilmResponseLevel1TypeMapper {
                 }
 
                 if (select.contains(pathHere + "rating1")) {
-                    editFilmResponseLevel1.setRating1(itTestFilmRecord.getRatingNoConverter() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(itTestFilmRecord.getRatingNoConverter(), null));
+                    editFilmResponseLevel1.setRating1(itTestFilmRecord.getRatingNoConverter() == null ? null : Map.of("G", RatingNoConverter.G, "PG", RatingNoConverter.PG, "R", RatingNoConverter.R).getOrDefault(itTestFilmRecord.getRatingNoConverter(), null));
                 }
 
                 if (select.contains(pathHere + "rating2")) {
-                    editFilmResponseLevel1.setRating2(itTestFilmRecord.getRatingWithConverter() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(itTestFilmRecord.getRatingWithConverter(), null));
+                    editFilmResponseLevel1.setRating2(itTestFilmRecord.getRatingWithConverter() == null ? null : Map.of(RatingTest.G, Rating.G, RatingTest.PG, Rating.PG, RatingTest.R, Rating.R).getOrDefault(itTestFilmRecord.getRatingWithConverter(), null));
                 }
 
                 if (select.contains(pathHere + "level2")) {
                     var level2 = new EditFilmResponseLevel2();
                     if (select.contains(pathHere + "level2/rating1")) {
-                        level2.setRating1(itTestFilmRecord.getRatingNoConverter() == null ? null : Map.of(RatingNoConverter.G, "G", RatingNoConverter.PG, "PG", RatingNoConverter.R, "R").getOrDefault(itTestFilmRecord.getRatingNoConverter(), null));
+                        level2.setRating1(itTestFilmRecord.getRatingNoConverter() == null ? null : Map.of("G", RatingNoConverter.G, "PG", RatingNoConverter.PG, "R", RatingNoConverter.R).getOrDefault(itTestFilmRecord.getRatingNoConverter(), null));
                     }
 
                     if (select.contains(pathHere + "level2/rating2")) {
-                        level2.setRating2(itTestFilmRecord.getRatingWithConverter() == null ? null : Map.of(Rating.G, RatingTest.G, Rating.PG, RatingTest.PG, Rating.R, RatingTest.R).getOrDefault(itTestFilmRecord.getRatingWithConverter(), null));
+                        level2.setRating2(itTestFilmRecord.getRatingWithConverter() == null ? null : Map.of(RatingTest.G, Rating.G, RatingTest.PG, Rating.PG, RatingTest.R, Rating.R).getOrDefault(itTestFilmRecord.getRatingWithConverter(), null));
                     }
 
                     if (select.contains(pathHere + "level2/film")) {

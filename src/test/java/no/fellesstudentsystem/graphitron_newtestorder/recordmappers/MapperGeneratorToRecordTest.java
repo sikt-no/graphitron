@@ -8,6 +8,7 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 
 import java.util.List;
+import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
 
@@ -18,7 +19,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     public MapperGeneratorToRecordTest() {
         super(
                 SRC_TEST_RESOURCES_PATH,
-                List.of(
+                Set.of(
                         MAPPER_RECORD_CUSTOMER.get(),
                         MAPPER_RECORD_CUSTOMER_INNER.get(),
                         MAPPER_RECORD_CITY.get(),

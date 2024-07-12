@@ -18,7 +18,7 @@ public class JavaMapperGeneratorToRecordClassesTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "javamappers/torecord";
 
     public JavaMapperGeneratorToRecordClassesTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_CONDITION.get()));
+        super(SRC_TEST_RESOURCES_PATH, Set.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_CONDITION.get()));
     }
 
     @Override

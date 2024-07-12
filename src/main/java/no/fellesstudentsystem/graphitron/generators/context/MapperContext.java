@@ -378,7 +378,7 @@ public class MapperContext {
     }
 
     public CodeBlock applyEnumConversion(String typeName, CodeBlock getCall, boolean isIterable) {
-        return schema.isEnum(typeName) ? toGraphEnumConverter(typeName, getCall, isIterable, false, schema) : getCall;
+        return schema.isEnum(typeName) ? toGraphEnumConverter(typeName, getCall, isIterable, false, toRecord, schema) : getCall;
     }
 
     public CodeBlock getReturnBlock() {

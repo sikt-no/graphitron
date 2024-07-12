@@ -45,27 +45,27 @@ public abstract class GeneratorTest {
     private final String sourceTestPath, subpathSchema;
     protected final boolean checkProcessedSchemaDefault;
     protected ListAppender<ILoggingEvent> logWatcher;
-    private final List<ExternalReference> references;
-    private final List<GlobalTransform> globalTransforms;
+    private final Set<ExternalReference> references;
+    private final Set<GlobalTransform> globalTransforms;
     private final List<Extension> extendedClasses;
 
     public GeneratorTest(String testSubpath) {
-        this(testSubpath, List.of());
+        this(testSubpath, Set.of());
     }
 
-    public GeneratorTest(String testSubpath, List<ExternalReference> references) {
+    public GeneratorTest(String testSubpath, Set<ExternalReference> references) {
         this(testSubpath, references, true);
     }
 
-    public GeneratorTest(String testSubpath, List<ExternalReference> references, boolean checkProcessedSchemaDefault) {
-        this(testSubpath, references, List.of(), List.of(), checkProcessedSchemaDefault);
+    public GeneratorTest(String testSubpath, Set<ExternalReference> references, boolean checkProcessedSchemaDefault) {
+        this(testSubpath, references, Set.of(), List.of(), checkProcessedSchemaDefault);
     }
 
-    public GeneratorTest(String testSubpath, List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
+    public GeneratorTest(String testSubpath, Set<ExternalReference> references, Set<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
         this(testSubpath, references, globalTransforms, extendedClasses, true);
     }
 
-    public GeneratorTest(String testSubpath, List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses, boolean checkProcessedSchemaDefault) {
+    public GeneratorTest(String testSubpath, Set<ExternalReference> references, Set<GlobalTransform> globalTransforms, List<Extension> extendedClasses, boolean checkProcessedSchemaDefault) {
         subpathSchema = SRC_ROOT + "/" + testSubpath + "/" + COMMON_SCHEMA_NAME;
         sourceTestPath = SRC_ROOT + "/" + testSubpath + "/";
         this.checkProcessedSchemaDefault = checkProcessedSchemaDefault;
@@ -192,7 +192,7 @@ public abstract class GeneratorTest {
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).addAppender(logWatch);
         this.logWatcher = logWatch;
 
-        setProperties(references, globalTransforms, extendedClasses);
+        setProperties(new ArrayList<>(references), new ArrayList<>(globalTransforms), extendedClasses);
     }
 
     @AfterEach

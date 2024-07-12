@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.JAVA_RECORD_FETCH_QUERY;
 
@@ -17,7 +18,7 @@ public class FetchWithRecordQueryTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "queries/fetch";
 
     public FetchWithRecordQueryTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of(JAVA_RECORD_FETCH_QUERY.get()));
+        super(SRC_TEST_RESOURCES_PATH, Set.of(JAVA_RECORD_FETCH_QUERY.get()));
     }
 
     @Override

@@ -666,13 +666,14 @@ public class FormatCodeBlocks {
             CodeBlock field,
             boolean isIterable,
             boolean forDeclaredCondition,
+            boolean toRecord,
             ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
             return empty();
         }
 
         var enumEntry = schema.getEnum(enumType);
-        return toNullSafeMapCall(field, enumEntry, isIterable, forDeclaredCondition, false);
+        return toNullSafeMapCall(field, enumEntry, isIterable, forDeclaredCondition, !toRecord);
     }
 
     private  static CodeBlock toNullSafeMapCall(

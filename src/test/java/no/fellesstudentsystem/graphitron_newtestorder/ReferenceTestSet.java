@@ -4,6 +4,7 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyCondition;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyEnum;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.*;
@@ -21,6 +22,9 @@ public enum ReferenceTestSet {
     // Dummy condition.
     DUMMY_CONDITION("DUMMY_CONDITION", DummyCondition.class),
 
+    // Dummy enum.
+    DUMMY_ENUM("DUMMY_ENUM", DummyEnum.class),
+
     // Mapping services.
     MAPPER_FETCH_SERVICE("MAPPER_FETCH_SERVICE", MapperFetchService.class),
 
@@ -29,6 +33,7 @@ public enum ReferenceTestSet {
     MAPPER_RECORD_CUSTOMER_INNER("MAPPER_RECORD_CUSTOMER_INNER", MapperCustomerInnerJavaRecord.class),
     MAPPER_RECORD_CITY("MAPPER_RECORD_CITY", MapperCityJavaRecord.class),
     MAPPER_RECORD_ADDRESS("MAPPER_RECORD_ADDRESS", MapperAddressJavaRecord.class),
+    MAPPER_RECORD_FILM("MAPPER_RECORD_FILM", MapperFilmJavaRecord.class),
 
     // Input record services.
     JAVA_RECORD_FETCH_SERVICE("JAVA_RECORD_FETCH_SERVICE", JavaRecordInputFetchService.class),

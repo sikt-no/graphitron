@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
 
@@ -17,7 +18,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/tograph";
 
     public MapperGeneratorToGraphTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), MAPPER_FETCH_SERVICE.get()));
+        super(SRC_TEST_RESOURCES_PATH, Set.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_ENUM.get(), MAPPER_FETCH_SERVICE.get()));
     }
 
     @Override
@@ -29,5 +30,11 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Mapper content for fetch services")
     void forFetchServiceContent() {
         assertGeneratedContentMatches("forFetchServiceContent");
+    }
+
+    @Test
+    @DisplayName("Mapper content for records with enums")
+    void forSchemaEnum() {
+        assertGeneratedContentMatches("forSchemaEnum");
     }
 }

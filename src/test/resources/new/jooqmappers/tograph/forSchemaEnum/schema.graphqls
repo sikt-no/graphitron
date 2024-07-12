@@ -1,0 +1,12 @@
+type Query {
+  film: Film @service(service : {name: "DUMMY_SERVICE"})
+}
+
+type Film @table {
+  rating1: Rating! @field(name: "RATING")
+  rating2: RatingNoConverter! @field(name: "RATING")
+}
+
+enum RatingNoConverter { G, PG, R } # No jOOQ converter.
+
+enum Rating @enum(enumReference: {name: "DUMMY_ENUM"}) { G, PG, R } # With jOOQ converter.

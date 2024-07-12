@@ -8,13 +8,14 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 
 import java.util.List;
+import java.util.Set;
 
 @DisplayName("Java Mappers - Mapper content for mapping graph types to Java records")
 public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "javamappers/tograph";
 
     public JavaMapperGeneratorToRecordTest() {
-        super(SRC_TEST_RESOURCES_PATH, List.of());
+        super(SRC_TEST_RESOURCES_PATH, Set.of());
     }
 
     @Override
