@@ -46,21 +46,21 @@ We plan to enhance this: all generator classes will be made extensible for wider
 Example of referencing a class through the configuration:
 ```xml
 <externalReferences>
-  <reference> <!--The name of this outer element does not matter.-->
-    <schemaName>CUSTOMER_TRANSFORM</schemaName>
-    <path>some.path.CustomerTransform</path>
-  </reference>
+  <element> <!--The name of this outer element does not matter.-->
+    <name>CUSTOMER_TRANSFORM</name>
+    <fullyQualifiedClassName>some.path.CustomerTransform</fullyQualifiedClassName>
+  </element>
 </externalReferences>
 ```
 
 Example of applying a global transform in the POM:
 ```xml
 <globalRecordTransforms>
-  <reference>
+  <element>
     <name>CUSTOMER_TRANSFORM</name> <!-- The name of the reference. -->
     <method>someTransformMethod</method> <!-- Method in the referenced class to be applied. -->
     <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
-  </reference>
+  </element>
 </globalRecordTransforms>
 ```
 
@@ -125,9 +125,11 @@ type OtherType {
 
 #### field directive
 By default, Graphitron assumes each field not annotated with the **notGenerated** or **splitQuery** directives to have a name
-equal to the column it corresponds to in the jOOQ table or service record. The **field** directive overrides this behaviour. Specifying
-the _name_-parameter allows for using schema names that are not connected to the names of jOOQ or service record fields.
+equal to the column it corresponds to in the jOOQ table or service record. The **field** directive overrides this behaviour.
 This directive applies to normal type fields, input type fields, arguments and enum values.
+For determining which table the field name should be taken from, see the [table](#table-directive) and [reference](#reference-directive) directives.
+
+Specifying the _name_-parameter allows for using schema names that are not connected to the names of jOOQ or service record fields.
 
 ```graphql
 type Query {
@@ -151,8 +153,22 @@ enum SomeEnum { # @field applied on enum fields. Each of these must correspond t
 }
 ```
 
-For determining which table the field should be taken from,
-see the [table](#table-directive) and [reference](#reference-directive) directives.
+The _javaName_-parameter is a special case for when a table/jOOQ-record needs to interact with a Java record.
+It acts as a second override, defaulting to the value of _name_ when not set. A concrete example of where this parameter
+is required is when using records with conditions or fetch queries in general where the contents of the record must be
+matched to jOOQ table fields.
+
+```graphql
+type Query {
+  query(argument: SomeInput): SomeType
+}
+
+input SomeInput @record(record: {name: "SOME_RECORD"}) {
+  value: String @field(name: "ACTUAL_VALUE_NAME", javaName: "ACTUAL_JAVA_RECORD_FIELD_NAME")
+}
+
+type SomeType @table { ... }
+```
 
 ### Tables, joins and records
 #### table directive
@@ -164,7 +180,7 @@ and does not need to be specified if the type name already equals the table name
 In the example below the generator would apply a jOOQ implicit join between the two tables when building the query.
 Note that this can only work if there is only one foreign key between the tables. For example, given tables from the
 schema example below, the result will be `TABLE_A.table_b()`. If more than one key exists, a more complex configuration
-is required.
+is required, see [reference](#reference-directive).
 
 ```graphql
 type TABLE_A @table { # Table name matches the type name, name is unnecessary.
@@ -204,10 +220,10 @@ referred type will have access to the join operation.
 The following examples will assume that this configuration is set: 
 ```xml
 <externalReferences>
-  <reference>
-    <schemaName>CUSTOMER_CONDITION</schemaName>
-    <path>some.path.CustomerCondition</path>
-  </reference>
+  <element>
+    <name>CUSTOMER_CONDITION</name>
+    <fullyQualifiedClassName>some.path.CustomerCondition</fullyQualifiedClassName>
+  </element>
 </externalReferences>
 ```
 
@@ -298,15 +314,20 @@ It provides the following parameter options:
 * _override_ - If true, disables the default checks that are added to all arguments, otherwise add the new condition in
 addition to the default ones.
 
+If the condition needs to be nested with list, you may want to use the **reference** and table **directive** to wrap them in records.
+This will result in a condition that takes the record as a parameter, allowing more complex conditions.
+Worth noting here is that as usual table directives can not be nested,
+and to use a record directive on a nested input all the preceding inputs must also be records.
+
 #### Example: Setup
 The following examples will assume this configuration exists:
 
 ```xml
 <externalReferences>
-  <reference>
-    <schemaName>CITY_CONDITION</schemaName>
-    <path>some.path.CityCondition</path>
-  </reference>
+  <element>
+    <name>CITY_CONDITION</name>
+    <fullyQualifiedClassName>some.path.CityCondition</fullyQualifiedClassName>
+  </element>
 </externalReferences>
 ```
 
@@ -396,6 +417,60 @@ _Resulting code_:
 ```java
 .where(some.path.CityCondition.cityMethod(CITY, cityNames))
 .and(some.path.CityCondition.cityMethodAllElements(CITY, countryId, cityNames))
+```
+
+#### Example: Condition using flat record configuration
+This is the simplest case, when we have only one layer of input types.
+In the example below, the input type will be mapped to a record that corresponds to the table.
+This has the advantage of not needing to define and reference a Java record, but the result is equivalent.
+
+_Schema_:
+```graphql
+cities(
+    cityInput: CityInput!
+): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
+
+input CityInput @table(name: "CITY") {
+    countryId: String! @field(name: "COUNTRY_ID")
+}
+```
+
+#### Example: Condition using nested record configurations
+Currently, the entire structure is required to be records if one layer is to be,
+because the mapping happens before the query is executed. Most relevant details to note here is that while jOOQ records
+are allowed inside a Java record definition, they must always be on "leaf" input types that do not have further record nesting.
+
+This configuration is required when using nested input types that use lists of the inner input types.
+Note the extra parameter for @field since we are using Java records in fetch queries.
+
+_Schema_:
+```graphql
+cities(
+    cityInput: CityInput1!
+): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
+
+# Can not skip record here even if we only want one of the other input types in our condition.
+input CityInput1 @record(record: {name: "LAYER_1_RECORD"}) {
+    # A condition can also be placed here, but this may be redundant given the condition above in this case.
+    cityNames: [String!] @field(name: "CITY", javaName: "javaCityNamesField") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"}, override: true)
+    countryId: String! @field(name: "COUNTRY_ID", javaName: "javaCountryField")
+    city2: [CityInput2]
+    city3: [CityInput3]
+}
+
+input CityInput2 @record(record: {name: "LAYER_2_RECORD"}) {
+    countryId: String! @field(name: "COUNTRY_ID", javaName: "javaCountryField2")
+}
+
+input CityInput3 @table(name: "CITY") {
+    countryId: String! @field(name: "COUNTRY_ID")
+}
+```
+
+_Resulting code_:
+```java
+.where(some.path.CityCondition.cityMethodAllElements(CITY, cityInputRecord))
+.and(some.path.CityCondition.cityMethod(CITY, cityInputRecord.getCityNames()))
 ```
 
 ### Enums
@@ -617,7 +692,7 @@ input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ t
 ```
 
 #### Nested input structures
-Multiple layers of input types are also supported, but comes with its own limitations.
+Multiple layers of jOOQ input types are also supported, but comes with its own limitations.
 Most notably, all records are sent to the service as a flat list of unorganised parameters,
 meaning that all the hierarchy information is lost when reading them in the service.
 It is therefore recommended to avoid using this feature, and use [Java records](#input-types-with-java-records) instead.
@@ -648,24 +723,19 @@ and may contain JOOQ-records.
 
 _Schema:_
 ```graphql
-type Mutation {
-  editCustomer(
-    editInput: EditCustomerInput!
-  ): ID! @service(service: {name: "SERVICE_CUSTOMER"})
-}
+customer(editInput: EditCustomerInput!): ID! @service(service: {name: "SERVICE_CUSTOMER"})
 
 input EditCustomerInput @record(record: {name: "JAVA_RECORD_CUSTOMER"}) { # @record specifies the Java record to use. Setting @table here would not do anything.
   id: ID! # We need a method with the name "setId" in the record class.
   first: String @field(name: "FIRST_NAME") # We need a method with the name "setFirstName" in the record class. Overridden by @field.
 }
 ```
-This is currently only supported for use with mutations.
 
 _Required service code_:
 ```java
 public class CustomerService {
     // The correct java class is defined through the code reference in the configuration.
-    public String editCustomer(JavaCustomerRecord person) { … }
+    public String customer(JavaCustomerRecord person) { … }
 }
 ```
 
@@ -713,8 +783,6 @@ These rules vary slightly when using pagination.
 All paginated fields are treated as listed, but otherwise behave as the points above indicated.
 * For the top level queries, it should return a list.
 * If the query is not at the top level it should return a map with the ID as key and the value should be set to a list of records.
-
-In contrast with input types, output type mapping works for both queries and mutations.
 
 Schema pagination wrapping is handled automatically, but pagination parameters must be manually applied to any queries
 that are used in the service.

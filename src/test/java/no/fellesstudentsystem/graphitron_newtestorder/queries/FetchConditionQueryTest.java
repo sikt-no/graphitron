@@ -40,7 +40,7 @@ public class FetchConditionQueryTest extends GeneratorTest {
 
     @Test
     @DisplayName("Conditions with listed inputs")
-    void withListedInput() {
-        assertGeneratedContentMatches("withListedInput");
+    void withListedInputConditions() {
+        assertGeneratedContentMatches("withListedInputConditions");
     }
 }
