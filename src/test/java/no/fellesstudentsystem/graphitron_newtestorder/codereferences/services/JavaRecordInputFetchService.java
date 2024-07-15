@@ -15,11 +15,11 @@ public class JavaRecordInputFetchService {
         this.context = context;
     }
 
-    public CustomerRecord customers(String id, CustomerRecord record) {
+    public CustomerRecord customer(String id, CustomerRecord record) {
         return null;
     }
 
-    public List<CustomerRecord> customersListed(List<CustomerRecord> record) {
+    public List<CustomerRecord> customerListed(List<CustomerRecord> record) {
         return null;
     }
 }

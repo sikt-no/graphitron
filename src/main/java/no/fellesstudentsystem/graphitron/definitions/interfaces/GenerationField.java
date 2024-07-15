@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron.definitions.interfaces;
 
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
@@ -38,6 +39,16 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      * @return The reference to the external service that this field is related to.
      */
     CodeReference getServiceReference();
+
+    /**
+     * @return Does this field have a mutation operation defined?
+     */
+    boolean hasMutationType();
+
+    /**
+     * @return The type of mutation that should be applied in this operation.
+     */
+    MutationType getMutationType();
 
     /**
      * @return Record-side name mapping based on the name of the field or the {@link GenerationDirective#FIELD} directive set on this type.

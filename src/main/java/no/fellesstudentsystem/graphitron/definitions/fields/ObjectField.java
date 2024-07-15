@@ -114,10 +114,12 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         return hasBackwardPagination;
     }
 
+    @Override
     public boolean hasMutationType() {
         return mutationType != null;
     }
 
+    @Override
     public MutationType getMutationType() {
         return mutationType;
     }

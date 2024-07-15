@@ -13,7 +13,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Customer customersForQuery(DSLContext ctx, QueryCustomerJavaRecord inRecord,
+    public static Customer customerForQuery(DSLContext ctx, QueryCustomerJavaRecord inRecord,
                                              SelectionSet select) {
         return ctx
                 .select(
@@ -27,7 +27,7 @@ public class QueryDBQueries {
                 .fetchOne(it -> it.into(Customer.class));
     }
 
-    public static List<Customer> customersListedForQuery(DSLContext ctx,
+    public static List<Customer> customerListedForQuery(DSLContext ctx,
                                                          List<QueryCustomerJavaRecord> inRecordList, SelectionSet select) {
         return ctx
                 .select(

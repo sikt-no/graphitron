@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<Customer> customersForQuery(DSLContext ctx, CustomerRecord inRecord,
+    public static List<Customer> customerForQuery(DSLContext ctx, CustomerRecord inRecord,
                                                    Integer pageSize, String after, SelectionSet select) {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
@@ -26,7 +26,7 @@ public class QueryDBQueries {
                 .fetch(it -> it.into(Customer.class));
     }
 
-    public static Integer countCustomersForQuery(DSLContext ctx, CustomerRecord inRecord) {
+    public static Integer countCustomerForQuery(DSLContext ctx, CustomerRecord inRecord) {
         return ctx
                 .select(DSL.count())
                 .from(CUSTOMER)

@@ -24,21 +24,13 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Abstractions for functionality that is used across multiple test classes.
  */
 public abstract class GeneratorTest {
-    public static final String
-            COMMON_SCHEMA_NAME = "default.graphqls",
-            DEFAULT_OUTPUT_PACKAGE = "fake.code.generated",
-            DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.jooq.generated.testdata",
-            SRC_ROOT = "src/test/resources/new",
-            SRC_COMMON_SCHEMA = SRC_ROOT + "/" + COMMON_SCHEMA_NAME,
-            SRC_DIRECTIVES = "src/main/resources/schema/directives.graphqls",
-            EXPECTED_OUTPUT_NAME = "expected";
-
     @TempDir
     protected Path tempOutputDirectory;
 
@@ -66,8 +58,8 @@ public abstract class GeneratorTest {
     }
 
     public GeneratorTest(String testSubpath, Set<ExternalReference> references, Set<GlobalTransform> globalTransforms, List<Extension> extendedClasses, boolean checkProcessedSchemaDefault) {
-        subpathSchema = SRC_ROOT + "/" + testSubpath + "/" + COMMON_SCHEMA_NAME;
         sourceTestPath = SRC_ROOT + "/" + testSubpath + "/";
+        subpathSchema = sourceTestPath + COMMON_SCHEMA_NAME;
         this.checkProcessedSchemaDefault = checkProcessedSchemaDefault;
         this.references = references;
         this.globalTransforms = globalTransforms;
@@ -148,17 +140,8 @@ public abstract class GeneratorTest {
     }
 
     @NotNull
-    protected ProcessedSchema getProcessedSchema(String schemaParentFolder) {
-        return getProcessedSchema(schemaParentFolder, checkProcessedSchemaDefault);
-    }
-
-    @NotNull
-    protected ProcessedSchema getProcessedSchema(String schemaParentFolder, boolean checkTypes) {
-        GeneratorConfig.setSchemaFiles(SRC_COMMON_SCHEMA, SRC_DIRECTIVES, subpathSchema, sourceTestPath + schemaParentFolder + "/schema.graphqls");
-
-        var processedSchema = GraphQLGenerator.getProcessedSchema();
-        processedSchema.validate(checkTypes);
-        return processedSchema;
+    public ProcessedSchema getProcessedSchema(String schemaParentFolder) {
+        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, subpathSchema, checkProcessedSchemaDefault);
     }
 
     protected void assertGeneratedContentMatches(String schemaFolder, String expectedOutputFolder) {
@@ -173,18 +156,6 @@ public abstract class GeneratorTest {
         assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(expectedFiles);
     }
 
-    private void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
-        GeneratorConfig.setProperties(
-                Set.of(),
-                tempOutputDirectory.toString(),
-                DEFAULT_OUTPUT_PACKAGE,
-                DEFAULT_JOOQ_PACKAGE,
-                references,
-                globalTransforms,
-                extendedClasses
-        );
-    }
-
     @BeforeEach
     public void setup() {
         ListAppender<ILoggingEvent> logWatch = new ListAppender<>();
@@ -192,7 +163,7 @@ public abstract class GeneratorTest {
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).addAppender(logWatch);
         this.logWatcher = logWatch;
 
-        setProperties(new ArrayList<>(references), new ArrayList<>(globalTransforms), extendedClasses);
+        setProperties(new ArrayList<>(references), new ArrayList<>(globalTransforms), extendedClasses, tempOutputDirectory.toString());
     }
 
     @AfterEach

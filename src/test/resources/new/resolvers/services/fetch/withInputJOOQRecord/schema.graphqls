@@ -1,10 +1,10 @@
 type Query {
-  customers(
+  customer(
     id: ID! # Some other input that should not be mapped.
     in: CustomerInput
   ): Customer @service(service: {name: "JOOQ_RECORD_FETCH_SERVICE"})
 
-  customersListed(in: [CustomerInput]): [Customer] @service(service: {name: "JOOQ_RECORD_FETCH_SERVICE"})
+  customerListed(in: [CustomerInput]): [Customer] @service(service: {name: "JOOQ_RECORD_FETCH_SERVICE"})
 }
 
 input CustomerInput @table(name: "CUSTOMER") {

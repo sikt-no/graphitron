@@ -1,5 +1,5 @@
 type Query {
-  customers(in: CustomerInput, first: Int = 100, after: String): CustomerConnection @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
+  customer(in: CustomerInput, first: Int = 100, after: String): CustomerConnection @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
 }
 
 type CustomerConnection {

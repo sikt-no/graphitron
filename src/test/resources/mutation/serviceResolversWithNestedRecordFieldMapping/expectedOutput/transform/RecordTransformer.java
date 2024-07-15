@@ -1,10 +1,12 @@
 package fake.code.generated.transform;
 
 import fake.code.generated.mappers.CustomerTypeMapper;
+import fake.code.generated.mappers.EditCustomerResponseTypeMapper;
 import fake.code.generated.mappers.EditInputLevel1JavaMapper;
 import fake.code.generated.mappers.EditInputLevel2AJavaMapper;
 import fake.code.generated.mappers.EditInputLevel3BJOOQMapper;
 import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.EditCustomerResponse;
 import fake.graphql.example.model.EditInputLevel1;
 import fake.graphql.example.model.EditInputLevel2A;
 import fake.graphql.example.model.EditInputLevel3B;
@@ -43,6 +45,11 @@ public class RecordTransformer extends AbstractTransformer {
 
     public TestCustomerRecord editInputLevel1ToJavaRecord(EditInputLevel1 input, String path) {
         return editInputLevel1ToJavaRecord(List.of(input), path).stream().findFirst().orElse(new TestCustomerRecord());
+    }
+
+    public EditCustomerResponse editCustomerResponseRecordToGraphType(List<CustomerRecord> input,
+                                                                      String path) {
+        return EditCustomerResponseTypeMapper.recordToGraphType(input, path, this);
     }
 
     public Customer customerRecordToGraphType(CustomerRecord input, String path) {

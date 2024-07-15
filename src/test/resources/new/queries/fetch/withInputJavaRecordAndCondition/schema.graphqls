@@ -1,6 +1,6 @@
 type Query {
-  customers(in: CustomerInput): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"})
-  customersListed(in: [CustomerInput]): [Customer] @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecordList"})
+  customer(in: CustomerInput): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"})
+  customerListed(in: [CustomerInput]): [Customer] @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecordList"})
 }
 
 input CustomerInput @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {

@@ -11,7 +11,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Customer customersForQuery(DSLContext ctx, QueryCustomerJavaRecord inRecord,
+    public static Customer customerForQuery(DSLContext ctx, QueryCustomerJavaRecord inRecord,
                                              SelectionSet select) {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))

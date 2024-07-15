@@ -35,7 +35,8 @@ public class MapperContext {
             targetIsType,
             isInitContext,
             pastFieldOverrideExists,
-            noRecordIterability;
+            noRecordIterability,
+            isSimpleIDMode;
     private final String sourceName, targetName, path, indexPath;
     private final MethodMapping getSourceMapping, setTargetMapping, lastRecordMapping;
     private final MapperContext previousContext;
@@ -59,6 +60,7 @@ public class MapperContext {
         hasRecordReference = false;
         hasJavaRecordReference = false;
         hasTable = false;
+        isSimpleIDMode = false;
         target = null;
         this.toRecord = toRecord;
         this.mapsJavaRecord = mapsJavaRecord;
@@ -90,6 +92,7 @@ public class MapperContext {
         recursion = previousContext.recursion + 1;
         isIterable = isResolver ? target.isIterableWrapped() : (target.isIterableWrapped() && !hasJavaRecordReference || previousContext.isInitContext);
         wasIterable = isIterable || previousContext.wasIterable;
+        isSimpleIDMode = !previousContext.hasRecordReference && !toRecord && !target.isInput() && target.isID(); // Special case, may become unsupported in the future.
 
         var schemaNameToUse = getSchemaNameToUse();
         var recordName = getRecordName();
@@ -264,6 +267,10 @@ public class MapperContext {
     }
 
     public CodeBlock getSourceGetCallBlock() {
+        if (isSimpleIDMode) {
+            return CodeBlock.of(asRecordName(previousContext.targetName));
+        }
+
         return getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), getSourceMapping);
     }
 

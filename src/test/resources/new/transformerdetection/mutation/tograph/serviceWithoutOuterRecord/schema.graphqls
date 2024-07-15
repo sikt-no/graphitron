@@ -1,0 +1,11 @@
+type Mutation {
+  edit: Response! @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Response {
+  customer: [Customer] @fetchByID
+}
+
+type Customer implements Node @table {
+  id: ID!
+}

@@ -1,6 +1,6 @@
 type Query {
-  customers(in: [CustomerInput]): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"})
-  customersOverride(in: [CustomerInput]): [Customer] @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"}, override: true)
+  customer(in: [CustomerInput]): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"})
+  customerOverride(in: [CustomerInput]): [Customer] @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"}, override: true)
 }
 
 input CustomerInput {

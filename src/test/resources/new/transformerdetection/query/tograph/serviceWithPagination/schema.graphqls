@@ -1,0 +1,20 @@
+type Query {
+  customerQueryConnection(first: Int = 100, after: String): CustomerConnection @service(service : {name: "DUMMY_SERVICE"})
+
+  # We expect only one match despite this.
+  customerQueryDirect: Customer @service(service : {name: "DUMMY_SERVICE"})
+}
+
+type CustomerConnection {
+  edges: [CustomerConnectionEdge]
+  nodes: [Customer!]!
+}
+
+type CustomerConnectionEdge {
+  cursor: String
+  node: Customer
+}
+
+type Customer @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+}

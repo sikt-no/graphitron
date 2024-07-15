@@ -13,7 +13,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Customer customersForQuery(DSLContext ctx, List<CustomerInput> in,
+    public static Customer customerForQuery(DSLContext ctx, List<CustomerInput> in,
                                              SelectionSet select) {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
@@ -38,7 +38,7 @@ public class QueryDBQueries {
                 .fetchOne(it -> it.into(Customer.class));
     }
 
-    public static List<Customer> customersOverrideForQuery(DSLContext ctx, List<CustomerInput> in,
+    public static List<Customer> customerOverrideForQuery(DSLContext ctx, List<CustomerInput> in,
                                                            SelectionSet select) {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))

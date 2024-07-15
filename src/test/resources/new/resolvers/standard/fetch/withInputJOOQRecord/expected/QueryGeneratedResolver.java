@@ -19,26 +19,26 @@ public class QueryGeneratedResolver implements QueryResolver {
     DSLContext ctx;
 
     @Override
-    public CompletableFuture<Customer> customers(CustomerInput in, DataFetchingEnvironment env)
+    public CompletableFuture<Customer> customer(CustomerInput in, DataFetchingEnvironment env)
             throws Exception {
         var transform = new RecordTransformer(env, this.ctx);
 
         var inRecord = transform.customerInputToJOOQRecord(in, "in");
 
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> QueryDBQueries.customersForQuery(ctx, inRecord, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.customerForQuery(ctx, inRecord, selectionSet)
         );
     }
 
     @Override
-    public CompletableFuture<List<Customer>> customersListed(List<CustomerInput> in,
+    public CompletableFuture<List<Customer>> customerListed(List<CustomerInput> in,
                                                              DataFetchingEnvironment env) throws Exception {
         var transform = new RecordTransformer(env, this.ctx);
 
         var inRecordList = transform.customerInputToJOOQRecord(in, "in");
 
         return new DataFetcher(env, this.ctx).load(
-                (ctx, selectionSet) -> QueryDBQueries.customersListedForQuery(ctx, inRecordList, selectionSet)
+                (ctx, selectionSet) -> QueryDBQueries.customerListedForQuery(ctx, inRecordList, selectionSet)
         );
     }
 }

@@ -1,6 +1,6 @@
 type Query {
-  customers(in: CustomerInput): Customer
-  customersListed(in: [CustomerInput]): [Customer]
+  customer(in: CustomerInput): Customer
+  customerListed(in: [CustomerInput]): [Customer]
 }
 
 input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {

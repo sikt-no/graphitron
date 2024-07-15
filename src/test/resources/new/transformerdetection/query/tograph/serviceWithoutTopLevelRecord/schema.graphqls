@@ -1,0 +1,11 @@
+type Query {
+  customerQuery: OuterWrapper @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type OuterWrapper {
+  customers: [Customer]
+}
+
+type Customer implements Node @table {
+  id: ID!
+}

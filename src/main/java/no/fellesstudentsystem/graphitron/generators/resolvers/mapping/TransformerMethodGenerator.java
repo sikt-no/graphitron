@@ -12,7 +12,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractMethodG
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
@@ -118,10 +117,6 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
     public List<MethodSpec> generateAll() {
         return processedSchema
                 .getTransformableFields()
-                .stream()
-                .filter(processedSchema::isRecordType)
-                .collect(Collectors.toMap(processedSchema::getRecordType, Function.identity(), (it1, it2) -> it1)) // Filter duplicates if multiple fields use the same input type.
-                .values()
                 .stream()
                 .map(this::generate)
                 .filter(it -> !it.code.isEmpty())

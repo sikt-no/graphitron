@@ -15,7 +15,7 @@ public class MapperFetchService {
         this.context = context;
     }
 
-    public List<CustomerRecord> customersQuery() {
+    public List<CustomerRecord> customerQuery() {
         return null;
     }
 }

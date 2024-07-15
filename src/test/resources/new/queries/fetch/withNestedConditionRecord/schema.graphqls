@@ -1,5 +1,5 @@
 type Query {
-  customers(in: CustomerInput1): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
+  customer(in: CustomerInput1): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
 }
 
 input CustomerInput1 @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {

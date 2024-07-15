@@ -714,7 +714,13 @@ public class ProcessedSchema {
                     .flatMap(field -> findTransformableFields(field, true).stream())
                     .forEach(fields::add);
         }
-        return fields;
+        return new ArrayList<>(
+                fields
+                        .stream()
+                        .filter(this::isRecordType)
+                        .collect(Collectors.toMap(this::getRecordType, Function.identity(), (it1, it2) -> it1)) // Filter duplicates if multiple fields use the same record type.
+                        .values()
+        );
     }
 
     /**
@@ -749,23 +755,17 @@ public class ProcessedSchema {
         seen.add(field);
 
         var hasService = field.hasServiceReference();
-        var hasCondition = field.hasCondition();
-        if (!field.isInput()) {
-            var objectField = (ObjectField) field;
-            if (objectField.hasMutationType() || objectField.isFetchByID() || (recursion > 0 && isMutation && hasService)) {
-                return List.of();
-            }
-        }
-
+        var hasMutationType = field.hasMutationType();
         var type = getRecordType(field);
-        if (field.isResolver() && isMutation || type == null) {
+        if (!field.isInput() && hasMutationType || field.isResolver() && isMutation && !hasService || type == null) {
             return List.of();
         }
 
+        var hasCondition = field.hasCondition();
         var canMapTableHere = isMutation || hasService || hasCondition && field.isInput() || type.hasJavaRecordReference() || canMapTable || hadMappableInputConfiguration;
         var notAlreadyWrappedInTable = !hadTable || !type.hasTable() || hadMappableInputConfiguration;
         var array = new ArrayList<GenerationField>();
-        if ((type.hasRecordReference() || hasService && !isMutation) && !field.isExplicitlyNotGenerated() && notAlreadyWrappedInTable && canMapTableHere) {
+        if ((type.hasRecordReference() || hasService && !hasMutationType) && !field.isExplicitlyNotGenerated() && notAlreadyWrappedInTable && canMapTableHere) {
             array.add(field);
         }
 

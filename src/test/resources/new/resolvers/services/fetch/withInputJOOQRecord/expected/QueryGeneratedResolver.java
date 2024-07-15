@@ -20,7 +20,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     DSLContext ctx;
 
     @Override
-    public CompletableFuture<Customer> customers(String id, CustomerInput in,
+    public CompletableFuture<Customer> customer(String id, CustomerInput in,
                                                  DataFetchingEnvironment env) throws Exception {
         var transform = new RecordTransformer(env, this.ctx);
 
@@ -29,12 +29,12 @@ public class QueryGeneratedResolver implements QueryResolver {
         var jOOQRecordInputFetchService = new JOOQRecordInputFetchService(transform.getCtx());
 
         return new ServiceDataFetcher<>(transform).load(
-                () -> jOOQRecordInputFetchService.customers(id, inRecord),
+                () -> jOOQRecordInputFetchService.customer(id, inRecord),
                 (transform, response) -> transform.customerRecordToGraphType(response, ""));
     }
 
     @Override
-    public CompletableFuture<List<Customer>> customersListed(List<CustomerInput> in,
+    public CompletableFuture<List<Customer>> customerListed(List<CustomerInput> in,
                                                              DataFetchingEnvironment env) throws Exception {
         var transform = new RecordTransformer(env, this.ctx);
 
@@ -43,7 +43,7 @@ public class QueryGeneratedResolver implements QueryResolver {
         var jOOQRecordInputFetchService = new JOOQRecordInputFetchService(transform.getCtx());
 
         return new ServiceDataFetcher<>(transform).load(
-                () -> jOOQRecordInputFetchService.customersListed(inRecordList),
+                () -> jOOQRecordInputFetchService.customerListed(inRecordList),
                 (transform, response) -> transform.customerRecordToGraphType(response, ""));
     }
 }

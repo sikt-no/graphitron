@@ -1,6 +1,6 @@
 type Query {
-  customersQuery: [Customer] @service(service : {name: "DUMMY_SERVICE"})
-  customersQueryWrapped: OuterWrapper @service(service: {name: "DUMMY_SERVICE"})
+  customerQuery: [Customer] @service(service : {name: "DUMMY_SERVICE"})
+  customerQueryWrapped: OuterWrapper @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type OuterWrapper @record(record: {name: "MAPPER_RECORD_CUSTOMER"}) {

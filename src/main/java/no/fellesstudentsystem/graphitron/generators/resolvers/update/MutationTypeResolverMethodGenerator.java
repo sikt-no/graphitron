@@ -29,6 +29,7 @@ import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.Tra
 import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_SELECT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -151,7 +152,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                 .add("\n")
                 .add(declareVariable(targetTypeName, responseClassName));
         for (var field : object.getFields()) {
-            if (!field.getMappingFromFieldOverride().getName().equalsIgnoreCase("Errors")) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
+            if (!field.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName())) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
                 code
                         .add(generateResponses(field, target, recursion + 1))
                         .add(mapToSetCall(field, target));

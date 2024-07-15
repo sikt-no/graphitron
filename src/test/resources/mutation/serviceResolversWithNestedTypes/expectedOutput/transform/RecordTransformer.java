@@ -1,5 +1,6 @@
 package fake.code.generated.transform;
 
+import fake.code.generated.mappers.CustomerTypeMapper;
 import fake.code.generated.mappers.EditCustomerResponse2TypeMapper;
 import fake.code.generated.mappers.EditCustomerResponse3TypeMapper;
 import fake.code.generated.mappers.EditCustomerResponse4TypeMapper;
@@ -9,6 +10,8 @@ import fake.code.generated.mappers.EditInputLevel2AJOOQMapper;
 import fake.code.generated.mappers.EditInputLevel2BJOOQMapper;
 import fake.code.generated.mappers.EditInputLevel3JOOQMapper;
 import fake.code.generated.mappers.EditInputLevel4JOOQMapper;
+import fake.code.generated.mappers.PaymentTypeMapper;
+import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.EditCustomerResponse;
 import fake.graphql.example.model.EditCustomerResponse2;
 import fake.graphql.example.model.EditCustomerResponse3;
@@ -18,12 +21,14 @@ import fake.graphql.example.model.EditInputLevel2A;
 import fake.graphql.example.model.EditInputLevel2B;
 import fake.graphql.example.model.EditInputLevel3;
 import fake.graphql.example.model.EditInputLevel4;
+import fake.graphql.example.model.Payment;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
 import java.util.List;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.PaymentRecord;
 import org.jooq.DSLContext;
 
 public class RecordTransformer extends AbstractTransformer {
@@ -34,6 +39,10 @@ public class RecordTransformer extends AbstractTransformer {
     public List<CustomerRecord> editInputLevel1ToJOOQRecord(List<EditInputLevel1> input,
                                                             String path) {
         return EditInputLevel1JOOQMapper.toJOOQRecord(input, path, this);
+    }
+
+    public List<Payment> paymentRecordToGraphType(List<PaymentRecord> input, String path) {
+        return PaymentTypeMapper.recordToGraphType(input, path, this);
     }
 
     public List<CustomerRecord> editInputLevel3ToJOOQRecord(List<EditInputLevel3> input,
@@ -63,6 +72,10 @@ public class RecordTransformer extends AbstractTransformer {
         return EditCustomerResponse2TypeMapper.toGraphType(input, path, this);
     }
 
+    public List<Customer> customerRecordToGraphType(List<CustomerRecord> input, String path) {
+        return CustomerTypeMapper.recordToGraphType(input, path, this);
+    }
+
     public List<EditCustomerResponse4> editCustomerResponse4ToGraphType(
             List<no.fellesstudentsystem.graphitron.records.EditCustomerResponse4> input,
             String path) {
@@ -81,6 +94,10 @@ public class RecordTransformer extends AbstractTransformer {
 
     public CustomerRecord editInputLevel1ToJOOQRecord(EditInputLevel1 input, String path) {
         return editInputLevel1ToJOOQRecord(List.of(input), path).stream().findFirst().orElse(new CustomerRecord());
+    }
+
+    public Payment paymentRecordToGraphType(PaymentRecord input, String path) {
+        return paymentRecordToGraphType(List.of(input), path).stream().findFirst().orElse(null);
     }
 
     public CustomerRecord editInputLevel3ToJOOQRecord(EditInputLevel3 input, String path) {
@@ -104,6 +121,10 @@ public class RecordTransformer extends AbstractTransformer {
     public EditCustomerResponse2 editCustomerResponse2ToGraphType(
             no.fellesstudentsystem.graphitron.records.EditCustomerResponse2 input, String path) {
         return editCustomerResponse2ToGraphType(List.of(input), path).stream().findFirst().orElse(null);
+    }
+
+    public Customer customerRecordToGraphType(CustomerRecord input, String path) {
+        return customerRecordToGraphType(List.of(input), path).stream().findFirst().orElse(null);
     }
 
     public EditCustomerResponse4 editCustomerResponse4ToGraphType(

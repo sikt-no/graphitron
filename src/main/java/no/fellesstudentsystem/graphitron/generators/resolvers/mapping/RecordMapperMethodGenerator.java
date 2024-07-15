@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 
 public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
     public RecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -38,6 +39,14 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
                 .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
                 .collect(Collectors.toList());
         for (var innerField : fields) {
+            if (innerField.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName())) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
+                continue;
+            }
+
+            if (innerField.hasFieldReferences()) { // TODO: Can not handle references in jOOQ mappers as input records do not contain them.
+                continue;
+            }
+
             var innerContext = context.iterateContext(innerField);
             var isType = innerContext.targetIsType();
             var previousHadSource = innerContext.getPreviousContext().hasSourceName();

@@ -5,6 +5,7 @@ import graphql.language.*;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldType;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
@@ -160,6 +161,16 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public CodeReference getServiceReference() {
         return serviceReference;
+    }
+
+    @Override
+    public boolean hasMutationType() {
+        return false;
+    }
+
+    @Override
+    public MutationType getMutationType() {
+        return null;
     }
 
     @Override

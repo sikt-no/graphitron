@@ -21,8 +21,7 @@ public class JavaRecordMapperClassGenerator extends AbstractMapperClassGenerator
 
     @Override
     protected boolean filterHasTableAndRecordProperties(GenerationField field) {
-        return processedSchema.isRecordType(field)
-                && (processedSchema.getRecordType(field).hasJavaRecordReference())
+        return processedSchema.getRecordType(field).hasJavaRecordReference()
                 && (isToRecord() ? processedSchema.isInputType(field) : processedSchema.isObject(field));
     }
 

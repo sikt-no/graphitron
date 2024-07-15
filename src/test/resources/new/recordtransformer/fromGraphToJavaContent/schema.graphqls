@@ -1,0 +1,7 @@
+type Query {
+  query(in: In): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input In @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+}
