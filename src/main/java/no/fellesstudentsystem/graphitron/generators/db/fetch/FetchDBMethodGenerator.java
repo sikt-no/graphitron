@@ -97,7 +97,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var inputs = Stream.concat(
                     Stream.of(context.getCurrentJoinSequence().render()),
                     Stream.concat(
-                            inputsWithRecords.stream().map(this::getCheckedNameWithPath),
+                            inputsWithRecords
+                                    .stream()
+                                    .filter(c1 -> inputsWithRecords.stream().noneMatch(c2 -> !c1.getNamePath().equals(c2.getNamePath()) && c1.getNamePath().startsWith(c2.getNamePath())))
+                                    .map(this::getCheckedNameWithPath),
                             inputsWithoutRecord
                                     .stream()
                                     .filter(c1 -> inputsWithRecords.stream().noneMatch(c2 -> c1.getNamePath().startsWith(c2.getNamePath())))

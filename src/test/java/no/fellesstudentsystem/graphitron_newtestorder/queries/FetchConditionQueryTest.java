@@ -44,4 +44,10 @@ public class FetchConditionQueryTest extends GeneratorTest {
     void withListedInputConditions() {
         assertGeneratedContentMatches("withListedInputConditions");
     }
+
+    @Test
+    @DisplayName("Condition with nested input records")
+    void withNestedConditionRecord() {
+        assertGeneratedContentMatches("withNestedConditionRecord");
+    }
 }

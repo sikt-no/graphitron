@@ -1,0 +1,15 @@
+type Query {
+  customers(in: CustomerInput1): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
+}
+
+input CustomerInput1 @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {
+  input2: CustomerInput2
+}
+
+input CustomerInput2 @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {
+  id: ID! @field(name: "ID", javaName: "someID")
+}
+
+type Customer @table {
+  id: ID!
+}
