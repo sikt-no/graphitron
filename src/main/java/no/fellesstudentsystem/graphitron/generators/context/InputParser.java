@@ -21,14 +21,15 @@ import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.PAGINATI
  * A helper class for handling input type data for services and mutations.
  */
 public class InputParser {
-    private final Map<String, InputField> methodInputs, recordInputs, jOOQInputs;
+    private final Map<String, InputField> methodInputsWithOrderField, methodInputs, recordInputs, jOOQInputs;
     private final String serviceInputString;
     private final List<ObjectField> allErrors;
     private final ExceptionDefinition validationErrorException;
 
     public InputParser(ObjectField target, ProcessedSchema schema) {
-        methodInputs = parseInputs(target.getNonReservedArgumentsWithOrderField(), schema);
-        recordInputs = methodInputs
+        methodInputs = parseInputs(target.getNonReservedArguments(), schema);
+        methodInputsWithOrderField = parseInputs(target.getNonReservedArgumentsWithOrderField(), schema);
+        recordInputs = methodInputsWithOrderField
                 .entrySet()
                 .stream()
                 .filter(it -> schema.hasRecord(it.getValue()))
@@ -38,7 +39,7 @@ public class InputParser {
                 .stream()
                 .filter(it -> schema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
-        var inputsJoined = String.join(", ", methodInputs.keySet());
+        var inputsJoined = String.join(", ", methodInputsWithOrderField.keySet());
         if (target.hasForwardPagination()) {
             serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + "," + PAGINATION_AFTER.getName();
         } else {
@@ -101,10 +102,17 @@ public class InputParser {
     }
 
     /**
-     * @return Map of inputs that the mutation field specifies.
+     * @return Map of inputs that the field specifies.
      */
     public Map<String, InputField> getMethodInputs() {
         return methodInputs;
+    }
+
+    /**
+     * @return Map of inputs that the field specifies.
+     */
+    public Map<String, InputField> getMethodInputsWithOrderField() {
+        return methodInputsWithOrderField;
     }
 
     /**

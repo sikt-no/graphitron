@@ -102,7 +102,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
-        parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
+        parser.getMethodInputsWithOrderField().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
 
         if (referenceField.hasForwardPagination()) {
             spec

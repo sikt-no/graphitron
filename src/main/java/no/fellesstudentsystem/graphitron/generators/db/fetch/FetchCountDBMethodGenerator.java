@@ -7,6 +7,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -53,13 +54,14 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .unindent();
 
-        return getSpecBuilder(target)
+        var parser = new InputParser(target, processedSchema);
+        return getSpecBuilder(target, parser)
                 .addCode(code.build())
                 .build();
     }
 
     @NotNull
-    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField) {
+    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
         var spec = getDefaultSpecBuilder(
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 INTEGER.className
@@ -68,9 +70,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
-        referenceField
-                .getNonReservedArguments()
-                .forEach(it -> spec.addParameter(iterableWrapType(it), it.getName()));
+        parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
 
         return spec;
     }

@@ -144,7 +144,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
 
         var orderField = target.getOrderField().map(AbstractField::getName);
         var filteredInputs = parser
-                .getMethodInputs()
+                .getMethodInputsWithOrderField()
                 .keySet()
                 .stream()
                 .filter(it -> orderField.map(orderByField -> !orderByField.equals(it)).orElse(true))

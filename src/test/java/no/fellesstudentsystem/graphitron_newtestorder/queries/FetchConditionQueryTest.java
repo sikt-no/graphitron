@@ -50,4 +50,10 @@ public class FetchConditionQueryTest extends GeneratorTest {
     void withNestedConditionRecord() {
         assertGeneratedContentMatches("withNestedConditionRecord");
     }
+
+    @Test
+    @DisplayName("Condition with input record and pagination")
+    void withPaginatedConditionAndRecord() {
+        assertGeneratedContentMatches("withPaginatedConditionAndRecord");
+    }
 }
