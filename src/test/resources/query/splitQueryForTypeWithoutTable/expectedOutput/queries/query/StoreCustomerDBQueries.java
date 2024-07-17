@@ -16,20 +16,20 @@ import org.jooq.impl.DSL;
 public class StoreCustomerDBQueries {
     public static Map<String, Customer> customerForStoreCustomer(DSLContext ctx,
                                                           Set<String> storeCustomerIds, SelectionSet select) {
-        var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
+        var store_store_customer = CUSTOMER.as("store_1860923489");
         return ctx
                 .select(
                         STORE.getId(),
                         DSL.row(
-                                store_customerstoreidfkey_customer.getId()
+                                store_store_customer.getId()
                         ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(STORE)
-                .join(store_customerstoreidfkey_customer)
+                .join(store_store_customer)
                 .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.hasIds(storeCustomerIds))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
-                .orderBy(store_customerstoreidfkey_customer.getIdFields())
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_store_customer))
+                .orderBy(store_store_customer.getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

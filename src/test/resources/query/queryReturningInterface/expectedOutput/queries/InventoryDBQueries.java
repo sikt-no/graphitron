@@ -19,19 +19,19 @@ import org.jooq.impl.DSL;
 public class InventoryDBQueries {
     public static Map<String, List<Rental>> rentalsForInventory(DSLContext ctx, Set<String> inventoryIds,
                                                          SelectionSet select) {
-        var inventory_rentalinventoryidfkey_rental = RENTAL.as("inventory_1049504228");
+        var inventory_inventory_rental = RENTAL.as("inventory_3398875663");
         return ctx
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                inventory_rentalinventoryidfkey_rental.getId()
+                                inventory_inventory_rental.getId()
                         ).mapping(Functions.nullOnAllNull(Rental::new))
                 )
                 .from(INVENTORY)
-                .join(inventory_rentalinventoryidfkey_rental)
+                .join(inventory_inventory_rental)
                 .onKey(RENTAL__RENTAL_INVENTORY_ID_FKEY)
                 .where(INVENTORY.hasIds(inventoryIds))
-                .orderBy(inventory_rentalinventoryidfkey_rental.getIdFields())
+                .orderBy(inventory_inventory_rental.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 

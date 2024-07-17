@@ -10,16 +10,16 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Address> addressForQuery(DSLContext ctx, String cityID, SelectionSet select) {
-        var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
+        var address_address_customer = CUSTOMER.as("address_179789877");
         return ctx
                 .select(
                         DSL.row(
                                 ADDRESS.getId(),
-                                select.optional("customersLastNames", address_customeraddressidfkey_customer.LAST_NAME)
+                                select.optional("customersLastNames", address_address_customer.LAST_NAME)
                         ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
-                .join(address_customeraddressidfkey_customer)
+                .join(address_address_customer)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.CITY_ID.eq(cityID))
                 .orderBy(ADDRESS.getIdFields())

@@ -10,20 +10,20 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Address> addressForQuery(DSLContext ctx, String cityID, SelectionSet select) {
-        var address_customeraddressidfkey_customer_left = CUSTOMER.as("address_2097104879");
-        var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
+        var address_address_customer_left = CUSTOMER.as("address_1331386265");
+        var address_address_customer = CUSTOMER.as("address_179789877");
         return ctx
                 .select(
                         DSL.row(
                                 ADDRESS.getId(),
-                                select.optional("customerStores0", address_customeraddressidfkey_customer_left.store().STORE_ID),
-                                select.optional("customerStores1", address_customeraddressidfkey_customer.store().STORE_ID)
+                                select.optional("customerStores0", address_address_customer_left.store().STORE_ID),
+                                select.optional("customerStores1", address_address_customer.store().STORE_ID)
                         ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
-                .leftJoin(address_customeraddressidfkey_customer_left)
+                .leftJoin(address_address_customer_left)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
-                .join(address_customeraddressidfkey_customer)
+                .join(address_address_customer)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.CITY_ID.eq(cityID))
                 .orderBy(ADDRESS.getIdFields())

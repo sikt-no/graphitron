@@ -10,24 +10,24 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static City cityForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var city_addresscityidfkey_address = ADDRESS.as("city_3990159062");
-        var city_customeraddressidfkey_customer = CUSTOMER.as("city_3624136159");
+        var city_city_address = ADDRESS.as("city_534742598");
+        var city_address_customer = CUSTOMER.as("city_4159535636");
         return ctx
                 .select(
                         DSL.row(
                                 CITY.getId(),
                                 DSL.row(
-                                        city_customeraddressidfkey_customer.store().getId()
+                                        city_address_customer.store().getId()
                                 ).mapping(Functions.nullOnAllNull(Store::new))
                         ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(CITY)
-                .join(city_addresscityidfkey_address)
+                .join(city_city_address)
                 .onKey(ADDRESS__ADDRESS_CITY_ID_FKEY)
-                .join(city_customeraddressidfkey_customer)
+                .join(city_address_customer)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(CITY.ID.eq(id))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(city_customeraddressidfkey_customer, city_customeraddressidfkey_customer.store()))
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(city_address_customer, city_address_customer.store()))
                 .fetchOne(it -> it.into(City.class));
     }
 }

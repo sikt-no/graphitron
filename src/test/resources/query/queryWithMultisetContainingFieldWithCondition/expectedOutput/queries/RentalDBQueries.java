@@ -19,7 +19,7 @@ import org.jooq.impl.DSL;
 public class RentalDBQueries {
     public static Map<String, Inventory> inventoryForRental(DSLContext ctx, Set<String> rentalIds,
                                                      SelectionSet select) {
-        var film_filmactorfilmidfkey_film_actor = FILM_ACTOR.as("film_518717159");
+        var film_film_film_actor = FILM_ACTOR.as("film_1962542515");
         return ctx
                 .select(
                         RENTAL.getId(),
@@ -31,15 +31,15 @@ public class RentalDBQueries {
                                                                 FILM.getId(),
                                                                 FILM.TITLE,
                                                                 DSL.row(
-                                                                        film_filmactorfilmidfkey_film_actor.getId()
+                                                                        film_film_film_actor.getId()
                                                                 ).mapping(Functions.nullOnAllNull(FilmActor::new))
                                                         ).mapping(Functions.nullOnAllNull(Film::new))
                                                 )
                                                 .from(FILM)
-                                                .join(film_filmactorfilmidfkey_film_actor)
+                                                .join(film_film_film_actor)
                                                 .onKey(FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY)
                                                 .where(INVENTORY.FILM_ID.eq(RENTAL.inventory().film().FILM_ID))
-                                                .and(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(FILM, film_filmactorfilmidfkey_film_actor))
+                                                .and(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(FILM, film_film_film_actor))
                                 )
                         ).mapping((a0, a1) -> new Inventory(a0, a1.map(Record1::value1)))
                 )

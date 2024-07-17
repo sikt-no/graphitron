@@ -9,19 +9,19 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static Store storeForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
+        var store_store_customer = CUSTOMER.as("store_1860923489");
         return ctx
                 .select(
                         DSL.row(
                                 STORE.getId(),
-                                select.optional("cityNameOfMostValuableCustomer", store_customerstoreidfkey_customer.address().city().NAME)
+                                select.optional("cityNameOfMostValuableCustomer", store_store_customer.address().city().NAME)
                         ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(STORE)
-                .join(store_customerstoreidfkey_customer)
+                .join(store_store_customer)
                 .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.ID.eq(id))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_store_customer))
                 .fetchOne(it -> it.into(Store.class));
     }
 }

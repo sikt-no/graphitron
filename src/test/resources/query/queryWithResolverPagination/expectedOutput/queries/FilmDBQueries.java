@@ -18,31 +18,31 @@ import org.jooq.impl.DSL;
 public class FilmDBQueries {
     public static Map<String, List<Inventory>> inventoryForFilm(DSLContext ctx, Set<String> filmIds,
                                                          Integer pageSize, String after, SelectionSet select) {
-        var film_inventoryfilmidfkey_inventory_left = INVENTORY.as("film_2576628581");
+        var film_film_inventory_left = INVENTORY.as("film_2315306553");
         return ctx
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                film_inventoryfilmidfkey_inventory_left.getId(),
-                                select.optional("storeId", film_inventoryfilmidfkey_inventory_left.STORE_ID)
+                                film_film_inventory_left.getId(),
+                                select.optional("storeId", film_film_inventory_left.STORE_ID)
                         ).mapping(Functions.nullOnAllNull(Inventory::new))
                 )
                 .from(FILM)
-                .leftJoin(film_inventoryfilmidfkey_inventory_left)
+                .leftJoin(film_film_inventory_left)
                 .onKey(INVENTORY__INVENTORY_FILM_ID_FKEY)
                 .where(FILM.hasIds(filmIds))
-                .orderBy(film_inventoryfilmidfkey_inventory_left.getIdFields())
+                .orderBy(film_film_inventory_left.getIdFields())
                 .seek(INVENTORY.getIdValues(after))
                 .limit(pageSize + 1)
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 
     public static Integer countInventoryForFilm(DSLContext ctx, Set<String> filmIds) {
-        var film_inventoryfilmidfkey_inventory_left = INVENTORY.as("film_2576628581");
+        var film_film_inventory_left = INVENTORY.as("film_2315306553");
         return ctx
                 .select(DSL.count())
                 .from(FILM)
-                .leftJoin(film_inventoryfilmidfkey_inventory_left)
+                .leftJoin(film_film_inventory_left)
                 .onKey(INVENTORY__INVENTORY_FILM_ID_FKEY)
                 .where(FILM.hasIds(filmIds))
                 .fetchOne(0, Integer.class);

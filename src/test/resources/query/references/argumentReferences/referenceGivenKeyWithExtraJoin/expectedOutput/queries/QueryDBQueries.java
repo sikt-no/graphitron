@@ -11,7 +11,7 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Address> address0ForQuery(DSLContext ctx, String cityID, String storeID,
             SelectionSet select) {
-        var address_customeraddressidfkey_customer_left = CUSTOMER.as("address_2097104879");
+        var address_address_customer_left = CUSTOMER.as("address_1331386265");
         return ctx
                 .select(
                         DSL.row(
@@ -19,16 +19,16 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
-                .leftJoin(address_customeraddressidfkey_customer_left)
+                .leftJoin(address_address_customer_left)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.CITY_ID.eq(cityID))
-                .and(storeID != null ? address_customeraddressidfkey_customer_left.store().STORE_ID.eq(storeID) : DSL.noCondition())
+                .and(storeID != null ? address_address_customer_left.store().STORE_ID.eq(storeID) : DSL.noCondition())
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(it -> it.into(Address.class));
     }
     public static List<Address> address1ForQuery(DSLContext ctx, String cityID, String storeID,
             SelectionSet select) {
-        var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
+        var address_address_customer = CUSTOMER.as("address_179789877");
         return ctx
                 .select(
                         DSL.row(
@@ -36,10 +36,10 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
-                .join(address_customeraddressidfkey_customer)
+                .join(address_address_customer)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.CITY_ID.eq(cityID))
-                .and(address_customeraddressidfkey_customer.store().STORE_ID.eq(storeID))
+                .and(address_address_customer.store().STORE_ID.eq(storeID))
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(it -> it.into(Address.class));
     }

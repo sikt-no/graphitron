@@ -16,21 +16,21 @@ import org.jooq.impl.DSL;
 public class StoreDBQueries {
     public static Map<String, City> cityOfMostValuableCustomerForStore(DSLContext ctx,
                                                                 Set<String> storeIds, SelectionSet select) {
-        var store_customerstoreidfkey_customer = CUSTOMER.as("store_393720061");
+        var store_store_customer = CUSTOMER.as("store_1860923489");
         return ctx
                 .select(
                         STORE.getId(),
                         DSL.row(
-                                store_customerstoreidfkey_customer.address().city().getId(),
-                                select.optional("name", store_customerstoreidfkey_customer.address().city().CITY)
+                                store_store_customer.address().city().getId(),
+                                select.optional("name", store_store_customer.address().city().CITY)
                         ).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(STORE)
-                .join(store_customerstoreidfkey_customer)
+                .join(store_store_customer)
                 .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
                 .where(STORE.hasIds(storeIds))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_customerstoreidfkey_customer))
-                .orderBy(store_customerstoreidfkey_customer.address().city().getIdFields())
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_store_customer))
+                .orderBy(store_store_customer.address().city().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

@@ -16,21 +16,21 @@ import org.jooq.impl.DSL;
 public class AddressDBQueries {
     public static Map<String, Store> storeForAddress(DSLContext ctx, Set<String> addressIds, String id,
                                               SelectionSet select) {
-        var address_customeraddressidfkey_customer = CUSTOMER.as("address_2452302987");
+        var address_address_customer = CUSTOMER.as("address_179789877");
         return ctx
                 .select(
                         ADDRESS.getId(),
                         DSL.row(
-                                address_customeraddressidfkey_customer.store().getId()
+                                address_address_customer.store().getId()
                         ).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(ADDRESS)
-                .join(address_customeraddressidfkey_customer)
+                .join(address_address_customer)
                 .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
                 .where(ADDRESS.hasIds(addressIds))
-                .and(id != null ? address_customeraddressidfkey_customer.store().ID.eq(id) : DSL.noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_customeraddressidfkey_customer, address_customeraddressidfkey_customer.store()))
-                .orderBy(address_customeraddressidfkey_customer.store().getIdFields())
+                .and(id != null ? address_address_customer.store().ID.eq(id) : DSL.noCondition())
+                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_address_customer, address_address_customer.store()))
+                .orderBy(address_address_customer.store().getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

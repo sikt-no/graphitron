@@ -3,11 +3,11 @@ package no.fellesstudentsystem.graphitron.mappings;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelationType;
-import no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
+import org.jooq.impl.TableImpl;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
@@ -18,16 +18,18 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.isFSKeyFormat;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
-
 /**
  * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
  */
 public class TableReflection {
     private final static Map<String, Table<?>> TABLES_BY_JAVA_FIELD_NAME = getTablesByJavaFieldName();
+    private final static Map<String, String> TABLE_NAME_TO_JAVA_FIELD_NAME = TABLES_BY_JAVA_FIELD_NAME.entrySet().stream()
+            .collect(Collectors.toMap(it -> it.getValue().getName(), Map.Entry::getKey));
     private final static Map<String, ForeignKey<?, ?>> FOREIGN_KEYS_BY_JAVA_FIELD_NAME = getForeignKeysByJavaFieldName();
+    private final static Map<String, String> FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME = FOREIGN_KEYS_BY_JAVA_FIELD_NAME.entrySet().stream()
+            .collect(Collectors.toMap(it -> it.getValue().getName(), Map.Entry::getKey));
+
+    private final static Map<String, Map<String, String>> PATH_BY_TABLE_AND_KEY = getPathMethodsForTableAndKey(TABLES_BY_JAVA_FIELD_NAME);
 
     /**
      * @return The implicit key between these two tables.
@@ -46,11 +48,14 @@ public class TableReflection {
 
         var keys = leftTable.getReferencesTo(rightTable);
         if (keys.size() == 1) {
-            return Optional.of(getFixedKeyName(keys.get(0)));
+            var keyName = keys.get(0).getName();
+            return Optional.of(FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(keyName));
         }
         var reverseKeys = rightTable.getReferencesTo(leftTable);
         if (reverseKeys.size() == 1) {
-            return Optional.of(getFixedKeyName(reverseKeys.get(0)));
+            var keyName = reverseKeys.get(0).getName();
+            return Optional.of(FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(keyName));
+
         }
 
         return Optional.empty();
@@ -83,8 +88,11 @@ public class TableReflection {
             }
 
             // The unlikely case where there are single references both ways, and for some reason the reverse reference is preferred.
-            if (reverseKeysSize == 1 && matchName(preferredKey.getMappingName(), reverseKeys.get(0)).isPresent()) {
-                return TableRelationType.REVERSE_IMPLICIT;
+            if (reverseKeysSize == 1) {
+                var reverseKeyFieldName = FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(reverseKeys.get(0).getName());
+                if (reverseKeyFieldName.equals(preferredKey.getMappingName())) {
+                    return TableRelationType.REVERSE_IMPLICIT;
+                }
             }
         }
 
@@ -256,36 +264,19 @@ public class TableReflection {
     }
 
     /**
-     * Search this jOOQ table for a method that matches this name.
-     * @param table Name of the jOOQ table.
-     * @return The name of a method that matches a key between the tables if exists.
+     * Search this jOOQ table for a path method that matches the provided key name.
+     * @param tableName Name of the jOOQ Table
+     * @param keyName   Name of the jOOQ ForeignKey
+     * @return The name of a path method on the table that matches the provided key
      */
-    public static Optional<String> searchTableForKeyMethodName(String table, String key) {
-        return getTable(table).flatMap(value -> value
-                .getReferences()
-                .stream()
-                .map(it -> matchName(key, it))
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .findFirst()
-        );
-    }
-
-    private static Optional<String> matchName(String key, ForeignKey<?, ?> referenceKey) {
-        if (!getFixedKeyName(referenceKey).equalsIgnoreCase(key)) {
-            return Optional.empty();
+    public static Optional<String> searchTableForKeyMethodName(String tableName, String keyName) {
+        var keys = PATH_BY_TABLE_AND_KEY.get(tableName);
+        if (keys != null) {
+            var name = keys.get(keyName);
+            return Optional.ofNullable(name);
         }
 
-        if (!isFSKeyFormat()) { // TODO: Remove this hack.
-            return Optional.of(toCamelCase(referenceKey.getName()));
-        }
-
-        var splitDouble = Arrays
-                .stream(referenceKey.getName().split("__"))
-                .map(NameFormat::toCamelCase)
-                .map(StringUtils::capitalize)
-                .collect(Collectors.joining("_"));
-        return Optional.of(uncapitalize(splitDouble));
+        return Optional.empty();
     }
 
     private static Optional<Table<?>> getTable(String name) {
@@ -305,16 +296,6 @@ public class TableReflection {
                         .map(TableReflection::getJavaFieldName)
                         .collect(Collectors.toSet()))
                 .orElse(Set.of());
-    }
-
-    private static String getFixedKeyName(ForeignKey<?, ?> key) { // TODO: Remove this hack.
-        var unquoted = key.getQualifiedName().unquotedName().toString();
-        if (!isFSKeyFormat()) {
-            return unquoted.replace(".", "__");
-        }
-
-        var split = unquoted.split("\\.");
-        return split[split.length - 1];
     }
 
     public static Set<Class<?>> getClassFromSchemas(String className) {
@@ -342,6 +323,50 @@ public class TableReflection {
                 .collect(Collectors.toMap(
                         TableReflection::getJavaFieldName,
                         it -> (ForeignKey<?, ?>) getJavaFieldValue(it)));
+    }
+
+    /**
+     * @return Map containing all the foreign key references for any table and the corresponding method names to call them.
+     */
+    private static Map<String, Map<String, String>> getPathMethodsForTableAndKey(Map<String, Table<?>> tablesByJavaFieldName) {
+        return tablesByJavaFieldName
+                .values()
+                .stream()
+                .collect(Collectors.toMap(table -> TABLE_NAME_TO_JAVA_FIELD_NAME.get(table.getName()), TableReflection::getPathByFk));
+    }
+
+    /**
+     * @param table Table class to find paths for.
+     * @return @return Map containing all the foreign key references for the table and the corresponding method names to call them.
+     */
+    private static Map<String, String> getPathByFk(Table<?> table) {
+        return Arrays
+                .stream(table.getClass().getMethods())
+                .filter(it -> Path.class.isAssignableFrom(it.getReturnType()))
+                .collect(Collectors.toMap(method -> getKeyNameForMethod(table, method), Method::getName));
+    }
+
+    /**
+     * @param method Method that can be used to implicitly join another table with a FK.
+     * @param table Table class to which the method belongs to.
+     * @return The jOOQ name of the key corresponding to the method in the table class.
+     */
+    private static String getKeyNameForMethod(Table<?> table, Method method) {
+        try {
+            var path = (Path<?>) method.invoke(table);
+            var childKey = (ForeignKey<?, ?>) getField(path, "childPath");
+            var parentKey = (InverseForeignKey<?, ?>) getField(path, "parentPath");
+            var key = childKey != null ? childKey : parentKey.getForeignKey();
+            return FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(key.getName());
+        } catch (IllegalAccessException | NoSuchFieldException | InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Object getField(Path<?> path, String name) throws NoSuchFieldException, IllegalAccessException {
+        var childKeyField = TableImpl.class.getDeclaredField(name);
+        childKeyField.setAccessible(true);
+        return childKeyField.get(path);
     }
 
     private static Function<Schema, Stream<java.lang.reflect.Field>> getFieldsFromSchemaClass(String className) {
