@@ -453,7 +453,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
         if (field.isID()) {
             return CodeBlock.of("$L$L", renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
-        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, false, processedSchema));
+        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
         return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 

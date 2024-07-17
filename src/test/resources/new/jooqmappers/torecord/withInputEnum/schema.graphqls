@@ -1,8 +1,8 @@
 type Query {
-  film: Film @service(service : {name: "DUMMY_SERVICE"})
+  film(in: FilmInput): ID @service(service : {name: "DUMMY_SERVICE"})
 }
 
-type Film @table {
+input FilmInput @table(name: "FILM") {
   rating1: Rating! @field(name: "RATING")
   rating2: RatingNoConverter! @field(name: "RATING")
   rating1List: [Rating]! @field(name: "RATING")

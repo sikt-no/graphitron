@@ -65,7 +65,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         .add(hasWhere ? ".and(" : "")
                         .add(checksNotEmpty ? checks + " ? " : "")
                         .add("$L.$N", renderedSequence, field.getUpperCaseName())
-                        .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), false, processedSchema))
+                        .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
                         .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
@@ -115,7 +115,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
         var nameWithPath = condition.getNameWithPath();
         var checks = condition.getChecksAsSequence();
-        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), nameWithPath, condition.getInput().isIterableWrapped(), true, true, processedSchema);
+        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), nameWithPath, condition.getInput().isIterableWrapped(), true, processedSchema);
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
                 enumConverter.isEmpty() ? nameWithPath : enumConverter
@@ -133,7 +133,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var unpacked = CodeBlock.of(VARIABLE_INTERNAL_ITERATION + condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
 
             if (!field.hasOverridingCondition()) {
-                var enumHandling = toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), false, processedSchema);
+                var enumHandling = toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema);
                 tupleFieldBlocks.add(CodeBlock.of("$L.$N$L", fieldSequence, field.getUpperCaseName(), enumHandling));
                 tupleVariableBlocks.add(inline(unpacked));
             }

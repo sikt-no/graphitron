@@ -639,7 +639,7 @@ public class FormatCodeBlocks {
     /**
      * @return Code block containing the enum conversion method call with an anonymous function declaration.
      */
-    public static CodeBlock toJOOQEnumConverter(String enumType, boolean isIterable, boolean forDeclaredCondition, ProcessedSchema schema) {
+    public static CodeBlock toJOOQEnumConverter(String enumType, boolean isIterable, ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
             return empty();
         }
@@ -651,9 +651,9 @@ public class FormatCodeBlocks {
                 .add(".convert($T.class, $L -> $L, $L -> $L)",
                      enumEntry.getGraphClassName(),
                      tempVariableName,
-                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, forDeclaredCondition, true),
+                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, false, true),
                      tempVariableName,
-                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, forDeclaredCondition, false)
+                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, false, false)
                 )
                 .build();
     }
@@ -665,7 +665,6 @@ public class FormatCodeBlocks {
             String enumType,
             CodeBlock field,
             boolean isIterable,
-            boolean forDeclaredCondition,
             boolean toRecord,
             ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
@@ -673,16 +672,16 @@ public class FormatCodeBlocks {
         }
 
         var enumEntry = schema.getEnum(enumType);
-        return toNullSafeMapCall(field, enumEntry, isIterable, forDeclaredCondition, !toRecord);
+        return toNullSafeMapCall(field, enumEntry, isIterable, true, !toRecord);
     }
 
     private  static CodeBlock toNullSafeMapCall(
             CodeBlock variable,
             EnumDefinition enumEntry,
             boolean isIterable,
-            boolean forDeclaredCondition,
+            boolean isGraphConverter,
             boolean flipDirection) {
-        if (isIterable && forDeclaredCondition) {
+        if (isIterable && isGraphConverter) {
             var itName = asIterable(enumEntry.getName());
             return CodeBlock.of(
                     "$L.stream().map($L -> $L.getOrDefault($L, null))$L",

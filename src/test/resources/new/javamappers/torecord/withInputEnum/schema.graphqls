@@ -1,8 +1,8 @@
 type Query {
-  film: Film @service(service : {name: "DUMMY_SERVICE"})
+  film(in: FilmInput): ID @service(service : {name: "DUMMY_SERVICE"})
 }
 
-type Film @record(record: {name: "MAPPER_RECORD_FILM"}) {
+input FilmInput @record(record: {name: "MAPPER_RECORD_FILM"}) {
   rating1: Rating! @field(name: "enum1")
   rating2: RatingNoConverter! @field(name: "enum2")
   rating1List: [Rating]! @field(name: "enum1")
