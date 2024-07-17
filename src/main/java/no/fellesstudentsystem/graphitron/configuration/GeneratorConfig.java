@@ -26,8 +26,6 @@ public class GeneratorConfig {
 
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
 
-    private static boolean isFSKeyFormat; // TODO: Remove this with FSP-328. Needed this hack because the key format isn't the same.
-
     /**
      * Set the generator properties from code. Intended for tests.
      */
@@ -54,7 +52,6 @@ public class GeneratorConfig {
         GeneratorConfig.globalTransforms = globalTransforms;
         recordValidation = new RecordValidation();
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
-        isFSKeyFormat = false;
     }
 
     /**
@@ -85,7 +82,6 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
-        isFSKeyFormat = mojo.isFSKeyFormat();
     }
 
     /**
@@ -182,10 +178,6 @@ public class GeneratorConfig {
 
     public static ExtendedFunctionality getExtendedFunctionality() {
         return extendedFunctionality;
-    }
-
-    public static boolean isFSKeyFormat() { // TODO: Remove this hack.
-        return isFSKeyFormat;
     }
 
     public static int getMaxAllowedPageSize() {
