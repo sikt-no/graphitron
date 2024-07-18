@@ -1,11 +1,20 @@
 type Mutation {
-  edit: Response! @service(service: {name: "DUMMY_SERVICE"})
+  edit1: Response1! @service(service: {name: "DUMMY_SERVICE"})
+  edit2: Response2! @service(service: {name: "DUMMY_SERVICE"})
 }
 
-type Response {
-  customer: [Customer] @fetchByID
+type Response1 {
+  customer1: [Customer1]
 }
 
-type Customer implements Node @table {
+type Response2 {
+  customer2: [Customer2] @fetchByID
+}
+
+type Customer1 @table(name: "CUSTOMER") {
+  id: ID!
+}
+
+type Customer2 @table(name: "CUSTOMER") {
   id: ID!
 }

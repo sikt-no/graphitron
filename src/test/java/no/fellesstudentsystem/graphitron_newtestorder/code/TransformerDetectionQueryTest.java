@@ -78,4 +78,10 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     public void conditionWithoutRecordClasses() {
         checkFoundNames("conditionWithoutRecordClasses");
     }
+
+    @Test
+    @DisplayName("Query with jOOQ record and no conditions or services")
+    public void withoutServiceOrCondition() {
+        checkFoundNames("torecord/withoutServiceOrCondition", "in1", "in2");
+    }
 }

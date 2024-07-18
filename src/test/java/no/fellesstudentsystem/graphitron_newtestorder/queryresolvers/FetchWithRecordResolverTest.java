@@ -1,9 +1,10 @@
-package no.fellesstudentsystem.graphitron_newtestorder.resolvers;
+package no.fellesstudentsystem.graphitron_newtestorder.queryresolvers;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.dummygenerators.DummyTransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ public class FetchWithRecordResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchResolverClassGenerator(schema), new DummyTransformerClassGenerator(schema));
     }
 
     @Test

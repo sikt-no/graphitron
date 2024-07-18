@@ -53,6 +53,6 @@ public class TransformerDetectionMutationTest extends AbstractTransformerDetecti
     @Test
     @DisplayName("Service without outer record wrapping and fetchByID field")
     public void serviceWithoutRecordOutput() {
-        checkFoundNames("tograph/serviceWithoutOuterRecord", "edit", "customer");
+        checkFoundNames("tograph/serviceWithoutOuterRecord", "customer1", "edit1", "customer2", "edit2");
     }
 }

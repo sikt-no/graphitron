@@ -735,7 +735,7 @@ public class ProcessedSchema {
         var inputs = field
                 .getArguments()
                 .stream()
-                .flatMap(it -> findTransformableFields(it, new HashSet<>(), isMutation, canMapTable, false, field.hasCondition(), 0).stream());
+                .flatMap(it -> findTransformableFields(it, new HashSet<>(), isMutation, canMapTable || hasRecord(it), false, field.hasCondition(), 0).stream());
         return Stream.concat(objects, inputs).collect(Collectors.toList());
     }
 

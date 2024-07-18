@@ -32,52 +32,52 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
 
     @Override
     public MethodSpec generate(GenerationField target) {
-        var typeName = target.getTypeName();
         var toRecord = target.isInput();
-        if (!processedSchema.isRecordType(target)) {
-            return MethodSpec.methodBuilder(recordTransformMethod(typeName, false, toRecord)).build();
-        }
-
         var type = processedSchema.getRecordType(target);
         var methodName = recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord);
-        var returnType = type.asTargetClassName(toRecord);
         var currentSource = type.asSourceClassName(toRecord);
-        var noRecordIterability = currentSource == null && target.isIterableWrapped();
         var spec = getDefaultSpecBuilder(
                 methodName,
-                wrapListIf(returnType, noRecordIterability),
+                wrapListIf(type.asTargetClassName(toRecord), currentSource == null && target.isIterableWrapped()),
                 getSource(currentSource, target)
         );
-        var useValidation = toRecord && useValidation(type);
-        if (useValidation) {
+        if (toRecord && useValidation(type)) {
             spec.addParameter(STRING.className, PATH_INDEX_NAME);
         }
-        if (currentSource == null) {
+
+        return spec.addCode(getMethodContent(target)).build();
+    }
+
+    protected CodeBlock getMethodContent(GenerationField target) {
+        var toRecord = target.isInput();
+
+        var type = processedSchema.getRecordType(target);
+        var code = CodeBlock.builder();
+        var useValidation = toRecord && useValidation(type);
+        if (type.asSourceClassName(toRecord) == null) {
             var hasReference = type.hasJavaRecordReference();
             var mapperClass = ClassName.get(GeneratorConfig.outputPackage() + "." + RecordMapperClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, asRecordMapperClass(type.getName(), hasReference, toRecord));
-            spec.addStatement(transformCallCode(useValidation, mapperClass, hasReference, toRecord));
+            code.addStatement(transformCallCode(useValidation, mapperClass, hasReference, toRecord));
 
             if (!useValidation) {
-                return spec.build();
+                return code.build();
             }
 
-            return spec
+            return code
                     .addStatement(validateCode(mapperClass))
-                    .addCode(returnWrap(VARIABLE_RECORDS))
+                    .add(returnWrap(VARIABLE_RECORDS))
                     .build(); // TODO: Test this.
         }
 
-        spec.addStatement(
+        return code.addStatement(
                 "return $N($T.of($N), $N$L).stream().findFirst().orElse($L)",
-                methodName,
+                recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord),
                 LIST.className,
                 VARIABLE_INPUT,
                 PATH_NAME,
                 useValidation ? CodeBlock.of(", $N", PATH_INDEX_NAME) : empty(),
-                toRecord ? CodeBlock.of("new $T()", returnType) : CodeBlock.of("null")
-        );
-
-        return spec.build();
+                toRecord ? CodeBlock.of("new $T()", type.getRecordClassName()) : CodeBlock.of("null")
+        ).build();
     }
 
     protected static CodeBlock transformCallCode(boolean useValidation, ClassName mapperClass, boolean hasReference, boolean toRecord) {
@@ -95,7 +95,7 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
         return CodeBlock.of("$N.addAll($T.$L($N, $N, this))", VALIDATION_ERRORS_NAME, mapperClass, recordValidateMethod(), VARIABLE_RECORDS, PATH_INDEX_NAME);
     }
 
-    private TypeName getSource(ClassName currentSource, GenerationField target) {
+    protected TypeName getSource(ClassName currentSource, GenerationField target) {
         if (currentSource != null || !target.hasServiceReference()) {
             return currentSource;
         }
