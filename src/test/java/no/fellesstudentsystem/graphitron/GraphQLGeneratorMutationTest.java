@@ -8,7 +8,6 @@ import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGener
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
@@ -46,7 +45,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
                 new UpdateResolverClassGenerator(schema),
                 new UpdateDBClassGenerator(schema),
                 new MutationExceptionStrategyConfigurationGenerator(schema),
-                new TransformerClassGenerator(schema),
                 new RecordMapperClassGenerator(schema, true),
                 new RecordMapperClassGenerator(schema, false),
                 new JavaRecordMapperClassGenerator(schema, true),
@@ -102,11 +100,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     @Test
     void generate_serviceMutationWithEnumInputMapping_shouldGenerateResolversWithEnums() {
         assertGeneratedContentMatches("serviceResolversWithEnumInputMapping");
-    }
-
-    @Test
-    void generate_serviceMutationWithEnumOutputMapping_shouldGenerateResolversWithEnums() {
-        assertGeneratedContentMatches("serviceResolversWithEnumOutputMapping");
     }
 
     @Test

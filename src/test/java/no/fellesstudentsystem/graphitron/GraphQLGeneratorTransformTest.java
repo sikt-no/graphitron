@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphitron.transforms.SomeTransform;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -31,7 +30,6 @@ public class GraphQLGeneratorTransformTest extends GeneratorTest {
         return List.of(
                 new UpdateResolverClassGenerator(schema),
                 new UpdateDBClassGenerator(schema),
-                new TransformerClassGenerator(schema),
                 new RecordMapperClassGenerator(schema, true)
         );
     }

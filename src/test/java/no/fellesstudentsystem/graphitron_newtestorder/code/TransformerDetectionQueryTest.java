@@ -84,4 +84,16 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     public void withoutServiceOrCondition() {
         checkFoundNames("torecord/withoutServiceOrCondition", "in1", "in2");
     }
+
+    @Test
+    @DisplayName("Finds records when middle input has no record set")
+    public void middleInputWithoutRecord() {
+        checkFoundNames("torecord/middleInputWithoutRecord", "level3A", "level3B", "level1");
+    }
+
+    @Test
+    @DisplayName("Finds records when middle output has no record set")
+    public void middleOutputWithoutRecord() {
+        checkFoundNames("tograph/middleOutputWithoutRecord", "level3A", "level3B", "query");
+    }
 }

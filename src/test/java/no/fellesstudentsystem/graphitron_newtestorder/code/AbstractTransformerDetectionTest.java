@@ -10,7 +10,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
-import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.SRC_ROOT;
+import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.setProperties;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public abstract class AbstractTransformerDetectionTest {

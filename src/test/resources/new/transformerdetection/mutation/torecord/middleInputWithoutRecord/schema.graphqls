@@ -1,0 +1,20 @@
+type Mutation {
+  mutation(level1: Level1!): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input Level1 @record(record: {name: "DUMMY_RECORD"}) {
+  level2: Level2
+}
+
+input Level2 {
+  level3A: [Level3A!]
+  level3B: [Level3B!]
+}
+
+input Level3A @table(name: "CUSTOMER") {
+  id: ID
+}
+
+input Level3B @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}

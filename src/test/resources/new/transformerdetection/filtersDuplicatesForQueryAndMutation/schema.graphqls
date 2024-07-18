@@ -1,0 +1,25 @@
+type Query {
+  queryJOOQ(inQueryJOOQ: CustomerInputJOOQ): CustomerJOOQ @service(service: {name: "DUMMY_SERVICE"})
+  queryJava(inQueryJava: CustomerInputJava): CustomerJava @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Mutation {
+  mutationJOOQ(inQueryJOOQ: CustomerInputJOOQ): CustomerJOOQ @service(service: {name: "DUMMY_SERVICE"})
+  mutationJava(inQueryJava: CustomerInputJava): CustomerJava @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input CustomerInputJOOQ @table(name: "CUSTOMER") {
+  id: ID
+}
+
+input CustomerInputJava @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}
+
+type CustomerJOOQ @table(name: "CUSTOMER") {
+  id: ID
+}
+
+type CustomerJava @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}

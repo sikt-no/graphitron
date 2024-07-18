@@ -17,4 +17,10 @@ public class TransformerDetectionTest extends AbstractTransformerDetectionTest {
     public void filtersDuplicates() {
         checkFoundNames("filtersDuplicates", "customer");
     }
+
+    @Test
+    @DisplayName("Filters duplicate uses of a record across mutations and queries")
+    public void filtersDuplicatesForQueryAndMutation() {
+        checkFoundNames("filtersDuplicatesForQueryAndMutation", "inQueryJava", "queryJOOQ", "queryJava", "inQueryJOOQ");
+    }
 }
