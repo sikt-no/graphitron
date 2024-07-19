@@ -38,10 +38,7 @@ public enum TestReferenceSet {
     RECORD_ADDRESS_RESPONSE("TEST_CUSTOMER_ADDRESS_RESPONSE", EditCustomerAddressResponse.class),
     RECORD_FILM("TEST_FILM_RECORD", TestFilmRecord.class),
     RECORD_CITY("TEST_CITY_RECORD", TestCityRecord.class),
-    RECORD_ID("TEST_ID_RECORD", TestIDRecord.class),
-
-    // Transform
-    TRANSFORM_0("TEST_TRANSFORM", SomeTransform.class);
+    RECORD_ID("TEST_ID_RECORD", TestIDRecord.class);
 
     private final ExternalReference reference;
 

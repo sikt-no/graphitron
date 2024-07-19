@@ -36,9 +36,7 @@ The options are the same for both goals.
 
 #### Code references
 * _externalReferences_ - List of references to classes that can be applied through certain directives.
-* _globalRecordTransforms_ - List of transforms that should be applied to all records. The transform _name_ value must
-be present in _externalReferences_. The _scope_ value specifies which mutations should be affected, but currently only
-_ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
+* _globalRecordTransforms_ - List of transforms that should be applied to all records. The _scope_ value specifies which mutations should be affected, but currently only _ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
 * _extensions_ - Graphitron classes allow for extensions, allowing plugin users to provide their own implementations to control the code generation process. 
 Currently, all extensions are instantiated via [ExtendedFunctionality](src/main/java/no/fellesstudentsystem/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
 We plan to enhance this: all generator classes will be made extensible for wider customization options.
@@ -57,7 +55,7 @@ Example of applying a global transform in the POM:
 ```xml
 <globalRecordTransforms>
   <element>
-    <name>CUSTOMER_TRANSFORM</name> <!-- The name of the reference. -->
+    <fullyQualifiedClassName>some.path.CustomerTransform</fullyQualifiedClassName>
     <method>someTransformMethod</method> <!-- Method in the referenced class to be applied. -->
     <scope>ALL_MUTATIONS</scope> <!-- Only ALL_MUTATIONS is supported right now. -->
   </element>

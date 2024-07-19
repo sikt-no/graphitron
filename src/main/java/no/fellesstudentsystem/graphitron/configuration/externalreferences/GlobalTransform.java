@@ -5,13 +5,13 @@ package no.fellesstudentsystem.graphitron.configuration.externalreferences;
  */
 public class GlobalTransform {
     private TransformScope scope;
-    private String name, method;
+    private String fullyQualifiedClassName, method;
 
     public GlobalTransform() {}
 
-    public GlobalTransform(String name, String method, TransformScope scope) {
+    public GlobalTransform(String fullyQualifiedClassName, String method, TransformScope scope) {
         this.scope = scope;
-        this.name = name;
+        this.fullyQualifiedClassName = fullyQualifiedClassName;
         this.method = method;
     }
 
@@ -19,8 +19,8 @@ public class GlobalTransform {
         return scope;
     }
 
-    public String getName() {
-        return name;
+    public String getFullyQualifiedClassName() {
+        return fullyQualifiedClassName;
     }
 
     public String getMethod() {

@@ -8,12 +8,11 @@ import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGener
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphitron.transforms.SomeTransform;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-
-import static no.fellesstudentsystem.graphitron.TestReferenceSet.TRANSFORM_0;
 
 public class GraphQLGeneratorTransformTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "transform";
@@ -21,8 +20,8 @@ public class GraphQLGeneratorTransformTest extends GeneratorTest {
     public GraphQLGeneratorTransformTest() {
         super(
                 SRC_TEST_RESOURCES_PATH,
-                List.of(TRANSFORM_0.get()),
-                List.of(new GlobalTransform("TEST_TRANSFORM", "someTransform", TransformScope.ALL_MUTATIONS)),
+                List.of(),
+                List.of(new GlobalTransform(SomeTransform.class.getName(), "someTransform", TransformScope.ALL_MUTATIONS)),
                 List.of()
         );
     }

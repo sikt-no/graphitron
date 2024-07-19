@@ -21,6 +21,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
@@ -750,10 +751,22 @@ public class FormatCodeBlocks {
         GeneratorConfig
                 .getGlobalTransforms(scope)
                 .stream()
-                .filter(it -> GeneratorConfig.getExternalReferences().contains(it.getName()))
-                .map(it -> GeneratorConfig.getExternalReferences().getMethodFrom(it.getName(), it.getMethod(), false))
+                .map(it -> getMethodFrom(it.getFullyQualifiedClassName(), it.getMethod()))
                 .forEach(transform -> code.add(applyTransform(recordName, recordTypeName, transform)));
         return code.build();
+    }
+
+    private static Method getMethodFrom(String fullyQualifiedClassName, String methodName) {
+        try {
+            var classReference = Class.forName(fullyQualifiedClassName);
+            return Arrays.stream(classReference.getMethods())
+                    .filter(it -> it.getName().equalsIgnoreCase(methodName))
+                    .findFirst()
+                    .orElseThrow(() ->  new IllegalArgumentException("Could not find method with name " + methodName + " in external class " + fullyQualifiedClassName));
+
+        } catch (ClassNotFoundException e) {
+            throw new IllegalArgumentException("Could not find external class " + fullyQualifiedClassName);
+        }
     }
 
     /**
