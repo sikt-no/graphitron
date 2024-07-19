@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron_newtestorder.recordmappers;
+package no.fellesstudentsystem.graphitron_newtestorder.jooqrecordmappers;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
 
@@ -18,7 +17,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/tograph";
 
     public MapperGeneratorToGraphTest() {
-        super(SRC_TEST_RESOURCES_PATH, Set.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_ENUM.get(), MAPPER_FETCH_SERVICE.get()));
+        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_ENUM.get(), MAPPER_FETCH_SERVICE.get());
     }
 
     @Override
@@ -27,13 +26,31 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Mapper content for fetch services")
-    void forFetchService() {
-        assertGeneratedContentMatches("forFetchService");
+    @DisplayName("Default case with simple record mapper")
+    void defaultCase() {
+        assertGeneratedContentMatches("default");
     }
 
     @Test
-    @DisplayName("Mapper content for records with enums")
+    @DisplayName("Mapper with a non-record outer wrapper")
+    void withNonRecordWrapper() {
+        assertGeneratedContentMatches("withNonRecordWrapper");
+    }
+
+    @Test
+    @DisplayName("jOOQ record containing jOOQ record")
+    void containingRecord() {
+        assertGeneratedContentMatches("containingRecord");
+    }
+
+    @Test
+    @DisplayName("jOOQ record containing non-record type")
+    void containingNonRecordWrapper() {
+        assertGeneratedContentMatches("containingNonRecordWrapper");
+    }
+
+    @Test
+    @DisplayName("Records with enum fields")
     void withEnum() {
         assertGeneratedContentMatches("withEnum");
     }

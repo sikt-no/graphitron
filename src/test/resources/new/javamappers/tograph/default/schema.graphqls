@@ -1,0 +1,8 @@
+type Query {
+  query: Customer @service(service : {name: "DUMMY_SERVICE"})
+}
+
+type Customer @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {
+  id: ID @field(name: "someID")
+  otherID: ID
+}

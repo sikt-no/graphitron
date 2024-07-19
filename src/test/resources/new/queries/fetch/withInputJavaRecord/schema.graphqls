@@ -3,9 +3,9 @@ type Query {
   customerListed(in: [CustomerInput]): [Customer]
 }
 
-input CustomerInput @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {
-  id: ID! @field(name: "ID", javaName: "someID")
-  first: String! @field(name: "FIRST_NAME", javaName: "name")
+input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+  id2: ID! @field(name: "ID", javaName: "otherID")
 }
 
 type Customer @table {

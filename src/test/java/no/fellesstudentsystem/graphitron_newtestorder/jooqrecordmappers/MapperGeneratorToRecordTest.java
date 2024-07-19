@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron_newtestorder.recordmappers;
+package no.fellesstudentsystem.graphitron_newtestorder.jooqrecordmappers;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
 
@@ -18,7 +17,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/torecord";
 
     public MapperGeneratorToRecordTest() {
-        super(SRC_TEST_RESOURCES_PATH, Set.of(DUMMY_SERVICE.get(), DUMMY_ENUM.get()));
+        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_ENUM.get());
     }
 
     @Override
@@ -27,7 +26,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Mapper content for records with enums")
+    @DisplayName("Records with enum fields")
     void withEnum() {
         assertGeneratedContentMatches("withEnum");
     }

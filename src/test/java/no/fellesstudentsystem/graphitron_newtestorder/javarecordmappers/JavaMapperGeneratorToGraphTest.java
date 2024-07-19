@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
 
@@ -20,15 +19,11 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     public JavaMapperGeneratorToGraphTest() {
         super(
                 SRC_TEST_RESOURCES_PATH,
-                Set.of(
-                        DUMMY_SERVICE.get(),
-                        DUMMY_ENUM.get(),
-                        MAPPER_RECORD_CUSTOMER.get(),
-                        MAPPER_RECORD_ADDRESS.get(),
-                        MAPPER_RECORD_CITY.get(),
-                        MAPPER_RECORD_FILM.get(),
-                        MAPPER_FETCH_SERVICE.get()
-                )
+                DUMMY_SERVICE.get(),
+                DUMMY_ENUM.get(),
+                JAVA_RECORD_FETCH_QUERY.get(),
+                MAPPER_RECORD_ADDRESS.get(),
+                MAPPER_RECORD_FILM.get()
         );
     }
 
@@ -38,13 +33,25 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Java mapper content for fetch services")
-    void forFetchService() {
-        assertGeneratedContentMatches("forFetchService");
+    @DisplayName("Default case with simple record mapper")
+    void defaultCase() {
+        assertGeneratedContentMatches("default");
     }
 
     @Test
-    @DisplayName("Mapper content for records with enums")
+    @DisplayName("Java record containing non-record type")
+    void containingNonRecordWrapper() {
+        assertGeneratedContentMatches("containingNonRecordWrapper");
+    }
+
+    @Test
+    @DisplayName("Skips fields with splitQuery set")
+    void skipsSplitQuery() {
+        assertGeneratedContentMatches("skipsSplitQuery");
+    }
+
+    @Test
+    @DisplayName("Records with enum fields")
     void withEnum() {
         assertGeneratedContentMatches("withEnum");
     }

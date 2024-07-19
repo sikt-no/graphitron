@@ -1,0 +1,11 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer implements Node @table {
+  address: Address
+}
+
+type Address @table {
+  id: ID!
+}

@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_SERVICE;
@@ -19,7 +18,7 @@ public class RecordTransformerClassTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "recordtransformer";
 
     public RecordTransformerClassTest() {
-        super(SRC_TEST_RESOURCES_PATH, Set.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get()));
+        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_RECORD.get());
     }
 
     @Override
@@ -30,6 +29,6 @@ public class RecordTransformerClassTest extends GeneratorTest {
     @Test
     @DisplayName("The class is still generated when no mappable records exist.")
     void whenNoRecordsExist() {
-        assertFilesAreGenerated(Set.of("RecordTransformer.java"), "whenNoRecordsExist");
+        assertFilesAreGenerated("whenNoRecordsExist", "RecordTransformer.java");
     }
 }

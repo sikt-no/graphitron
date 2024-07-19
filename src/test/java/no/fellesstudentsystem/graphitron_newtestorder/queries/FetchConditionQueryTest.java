@@ -9,9 +9,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.JAVA_RECORD_FETCH_QUERY;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.RECORD_FETCH_CONDITION;
 
 @DisplayName("Fetch condition queries - Queries that apply custom conditions")
@@ -19,7 +18,7 @@ public class FetchConditionQueryTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "queries/fetch";
 
     public FetchConditionQueryTest() {
-        super(SRC_TEST_RESOURCES_PATH, Set.of(RECORD_FETCH_CONDITION.get(), JAVA_RECORD_FETCH_QUERY.get()));
+        super(SRC_TEST_RESOURCES_PATH, RECORD_FETCH_CONDITION.get(), DUMMY_RECORD.get());
     }
 
     @Override

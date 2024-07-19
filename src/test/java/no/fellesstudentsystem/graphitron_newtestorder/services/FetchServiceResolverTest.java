@@ -10,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
 
@@ -19,7 +18,7 @@ public class FetchServiceResolverTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "resolvers/services/fetch";
 
     public FetchServiceResolverTest() {
-        super(SRC_TEST_RESOURCES_PATH, Set.of(JOOQ_RECORD_FETCH_SERVICE.get(), JAVA_RECORD_FETCH_SERVICE.get(), DUMMY_RECORD.get()));
+        super(SRC_TEST_RESOURCES_PATH, JOOQ_RECORD_FETCH_SERVICE.get(), JAVA_RECORD_FETCH_SERVICE.get(), DUMMY_RECORD.get());
     }
 
     @Override

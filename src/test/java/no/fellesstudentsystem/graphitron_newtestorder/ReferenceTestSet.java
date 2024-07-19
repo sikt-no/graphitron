@@ -29,8 +29,6 @@ public enum ReferenceTestSet {
     MAPPER_FETCH_SERVICE("MAPPER_FETCH_SERVICE", MapperFetchService.class),
 
     // Mapping records.
-    MAPPER_RECORD_CUSTOMER("MAPPER_RECORD_CUSTOMER", MapperCustomerJavaRecord.class),
-    MAPPER_RECORD_CUSTOMER_INNER("MAPPER_RECORD_CUSTOMER_INNER", MapperCustomerInnerJavaRecord.class),
     MAPPER_RECORD_CITY("MAPPER_RECORD_CITY", MapperCityJavaRecord.class),
     MAPPER_RECORD_ADDRESS("MAPPER_RECORD_ADDRESS", MapperAddressJavaRecord.class),
     MAPPER_RECORD_FILM("MAPPER_RECORD_FILM", MapperFilmJavaRecord.class),

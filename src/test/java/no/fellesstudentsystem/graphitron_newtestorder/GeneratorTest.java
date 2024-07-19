@@ -41,12 +41,8 @@ public abstract class GeneratorTest {
     private final Set<GlobalTransform> globalTransforms;
     private final List<Extension> extendedClasses;
 
-    public GeneratorTest(String testSubpath) {
-        this(testSubpath, Set.of());
-    }
-
-    public GeneratorTest(String testSubpath, Set<ExternalReference> references) {
-        this(testSubpath, references, true);
+    public GeneratorTest(String testSubpath, ExternalReference... references) {
+        this(testSubpath, Set.of(references), true);
     }
 
     public GeneratorTest(String testSubpath, Set<ExternalReference> references, boolean checkProcessedSchemaDefault) {
@@ -152,8 +148,8 @@ public abstract class GeneratorTest {
         assertGeneratedContentMatches(resourceRootFolder, resourceRootFolder);
     }
 
-    protected void assertFilesAreGenerated(Set<String> expectedFiles, String schemaFolder) {
-        assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(expectedFiles);
+    protected void assertFilesAreGenerated(String schemaFolder, String... expectedFiles) {
+        assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));
     }
 
     @BeforeEach

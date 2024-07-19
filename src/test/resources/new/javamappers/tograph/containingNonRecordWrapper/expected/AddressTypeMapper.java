@@ -19,10 +19,6 @@ public class AddressTypeMapper {
             for (var itMapperAddressJavaRecord : mapperAddressJavaRecord) {
                 if (itMapperAddressJavaRecord == null) continue;
                 var address = new Address();
-                if (select.contains(pathHere + "id")) {
-                    address.setId(itMapperAddressJavaRecord.getId());
-                }
-
                 if (select.contains(pathHere + "inner")) {
                     var inner = new InnerWrapper();
                     if (select.contains(pathHere + "inner/postalCode")) {
@@ -30,16 +26,6 @@ public class AddressTypeMapper {
                     }
 
                     address.setInner(inner);
-                }
-
-                var city = itMapperAddressJavaRecord.getCity();
-                if (city != null && select.contains(pathHere + "city")) {
-                    address.setCity(transform.addressCity0RecordToGraphType(city, pathHere + "city"));
-                }
-
-                var cityRecord = itMapperAddressJavaRecord.getCityRecord();
-                if (cityRecord != null && select.contains(pathHere + "cityRecord")) {
-                    address.setCityRecord(transform.addressCity1ToGraphType(cityRecord, pathHere + "cityRecord"));
                 }
 
                 addressList.add(address);

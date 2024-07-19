@@ -19,7 +19,7 @@ public class JavaMapperGeneratorClassesTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "javamappers";
 
     public JavaMapperGeneratorClassesTest() {
-        super(SRC_TEST_RESOURCES_PATH, Set.of(DUMMY_SERVICE.get(), DUMMY_RECORD.get()));
+        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_RECORD.get());
     }
 
     @Override
@@ -30,6 +30,6 @@ public class JavaMapperGeneratorClassesTest extends GeneratorTest {
     @Test
     @DisplayName("Mapper generator ignores JOOQ records")
     void ignoresJOOQRecordClasses() {
-        assertFilesAreGenerated(Set.of(), "ignoresJOOQRecordClasses");
+        assertFilesAreGenerated("ignoresJOOQRecordClasses");
     }
 }
