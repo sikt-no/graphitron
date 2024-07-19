@@ -39,13 +39,13 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
 
     @Test
     @DisplayName("Java mapper content for fetch services")
-    void forFetchServiceContent() {
-        assertGeneratedContentMatches("forFetchServiceContent");
+    void forFetchService() {
+        assertGeneratedContentMatches("forFetchService");
     }
 
     @Test
     @DisplayName("Mapper content for records with enums")
-    void forSchemaEnum() {
-        assertGeneratedContentMatches("forSchemaEnum");
+    void withEnum() {
+        assertGeneratedContentMatches("withEnum");
     }
 }

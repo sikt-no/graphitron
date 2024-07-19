@@ -98,11 +98,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     }
 
     @Test
-    void generate_serviceMutationWithEnumInputMapping_shouldGenerateResolversWithEnums() {
-        assertGeneratedContentMatches("serviceResolversWithEnumInputMapping");
-    }
-
-    @Test
     void generate_serviceMutationWithWrongMapping_shouldSkipIncorrectMappings() {
         assertGeneratedContentMatches("serviceResolversWithWrongRecordMappings");
     }
@@ -183,11 +178,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     @Test
     void generate_whenHasSetMutationType_shouldGenerateNestedQueriesAndResolvers() {
         assertGeneratedContentMatches("mutationWithNestedResponse");
-    }
-
-    @Test
-    void generate_whenHasSetMutationType_shouldGenerateQueriesWithEnumInputs() {
-        assertGeneratedContentMatches("enumInputQueries");
     }
 
     @Test
