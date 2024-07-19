@@ -33,7 +33,7 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
         var inputRecordList = transform.insertInputToJOOQRecord(input, "input");
 
         var rowsUpdated = InsertCustomersWithCustomerResponseDBQueries.insertCustomersWithCustomerResponse(transform.getCtx(), inputRecordList);
-        var inputRecordCustomer = getEditResponseWithCustomerCustomer(transform.getCtx(), inputRecordList, transform.getSelect());
+        var inputRecordCustomer = getEditResponseWithCustomerCustomer(transform, inputRecordList, transform.getSelect());
 
         var editResponseWithCustomerList = new ArrayList<EditResponseWithCustomer>();
         for (var itInputRecordList : inputRecordList) {
@@ -45,12 +45,12 @@ public class InsertCustomersWithCustomerResponseGeneratedResolver implements Ins
         return CompletableFuture.completedFuture(editResponseWithCustomerList);
     }
 
-    private Map<String, Customer> getEditResponseWithCustomerCustomer(DSLContext ctx,
+    private Map<String, Customer> getEditResponseWithCustomerCustomer(RecordTransformer transform,
             List<CustomerRecord> idContainer, SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return Map.of();
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import static no.fellesstudentsystem.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
+import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -524,10 +525,10 @@ public class FormatCodeBlocks {
         var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForRecordFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
         var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, asQueryClass(typeName));
         return CodeBlock.of(
-                "$T.$L($N, $L, $L.withPrefix($L))$L$L",
+                "$T.$L($L, $L, $L.withPrefix($L))$L$L",
                 queryClass,
                 asQueryNodeMethod(typeName),
-                CONTEXT_NAME,
+                asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
                 isIterable ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,

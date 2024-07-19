@@ -27,7 +27,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.Variable
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 import static no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_SELECT_NAME;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -118,7 +118,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         if (responseObject.implementsInterface(NODE_TYPE.getName())) {
             return declare(
                     asGetMethodVariableName(variableName, target.getName()),
-                    CodeBlock.of("$N($L, $N, $L)", asGetMethodName(previous.getTypeName(), target.getName()), asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME), argumentName, asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME))
+                    CodeBlock.of("$N($N, $N, $L)", asGetMethodName(previous.getTypeName(), target.getName()), TRANSFORMER_NAME, argumentName, asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME))
             );
         }
 
@@ -252,7 +252,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
                 MethodSpec
                         .methodBuilder(asGetMethodName(previous.getTypeName(), target.getName()))
                         .addModifiers(Modifier.PRIVATE)
-                        .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME)
+                        .addParameter(RECORD_TRANSFORMER.className, TRANSFORMER_NAME)
                         .addParameter(methodParameter, VARIABLE_GET_PARAM)
                         .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
                         .returns(wrapStringMapIf(type.getGraphClassName(), isIterable))

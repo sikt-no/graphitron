@@ -29,7 +29,7 @@ public class InsertCustomerWithCustomerResponseGeneratedResolver implements Inse
         var inputRecord = transform.insertInputToJOOQRecord(input, "input");
 
         var rowsUpdated = InsertCustomerWithCustomerResponseDBQueries.insertCustomerWithCustomerResponse(transform.getCtx(), inputRecord);
-        var inputRecordCustomer = getInsertResponseWithCustomerCustomer(transform.getCtx(), inputRecord, transform.getSelect());
+        var inputRecordCustomer = getInsertResponseWithCustomerCustomer(transform, inputRecord, transform.getSelect());
 
         var insertResponseWithCustomer = new InsertResponseWithCustomer();
         insertResponseWithCustomer.setCustomer(inputRecordCustomer);
@@ -37,12 +37,12 @@ public class InsertCustomerWithCustomerResponseGeneratedResolver implements Inse
         return CompletableFuture.completedFuture(insertResponseWithCustomer);
     }
 
-    private Customer getInsertResponseWithCustomerCustomer(DSLContext ctx,
+    private Customer getInsertResponseWithCustomerCustomer(RecordTransformer transform,
             CustomerRecord idContainer, SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return null;
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
     }
 }

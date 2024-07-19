@@ -33,7 +33,7 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
         var rowsUpdated = EditCustomerWithCustomerIterable2DBQueries.editCustomerWithCustomerIterable2(transform.getCtx(), inputRecordList);
-        var inputRecordCustomers = getListedNodeResponseCustomers(transform.getCtx(), inputRecordList, transform.getSelect());
+        var inputRecordCustomers = getListedNodeResponseCustomers(transform, inputRecordList, transform.getSelect());
 
         var listedNodeResponse = new ListedNodeResponse();
 
@@ -46,12 +46,12 @@ public class EditCustomerWithCustomerIterable2GeneratedResolver implements EditC
         return CompletableFuture.completedFuture(listedNodeResponse);
     }
 
-    private Map<String, Customer> getListedNodeResponseCustomers(DSLContext ctx,
+    private Map<String, Customer> getListedNodeResponseCustomers(RecordTransformer transform,
             List<CustomerRecord> idContainer, SelectionSet select) {
         if (!select.contains("customers") || idContainer == null) {
             return Map.of();
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customers"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customers"));
     }
 }

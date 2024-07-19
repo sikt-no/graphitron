@@ -34,7 +34,7 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
         var inputRecordList = transform.editInputToJOOQRecord(input, "input");
 
         var rowsUpdated = DeleteCustomerWithCustomerIterableDBQueries.deleteCustomerWithCustomerIterable(transform.getCtx(), inputRecordList);
-        var inputRecordCustomer = getResultCustomer(transform.getCtx(), inputRecordList, transform.getSelect());
+        var inputRecordCustomer = getResultCustomer(transform, inputRecordList, transform.getSelect());
 
         var listedResponse = new ListedResponse();
 
@@ -49,12 +49,12 @@ public class DeleteCustomerWithCustomerIterableGeneratedResolver implements Dele
         return CompletableFuture.completedFuture(listedResponse);
     }
 
-    private Map<String, Customer> getResultCustomer(DSLContext ctx,
+    private Map<String, Customer> getResultCustomer(RecordTransformer transform,
             List<CustomerRecord> idContainer, SelectionSet select) {
         if (!select.contains("results/customer") || idContainer == null) {
             return Map.of();
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("results/customer"));
     }
 }

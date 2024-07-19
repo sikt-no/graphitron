@@ -26,7 +26,7 @@ public class EditCustomerResponse3TypeMapper {
 
                 var customer3 = itEditCustomerResponse3.getCustomer3();
                 if (customer3 != null && select.contains(pathHere + "customer")) {
-                    editCustomerResponse3.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(customer3.getId()), select.withPrefix(pathHere + "customer")).values().stream().findFirst().orElse(null));
+                    editCustomerResponse3.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(customer3.getId()), select.withPrefix(pathHere + "customer")).values().stream().findFirst().orElse(null));
                 }
 
                 var edit4 = itEditCustomerResponse3.getEdit4();

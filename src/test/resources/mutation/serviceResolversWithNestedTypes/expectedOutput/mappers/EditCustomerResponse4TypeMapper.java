@@ -26,7 +26,7 @@ public class EditCustomerResponse4TypeMapper {
 
                 var payment4 = itEditCustomerResponse4.getPayment4();
                 if (payment4 != null && select.contains(pathHere + "payment")) {
-                    editCustomerResponse4.setPayment(PaymentDBQueries.loadPaymentByIdsAsNode(ctx, Set.of(payment4.getId()), select.withPrefix(pathHere + "payment")).values().stream().findFirst().orElse(null));
+                    editCustomerResponse4.setPayment(PaymentDBQueries.loadPaymentByIdsAsNode(transform.getCtx(), Set.of(payment4.getId()), select.withPrefix(pathHere + "payment")).values().stream().findFirst().orElse(null));
                 }
 
                 editCustomerResponse4List.add(editCustomerResponse4);

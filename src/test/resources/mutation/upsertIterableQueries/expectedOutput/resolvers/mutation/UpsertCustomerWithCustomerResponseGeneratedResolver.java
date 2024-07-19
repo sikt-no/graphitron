@@ -33,7 +33,7 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
         var inputRecordList = transform.upsertInputToJOOQRecord(input, "input");
 
         var rowsUpdated = UpsertCustomerWithCustomerResponseDBQueries.upsertCustomerWithCustomerResponse(transform.getCtx(), inputRecordList);
-        var inputRecordCustomer = getUpsertResponseWithCustomerCustomer(transform.getCtx(), inputRecordList, transform.getSelect());
+        var inputRecordCustomer = getUpsertResponseWithCustomerCustomer(transform, inputRecordList, transform.getSelect());
 
         var upsertResponseWithCustomerList = new ArrayList<UpsertResponseWithCustomer>();
         for (var itInputRecordList : inputRecordList) {
@@ -45,12 +45,12 @@ public class UpsertCustomerWithCustomerResponseGeneratedResolver implements Upse
         return CompletableFuture.completedFuture(upsertResponseWithCustomerList);
     }
 
-    private Map<String, Customer> getUpsertResponseWithCustomerCustomer(DSLContext ctx,
+    private Map<String, Customer> getUpsertResponseWithCustomerCustomer(RecordTransformer transform,
             List<CustomerRecord> idContainer, SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return Map.of();
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

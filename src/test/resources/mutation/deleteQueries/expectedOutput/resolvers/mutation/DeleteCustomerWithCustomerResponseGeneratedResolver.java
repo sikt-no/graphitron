@@ -29,7 +29,7 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
         var inputRecord = transform.deleteInputToJOOQRecord(input, "input");
 
         var rowsUpdated = DeleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(transform.getCtx(), inputRecord);
-        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(transform.getCtx(), inputRecord, transform.getSelect());
+        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(transform, inputRecord, transform.getSelect());
 
         var deleteResponseWithCustomer = new DeleteResponseWithCustomer();
         deleteResponseWithCustomer.setCustomer(inputRecordCustomer);
@@ -37,12 +37,12 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
         return CompletableFuture.completedFuture(deleteResponseWithCustomer);
     }
 
-    private Customer getDeleteResponseWithCustomerCustomer(DSLContext ctx,
+    private Customer getDeleteResponseWithCustomerCustomer(RecordTransformer transform,
             CustomerRecord idContainer, SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return null;
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
     }
 }

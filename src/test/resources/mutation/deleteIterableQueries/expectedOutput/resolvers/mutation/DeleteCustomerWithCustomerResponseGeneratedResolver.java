@@ -33,7 +33,7 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
         var inputRecordList = transform.deleteInputToJOOQRecord(input, "input");
 
         var rowsUpdated = DeleteCustomerWithCustomerResponseDBQueries.deleteCustomerWithCustomerResponse(transform.getCtx(), inputRecordList);
-        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(transform.getCtx(), inputRecordList, transform.getSelect());
+        var inputRecordCustomer = getDeleteResponseWithCustomerCustomer(transform, inputRecordList, transform.getSelect());
 
         var deleteResponseWithCustomerList = new ArrayList<DeleteResponseWithCustomer>();
         for (var itInputRecordList : inputRecordList) {
@@ -45,12 +45,12 @@ public class DeleteCustomerWithCustomerResponseGeneratedResolver implements Dele
         return CompletableFuture.completedFuture(deleteResponseWithCustomerList);
     }
 
-    private Map<String, Customer> getDeleteResponseWithCustomerCustomer(DSLContext ctx,
+    private Map<String, Customer> getDeleteResponseWithCustomerCustomer(RecordTransformer transform,
             List<CustomerRecord> idContainer, SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return Map.of();
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix("customer"));
     }
 }

@@ -29,7 +29,7 @@ public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCu
         var inputRecord = transform.editInputToJOOQRecord(input, "input");
 
         var rowsUpdated = EditCustomerWithCustomerResponseDBQueries.editCustomerWithCustomerResponse(transform.getCtx(), inputRecord);
-        var inputRecordCustomer = getEditResponseWithCustomerCustomer(transform.getCtx(), inputRecord, transform.getSelect());
+        var inputRecordCustomer = getEditResponseWithCustomerCustomer(transform, inputRecord, transform.getSelect());
 
         var editResponseWithCustomer = new EditResponseWithCustomer();
         editResponseWithCustomer.setCustomer(inputRecordCustomer);
@@ -37,12 +37,12 @@ public class EditCustomerWithCustomerResponseGeneratedResolver implements EditCu
         return CompletableFuture.completedFuture(editResponseWithCustomer);
     }
 
-    private Customer getEditResponseWithCustomerCustomer(DSLContext ctx, CustomerRecord idContainer,
+    private Customer getEditResponseWithCustomerCustomer(RecordTransformer transform, CustomerRecord idContainer,
             SelectionSet select) {
         if (!select.contains("customer") || idContainer == null) {
             return null;
         }
 
-        return CustomerDBQueries.loadCustomerByIdsAsNode(ctx, Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
+        return CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(idContainer.getId()), select.withPrefix("customer")).values().stream().findFirst().orElse(null);
     }
 }
