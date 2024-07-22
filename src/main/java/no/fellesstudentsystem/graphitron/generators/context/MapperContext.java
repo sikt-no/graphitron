@@ -243,7 +243,7 @@ public class MapperContext {
     }
 
     public boolean targetCanNotBeMapped() {
-        return previousContext.hasRecordReference && !isMappingPossible() && (!targetIsType || targetType.hasTable());
+        return previousContext.hasRecordReference && !isMappingPossible() && (!targetIsType || targetType.hasRecordReference());
     }
 
     public boolean variableNotAlreadyDeclared() {

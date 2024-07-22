@@ -9,11 +9,7 @@ import java.util.List;
  * Fake service for mapper tests. Does not need to return meaningful values as only the generated result is tested.
  */
 public class MapperFetchService {
-    private final DSLContext context;
-
-    public MapperFetchService(DSLContext context) {
-        this.context = context;
-    }
+    public MapperFetchService(DSLContext context) {}
 
     public List<CustomerRecord> customerQuery() {
         return null;

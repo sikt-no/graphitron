@@ -29,26 +29,7 @@ input EditInputLevel4 @table(name : "CUSTOMER") {
 }
 
 type EditCustomerResponse @record(record: {name: "TEST_CUSTOMER_RESPONSE1"}) {
-  id: ID!
-  EditCustomerResponse2: EditCustomerResponse2 @field(name: "editResponse2")
-  EditCustomerResponse3: [EditCustomerResponse3!] @field(name: "EditResponse3")
-}
-
-type EditCustomerResponse2 @record(record: {name: "TEST_CUSTOMER_RESPONSE2"}) {
-  id: ID! @field(name : "id2")
-  customer: Customer @fetchByID
-  customerList: [Customer] @fetchByID
-}
-
-type EditCustomerResponse3 @record(record: {name: "TEST_CUSTOMER_RESPONSE3"}) {
-  id: ID! @field(name : "id3")
-  customer: Customer @field(name : "customer3") @fetchByID
-  EditCustomerResponse4: [EditCustomerResponse4!] @field(name : "edit4")
-}
-
-type EditCustomerResponse4 @record(record: {name: "TEST_CUSTOMER_RESPONSE4"}) {
-  id: ID! @field(name : "id4")
-  payment: Payment @field(name : "payment4") @fetchByID
+  customer: Customer
 }
 
 type Mutation {
@@ -57,15 +38,4 @@ type Mutation {
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @field(name: "FIRST_NAME")
-  lastName: String! @field(name: "LAST_NAME")
-  email: String
-  payment: Payment @splitQuery @notGenerated
-}
-
-type Payment implements Node @table {
-  id: ID!
-  amount: Int
-  date: DateTime @field(name : "PAYMENT_DATE")
-  lastUpdate: DateTime @field(name : "LAST_UPDATE")
 }

@@ -1,0 +1,12 @@
+type Query {
+  query0: Response0 @service(service: {name: "MAPPER_ID_SERVICE", method: "query"})
+  query1: Response1 @service(service: {name: "MAPPER_ID_SERVICE", method: "query"})
+}
+
+type Response0 {
+  id: ID
+}
+
+type Response1 {
+  id1: ID @field(name: "ID")
+}

@@ -21,6 +21,4 @@ type Mutation {
 
 type Customer implements Node @table {
   id: ID!
-  firstName: String! @field(name: "FIRST_NAME")
-  lastName: String! @field(name: "LAST_NAME")
 }

@@ -9,11 +9,7 @@ import java.util.List;
  * Fake service for record tests.
  */
 public class JOOQRecordInputFetchService {
-    private final DSLContext context;
-
-    public JOOQRecordInputFetchService(DSLContext context) {
-        this.context = context;
-    }
+    public JOOQRecordInputFetchService(DSLContext context) {}
 
     public CustomerRecord customer(String id, CustomerRecord record) {
         return null;

@@ -2,9 +2,8 @@ type Query {
   query: Customer
 }
 
-type Customer @record(record: {name: "JAVA_RECORD_FETCH_QUERY"}) {
-  address1: Address @field(name: "address")
-  address2: Address @field(name: "address") @splitQuery
+type Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  address: Address @splitQuery
 }
 
 type Address @table {

@@ -21,7 +21,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
                 SRC_TEST_RESOURCES_PATH,
                 DUMMY_SERVICE.get(),
                 DUMMY_ENUM.get(),
-                JAVA_RECORD_FETCH_QUERY.get(),
+                JAVA_RECORD_CUSTOMER.get(),
                 MAPPER_RECORD_ADDRESS.get(),
                 MAPPER_RECORD_FILM.get()
         );
@@ -45,14 +45,38 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Java record containing non-record type and using field overrides")
+    void containingNonRecordWrapperWithFieldOverride() {
+        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+    }
+
+    @Test
     @DisplayName("Skips fields with splitQuery set")
     void skipsSplitQuery() {
         assertGeneratedContentMatches("skipsSplitQuery");
     }
 
     @Test
+    @DisplayName("Skips fields that are not mapped to a record field")
+    void unconfiguredField() {
+        assertGeneratedContentMatches("unconfiguredField");
+    }
+
+    @Test
+    @DisplayName("Maps ID fields that are not the primary key")
+    void idOtherThanPK() {
+        assertGeneratedContentMatches("idOtherThanPK");
+    }
+
+    @Test
     @DisplayName("Records with enum fields")
     void withEnum() {
         assertGeneratedContentMatches("withEnum");
+    }
+
+    @Test
+    @DisplayName("Records with list fields")
+    void listField() {
+        assertGeneratedContentMatches("listField");
     }
 }

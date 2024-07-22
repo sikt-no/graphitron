@@ -1,8 +1,0 @@
-input EndreInput @table(name : "CUSTOMER") {
-  id: ID!
-  firstName: String! @field(name: "FIRST_NAME")
-}
-
-type Mutation {
-  editCustomer(in: EndreInput): ID! @mutation(typeName: UPDATE)
-}

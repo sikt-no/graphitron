@@ -1,0 +1,16 @@
+type Query {
+  query(in: Address): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input Address @table {
+  inner1: Wrapper1
+  inner2: Wrapper2 @field(name: "POSTAL_CODE")
+}
+
+input Wrapper1 {
+  code: String! @field(name: "POSTAL_CODE")
+}
+
+input Wrapper2 {
+  code: String!
+}

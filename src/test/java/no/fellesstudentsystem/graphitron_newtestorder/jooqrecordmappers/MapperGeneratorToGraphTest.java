@@ -39,14 +39,32 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
 
     @Test
     @DisplayName("jOOQ record containing jOOQ record")
-    void containingRecord() {
-        assertGeneratedContentMatches("containingRecord");
+    void containingRecords() {
+        assertGeneratedContentMatches("containingRecords");
     }
 
     @Test
     @DisplayName("jOOQ record containing non-record type")
     void containingNonRecordWrapper() {
         assertGeneratedContentMatches("containingNonRecordWrapper");
+    }
+
+    @Test
+    @DisplayName("jOOQ record containing non-record type and using field overrides")
+    void containingNonRecordWrapperWithFieldOverride() {
+        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+    }
+
+    @Test
+    @DisplayName("Handles fields that are not mapped to a record field") // TODO: This currently produces illegal code.
+    void unconfiguredField() {
+        assertGeneratedContentMatches("unconfiguredField");
+    }
+
+    @Test
+    @DisplayName("Maps ID fields that are not the primary key")
+    void idOtherThanPK() {
+        assertGeneratedContentMatches("idOtherThanPK");
     }
 
     @Test

@@ -1,0 +1,19 @@
+type Query {
+  query(in: Customer): ID
+}
+
+input Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  c1: CustomerJava # Wrong.
+  c2: CustomerJava @field(name: "WRONG_NAME") # Even more wrong.
+
+  c3: CustomerJOOQ # Wrong.
+  c4: CustomerJOOQ @field(name: "WRONG_NAME") # Even more wrong.
+}
+
+input CustomerJava @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  id: ID
+}
+
+input CustomerJOOQ @table(name: "CUSTOMER") {
+  id: ID
+}

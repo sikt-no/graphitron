@@ -7,7 +7,11 @@ import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyrefere
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyEnum;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyService;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.*;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.CustomerJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperAddressJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperCityJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperFilmJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.IDMapperService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.JOOQRecordInputFetchService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.JavaRecordInputFetchService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.MapperFetchService;
@@ -27,6 +31,7 @@ public enum ReferenceTestSet {
 
     // Mapping services.
     MAPPER_FETCH_SERVICE("MAPPER_FETCH_SERVICE", MapperFetchService.class),
+    MAPPER_ID_SERVICE("MAPPER_ID_SERVICE", IDMapperService.class),
 
     // Mapping records.
     MAPPER_RECORD_CITY("MAPPER_RECORD_CITY", MapperCityJavaRecord.class),
@@ -36,7 +41,7 @@ public enum ReferenceTestSet {
     // Input record services.
     JAVA_RECORD_FETCH_SERVICE("JAVA_RECORD_FETCH_SERVICE", JavaRecordInputFetchService.class),
     JOOQ_RECORD_FETCH_SERVICE("JOOQ_RECORD_FETCH_SERVICE", JOOQRecordInputFetchService.class),
-    JAVA_RECORD_FETCH_QUERY("JAVA_RECORD_FETCH_QUERY", QueryCustomerJavaRecord.class),
+    JAVA_RECORD_CUSTOMER("JAVA_RECORD_CUSTOMER", CustomerJavaRecord.class),
 
     // Input record conditions.
     RECORD_FETCH_CONDITION("RECORD_FETCH_CONDITION", QueryCustomerCondition.class);

@@ -6,9 +6,8 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.fellesstudentsystem.graphitron_newtestorder.dummygenerators.ReducedRecordMapperClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
@@ -26,15 +25,9 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
                 List.of(
                         ENUM_RATING.get(),
                         SERVICE_CUSTOMER.get(),
-                        SERVICE_FILM.get(),
                         RECORD_CUSTOMER.get(),
-                        RECORD_CUSTOMER_INNER.get(),
                         RECORD_CUSTOMER_RESPONSE_1.get(),
-                        RECORD_CUSTOMER_RESPONSE_2.get(),
-                        RECORD_CUSTOMER_RESPONSE_3.get(),
-                        RECORD_CUSTOMER_RESPONSE_4.get(),
-                        RECORD_ADDRESS_RESPONSE.get(),
-                        RECORD_FILM.get()
+                        RECORD_CUSTOMER_RESPONSE_2.get()
                 )
         );
     }
@@ -45,10 +38,7 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
                 new UpdateResolverClassGenerator(schema),
                 new UpdateDBClassGenerator(schema),
                 new MutationExceptionStrategyConfigurationGenerator(schema),
-                new RecordMapperClassGenerator(schema, true),
-                new RecordMapperClassGenerator(schema, false),
-                new JavaRecordMapperClassGenerator(schema, true),
-                new JavaRecordMapperClassGenerator(schema, false)
+                new ReducedRecordMapperClassGenerator(schema) // Temporary solution until validation tests are moved.
         );
     }
 
@@ -70,51 +60,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     @Test
     void generate_mutationWithListFields_shouldGenerateResolversForLists() {
         assertGeneratedContentMatches("listResolvers");
-    }
-
-    @Test
-    void generate_serviceMutationWithNestedInputs_shouldGenerateResolversForNestedStructures() {
-        assertGeneratedContentMatches("serviceResolversWithNestedTypes");
-    }
-
-    @Test
-    void generate_serviceMutationWithRecordInputs_shouldGenerateResolversForSimpleFields() {
-        assertGeneratedContentMatches("serviceResolversWithSimpleFields");
-    }
-
-    @Test
-    void generate_serviceMutationWithNestedRecordInputs_shouldGenerateResolversForNestedRecordStructures() {
-        assertGeneratedContentMatches("serviceResolversWithNestedRecordTypes");
-    }
-
-    @Test
-    void generate_serviceMutationWithNestedSchemaTypes_shouldGenerateResolversForNestedOutputStructures() {
-        assertGeneratedContentMatches("serviceResolversWithNestedSchemaTypes");
-    }
-
-    @Test
-    void generate_serviceMutationWithNestedRecordFieldMapping_shouldGenerateResolversForNestedStructures() {
-        assertGeneratedContentMatches("serviceResolversWithNestedRecordFieldMapping");
-    }
-
-    @Test
-    void generate_serviceMutationWithWrongMapping_shouldSkipIncorrectMappings() {
-        assertGeneratedContentMatches("serviceResolversWithWrongRecordMappings");
-    }
-
-    @Test
-    void generate_serviceMutationWithoutTable_shouldGenerateResolverWithJavaRecordMapping() {
-        assertGeneratedContentMatches("serviceResolversWithJavaRecordWithoutTable");
-    }
-
-    @Test
-    void generate_serviceMutationWithJavaRecordResponse_shouldGenerateResolverWithTypeMapping() {
-        assertGeneratedContentMatches("serviceResolversWithJavaRecordReturnType");
-    }
-
-    @Test //TODO fjerne denne? Det er vel analogt case med det som blir generert til EditCustomerInputAndResponseGeneratedResolver. Mulig dette caset ga mer mening mot kjerneAPI
-    void generate_mutation_shouldGenerateResolversWithIDsNotInDBs() {
-        assertGeneratedContentMatches("mapIDsNotInDB");
     }
 
     @Test

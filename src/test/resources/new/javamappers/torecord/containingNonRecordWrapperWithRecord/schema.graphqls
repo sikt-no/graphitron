@@ -1,0 +1,21 @@
+type Query {
+  query(in: Address): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
+  inner: InnerWrapper
+}
+
+input InnerWrapper {
+  cityJOOQ: AddressCityJOOQ
+  cityJava: AddressCityJava
+}
+
+input AddressCityJOOQ @table(name: "City") {
+  city: String
+}
+
+input AddressCityJava @record(record: {name: "MAPPER_RECORD_CITY"}) {
+  cityName: String
+}
+

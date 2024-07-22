@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions;
 
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.QueryCustomerJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.CustomerJavaRecord;
 import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
 import org.jooq.Condition;
@@ -20,10 +20,10 @@ public class QueryCustomerCondition {
         return null;
     }
 
-    public static Condition customerJavaRecord(Customer customer, QueryCustomerJavaRecord record) {
+    public static Condition customerJavaRecord(Customer customer, CustomerJavaRecord record) {
         return null;
     }
-    public static Condition customerJavaRecordList(Customer customer, List<QueryCustomerJavaRecord> record) {
+    public static Condition customerJavaRecordList(Customer customer, List<CustomerJavaRecord> record) {
         return null;
     }
 }

@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.services;
 
-import no.fellesstudentsystem.graphitron.records.EditCustomerAddressResponse;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse2;
 import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
@@ -109,10 +108,6 @@ public class TestCustomerService {
 
     public EditCustomerResponse1 editErrorUnion2(CustomerRecord record0, CustomerRecord record1) {
         return new EditCustomerResponse1();
-    }
-
-    public EditCustomerAddressResponse editCustomerAddress(CustomerRecord r) {
-        return null;
     }
 
     public CustomerRecord editCustomerWithRecordInputs(TestCustomerRecord record) {

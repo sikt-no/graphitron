@@ -17,7 +17,14 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "javamappers/torecord";
 
     public JavaMapperGeneratorToRecordTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_ENUM.get(), MAPPER_RECORD_FILM.get());
+        super(
+                SRC_TEST_RESOURCES_PATH,
+                DUMMY_SERVICE.get(),
+                DUMMY_ENUM.get(),
+                MAPPER_RECORD_FILM.get(),
+                JAVA_RECORD_CUSTOMER.get(),
+                MAPPER_RECORD_ADDRESS.get()
+        );
     }
 
     @Override
@@ -26,8 +33,50 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Default case with simple record mapper")
+    void defaultCase() {
+        assertGeneratedContentMatches("default");
+    }
+
+    @Test
+    @DisplayName("Java record containing non-record type")
+    void containingNonRecordWrapper() {
+        assertGeneratedContentMatches("containingNonRecordWrapper");
+    }
+
+    @Test
+    @DisplayName("Java record containing non-record type and using field overrides")
+    void containingNonRecordWrapperWithFieldOverride() {
+        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+    }
+
+    @Test
+    @DisplayName("Skips fields that are not mapped to a record field")
+    void unconfiguredField() {
+        assertGeneratedContentMatches("unconfiguredField");
+    }
+
+    @Test
+    @DisplayName("Maps ID fields that are not the primary key")
+    void idOtherThanPK() {
+        assertGeneratedContentMatches("idOtherThanPK");
+    }
+
+    @Test
+    @DisplayName("Skips fields with splitQuery set")
+    void skipsSplitQuery() {
+        assertGeneratedContentMatches("skipsSplitQuery");
+    }
+
+    @Test
     @DisplayName("Records with enum fields")
     void withEnum() {
         assertGeneratedContentMatches("withEnum");
+    }
+
+    @Test
+    @DisplayName("Records with list fields")
+    void listField() {
+        assertGeneratedContentMatches("listField");
     }
 }

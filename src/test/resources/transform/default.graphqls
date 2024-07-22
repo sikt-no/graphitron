@@ -1,6 +1,0 @@
-# defines default mutation schema.
-
-type Query {
-  "Dummy query, since the schema insists that there must be at least one."
-  i(id: ID): ID! @notGenerated
-}

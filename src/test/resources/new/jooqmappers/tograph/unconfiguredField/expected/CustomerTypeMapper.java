@@ -1,0 +1,35 @@
+package fake.code.generated.mappers;
+
+import fake.code.generated.transform.RecordTransformer;
+import fake.graphql.example.model.Customer;
+import java.lang.String;
+import java.util.ArrayList;
+import java.util.List;
+import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+
+public class CustomerTypeMapper {
+    public static List<Customer> recordToGraphType(List<CustomerRecord> customerRecord, String path,
+                                                   RecordTransformer transform) {
+        var pathHere = path.isEmpty() ? path : path + "/";
+        var select = transform.getSelect();
+        var customerList = new ArrayList<Customer>();
+
+        if (customerRecord != null) {
+            for (var itCustomerRecord : customerRecord) {
+                if (itCustomerRecord == null) continue;
+                var customer = new Customer();
+                if (select.contains(pathHere + "id1")) {
+                    customer.setId1(itCustomerRecord.getId1());
+                }
+
+                if (select.contains(pathHere + "id2")) {
+                    customer.setId2(itCustomerRecord.getWrongName());
+                }
+
+                customerList.add(customer);
+            }
+        }
+
+        return customerList;
+    }
+}
