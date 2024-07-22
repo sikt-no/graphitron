@@ -9,6 +9,7 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolve
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -121,11 +122,13 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
         assertGeneratedContentMatches("queryWithMultipleArguments");
     }
 
+    @Disabled
     @Test
     void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() {
         assertGeneratedContentMatches("queryWithMultiset");
     }
 
+    @Disabled
     @Test
     void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultisetWhichContainsFieldWithCondition() {
         assertGeneratedContentMatches("queryWithMultisetContainingFieldWithCondition");

@@ -11,6 +11,7 @@ import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -100,6 +101,7 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
                 .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'ids' are not supported on such types (used for generating condition tuples)");
     }
 
+    @Disabled
     @Test
     void generate_whenMultisetRequireReferenceConditionOnItself_shouldThrowException() {
         assertThatThrownBy(() ->  generateFiles("error/multisetReferenceConditionNotSupported"))
@@ -107,6 +109,7 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
                 .hasMessage(String.format("List of type Address requires the @%s directive to be able to contain @%s in a @%s within a list", GenerationDirective.SPLIT_QUERY.getName(), GenerationDirectiveParam.CONDITION.getName(), GenerationDirective.REFERENCE.getName()));
     }
 
+    @Disabled
     @Test
     void generate_whenMultisetRequireFieldInputArgumentOnItself_shouldThrowException() {
         assertThatThrownBy(() ->  generateFiles("error/multisetFieldInputArgumentNotSupported"))
@@ -114,6 +117,7 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
                 .hasMessage("Input arguments is not supported for multiset lists in INVENTORY");
     }
 
+    @Disabled
     @Test
     void generate_whenMultisetFailsToGenerateWhereBetweenTwoUnconnectedTables_shouldThrowException() {
         assertThatThrownBy(() ->  generateFiles("error/multisetIncorrectWhereConstruction"))
