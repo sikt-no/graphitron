@@ -7,7 +7,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
-import no.fellesstudentsystem.graphitron_newtestorder.dummygenerators.ReducedRecordMapperClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
@@ -37,8 +36,7 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
         return List.of(
                 new UpdateResolverClassGenerator(schema),
                 new UpdateDBClassGenerator(schema),
-                new MutationExceptionStrategyConfigurationGenerator(schema),
-                new ReducedRecordMapperClassGenerator(schema) // Temporary solution until validation tests are moved.
+                new MutationExceptionStrategyConfigurationGenerator(schema)
         );
     }
 

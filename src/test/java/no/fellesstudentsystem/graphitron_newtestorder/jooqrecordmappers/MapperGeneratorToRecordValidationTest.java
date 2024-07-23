@@ -1,29 +1,36 @@
 package no.fellesstudentsystem.graphitron_newtestorder.jooqrecordmappers;
 
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.dummygenerators.ReducedRecordMapperClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_SERVICE;
 
-@DisplayName("JOOQ Mappers - Mapper content for mapping graph types to jOOQ records")
-public class MapperGeneratorToRecordTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/torecord";
+@DisplayName("JOOQ Validators - Validate mapped jOOQ records")
+public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
+    public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/validation";
 
-    public MapperGeneratorToRecordTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_ENUM.get(), MAPPER_FETCH_SERVICE.get());
+    public MapperGeneratorToRecordValidationTest() {
+        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get());
     }
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new RecordMapperClassGenerator(schema, true));
+        return List.of(new ReducedRecordMapperClassGenerator(schema)); // Generates only validation.
+    }
+
+    @BeforeEach
+    void before() {
+        GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
     }
 
     @Test
@@ -40,31 +47,19 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
 
     @Test
     @DisplayName("jOOQ record containing non-record type and using field overrides")
-    @Disabled // This confuses the temporary variable a bit, but otherwise works.
+    // This does not inherit @field the same way the mappers do, and may therefore have unwanted deviations.
     void containingNonRecordWrapperWithFieldOverride() {
         assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
     }
 
     @Test
-    @DisplayName("Handles fields that are not mapped to a record field") // TODO: This currently produces illegal code.
+    @DisplayName("Handles fields that are not mapped to a record field") // TODO: This currently does not check for field existence.
     void unconfiguredField() {
         assertGeneratedContentMatches("unconfiguredField");
     }
 
     @Test
-    @DisplayName("Maps ID fields that are not the primary key")
-    void idOtherThanPK() {
-        assertGeneratedContentMatches("idOtherThanPK");
-    }
-
-    @Test
-    @DisplayName("Records with enum fields")
-    void withEnum() {
-        assertGeneratedContentMatches("withEnum");
-    }
-
-    @Test
-    @DisplayName("jOOQ record containing jOOQ record")
+    @DisplayName("jOOQ record containing jOOQ record") // Can not do anything with records, so will skip them.
     void containingRecords() {
         assertGeneratedContentMatches("containingRecords");
     }
