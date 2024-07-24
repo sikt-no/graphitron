@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-@DisplayName("Fetch resolvers - Resolvers for queries")
+@DisplayName("Fetch resolvers - Non-root resolvers for queries")
 public class ResolverSplitQueryTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "resolvers/standard/fetch/splitquery";
 

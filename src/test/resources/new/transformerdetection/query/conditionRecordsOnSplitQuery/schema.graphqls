@@ -1,0 +1,25 @@
+type Query {
+  wrapper: Wrapper @notGenerated
+}
+
+type Wrapper {
+  id: ID
+  address1(input1: AddressInput1): Address1 @splitQuery @condition(condition: {name: "DUMMY_CONDITION"})
+  address2(input2: AddressInput2): Address2 @splitQuery @condition(condition: {name: "DUMMY_CONDITION"})
+}
+
+input AddressInput1 @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}
+
+input AddressInput2 @table(name: "ADDRESS") {
+  id: ID
+}
+
+type Address1 @record(record: {name: "DUMMY_RECORD"})  {
+  id: ID
+}
+
+type Address2 @table(name: "ADDRESS") {
+  id: ID
+}

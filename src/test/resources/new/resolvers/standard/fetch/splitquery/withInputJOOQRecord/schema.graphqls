@@ -1,0 +1,17 @@
+type Query {
+  wrapper: Wrapper @notGenerated
+}
+
+type Wrapper {
+  id: ID
+
+  query(in: Customer): Target @splitQuery
+}
+
+input Customer @table(name: "CUSTOMER") {
+  id: ID
+}
+
+type Target {
+  id: ID
+}

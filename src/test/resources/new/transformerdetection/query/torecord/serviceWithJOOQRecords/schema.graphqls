@@ -2,9 +2,6 @@ type Query {
   # When setting service.
   service1(cityInput: CityInput1): ID @service(service: {name: "DUMMY_SERVICE"})
   service2(cityInput: CityInput3): ID @service(service: {name: "DUMMY_SERVICE"})
-
-  # Nested case, service in a resolver.
-  serviceResolver: Store
 }
 
 # Layer without record. Maybe this case should not be generated after all? For services this would not really work out.
@@ -23,17 +20,4 @@ input CityInput3 @table(name: "CITY") {
 
 input CityInput4 @table(name: "CITY") { # Will not find this. Two tables in a row do not make sense.
   cityId: String! @field(name: "CITY_ID")
-}
-
-type Store @table {
-  id: ID!
-  address(input: AddressInput): Address @splitQuery @service(service: {name: "DUMMY_SERVICE"})
-}
-
-input AddressInput @table(name: "ADDRESS") {
-  id: ID!
-}
-
-type Address @table {
-  id: ID!
 }

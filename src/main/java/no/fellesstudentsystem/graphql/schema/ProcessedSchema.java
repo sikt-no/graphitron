@@ -731,7 +731,7 @@ public class ProcessedSchema {
         // Note, do not check for conditions in this variable, it should not apply to object fields. Conditions should not affect return type mapping!
         var canMapTable = isMutation || field.hasServiceReference();
 
-        var objects = field.isGenerated() ? findTransformableFields(field, new HashSet<>(), isMutation, canMapTable, false, false, 0).stream() : Stream.<ObjectField>of();
+        var objects = findTransformableFields(field, new HashSet<>(), isMutation, canMapTable, false, false, 0).stream();
         var inputs = field
                 .getArguments()
                 .stream()
@@ -749,7 +749,7 @@ public class ProcessedSchema {
             int recursion
     ) {
         recursionCheck(recursion);
-        if (seen.contains(field) || field.isExplicitlyNotGenerated()) {
+        if (seen.contains(field)) {
             return List.of();
         }
         seen.add(field);
@@ -769,7 +769,7 @@ public class ProcessedSchema {
             array.add(field);
         }
 
-        if (!field.isInput() && (hasService || hasCondition) && !isMutation && !field.isExplicitlyNotGenerated()) {
+        if (!field.isInput() && !isMutation) {
             array.addAll(((ObjectField) field).getArguments().stream().flatMap(it ->
                     findTransformableFields(
                             it,

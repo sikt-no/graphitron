@@ -1,0 +1,17 @@
+type Query {
+  wrapper: Wrapper @notGenerated
+}
+
+type Wrapper {
+  id: ID
+
+  query(in: Input): Target @splitQuery
+}
+
+input Input @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}
+
+type Target {
+  id: ID
+}

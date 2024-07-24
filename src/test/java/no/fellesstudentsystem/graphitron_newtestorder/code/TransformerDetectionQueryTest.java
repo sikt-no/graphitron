@@ -40,25 +40,37 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     @Test
     @DisplayName("Java records in fetch queries with conditions")
     public void conditionAndJavaRecords() {
-        checkFoundNames("torecord/conditionAndJavaRecords", "input", "cityInput", "city", "city");
+        checkFoundNames("torecord/conditionAndJavaRecords", "cityInput", "city", "city");
     }
 
     @Test
     @DisplayName("jOOQ records in fetch queries with conditions")
     public void conditionAndJOOQRecords() {
-        checkFoundNames("torecord/conditionAndJOOQRecords", "input", "cityInput", "city");
+        checkFoundNames("torecord/conditionAndJOOQRecords", "cityInput", "city");
     }
 
     @Test
-    @DisplayName("Java record inputs in fetch queries")
+    @DisplayName("Records in non-root fetch queries with conditions")
+    public void conditionRecordsOnSplitQuery() {
+        checkFoundNames("conditionRecordsOnSplitQuery", "input2", "input1", "address1");
+    }
+
+    @Test
+    @DisplayName("Java record inputs in fetch services")
     public void serviceWithJavaRecordInputs() {
-        checkFoundNames("torecord/serviceWithJavaRecords", "address", "input", "cityInput", "city", "city");
+        checkFoundNames("torecord/serviceWithJavaRecords", "cityInput", "city", "city");
     }
 
     @Test
-    @DisplayName("jOOQ record inputs in fetch queries")
+    @DisplayName("jOOQ record inputs in fetch services")
     public void serviceWithJOOQRecordInputs() {
-        checkFoundNames("torecord/serviceWithJOOQRecords", "address", "input", "cityInput", "city");
+        checkFoundNames("torecord/serviceWithJOOQRecords", "cityInput", "city");
+    }
+
+    @Test
+    @DisplayName("Records in non-root fetch services")
+    public void serviceRecordsOnSplitQuery() {
+        checkFoundNames("serviceRecordsOnSplitQuery", "input2", "input1", "address1", "address2");
     }
 
     @Test
@@ -83,6 +95,12 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     @DisplayName("Query with jOOQ record and no conditions or services")
     public void withoutServiceOrCondition() {
         checkFoundNames("torecord/withoutServiceOrCondition", "in1", "in2");
+    }
+
+    @Test
+    @DisplayName("Query with jOOQ record and no conditions or services")
+    public void withoutServiceOrConditionSplitQuery() {
+        checkFoundNames("torecord/withoutServiceOrConditionSplitQuery", "in1", "in2");
     }
 
     @Test
