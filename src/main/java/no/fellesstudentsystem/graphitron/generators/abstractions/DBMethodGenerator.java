@@ -13,11 +13,8 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
-import no.fellesstudentsystem.graphql.directives.GenerationDirective;
-import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
-import org.jooq.Record1;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
@@ -28,7 +25,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeyFields;
 
 /**
  * Generic select query generation functionality is contained within this class.
@@ -63,69 +59,21 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
     }
 
     /**
-     * @param context Contains the list of join statements that should be applied to a select query.
+     * @param joinList List of join statements that should be applied to a select query.
      * @return Code block containing all the join statements and their conditions.
      */
-    protected CodeBlock createSelectJoins(FetchContext context) {
+    protected CodeBlock createSelectJoins(Set<SQLJoinStatement> joinList) {
         var codeBuilder = CodeBlock.builder();
-        var joinList = new LinkedHashSet<>(context.getJoinSet());
-
-        var currentJoinList = new LinkedHashSet<SQLJoinStatement>();
-        if(!joinList.isEmpty() && !context.getMultisetObjectFields().isEmpty()) {
-            var listOfMultisetObjectTables = context.getMultisetObjectFields().stream().map(it -> context.nextContext(it).getReferenceTable().getMappingName()).collect(Collectors.toList());
-            for(var currentJoin : joinList) {
-                var joinElement = currentJoin.getJoinSequence().stream().reduce((first, second) -> second);
-                if(joinElement.isPresent() && !listOfMultisetObjectTables.contains(joinElement.get().getTable().getMappingName())) {
-                    currentJoinList.add(currentJoin);
-                }
-            }
-        } else {
-            currentJoinList = joinList;
-        }
-
-        currentJoinList.forEach(join -> codeBuilder.add(join.toJoinString()));
-        return codeBuilder.build();
-    }
-
-    protected CodeBlock createJoinsForMultisetWhere(FetchContext context) {
-        var codeBuilder = CodeBlock.builder();
-        var joinList = context.getJoinSet();
-        var currentReferenceTable = context.getReferenceTable().getMappingName();
-
-        for(var currentJoin : joinList) {
-            var joinElement = currentJoin.getJoinSequence().stream().reduce((first, second) -> second);
-            if(joinElement.isPresent() && currentReferenceTable.equals(joinElement.get().getTable().getMappingName())) {
-                codeBuilder.add(currentJoin.toJoinString());
-            }
-        }
+        joinList.forEach(join -> codeBuilder.add(join.toJoinString()));
         return codeBuilder.build();
     }
 
     /**
-     * @param context contains a map of conditional statements that should be appended after the where-statement.
+     * @param conditionList List of conditional statements that should be appended after the where-statement.
      * @return Code block which declares all the extra conditions that will be used in a select query.
      */
-    protected CodeBlock createSelectConditions(FetchContext context) {
-        var codeBuilder = CodeBlock.builder();
-        var conditionMap = context.getConditionSet();
-
-        if(conditionMap.isEmpty()) {
-            return codeBuilder.build();
-        }
-
-        for(var conditionMultisetContext : conditionMap.keySet()) {
-            var currentConditionList = conditionMap.get(conditionMultisetContext);
-            if(currentConditionList.isEmpty()) {
-                break;
-            }
-            for(var currentCondition : currentConditionList) {
-                if(conditionMultisetContext == null || Objects.equals(conditionMultisetContext.getGraphPath(), context.getGraphPath())) {
-                    codeBuilder.add(".and($L)\n", currentCondition);
-                }
-            }
-        }
-
-        return codeBuilder.build();
+    protected CodeBlock createSelectConditions(List<CodeBlock> conditionList) {
+        return CodeBlock.join(conditionList, "\n");
     }
 
     /**
@@ -142,21 +90,9 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                 .collect(Collectors.toList());
 
         var fieldsWithoutSplittingSize = fieldsWithoutSplitting.size();
-        var fieldsOfTypeListWithoutSplitting = fieldsWithoutSplitting
-                .stream()
-                .filter(processedSchema::isObject)
-                .filter(GenerationField::isIterableWrapped)
-                .collect(Collectors.toList());
-
-        context.setMultisetObjectFields(fieldsOfTypeListWithoutSplitting);
 
         var rowElements = new ArrayList<CodeBlock>();
-        for (int i = 0; i < fieldsWithoutSplittingSize; i++) {
-            var field = fieldsWithoutSplitting.get(i);
-            if (field.isIterableWrapped() && processedSchema.isObject(field)) {
-                rowElements.add(generateMultisetSelectRow(context.nextContext(field)));
-                continue;
-            }
+        for (GenerationField field : fieldsWithoutSplitting) {
             var innerRowCode = processedSchema.isObject(field)
                     ? generateSelectRow(context.nextContext(field))
                     : (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
@@ -169,96 +105,13 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
-        var useSpecialMapping = !fieldsOfTypeListWithoutSplitting.isEmpty();
-
         return CodeBlock
                 .builder()
                 .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
                 .add(".mapping(")
-                .add(useSpecialMapping ? generateMultisetMapping(context, fieldsWithoutSplitting) : maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting) : regularMappingFunction)
+                .add(maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting) : regularMappingFunction)
                 .add(")")
                 .build();
-    }
-
-    public CodeBlock generateMultisetMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting) {
-        var mappingFrom = CodeBlock.builder().add("(");
-        var mappingTo = CodeBlock.builder().add(" -> new $T(", context.getReferenceObject().getGraphClassName());
-        var mappingIndex = 0;
-        for(var field : fieldsWithoutSplitting){
-            if(field.isIterableWrapped()) {
-                mappingTo.add(createListMapping(mappingIndex));
-            } else {
-                mappingTo.add(("a" + mappingIndex));
-            }
-            mappingFrom.add("a" + mappingIndex);
-            mappingIndex++;
-            if(mappingIndex >= fieldsWithoutSplitting.size()) {
-                mappingFrom.add(")");
-                mappingTo.add(")");
-            } else {
-                mappingFrom.add(", ");
-                mappingTo.add((", "));
-            }
-
-        }
-
-        return mappingFrom.add(mappingTo.build()).build();
-    }
-
-    public CodeBlock generateMultisetSelectRow(FetchContext context) {
-        var multisetFrom = context.getReferenceTable() != null ? context.getReferenceTable().getMappingName() : null;
-        var multisetRowContent = generateSelectRow(context.toMultisetContext());
-        var multisetJoin = createJoinsForMultisetWhere(context);
-        var multisetWhere = getMultisetSelectWhereStatement(context);
-        return CodeBlock.builder()
-                .add("$T.multiset(\n", DSL.className)
-                .indent().add("$T.select(\n", DSL.className)
-                .indent().add(multisetRowContent)
-                .unindent().add("\n)\n")
-                .add(".from($L)\n", multisetFrom)
-                .add(multisetJoin)
-                .add(multisetWhere)
-                .add(createSelectConditions(context))
-                .unindent().add(")").build();
-    }
-
-    public CodeBlock getMultisetSelectWhereStatement(FetchContext context) {
-        var keyFields = getKeyFields(context.getKeyForMapping());
-
-        if(keyFields.isEmpty()) {
-            throw new IllegalArgumentException("The multiset context in " + context.getPreviousTable().getMappingName() + " is set to generate a where statement but cannot find a path between " + context.getPreviousTable().getMappingName() + " and " + context.getReferenceObject().getName().toUpperCase());
-        }
-
-        var multisetJoinAlias = context.generateMultisetAliasFromJoinSequence(context.getCurrentJoinSequence());
-
-        var stringMap = keyFields.get().entrySet().stream()
-                .collect(Collectors.toMap(
-                        e -> e.getKey().getQualifiedName().toString().toUpperCase().replace("\"", ""),
-                        e -> (multisetJoinAlias.map(
-                                codeBlock -> codeBlock + "." + e.getValue().getName().toUpperCase().replace("\"", ""))
-                                .orElseGet(() -> e.getValue().getQualifiedName().toString().toUpperCase().replace("\"", ""))
-                        )
-                ));
-
-        var conditionFields = context.getReferenceObjectField().getFieldReferences().stream().filter(it -> it.getTableCondition() != null).collect(Collectors.toList());
-
-        if(!conditionFields.isEmpty()) {
-            throw new IllegalArgumentException(String.format("List of type %s requires the @%s directive to be able to contain @%s in a @%s within a list", context.getReferenceObject().getName(), GenerationDirective.SPLIT_QUERY.getName(), GenerationDirectiveParam.CONDITION.getName(), GenerationDirective.REFERENCE.getName()));
-        }
-
-        var whereContent = CodeBlock.builder();
-        var fromTable = context.getPreviousTable();
-        var joinAlias = context.getJoinSet().stream().filter(it -> fromTable.equals(it.getJoinTargetTable())).map(SQLJoinStatement::getJoinAlias).findFirst();
-        var i = 0;
-        for(var field : stringMap.entrySet()) {
-            whereContent.add(".$L($L.eq($L))\n", (i == 0) ? "where" : "and", field.getKey(), joinAlias.map(alias -> alias.getMappingName() + "." + Arrays.stream(field.getValue().split("[.]")).reduce((first, second) -> second).orElseGet(field::getValue)).orElseGet(field::getValue));
-            i++;
-        }
-        if (((ObjectField)context.getReferenceObjectField()).hasNonReservedInputFields()) {
-            throw new IllegalArgumentException("Input arguments is not supported for multiset lists in " + context.getPreviousTable().getMappingName());
-        }
-
-        return whereContent.build();
     }
 
     private CodeBlock createMappingFunction(FetchContext context, List<? extends GenerationField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
@@ -279,13 +132,6 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractM
                     : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
         }
         return mappedObjectCodeBlock;
-    }
-
-    protected CodeBlock createListMapping(int mappingIndex) {
-        var codeBlock = CodeBlock.builder();
-        codeBlock.add("a$L.map", mappingIndex);
-        codeBlock.add("($T::value1)", Record1.class);
-        return codeBlock.build();
     }
 
     private CodeBlock createMappingWithUnion(FetchContext context, List<? extends GenerationField> fieldsWithoutTable) {

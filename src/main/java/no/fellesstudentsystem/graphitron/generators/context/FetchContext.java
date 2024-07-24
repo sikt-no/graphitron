@@ -25,16 +25,13 @@ public class FetchContext {
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
-    private final LinkedHashMap<FetchContext, List<CodeBlock>> conditionSet;
+    private final List<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
     private JOOQMapping keyForMapping;
     private boolean shouldUseOptional;
 
     private boolean requireAlias;
-    private List<? extends GenerationField> multisetObjectFields;
-    private boolean fromMultiset = false;
-    private FetchContext currentMultisetContext = null;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
 
     private final ProcessedSchema processedSchema;
@@ -44,7 +41,7 @@ public class FetchContext {
      * @param pastJoinSequence The current sequence of joins that must prepended.
      * @param previousObject The last object that was joined on in some previous iteration.
      * @param joinSet List of joins that must be declared outside this recursion.
-     * @param conditionSet List of conditions that must be declared outside this recursion.
+     * @param conditionList List of conditions that must be declared outside this recursion.
      * @param pastGraphPath The path in the GraphQL schema so far.
      * @param recCounter Counter that limits recursion depth to the max value of integers.
      */
@@ -54,14 +51,12 @@ public class FetchContext {
             JoinListSequence pastJoinSequence,
             RecordObjectSpecification<?> previousObject,
             LinkedHashSet<SQLJoinStatement> joinSet,
-            LinkedHashMap<FetchContext, List<CodeBlock>> conditionSet,
+            List<CodeBlock> conditionList,
             String pastGraphPath,
             int recCounter,
             FetchContext previousContext,
             boolean shouldUseOptional,
-            boolean requireAlias,
-            List<? extends GenerationField> multisetObjectFields,
-            FetchContext currentMultisetContext
+            boolean requireAlias
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
             throw new RuntimeException("Recursion depth has reached the integer max value.");
@@ -70,7 +65,7 @@ public class FetchContext {
         this.processedSchema = processedSchema;
         referenceObject = processedSchema.getObjectOrConnectionNode(referenceObjectField);
         this.joinSet = joinSet;
-        this.conditionSet = conditionSet;
+        this.conditionList = conditionList;
 
         this.referenceObjectField = referenceObjectField;
         this.previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
@@ -79,8 +74,6 @@ public class FetchContext {
         this.previousContext = previousContext;
         this.shouldUseOptional = shouldUseOptional;
         this.requireAlias = requireAlias;
-        this.multisetObjectFields = multisetObjectFields;
-        this.currentMultisetContext = currentMultisetContext;
         currentJoinSequence = iterateJoinSequence(pastJoinSequence);
     }
 
@@ -99,14 +92,12 @@ public class FetchContext {
                 new JoinListSequence(),
                 previousObject,
                 new LinkedHashSet<>(),
-                new LinkedHashMap<>(),
+                new ArrayList<>(),
                 "",
                 0,
                 null,
                 referenceObjectField.getOrderField().isEmpty(), //do not use optional in combination with orderBy
-                true,
-                new ArrayList<>(),
-                null
+                true
         );
     }
 
@@ -139,10 +130,10 @@ public class FetchContext {
     }
 
     /**
-     * @return Map of all conditions created up to this point by this context or any contexts created from it.
+     * @return List of all conditions created up to this point.
      */
-    public LinkedHashMap<FetchContext, List<CodeBlock>> getConditionSet() {
-        return conditionSet;
+    public List<CodeBlock> getConditionList() {
+        return conditionList;
     }
 
     /**
@@ -177,36 +168,12 @@ public class FetchContext {
         return keyForMapping;
     }
 
-    public List<? extends GenerationField> getMultisetObjectFields() {
-        return multisetObjectFields;
-    }
-
-    public void setMultisetObjectFields(List<? extends GenerationField> multisetObjectFields) {
-        this.multisetObjectFields = multisetObjectFields;
-    }
-
-    public boolean isFromMultiset() {
-        return fromMultiset;
-    }
-
     public boolean getShouldUseOptional() {
         return shouldUseOptional;
     }
 
     public FetchContext withShouldUseOptional(boolean shouldUseOptional) {
         this.shouldUseOptional = shouldUseOptional;
-        return this;
-    }
-
-    public boolean requiresAlias() {
-        return requireAlias;
-    }
-
-    public FetchContext toMultisetContext() {
-        this.shouldUseOptional = false;
-        this.fromMultiset = true;
-        this.requireAlias = false;
-        this.currentMultisetContext = this;
         return this;
     }
 
@@ -235,17 +202,15 @@ public class FetchContext {
         return new FetchContext(
                 processedSchema,
                 referenceObjectField,
-                fromMultiset ? newJoinListSequence : currentJoinSequence.clone(),
+                currentJoinSequence.clone(),
                 referenceObject,
                 joinSet,
-                conditionSet,
+                conditionList,
                 graphPath + referenceObjectField.getName(),
                 recCounter + 1,
                 this,
                 shouldUseOptional,
-                requireAlias,
-                new ArrayList<>(),
-                currentMultisetContext
+                requireAlias
         );
     }
 
@@ -257,11 +222,6 @@ public class FetchContext {
     public JoinListSequence iterateJoinSequenceFor(GenerationField field) {
         var currentSequence = getCurrentJoinSequence();
         if (!field.hasFieldReferences()) {
-            if(fromMultiset) {
-                var newSequence = new JoinListSequence();
-                newSequence.add(getReferenceTable());
-                return newSequence;
-            }
             return currentSequence;
         }
 
@@ -300,7 +260,7 @@ public class FetchContext {
             return !updatedSequence.isEmpty() ? updatedSequence : JoinListSequence.of(refTable);
         }
 
-        var finalSequence = resolveNextSequenceWithPath(
+        var finalSequence = resolveNextSequence(
                 new FieldReference(refTable),
                 new TableRelation(lastTable, refTable),
                 updatedSequence,
@@ -333,21 +293,12 @@ public class FetchContext {
         }
 
         for (int i = 0; i < references.size(); i++) {
-            joinSequence = resolveNextSequenceWithPath(references.get(i), relations.get(i), joinSequence, requiresLeftJoin);
+            joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, requiresLeftJoin);
         }
         return joinSequence;
     }
 
-    private boolean isMultisetContext() {
-        return (getReferenceObjectField().isIterableWrapped()
-                && !getReferenceObjectField().isResolver()
-                && !((ObjectField) getReferenceObjectField()).hasInputFields()
-                && getPreviousTable() != null
-                && processedSchema.isObject(getReferenceObjectField())
-        );
-    }
-
-    private JoinListSequence resolveNextSequenceWithPath(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
+    private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
         requiresLeftJoin = true;
         var previous = relation.getFrom();
         var target = relation.getToTable();
@@ -383,74 +334,10 @@ public class FetchContext {
         }
 
         if (fRef.hasTableCondition() && relation.hasRelation()) {
-            var conditionString = fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()));
-            var listOfConditions = this.conditionSet.get(currentMultisetContext);
-            if(listOfConditions == null) {
-                listOfConditions = new ArrayList<>();
-            }
-            listOfConditions.add(conditionString);
-            this.conditionSet.put(currentMultisetContext, listOfConditions);
+            this.conditionList.add(CodeBlock.of(".and($L)\n", fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()))));
         }
 
         return newSequence;
-    }
-
-    private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin, boolean hasFutureJoin) {
-        var previous = relation.getFrom();
-        var multisetSkipJoin = isMultisetContext();
-        var target = relation.getToTable();
-        if (previous == null) {
-            return JoinListSequence.of(target);
-        }
-        var targetOrPrevious = target != null ? target : previous;
-
-        var iteratedSequence = relation.hasRelation() ? relation.inferJoinStep(joinSequence) : joinSequence;
-        var newSequence = iteratedSequence.isEmpty() ? JoinListSequence.of(previous) : iteratedSequence;
-        var keyToUse = fRef.hasKey()
-                ? fRef.getKey()
-                : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
-        keyForMapping = keyToUse;
-        // If we lack this table from a previous join or there is no key, we can not make a key join with implicit steps.
-        var lastIsNotJoin = joinSequence.size() > 1 && !joinSequence.getLast().clearsPreviousSequence();
-        if (!multisetSkipJoin && fRef.hasTableCondition() && (keyToUse == null || lastIsNotJoin)) {
-            var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
-            joinSet.add(join);
-            return newSequence.cloneAdd(join.getJoinAlias());
-        }
-
-        if (!multisetSkipJoin && (relation.isReverse() || hasFutureJoin) && keyToUse != null) { // Tried to make it (relation.isReverse() || requiresLeftJoin), but that didn't work out. Theoretically, including it should be the most correct.
-            var join = fRef.createJoinOnKeyFor(keyToUse, newSequence, targetOrPrevious, requiresLeftJoin);
-            joinSet.add(join);
-            var alias = join.getJoinAlias();
-            if (newSequence.getLast().equals(alias.getTable()) && !hasSelfRelation(alias.getTable().getMappingName())) {
-                newSequence.removeLast();
-            }
-            newSequence = newSequence.cloneAdd(alias);
-        }
-
-        if (fRef.hasTableCondition() && relation.hasRelation()) {
-            var conditionString = fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()));
-            var listOfConditions = this.conditionSet.get(currentMultisetContext);
-            if(listOfConditions == null) {
-                listOfConditions = new ArrayList<>();
-            }
-            listOfConditions.add(conditionString);
-            this.conditionSet.put(currentMultisetContext, listOfConditions);
-        }
-
-        return newSequence;
-    }
-
-    public Optional<CodeBlock> generateMultisetAliasFromJoinSequence(JoinListSequence joinSequence) {
-        var codeBlock = CodeBlock.builder();
-        if(joinSequence.size() <= 1) {
-            return Optional.empty();
-        }
-        codeBlock.add(joinSequence.get(0).getMappingName());
-        for(var i = 1; i < joinSequence.size(); i++) {
-            codeBlock.add(".$L()", joinSequence.get(i).getTable().getCodeName());
-        }
-        return Optional.of(codeBlock.build());
     }
 
     private boolean hasExplicitJoin(FieldReference fRef, TableRelation relation) {

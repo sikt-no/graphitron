@@ -47,9 +47,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .add(".select($T.count())\n", DSL.className)
                 .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
-                .add(createSelectJoins(context))
+                .add(createSelectJoins(context.getJoinSet()))
                 .add(where)
-                .add(createSelectConditions(context))
+                .add(createSelectConditions(context.getConditionList()))
                 .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
                 .unindent()
                 .unindent();

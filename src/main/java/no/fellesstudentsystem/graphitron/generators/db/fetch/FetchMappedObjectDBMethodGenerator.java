@@ -63,9 +63,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".select(")
                 .add(indentIfMultiline(CodeBlock.of("$L$L", getInitialID(context), selectCode)))
                 .add(")\n.from($L)\n", context.renderQuerySource(getLocalTable()))
-                .add(createSelectJoins(context))
+                .add(createSelectJoins(context.getJoinSet()))
                 .add(where)
-                .add(createSelectConditions(context))
+                .add(createSelectConditions(context.getConditionList()))
                 .add(setPaginationAndFetch(target, context.getCurrentJoinSequence().render().toString()));
 
         var parser = new InputParser(target, processedSchema);
