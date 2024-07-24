@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron_newtestorder.queries;
+package no.fellesstudentsystem.graphitron_newtestorder.queries.fetch;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
@@ -13,27 +13,15 @@ import java.util.List;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
 
 @DisplayName("Fetch queries - Queries using input records")
-public class FetchWithRecordQueryTest extends GeneratorTest {
+public class ReferenceTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "queries/fetch";
 
-    public FetchWithRecordQueryTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_RECORD.get());
+    public ReferenceTest() {
+        super(SRC_TEST_RESOURCES_PATH);
     }
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
         return List.of(new FetchDBClassGenerator(schema));
-    }
-
-    @Test
-    @DisplayName("Query with input Java records")
-    void withInputJavaRecord() {
-        assertGeneratedContentMatches("withInputJavaRecord");
-    }
-
-    @Test
-    @DisplayName("Query with input jOOQ records")
-    void withInputJOOQRecord() {
-        assertGeneratedContentMatches("withInputJOOQRecord");
     }
 }

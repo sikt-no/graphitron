@@ -1,0 +1,7 @@
+type Query {
+  query: Target
+}
+
+type Target {
+  id: ID
+}

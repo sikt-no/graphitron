@@ -1,6 +1,6 @@
 package fake.code.generated.transform;
 
-import fake.graphql.example.model.CustomerInput;
+import fake.graphql.example.model.Input;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
 import java.util.List;
@@ -13,11 +13,11 @@ public class RecordTransformer extends AbstractTransformer {
         super(env, ctx);
     }
 
-    public List<DummyRecord> customerInputToJavaRecord(List<CustomerInput> input, String path) {
+    public List<DummyRecord> inputToJavaRecord(List<Input> input, String path) {
         return List.of();
     }
 
-    public DummyRecord customerInputToJavaRecord(CustomerInput input, String path) {
+    public DummyRecord inputToJavaRecord(Input input, String path) {
         return new DummyRecord();
     }
 }

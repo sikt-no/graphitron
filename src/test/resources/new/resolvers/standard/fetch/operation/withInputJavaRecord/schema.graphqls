@@ -1,0 +1,12 @@
+type Query {
+  query(in: Input): Target
+  queryListed(in: [Input]): [Target]
+}
+
+input Input @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}
+
+type Target {
+  id: ID
+}

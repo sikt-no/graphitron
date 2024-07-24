@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron_newtestorder.queries;
+package no.fellesstudentsystem.graphitron_newtestorder.queries.fetch;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
@@ -14,10 +14,10 @@ import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DU
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.RECORD_FETCH_CONDITION;
 
 @DisplayName("Fetch condition queries - Queries that apply custom conditions")
-public class FetchConditionQueryTest extends GeneratorTest {
+public class ConditionTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "queries/fetch";
 
-    public FetchConditionQueryTest() {
+    public ConditionTest() {
         super(SRC_TEST_RESOURCES_PATH, RECORD_FETCH_CONDITION.get(), DUMMY_RECORD.get());
     }
 
