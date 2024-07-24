@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Customer;
 import java.lang.String;
 import java.util.Map;
@@ -12,24 +10,20 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
-
 public class StoreCustomerDBQueries {
     public static Map<String, Customer> customerForStoreCustomer(DSLContext ctx,
-                                                          Set<String> storeCustomerIds, SelectionSet select) {
-        var store_store_customer = CUSTOMER.as("store_1860923489");
+            Set<String> storeCustomerIds, SelectionSet select) {
+        var store_storecustomer_customer_left = CUSTOMER.as("store_802713965");
         return ctx
                 .select(
                         STORE.getId(),
-                        DSL.row(
-                                store_store_customer.getId()
-                        ).mapping(Functions.nullOnAllNull(Customer::new))
+                        DSL.row(store_storecustomer_customer_left.getId()).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(STORE)
-                .join(store_store_customer)
-                .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
+                .leftJoin(store_storecustomer_customer_left)
+                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_storecustomer_customer_left))
                 .where(STORE.hasIds(storeCustomerIds))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_store_customer))
-                .orderBy(store_store_customer.getIdFields())
+                .orderBy(store_storecustomer_customer_left.getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

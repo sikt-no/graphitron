@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Store;
 import java.lang.String;
 import java.util.List;
@@ -13,41 +11,37 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
-
 public class AddressDBQueries {
     public static Map<String, List<Store>> stores0ForAddress(DSLContext ctx, Set<String> addressIds,
-                                                      SelectionSet select) {
-        var address_address_customer_left = CUSTOMER.as("address_1331386265");
+            SelectionSet select) {
+        var address_customer_left = ADDRESS.customer().as("customer_2761894695");
+        var customer_2761894695_store_left = address_customer_left.store().as("store_2053761122");
         return ctx
                 .select(
                         ADDRESS.getId(),
-                        DSL.row(
-                                address_address_customer_left.store().getId()
-                        ).mapping(Functions.nullOnAllNull(Store::new))
+                        DSL.row(customer_2761894695_store_left.getId()).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(ADDRESS)
-                .leftJoin(address_address_customer_left)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .leftJoin(address_customer_left)
+                .leftJoin(customer_2761894695_store_left)
                 .where(ADDRESS.hasIds(addressIds))
-                .orderBy(address_address_customer_left.store().getIdFields())
+                .orderBy(customer_2761894695_store_left.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
-
     public static Map<String, List<Store>> stores1ForAddress(DSLContext ctx, Set<String> addressIds,
-                                                      SelectionSet select) {
-        var address_address_customer = CUSTOMER.as("address_179789877");
+            SelectionSet select) {
+        var address_customer_left = ADDRESS.customer().as("customer_2761894695");
+        var customer_2761894695_store_left = address_customer_left.store().as("store_2053761122");
         return ctx
                 .select(
                         ADDRESS.getId(),
-                        DSL.row(
-                                address_address_customer.store().getId()
-                        ).mapping(Functions.nullOnAllNull(Store::new))
+                        DSL.row(customer_2761894695_store_left.getId()).mapping(Functions.nullOnAllNull(Store::new))
                 )
                 .from(ADDRESS)
-                .join(address_address_customer)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .leftJoin(address_customer_left)
+                .leftJoin(customer_2761894695_store_left)
                 .where(ADDRESS.hasIds(addressIds))
-                .orderBy(address_address_customer.store().getIdFields())
+                .orderBy(customer_2761894695_store_left.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

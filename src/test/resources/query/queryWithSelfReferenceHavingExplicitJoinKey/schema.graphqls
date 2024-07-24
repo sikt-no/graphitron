@@ -1,6 +1,6 @@
 type Film @table {
   id: ID!
-  sequel: Film @splitQuery @reference(key : "SEQUEL_FKEY")
+  sequel: Film @splitQuery @reference(key : "FILM__SEQUEL_FKEY")
 }
 
 type Query {

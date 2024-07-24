@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.definitions.mapping;
 
 import no.fellesstudentsystem.graphitron.definitions.interfaces.JoinElement;
+import no.fellesstudentsystem.graphitron.generators.context.JoinListSequence;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -10,14 +12,24 @@ import java.util.zip.CRC32;
  * Holds an alias.
  */
 public class Alias implements JoinElement {
-    private final String name, shortName;
+    private final String name, shortName, variableValue;
     private final JOOQMapping type;
 
-    public Alias(String prefix, JOOQMapping type, boolean isLeft) {
-        var name = prefix + "_" + type.getMappingName() + (isLeft ? "_left" : "");
+
+    public Alias(String prefix, JOOQMapping table, boolean isLeft) {
+        var name = prefix + "_" + table.getMappingName() + (isLeft ? "_left" : "");
         this.name = name.toLowerCase();
         this.shortName = createShortAliasName(Arrays.stream(prefix.split("_")).findFirst().orElse(prefix), name);
-        this.type = type;
+        this.type = table;
+        this.variableValue = table.getMappingName();
+    }
+
+    public Alias(String prefix, JoinListSequence joinSequence, boolean isLeft) {
+        this.type = joinSequence.getLast().getTable();
+        var name = prefix + (isLeft ? "_left" : "");
+        this.name = name.toLowerCase();
+        this.shortName = createShortAliasName(StringUtils.substringAfterLast(prefix, "_"), name);
+        this.variableValue = joinSequence.render().toString();
     }
 
     /**
@@ -71,5 +83,12 @@ public class Alias implements JoinElement {
     @Override
     public int hashCode() {
         return Objects.hash(name);
+    }
+
+/*
+* Content for alias variable declaration
+* */
+    public String getVariableValue() {
+        return variableValue;
     }
 }

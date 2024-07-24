@@ -9,14 +9,20 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static Payment paymentForQuery(DSLContext ctx, String id, SelectionSet select) {
+        var payment_rental_left = PAYMENT.rental().as("rental_61302898");
+        var rental_61302898_inventory_left = payment_rental_left.inventory().as("inventory_2622920513");
+        var inventory_2622920513_film_left = rental_61302898_inventory_left.film().as("film_2895304902");
         return ctx
                 .select(
                         DSL.row(
                                 PAYMENT.getId(),
-                                select.optional("filmTitle", PAYMENT.rental().inventory().film().TITLE)
+                                select.optional("filmTitle", inventory_2622920513_film_left.TITLE)
                         ).mapping(Functions.nullOnAllNull(Payment::new))
                 )
                 .from(PAYMENT)
+                .leftJoin(payment_rental_left)
+                .leftJoin(rental_61302898_inventory_left)
+                .leftJoin(inventory_2622920513_film_left)
                 .where(PAYMENT.ID.eq(id))
                 .fetchOne(it -> it.into(Payment.class));
     }

@@ -12,4 +12,8 @@ public class StoreTestConditions {
     public static Condition customerStore(Customer customer, Store store) {
         return null;
     }
+
+    public static Condition storeStore(Store store1, Store store2) {
+        return null;
+    }
 }

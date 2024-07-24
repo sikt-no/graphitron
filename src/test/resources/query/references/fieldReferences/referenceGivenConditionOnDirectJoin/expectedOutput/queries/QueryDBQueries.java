@@ -9,16 +9,18 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static Customer customerForQuery(DSLContext ctx, String id, SelectionSet select) {
+        var customer_customeraddress_address_left = ADDRESS.as("customer_3932835938");
         return ctx
                 .select(
                         DSL.row(
                                 CUSTOMER.getId(),
-                                select.optional("historicalAddressesAddress", CUSTOMER.address().ADDRESS)
+                                select.optional("historicalAddressesAddress", customer_customeraddress_address_left.ADDRESS)
                         ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
+                .leftJoin(customer_customeraddress_address_left)
+                .on(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, customer_customeraddress_address_left))
                 .where(CUSTOMER.ID.eq(id))
-                .and(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, CUSTOMER.address()))
                 .fetchOne(it -> it.into(Customer.class));
     }
 }

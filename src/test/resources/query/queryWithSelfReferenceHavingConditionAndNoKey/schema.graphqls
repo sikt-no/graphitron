@@ -1,0 +1,10 @@
+type Store @table {
+  id: ID!
+  flagshipStore: Store @splitQuery @reference(condition: {name: "TEST_STORE_CUSTOMER", method: "storeStore"})
+  popupStores: [Store] @splitQuery @reference(condition: {name: "TEST_STORE_CUSTOMER", method: "storeStore"})
+}
+
+type Query {
+  stores: [Store]
+}
+

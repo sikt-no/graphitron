@@ -9,18 +9,18 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public static List<Address> addressForQuery(DSLContext ctx, String cityID, SelectionSet select) {
-        var address_address_customer = CUSTOMER.as("address_179789877");
+    public static List<Address> addressForQuery(DSLContext ctx, String cityID,
+            SelectionSet select) {
+        var address_customer_left = ADDRESS.customer().as("customer_2761894695");
         return ctx
                 .select(
                         DSL.row(
                                 ADDRESS.getId(),
-                                select.optional("customersLastNames", address_address_customer.LAST_NAME)
+                                select.optional("customersLastNames", address_customer_left.LAST_NAME)
                         ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(ADDRESS)
-                .join(address_address_customer)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .leftJoin(address_customer_left)
                 .where(ADDRESS.CITY_ID.eq(cityID))
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(it -> it.into(Address.class));

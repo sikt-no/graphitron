@@ -10,16 +10,14 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static Customer customerForQuery(DSLContext ctx, String id, String address,
             SelectionSet select) {
+        var customer_customeraddress_address_left = ADDRESS.as("customer_3932835938");
         return ctx
-                .select(
-                        DSL.row(
-                                CUSTOMER.getId()
-                        ).mapping(Functions.nullOnAllNull(Customer::new))
-                )
+                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(CUSTOMER)
+                .leftJoin(customer_customeraddress_address_left)
+                .on(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, customer_customeraddress_address_left))
                 .where(CUSTOMER.ID.eq(id))
-                .and(address != null ? CUSTOMER.address().ADDRESS.eq(address) : DSL.noCondition())
-                .and(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, CUSTOMER.address()))
+                .and(address != null ? customer_customeraddress_address_left.ADDRESS.eq(address) : DSL.noCondition())
                 .fetchOne(it -> it.into(Customer.class));
     }
 }

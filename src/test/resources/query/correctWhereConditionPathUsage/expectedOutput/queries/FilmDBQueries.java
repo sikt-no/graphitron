@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.In;
 import fake.graphql.example.model.Language;
 import java.lang.String;
@@ -11,40 +9,38 @@ import java.util.Map;
 import java.util.Set;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
-import org.jooq.Record2;
 import org.jooq.Functions;
+import org.jooq.Record2;
 import org.jooq.impl.DSL;
-
 public class FilmDBQueries {
     public static Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIds,
-                                                        List<String> s, SelectionSet select) {
+            List<String> s, SelectionSet select) {
+        var film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2782157680");
         return ctx
                 .select(
                         FILM.getId(),
-                        DSL.row(
-                                FILM.filmLanguageIdFkey().getId()
-                        ).mapping(Functions.nullOnAllNull(Language::new))
+                        DSL.row(film_filmlanguageidfkey_left.getId()).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(FILM)
+                .leftJoin(film_filmlanguageidfkey_left)
                 .where(FILM.hasIds(filmIds))
-                .and(s != null && s.size() > 0 ? FILM.filmLanguageIdFkey().NAME.in(s) : DSL.noCondition())
-                .orderBy(FILM.filmLanguageIdFkey().getIdFields())
+                .and(s != null && s.size() > 0 ? film_filmlanguageidfkey_left.NAME.in(s) : DSL.noCondition())
+                .orderBy(film_filmlanguageidfkey_left.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
-
-    public static Map<String, List<Language>> languagesInputForFilm(DSLContext ctx, Set<String> filmIds,
-                                                             In s, SelectionSet select) {
+    public static Map<String, List<Language>> languagesInputForFilm(DSLContext ctx,
+            Set<String> filmIds, In s, SelectionSet select) {
+        var film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2782157680");
         return ctx
                 .select(
                         FILM.getId(),
-                        DSL.row(
-                                FILM.filmLanguageIdFkey().getId()
-                        ).mapping(Functions.nullOnAllNull(Language::new))
+                        DSL.row(film_filmlanguageidfkey_left.getId()).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(FILM)
+                .leftJoin(film_filmlanguageidfkey_left)
                 .where(FILM.hasIds(filmIds))
-                .and(s != null && s.getName() != null && s.getName().size() > 0 ? FILM.filmLanguageIdFkey().NAME.in(s.getName()) : DSL.noCondition())
-                .orderBy(FILM.filmLanguageIdFkey().getIdFields())
+                .and(s != null && s.getName() != null && s.getName().size() > 0 ? film_filmlanguageidfkey_left.NAME.in(s.getName()) : DSL.noCondition())
+                .orderBy(film_filmlanguageidfkey_left.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

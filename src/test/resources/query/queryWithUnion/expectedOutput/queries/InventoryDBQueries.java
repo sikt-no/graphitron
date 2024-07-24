@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Extra;
 import fake.graphql.example.model.Film2;
 import fake.graphql.example.model.FilmDataA;
@@ -18,40 +16,31 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
-
 public class InventoryDBQueries {
-    public static Map<String, List<Film2>> filmsForInventory(DSLContext ctx, Set<String> inventoryIds,
-                                                      SelectionSet select) {
+    public static Map<String, List<Film2>> filmsForInventory(DSLContext ctx,
+            Set<String> inventoryIds, SelectionSet select) {
+        var inventory_film_left = INVENTORY.film().as("film_2557797379");
         return ctx
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                INVENTORY.film().getId(),
+                                inventory_film_left.getId(),
+                                DSL.row(inventory_film_left.DESCRIPTION).mapping(Functions.nullOnAllNull(FilmDataA::new)),
+                                DSL.row(inventory_film_left.LENGTH).mapping(Functions.nullOnAllNull(FilmDataB::new)),
+                                DSL.row(inventory_film_left.RELEASE_YEAR).mapping(Functions.nullOnAllNull(FilmDataC::new)),
+                                DSL.row(inventory_film_left.RELEASE_YEAR).mapping(Functions.nullOnAllNull(FilmDataC::new)),
+                                DSL.row(inventory_film_left.RATING).mapping(Functions.nullOnAllNull(FilmDataD::new)),
                                 DSL.row(
-                                        INVENTORY.film().DESCRIPTION
-                                ).mapping(Functions.nullOnAllNull(FilmDataA::new)),
-                                DSL.row(
-                                        INVENTORY.film().LENGTH
-                                ).mapping(Functions.nullOnAllNull(FilmDataB::new)),
-                                DSL.row(
-                                        INVENTORY.film().RELEASE_YEAR
-                                ).mapping(Functions.nullOnAllNull(FilmDataC::new)),
-                                DSL.row(
-                                        INVENTORY.film().RELEASE_YEAR
-                                ).mapping(Functions.nullOnAllNull(FilmDataC::new)),
-                                DSL.row(
-                                        INVENTORY.film().RATING
-                                ).mapping(Functions.nullOnAllNull(FilmDataD::new)),
-                                DSL.row(
-                                        select.optional("extra/title", INVENTORY.film().TITLE),
-                                        select.optional("extra/description", INVENTORY.film().DESCRIPTION),
-                                        select.optional("extra/length", INVENTORY.film().LENGTH)
+                                        select.optional("extra/title", inventory_film_left.TITLE),
+                                        select.optional("extra/description", inventory_film_left.DESCRIPTION),
+                                        select.optional("extra/length", inventory_film_left.LENGTH)
                                 ).mapping(Extra::new)
                         ).mapping((a0, a1_0, a1_1, a1_2, a2_0, a2_1, a3) -> a0 == null && a1_0 != null && a1_1 != null && a1_2 != null && a2_0 != null && a2_1 != null && (a3 == null || new Extra().equals(a3)) ? null : new Film2(a0, a1_0 != null ? a1_0 : a1_1 != null ? a1_1 : a1_2, a2_0 != null ? a2_0 : a2_1, a3))
                 )
                 .from(INVENTORY)
+                .leftJoin(inventory_film_left)
                 .where(INVENTORY.hasIds(inventoryIds))
-                .orderBy(INVENTORY.film().getIdFields())
+                .orderBy(inventory_film_left.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

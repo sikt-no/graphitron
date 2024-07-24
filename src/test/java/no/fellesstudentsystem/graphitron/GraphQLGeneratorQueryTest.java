@@ -243,6 +243,11 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     }
 
     @Test
+    void generate_queryWithSelfReferenceHavingConditionAndNoKey() {
+        assertGeneratedContentMatches("queryWithSelfReferenceHavingConditionAndNoKey");
+    }
+
+    @Test
     void generate_queryWithSelfReferenceFindingImplicitJoinKey() {
         assertGeneratedContentMatches("queryWithSelfReferenceFindingImplicitJoinKey");
     }

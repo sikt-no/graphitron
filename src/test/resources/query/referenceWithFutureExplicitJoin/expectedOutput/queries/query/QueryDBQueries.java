@@ -10,24 +10,22 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static Customer customerForQuery(DSLContext ctx, String id, SelectionSet select) {
-        var customer_address = ADDRESS.as("customer_785790245");
-        var customer_address_customer = CUSTOMER.as("customer_2837757656");
+        var customer_address_left = CUSTOMER.address().as("address_166982810");
+        var address_166982810_customer_left = customer_address_left.customer().as("customer_3093903694");
+        var customer_customerstore_store_left = STORE.as("customer_1643242881");
         return ctx
                 .select(
                         DSL.row(
                                 CUSTOMER.getId(),
-                                DSL.row(
-                                        customer_address_customer.store().getId()
-                                ).mapping(Functions.nullOnAllNull(Store::new))
+                                DSL.row(customer_customerstore_store_left.getId()).mapping(Functions.nullOnAllNull(Store::new))
                         ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
-                .join(customer_address)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
-                .join(customer_address_customer)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .leftJoin(customer_address_left)
+                .leftJoin(address_166982810_customer_left)
+                .leftJoin(customer_customerstore_store_left)
+                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_166982810_customer_left, customer_customerstore_store_left))
                 .where(CUSTOMER.ID.eq(id))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(customer_address_customer, customer_address_customer.store()))
                 .fetchOne(it -> it.into(Customer.class));
     }
 }

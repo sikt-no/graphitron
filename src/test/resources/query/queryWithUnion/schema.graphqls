@@ -19,7 +19,7 @@ type Extra {
 
 type Inventory @table {
   id: ID!
-  films: [Film2!]! @splitQuery @reference(key: "inventory_film_id_fkey")
+  films: [Film2!]! @splitQuery @reference(key: "inventory__inventory_film_id_fkey")
 }
 
 type FilmDataA {

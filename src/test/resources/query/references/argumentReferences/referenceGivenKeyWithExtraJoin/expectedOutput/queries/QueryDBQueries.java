@@ -11,35 +11,29 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Address> address0ForQuery(DSLContext ctx, String cityID, String storeID,
             SelectionSet select) {
-        var address_address_customer_left = CUSTOMER.as("address_1331386265");
+        var address_customer_left = ADDRESS.customer().as("customer_2761894695");
+        var customer_2761894695_store_left = address_customer_left.store().as("store_2053761122");
         return ctx
-                .select(
-                        DSL.row(
-                                ADDRESS.getId()
-                        ).mapping(Functions.nullOnAllNull(Address::new))
-                )
+                .select(DSL.row(ADDRESS.getId()).mapping(Functions.nullOnAllNull(Address::new)))
                 .from(ADDRESS)
-                .leftJoin(address_address_customer_left)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .leftJoin(address_customer_left)
+                .leftJoin(customer_2761894695_store_left)
                 .where(ADDRESS.CITY_ID.eq(cityID))
-                .and(storeID != null ? address_address_customer_left.store().STORE_ID.eq(storeID) : DSL.noCondition())
+                .and(storeID != null ? customer_2761894695_store_left.STORE_ID.eq(storeID) : DSL.noCondition())
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(it -> it.into(Address.class));
     }
     public static List<Address> address1ForQuery(DSLContext ctx, String cityID, String storeID,
             SelectionSet select) {
-        var address_address_customer = CUSTOMER.as("address_179789877");
+        var address_customer_left = ADDRESS.customer().as("customer_2761894695");
+        var customer_2761894695_store_left = address_customer_left.store().as("store_2053761122");
         return ctx
-                .select(
-                        DSL.row(
-                                ADDRESS.getId()
-                        ).mapping(Functions.nullOnAllNull(Address::new))
-                )
+                .select(DSL.row(ADDRESS.getId()).mapping(Functions.nullOnAllNull(Address::new)))
                 .from(ADDRESS)
-                .join(address_address_customer)
-                .onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+                .leftJoin(address_customer_left)
+                .leftJoin(customer_2761894695_store_left)
                 .where(ADDRESS.CITY_ID.eq(cityID))
-                .and(address_address_customer.store().STORE_ID.eq(storeID))
+                .and(customer_2761894695_store_left.STORE_ID.eq(storeID))
                 .orderBy(ADDRESS.getIdFields())
                 .fetch(it -> it.into(Address.class));
     }

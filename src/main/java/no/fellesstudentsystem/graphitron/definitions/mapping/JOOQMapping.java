@@ -7,21 +7,20 @@ import org.apache.commons.lang3.StringUtils;
 import java.util.Objects;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.toCamelCase;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.getKeySourceTable;
-import static no.fellesstudentsystem.graphitron.mappings.TableReflection.searchTableForKeyMethodName;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.*;
 
 /**
  * Stores operations related to rendering jOOQ key and table mappings.
  */
 public class JOOQMapping extends MethodMapping implements JoinElement {
     private final String name, codeName;
-    private JOOQMapping underlyingTable;
+    private final JOOQMapping underlyingTable;
 
     private JOOQMapping(String name, String codeName) {
         super(name);
         this.name = name;
         this.codeName = codeName;
-        underlyingTable = this;
+        this.underlyingTable = this;
     }
 
     private JOOQMapping(String name, String codeName, JOOQMapping underlyingTable) {
@@ -54,24 +53,36 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
 
     public static JOOQMapping fromKey(String keyName) {
         var upperName = keyName.toUpperCase();
-        var table = getKeySourceTable(upperName);
+        var sourceTable = getKeySourceTable(upperName);
+        var targetTable = getKeyTargetTable(upperName);
+
         return new JOOQMapping(
                 upperName,
-                table.map(it -> searchTableForKeyMethodName(it, upperName).orElse("")).orElse(""),
-                table.map(JOOQMapping::fromTable).orElse(null)
+                sourceTable.map(it -> searchTableForKeyMethodName(it, upperName).orElse("")).orElse(""),
+                targetTable.map(JOOQMapping::fromTable).orElse(null)
+        );
+    }
+
+    public JOOQMapping getInverseKey() {
+        var sourceTable = getKeySourceTable(name).map(JOOQMapping::fromTable).orElse(null);
+        var targetTable = getKeyTargetTable(name).map(JOOQMapping::fromTable).orElse(null);
+
+        if (sourceTable == null || targetTable == null) {
+            return null;
+        }
+
+        var isReverse = sourceTable.equals(underlyingTable);
+
+        return new JOOQMapping(
+                name,
+                searchTableForKeyMethodName(isReverse ? sourceTable.getName() : targetTable.getName(), name).orElse(""),
+                (isReverse ? targetTable : sourceTable)
         );
     }
 
     @Override
     public JOOQMapping getTable() {
         return underlyingTable;
-    }
-
-    /**
-     * Extra method to fix key references that are reversed. TODO: Find better solution to know this for sure beforehand.
-     */
-    public void setTable(JOOQMapping table) {
-        underlyingTable = table;
     }
 
     @Override
@@ -84,7 +95,7 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
         if (this == o) return true;
         if (!(o instanceof JOOQMapping)) return false;
         JOOQMapping that = (JOOQMapping) o;
-        return Objects.equals(name, that.name);
+        return Objects.equals(name, that.name) && underlyingTable.getName().equalsIgnoreCase(that.underlyingTable.getName());
     }
 
     @Override

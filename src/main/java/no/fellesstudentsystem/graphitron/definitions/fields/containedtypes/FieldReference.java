@@ -135,4 +135,22 @@ public class FieldReference {
                 isNullable
         );
     }
+
+    /**
+     * @return A join statement based on a key reference using path
+     */
+
+    public SQLJoinStatement createJoinOnExplicitPathFor(JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
+
+        var targetTable = hasTable() ? getTable() : tableNameBackup;
+        var alias = new Alias(joinSequence.getSecondLast().getCodeName() + "_" + keyOverride.getCodeName(), joinSequence, isNullable);
+
+        return new SQLJoinStatement(
+                joinSequence,
+                targetTable,
+                alias,
+                List.of(),
+                isNullable
+        );
+    }
 }

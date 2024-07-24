@@ -1,8 +1,6 @@
 package fake.code.generated.queries.query;
-
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
-
 import fake.graphql.example.model.Film;
 import fake.graphql.example.model.FilmTitle;
 import java.lang.String;
@@ -13,23 +11,22 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
-
 public class FilmDBQueries {
     public static Map<String, Film> sequelForFilm(DSLContext ctx, Set<String> filmIds,
-                                           SelectionSet select) {
+            SelectionSet select) {
+        var film_film_left = FILM.film().as("film_721703768");
         return ctx
                 .select(
                         FILM.getId(),
                         DSL.row(
-                                FILM.film().getId(),
-                                DSL.row(
-                                        select.optional("title/title", FILM.film().TITLE)
-                                ).mapping(Functions.nullOnAllNull(FilmTitle::new))
+                                film_film_left.getId(),
+                                DSL.row(select.optional("title/title", film_film_left.TITLE)).mapping(Functions.nullOnAllNull(FilmTitle::new))
                         ).mapping(Functions.nullOnAllNull(Film::new))
                 )
                 .from(FILM)
+                .leftJoin(film_film_left)
                 .where(FILM.hasIds(filmIds))
-                .orderBy(FILM.film().getIdFields())
+                .orderBy(film_film_left.getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

@@ -16,6 +16,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Film> filmsForQuery(DSLContext ctx, List<String> ids, SelectionSet select) {
+        var film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2782157680");
         return ctx
                 .select(
                         DSL.row(
@@ -42,9 +43,7 @@ public class QueryDBQueries {
                                 select.optional("title20", FILM.TITLE),
                                 select.optional("description", FILM.DESCRIPTION),
                                 select.optional("length", FILM.LENGTH),
-                                DSL.row(
-                                        select.optional("duration1/duration", FILM.RENTAL_DURATION)
-                                ).mapping(Functions.nullOnAllNull(Duration1::new)),
+                                DSL.row(select.optional("duration1/duration", FILM.RENTAL_DURATION)).mapping(Functions.nullOnAllNull(Duration1::new)),
                                 DSL.row(
                                         select.optional("duration2/duration", FILM.RENTAL_DURATION),
                                         select.optional("duration2/duration2", FILM.RENTAL_DURATION),
@@ -101,7 +100,7 @@ public class QueryDBQueries {
                                         )
                                 ),
                                 select.optional("rate", FILM.RENTAL_RATE),
-                                select.optional("languageName", FILM.filmLanguageIdFkey().NAME),
+                                select.optional("languageName", film_filmlanguageidfkey_left.NAME),
                                 select.optional("rating", FILM.RATING.convert(Rating.class, s -> s == null ? null : Map.of("G", Rating.G, "PG", Rating.PG, "R", Rating.R).getOrDefault(s, null), s -> s == null ? null : Map.of(Rating.G, "G", Rating.PG, "PG", Rating.R, "R").getOrDefault(s, null)))
                         ).mapping(Film.class, r ->
                                 Arrays.stream(r).allMatch(Objects::isNull) ? null : new Film(
@@ -131,12 +130,13 @@ public class QueryDBQueries {
                                         (Duration1) r[23],
                                         (Duration2) r[24],
                                         FILM.RENTAL_RATE.getDataType().convert(r[25]),
-                                        FILM.filmLanguageIdFkey().NAME.getDataType().convert(r[26]),
+                                        film_filmlanguageidfkey_left.NAME.getDataType().convert(r[26]),
                                         (Rating) r[27]
                                 )
                         )
                 )
                 .from(FILM)
+                .leftJoin(film_filmlanguageidfkey_left)
                 .where(ids.size() > 0 ? FILM.FILM_ID.in(ids) : DSL.noCondition())
                 .orderBy(FILM.getIdFields())
                 .fetch(it -> it.into(Film.class));

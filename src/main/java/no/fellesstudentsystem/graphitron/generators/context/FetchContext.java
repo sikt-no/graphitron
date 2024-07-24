@@ -300,12 +300,11 @@ public class FetchContext {
             return !updatedSequence.isEmpty() ? updatedSequence : JoinListSequence.of(refTable);
         }
 
-        var finalSequence = resolveNextSequence(
+        var finalSequence = resolveNextSequenceWithPath(
                 new FieldReference(refTable),
                 new TableRelation(lastTable, refTable),
                 updatedSequence,
-                nullable,
-                false
+                nullable
         ); // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
         return !finalSequence.isEmpty() ? finalSequence : JoinListSequence.of(refTable);
     }
@@ -315,6 +314,7 @@ public class FetchContext {
      * @return The new join sequence, with the provided join sequence extended by all the references provided.
      */
     private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin, boolean checkLastRef) {
+        requiresLeftJoin = true;
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
 
         var relations = new ArrayList<TableRelation>();
@@ -328,34 +328,13 @@ public class FetchContext {
             previousTable = getPreviousTable();
         }
 
-        var referencesWithLast = new ArrayList<>(references);
         if (checkLastRef && !Objects.equals(previousTable, refTable)) {
             relations.add(new TableRelation(previousTable, refTable));
-            referencesWithLast.add(new FieldReference(refTable));
         }
 
-        var refSize = referencesWithLast.size();
-        boolean hasFutureJoin = false, checkedJoins = false;
-        // These complicated checks may become redundant with https://www.jooq.org/doc/latest/manual/sql-building/sql-statements/select-statement/explicit-path-join/ and should be removed if the feature is applied.
         for (int i = 0; i < references.size(); i++) {
-            if (!checkedJoins) {
-                var futureRelations = relations.subList(i, refSize);
-                var futureReferences = referencesWithLast.subList(i, refSize);
-                for (int j = 0; j < futureRelations.size() && !hasFutureJoin; j++) {
-                    hasFutureJoin = hasExplicitJoin(futureReferences.get(j), futureRelations.get(j));
-                }
-
-                checkedJoins = true;
-            }
-
-            joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, requiresLeftJoin, hasFutureJoin);
-
-            if (!joinSequence.isEmpty() && joinSequence.getLast().clearsPreviousSequence()) {
-                checkedJoins = false;
-                hasFutureJoin = false;
-            }
+            joinSequence = resolveNextSequenceWithPath(references.get(i), relations.get(i), joinSequence, requiresLeftJoin);
         }
-
         return joinSequence;
     }
 
@@ -366,6 +345,54 @@ public class FetchContext {
                 && getPreviousTable() != null
                 && processedSchema.isObject(getReferenceObjectField())
         );
+    }
+
+    private JoinListSequence resolveNextSequenceWithPath(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
+        requiresLeftJoin = true;
+        var previous = relation.getFrom();
+        var target = relation.getToTable();
+        if (previous == null) {
+            return JoinListSequence.of(target);
+        }
+        var targetOrPrevious = target != null ? target : previous;
+
+        var newSequence = joinSequence.isEmpty() ? JoinListSequence.of(previous) : joinSequence;
+        var keyToUse = fRef.hasKey() || fRef.hasTableCondition()
+                ? fRef.getKey()
+                : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
+
+        keyForMapping = keyToUse;
+
+        if (keyToUse != null && !keyToUse.getTable().equals(target)) {
+            keyToUse = keyToUse.getInverseKey();
+        }
+
+        if (fRef.hasTableCondition() && keyToUse == null) {
+            var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
+            joinSet.add(join);
+            return newSequence.cloneAdd(join.getJoinAlias());
+        }
+
+        if (keyToUse != null) {
+            var aliasJoinSequence = newSequence.clone();
+            aliasJoinSequence = aliasJoinSequence.cloneAdd(keyToUse);
+
+            var join = fRef.createJoinOnExplicitPathFor(keyToUse, aliasJoinSequence, target, requiresLeftJoin);
+            joinSet.add(join);
+            newSequence = newSequence.cloneAdd(join.getJoinAlias());
+        }
+
+        if (fRef.hasTableCondition() && relation.hasRelation()) {
+            var conditionString = fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()));
+            var listOfConditions = this.conditionSet.get(currentMultisetContext);
+            if(listOfConditions == null) {
+                listOfConditions = new ArrayList<>();
+            }
+            listOfConditions.add(conditionString);
+            this.conditionSet.put(currentMultisetContext, listOfConditions);
+        }
+
+        return newSequence;
     }
 
     private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin, boolean hasFutureJoin) {
@@ -444,10 +471,6 @@ public class FetchContext {
 
     private static JOOQMapping inferNextTable(JOOQMapping referenceTable, JOOQMapping referenceKey, JOOQMapping previousTable, JOOQMapping nextTable) {
         if (referenceTable != null) {
-            if (referenceKey != null) {
-                // Tiny hack for reverse references.
-                referenceKey.setTable(referenceTable);
-            }
             return referenceTable;
         }
 
@@ -464,15 +487,11 @@ public class FetchContext {
 
             // Key is the "right" way.
             if (Objects.equals(sourceTable, previousTable)) {
-                // Tiny hack for reverse references.
-                referenceKey.setTable(targetTable);
                 return targetTable;
             }
 
             // Key is the "wrong" way.
             if (Objects.equals(targetTable, previousTable)) {
-                // Tiny hack for reverse references.
-                referenceKey.setTable(sourceTable);
                 return sourceTable;
             }
         }

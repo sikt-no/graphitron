@@ -8,7 +8,12 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
-    public static Payment paymentForQuery(DSLContext ctx, String id, String name, SelectionSet select) {
+    public static Payment paymentForQuery(DSLContext ctx, String id, String name,
+            SelectionSet select) {
+        var payment_rental_left = PAYMENT.rental().as("rental_61302898");
+        var rental_61302898_inventory_left = payment_rental_left.inventory().as("inventory_2622920513");
+        var inventory_2622920513_film_left = rental_61302898_inventory_left.film().as("film_2895304902");
+        var film_2895304902_filmoriginallanguageidfkey_left = inventory_2622920513_film_left.filmOriginalLanguageIdFkey().as("filmOriginalLanguageIdFkey_458113126");
         return ctx
                 .select(
                         DSL.row(
@@ -16,8 +21,12 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Payment::new))
                 )
                 .from(PAYMENT)
+                .leftJoin(payment_rental_left)
+                .leftJoin(rental_61302898_inventory_left)
+                .leftJoin(inventory_2622920513_film_left)
+                .leftJoin(film_2895304902_filmoriginallanguageidfkey_left)
                 .where(PAYMENT.ID.eq(id))
-                .and(name != null ? PAYMENT.rental().inventory().film().filmOriginalLanguageIdFkey().NAME.eq(name) : DSL.noCondition())
+                .and(name != null ? film_2895304902_filmoriginallanguageidfkey_left.NAME.eq(name) : DSL.noCondition())
                 .fetchOne(it -> it.into(Payment.class));
     }
 }

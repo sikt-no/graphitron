@@ -9,19 +9,18 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static Store storeForQuery(DSLContext ctx, String id, String name, SelectionSet select) {
-        var store_store_customer = CUSTOMER.as("store_1860923489");
+        var store_storecustomer_customer_left = CUSTOMER.as("store_802713965");
+        var store_802713965_address_left = store_storecustomer_customer_left.address().as("address_3872633320");
+        var address_3872633320_city_left = store_802713965_address_left.city().as("city_2245622354");
         return ctx
-                .select(
-                        DSL.row(
-                                STORE.getId()
-                        ).mapping(Functions.nullOnAllNull(Store::new))
-                )
+                .select(DSL.row(STORE.getId()).mapping(Functions.nullOnAllNull(Store::new)))
                 .from(STORE)
-                .join(store_store_customer)
-                .onKey(CUSTOMER__CUSTOMER_STORE_ID_FKEY)
+                .leftJoin(store_storecustomer_customer_left)
+                .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_storecustomer_customer_left))
+                .leftJoin(store_802713965_address_left)
+                .leftJoin(address_3872633320_city_left)
                 .where(STORE.ID.eq(id))
-                .and(store_store_customer.address().city().NAME.eq(name))
-                .and(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.storeCustomer(STORE, store_store_customer))
+                .and(address_3872633320_city_left.NAME.eq(name))
                 .fetchOne(it -> it.into(Store.class));
     }
 }
