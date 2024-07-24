@@ -16,6 +16,8 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameForm
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.ReflectionHelpers.classHasMethod;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.recordUsesFSHack;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_ID;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class MapperContext {
@@ -114,6 +116,11 @@ public class MapperContext {
     private @Nullable MethodMapping getNextRecordMapping() {
         if (previousContext.isInitContext || (!target.hasSetFieldOverride() && previousContext.lastRecordMapping != null && pastFieldOverrideExists)) {
             return previousContext.lastRecordMapping;
+        }
+
+        // FS HACK - Account for get/set ID methods with an underscore at the end...
+        if (previousContext.targetIsType && previousContext.targetType.hasTable() && recordUsesFSHack(previousContext.targetType.getTable().getName()) && target.getName().equals(NODE_ID.getName())) {
+            return new MethodMapping(target.getName() + "_");
         }
 
         return mapsJavaRecord ? target.getMappingFromFieldOverride() : target.getMappingForRecordFieldOverride();

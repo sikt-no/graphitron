@@ -121,6 +121,15 @@ public class TableReflection {
     }
 
     /**
+     * NEW FS hack! Some methods do not use getId(), but getId_() methods for ID...
+     */
+    public static boolean recordUsesFSHack(String tableName) {
+        return getRecordClass(tableName)
+                .map(it -> Stream.of(it.getMethods()).anyMatch(m -> m.getName().equalsIgnoreCase("getId_")))
+                .orElse(false);
+    }
+
+    /**
      * @return Does this table exist in the generated jOOQ code?
      */
     public static boolean tableExists(String tableName) {
