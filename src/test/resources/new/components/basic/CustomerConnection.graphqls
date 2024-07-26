@@ -1,0 +1,10 @@
+type CustomerConnection {
+  edges: [CustomerConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Customer!]!
+}
+
+type CustomerConnectionEdge {
+  cursor: String
+  node: Customer
+}

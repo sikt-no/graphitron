@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.DUMMY_INPUT_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.DUMMY_TYPE_RECORD;

@@ -14,8 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.RESOLVER_FETCH_SERVICE;
-import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.CUSTOMER;
-import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.SPLIT_QUERY_WRAPPER;
+import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.*;
 
 @DisplayName("Fetch service resolvers - Resolvers that call custom services")
 public class FetchServiceResolverTest extends GeneratorTest {
@@ -52,6 +51,18 @@ public class FetchServiceResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Root service with pagination")
+    void withPagination() {
+        assertGeneratedContentMatches("operation/withPagination", CUSTOMER_CONNECTION);
+    }
+
+    @Test
+    @DisplayName("Root service with pagination and a record input")
+    void withPaginationAndRecord() {
+        assertGeneratedContentMatches("operation/withPaginationAndRecord", CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE);
+    }
+
+    @Test
     @DisplayName("Basic service with no extra parameters")
     void splitQuery() {
         assertGeneratedContentMatches("splitquery/default", SPLIT_QUERY_WRAPPER);
@@ -59,7 +70,19 @@ public class FetchServiceResolverTest extends GeneratorTest {
 
     @Test
     @DisplayName("Basic service with a parameter")
-    void splitQuerywithInput() {
+    void splitQueryWithInput() {
         assertGeneratedContentMatches("splitquery/withInput", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Service with pagination")
+    void splitQueryWithPagination() {
+        assertGeneratedContentMatches("splitquery/withPagination", SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION);
+    }
+
+    @Test
+    @DisplayName("Service with pagination and a record input")
+    void splitQueryWithPaginationAndRecord() {
+        assertGeneratedContentMatches("splitquery/withPaginationAndRecord", SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE);
     }
 }

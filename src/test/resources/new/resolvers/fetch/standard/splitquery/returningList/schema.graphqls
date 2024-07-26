@@ -1,0 +1,6 @@
+type Wrapper {
+  id: ID # TODO: This should not be required.
+
+  query1: [DummyType] @splitQuery
+  query2: [DummyType!]! @splitQuery
+}

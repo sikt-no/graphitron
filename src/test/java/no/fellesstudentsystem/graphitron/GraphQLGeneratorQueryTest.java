@@ -9,7 +9,6 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolve
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -54,26 +53,6 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
                 .collect(Collectors.toSet());
     }
 
-    @Test //jOOQ' støtter maks 22 type-safe records. Flere enn 22 er støttet, men uten type safety.
-    void generate_whenTypeHasMoreThan22Fields_shouldGenerateValidResolver() {
-        assertGeneratedContentMatches("moreThan22Fields");
-    }
-
-    @Test
-    void generate_manualResolver_shouldNotGenerateAnyResolvers() {
-        assertGeneratedContentMatches("manualResolver");
-    }
-
-    @Test
-    void generate_whenMixOfOptionalAndRequiredFieldsOnRequiredLeafNode_shouldGenerateQueryThatIncludesOneRequiredField() {
-        assertGeneratedContentMatches("mixOfOptionalAndRequiredFields");
-    }
-
-    @Test
-    void generate_queryWithPagination_shouldCreateQueryResolverWithPaginationSupport() {
-        assertGeneratedContentMatches("queryWithPagination");
-    }
-
     @Test
     void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() {
         assertGeneratedContentMatches("queryWithPaginationAndSorting");
@@ -113,100 +92,8 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithResolverPagination_shouldCreateResolverWithPaginationOnResolver() {
-        assertGeneratedContentMatches("queryWithResolverPagination");
-    }
-
-    @Test
-    void generate_queryWithMultipleAndOptionalArguments_shouldCreateQueryResolverThatHandlesMultipleAndOptionalArguments() {
-        assertGeneratedContentMatches("queryWithMultipleArguments");
-    }
-
-    @Disabled
-    @Test
-    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() {
-        assertGeneratedContentMatches("queryWithMultiset");
-    }
-
-    @Disabled
-    @Test
-    void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultisetWhichContainsFieldWithCondition() {
-        assertGeneratedContentMatches("queryWithMultisetContainingFieldWithCondition");
-    }
-
-    @Test
-    void generate_queryWithArguments_shouldUseCorrectPathForWhere() {
-        assertGeneratedContentMatches("correctWhereConditionPathUsage");
-    }
-
-    @Test
-    void generate_queryWithInputTypes_shouldCreateQueryResolverThatHandlesInputTypes() {
-        assertGeneratedContentMatches("queryWithInputTypeArguments");
-    }
-
-    @Test
-    void generate_queryWithInputWithListInput_shouldCreateQueryResolverThatHandlesInputWithListOfInputTypes() {
-        assertGeneratedContentMatches("queryWithInputWithListInput");
-    }
-
-    @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() {
-        assertGeneratedContentMatches("queryWithConditions");
-    }
-
-    @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithEnumConditionInputs() {
-        assertGeneratedContentMatches("queryWithEnumConditions");
-    }
-
-    @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithEnumListConditionInputs() {
-        assertGeneratedContentMatches("queryWithEnumListConditions");
-    }
-
-    @Test
-    void generate_queryWithInputs_shouldCreateConditionsWithoutExtraNullChecksWhenIterable() {
-        assertGeneratedContentMatches("queryWithLayeredAndListedChecks");
-    }
-
-    @Test
     void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() {
         assertGeneratedContentMatches("splitQueryForTypeWithoutTable");
-    }
-
-    @Test
-    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() {
-        assertGeneratedContentMatches("referenceBackwards");
-    }
-
-    @Test
-    void generate_referenceViaTablesBackwardsAndJoin_shouldCreateJoinViaTablesBackwards() {
-        assertGeneratedContentMatches("referenceBackwardsWithExtraJoin");
-    }
-
-    @Test
-    void generate_conditionOnReverseJoin_shouldFindAppropriateConditionSource() {
-        assertGeneratedContentMatches("referenceBackwardWithCondition");
-    }
-
-    @Test
-    void generate_joinWhenFutureHasExplicitJoin_shouldCreateAppropriateJoinType() {
-        assertGeneratedContentMatches("referenceWithFutureExplicitJoin");
-    }
-
-    @Test
-    void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() {
-        assertGeneratedContentMatches("multipleAliasesForSameType");
-    }
-
-    @Test
-    void generate_queryWithoutPagination_shouldCreateQueryAndQueryResolverWithoutPaginationSupport() {
-        assertGeneratedContentMatches("queryWithoutPagination");
-    }
-
-    @Test
-    void generate_queryWithUnion_shouldCreateQueryAndQueryResolverWithUnionSupport() {
-        assertGeneratedContentMatches("queryWithUnion");
     }
 
     @Test
@@ -235,20 +122,5 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     @Test
     void generate_simpleInterfaceWithoutTable_shouldNotThrowException() {
         assertDoesNotThrow(() -> generateFiles("simpleInterfaceWithoutTable"));
-    }
-
-    @Test
-    void generate_queryWithSelfReferenceHavingExplicitJoinKey() {
-        assertGeneratedContentMatches("queryWithSelfReferenceHavingExplicitJoinKey");
-    }
-
-    @Test
-    void generate_queryWithSelfReferenceHavingConditionAndNoKey() {
-        assertGeneratedContentMatches("queryWithSelfReferenceHavingConditionAndNoKey");
-    }
-
-    @Test
-    void generate_queryWithSelfReferenceFindingImplicitJoinKey() {
-        assertGeneratedContentMatches("queryWithSelfReferenceFindingImplicitJoinKey");
     }
 }

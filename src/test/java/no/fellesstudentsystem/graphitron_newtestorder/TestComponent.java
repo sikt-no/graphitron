@@ -18,11 +18,14 @@ public enum TestComponent {
     CUSTOMER("basic/Customer"),
     CUSTOMER_TABLE("basic/CustomerTable"),
     CUSTOMER_INPUT_TABLE("basic/CustomerInputTable"),
+    CUSTOMER_CONNECTION("basic/CustomerConnection", CUSTOMER_TABLE, PAGE_INFO),
+
     DUMMY_TYPE("basic/DummyType"),
     DUMMY_TYPE_RECORD("basic/DummyTypeRecord", Set.of(DUMMY_RECORD)),
     DUMMY_INPUT("basic/DummyInput"),
     DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(DUMMY_RECORD)),
     DUMMY_CONNECTION("basic/DummyConnection", DUMMY_TYPE, PAGE_INFO),
+
     SPLIT_QUERY_WRAPPER("SplitQueryWrapper"),
 
     CITY_INPUTS_JOOQ("records/CityInputsJOOQ"),

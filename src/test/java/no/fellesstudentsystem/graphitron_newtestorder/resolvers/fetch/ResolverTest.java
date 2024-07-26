@@ -44,6 +44,24 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Root resolver that returns a list")
+    void returningList() {
+        assertGeneratedContentMatches("operation/returningList");
+    }
+
+    @Test
+    @DisplayName("Root resolver that is not generated")
+    void notGenerated() {
+        assertGeneratedContentMatches("operation/notGenerated");
+    }
+
+    @Test
+    @DisplayName("Root resolver that is generated as abstract")
+    void notGeneratedAbstractResolver() {
+        assertGeneratedContentMatches("operation/notGeneratedAbstractResolver");
+    }
+
+    @Test
     @DisplayName("Basic resolver with no parameters")
     void splitQuery() {
         assertGeneratedContentMatches("splitquery/default", SPLIT_QUERY_WRAPPER);
@@ -53,5 +71,23 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Resolvers with various input data types")
     void splitQueryInputDatatypes() {
         assertGeneratedContentMatches("splitquery/inputDatatypes", DUMMY_INPUT, SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Resolver that returns a list")
+    void splitQueryReturningList() {
+        assertGeneratedContentMatches("splitquery/returningList", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Resolver that is not generated")
+    void splitQueryNotGenerated() {
+        assertGeneratedContentMatches("splitquery/notGenerated", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Resolver that is generated as abstract")
+    void splitQueryNotGeneratedAbstractResolver() {
+        assertGeneratedContentMatches("splitquery/notGeneratedAbstractResolver", SPLIT_QUERY_WRAPPER);
     }
 }

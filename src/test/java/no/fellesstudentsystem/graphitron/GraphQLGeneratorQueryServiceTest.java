@@ -38,18 +38,8 @@ public class GraphQLGeneratorQueryServiceTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithService_shouldGenerateMappersAndCallSimpleServices() {
-        assertGeneratedContentMatches("resolverWithService");
-    }
-
-    @Test
     void generate_queryWithService_shouldGenerateMappersForServicesInResolvers() {
         assertGeneratedContentMatches("resolverWithServiceAndNestedResolvers");
-    }
-
-    @Test
-    void generate_queryWithService_shouldGenerateMappersAndCallServicesWithPagination() {
-        assertGeneratedContentMatches("resolverWithServicePagination");
     }
 
     @Test

@@ -33,10 +33,7 @@ public class GraphQLGeneratorQueryReferenceTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(
-                new FetchDBClassGenerator(schema),
-                new FetchResolverClassGenerator(schema)
-        );
+        return List.of(new FetchDBClassGenerator(schema));
     }
 
     @ParameterizedTest(name = "{index} {0}")

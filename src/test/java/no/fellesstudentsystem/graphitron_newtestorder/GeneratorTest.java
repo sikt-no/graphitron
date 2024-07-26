@@ -85,10 +85,15 @@ public abstract class GeneratorTest {
     }
 
     public static void assertGeneratedContentMatches(String expectedOutputFolder, Map<String, List<String>> generatedFiles) {
-        var expectedFileNames = new HashSet<String>();
+        var path = Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME);
+        if (!Files.exists(path)) {
+            assertThat(generatedFiles).isEmpty();
+            return;
+        }
 
+        var expectedFileNames = new HashSet<String>();
         try {
-            Files.walkFileTree(Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME), new SimpleFileVisitor<>() {
+            Files.walkFileTree(path, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) {
                     String expectedFileName = expectedOutputFile.getFileName().toString();
