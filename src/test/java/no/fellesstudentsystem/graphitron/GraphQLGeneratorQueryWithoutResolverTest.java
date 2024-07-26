@@ -1,5 +1,7 @@
 package no.fellesstudentsystem.graphitron;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
@@ -8,8 +10,11 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.TestReferenceSet.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
@@ -163,5 +168,18 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     @Test
     void generate_queryWithComplexLookup_shouldGenerateLookupResolversAndQueries() {
         assertGeneratedContentMatches("queryWithLookupMultipleParameters");
+    }
+
+    @Test
+    void generate_queryThatReturnsInterface_shouldCreateResolver() {
+        assertGeneratedContentMatches("queryReturningInterface");
+        assertThat(getLogMessagesWithLevelWarn()).isEmpty();
+    }
+
+    private Set<String> getLogMessagesWithLevelWarn() {
+        return logWatcher.list.stream()
+                .filter(it -> it.getLevel() == Level.WARN)
+                .map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.toSet());
     }
 }

@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron;
+package no.fellesstudentsystem.graphitron_newtestorder.code;
 
 import graphql.execution.ExecutionStepInfo;
 import graphql.execution.MergedField;

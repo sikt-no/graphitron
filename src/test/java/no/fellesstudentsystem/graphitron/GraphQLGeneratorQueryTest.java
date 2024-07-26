@@ -1,7 +1,5 @@
 package no.fellesstudentsystem.graphitron;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
@@ -12,11 +10,8 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphitron.TestReferenceSet.*;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
@@ -44,13 +39,6 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
                 new FetchDBClassGenerator(schema),
                 new FetchResolverClassGenerator(schema)
         );
-    }
-
-    private Set<String> getLogMessagesWithLevelWarn() {
-        return logWatcher.list.stream()
-                .filter(it -> it.getLevel() == Level.WARN)
-                .map(ILoggingEvent::getFormattedMessage)
-                .collect(Collectors.toSet());
     }
 
     @Test
@@ -94,12 +82,6 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     @Test
     void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() {
         assertGeneratedContentMatches("splitQueryForTypeWithoutTable");
-    }
-
-    @Test
-    void generate_queryThatReturnsInterface_shouldCreateResolver() {
-        assertGeneratedContentMatches("queryReturningInterface");
-        assertThat(getLogMessagesWithLevelWarn()).isEmpty();
     }
 
     @Test

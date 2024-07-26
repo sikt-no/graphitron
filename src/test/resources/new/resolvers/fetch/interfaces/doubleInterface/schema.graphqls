@@ -1,0 +1,15 @@
+type Query {
+  node(id: ID!): Node # Node interface
+  titled(title: String!): Titled
+
+  film: Film @notGenerated
+}
+
+type Film implements Titled & Node @table {
+  id: ID!
+  title: String!
+}
+
+interface Titled {
+  title: String!
+}
