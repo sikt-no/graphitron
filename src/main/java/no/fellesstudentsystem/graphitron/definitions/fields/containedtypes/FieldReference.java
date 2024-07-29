@@ -30,10 +30,7 @@ public class FieldReference {
 
             var condition = getOptionalDirectiveArgumentObjectFields(field, REFERENCE, CONDITION);
             if (condition.isPresent()) {
-                var objectFields = condition.get();
-                var classReference = stringValueOf(getObjectFieldByName(objectFields, NAME));
-                var methodName = getOptionalObjectFieldByName(objectFields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(field.getName());
-                relatedTableCondition = new SQLCondition(new CodeReference(classReference, methodName));
+                relatedTableCondition = new SQLCondition(new CodeReference(condition.get(), field.getName()));
             }
         }
 

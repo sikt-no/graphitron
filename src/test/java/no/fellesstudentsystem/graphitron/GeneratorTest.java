@@ -198,6 +198,12 @@ public abstract class GeneratorTest {
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
                 references,
+                Set.of(
+                    "no.fellesstudentsystem.graphitron.conditions",
+                    "no.fellesstudentsystem.graphitron.enums",
+                    "no.fellesstudentsystem.graphitron.records",
+                    "no.fellesstudentsystem.graphitron.services"
+                ),
                 globalTransforms,
                 extendedClasses
         );

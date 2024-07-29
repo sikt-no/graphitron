@@ -35,7 +35,8 @@ The options are the same for both goals.
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
 
 #### Code references
-* _externalReferences_ - List of references to classes that can be applied through certain directives.
+* _externalReferences_ - List of references to classes that can be applied through certain directives. Note that this is being deprecated in favor of using the actual className in the directives.
+* _externalReferenceImports_ - List of packages that should be searched for classNames used in directives.
 * _globalRecordTransforms_ - List of transforms that should be applied to all records. The _scope_ value specifies which mutations should be affected, but currently only _ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
 * _extensions_ - Graphitron classes allow for extensions, allowing plugin users to provide their own implementations to control the code generation process. 
 Currently, all extensions are instantiated via [ExtendedFunctionality](src/main/java/no/fellesstudentsystem/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
@@ -49,6 +50,13 @@ Example of referencing a class through the configuration:
     <fullyQualifiedClassName>some.path.CustomerTransform</fullyQualifiedClassName>
   </element>
 </externalReferences>
+```
+
+Example of importing a package through the configuration:
+```xml
+<externalReferenceImports>
+    <package>some.path</package>
+<externalReferenceImports>
 ```
 
 Example of applying a global transform in the POM:
@@ -215,14 +223,11 @@ manage several simultaneous joins from one table to another. If the field is a s
 it can be linked to a jOOQ column in another table using this directive. If the field points to a type, all fields within this
 referred type will have access to the join operation.
 
-The following examples will assume that this configuration is set: 
+The following examples will assume that this configuration is set so that Graphitron can find the referenced classes: 
 ```xml
-<externalReferences>
-  <element>
-    <name>CUSTOMER_CONDITION</name>
-    <fullyQualifiedClassName>some.path.CustomerCondition</fullyQualifiedClassName>
-  </element>
-</externalReferences>
+<externalReferenceImports>
+  <package>some.path</package>
+</externalReferenceImports>
 ```
 
 For the first example we will apply this simple condition method on tables that do have a direct connection.
@@ -237,7 +242,7 @@ The method returns a jOOQ condition, which will be appended after the where-stat
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(condition : {name: "CUSTOMER_CONDITION", method: "addressJoin"})
+  addresses: [Address!]! @splitQuery @reference(condition : {className: "CustomerCondition", method: "addressJoin"})
 }
 ```
 
@@ -308,7 +313,7 @@ To either apply additional conditions or override some of the conditions added b
 It can be applied to both input parameters and resolver fields, and the scope of the condition will match the element it is put on.
 It provides the following parameter options:
 
-* _condition_ - Reference name and method name of a reference defined in an [entry](#code-references) in the POM XML.
+* _condition_ - Reference class and method name (see [code references]](#code-references))
 * _override_ - If true, disables the default checks that are added to all arguments, otherwise add the new condition in
 addition to the default ones.
 
@@ -321,12 +326,9 @@ and to use a record directive on a nested input all the preceding inputs must al
 The following examples will assume this configuration exists:
 
 ```xml
-<externalReferences>
-  <element>
-    <name>CITY_CONDITION</name>
-    <fullyQualifiedClassName>some.path.CityCondition</fullyQualifiedClassName>
-  </element>
-</externalReferences>
+<externalReferenceImports>
+  <package>some.path</package>
+</externalReferenceImports>
 ```
 
 #### Example: No _override_ on input parameter
@@ -335,7 +337,7 @@ The method must have the table and the input parameter type as parameters.
 
 _Schema_:
 ```graphql
-cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"})
+cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "CityCondition", method: "cityMethod"})
 ```
 
 _Resulting code_:
@@ -353,7 +355,7 @@ _Schema_:
 cities(
     countryId: String! @field(name: "COUNTRY_ID"),
     cityNames: [String!] @field(name: "CITY")
-): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"})
+): [City] @condition(condition: {className: "CityCondition", method: "cityMethod"})
 ```
 
 _Resulting code_:
@@ -373,7 +375,7 @@ The method must have the table and the input parameter type as parameters.
 
 _Schema_:
 ```graphql
-cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"}, override: true)
+cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "CityCondition", method: "cityMethod"}, override: true)
 ```
 
 _Resulting code_:
@@ -390,7 +392,7 @@ _Schema_:
 cities(
     countryId: String! @field(name: "COUNTRY_ID"),
     cityNames: [String!] @field(name: "CITY")
-): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
+): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
 ```
 
 _Resulting code_:
@@ -407,8 +409,8 @@ _Schema_:
 ```graphql
 cities(
     countryId: String! @field(name: "COUNTRY_ID"),
-    cityNames: [String!] @field(name: "CITY") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"}, override: true)
-): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
+    cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "CityCondition", method: "cityMethod"}, override: true)
+): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
 ```
 
 _Resulting code_:
@@ -426,7 +428,7 @@ _Schema_:
 ```graphql
 cities(
     cityInput: CityInput!
-): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
+): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
 
 input CityInput @table(name: "CITY") {
     countryId: String! @field(name: "COUNTRY_ID")
@@ -445,12 +447,12 @@ _Schema_:
 ```graphql
 cities(
     cityInput: CityInput1!
-): [City] @condition(condition: {name: "CITY_CONDITION", method: "cityMethodAllElements"}, override: true)
+): [City] @condition(condition: {className: "CityCondition", method: "cityMethodAllElements"}, override: true)
 
 # Can not skip record here even if we only want one of the other input types in our condition.
 input CityInput1 @record(record: {name: "LAYER_1_RECORD"}) {
     # A condition can also be placed here, but this may be redundant given the condition above in this case.
-    cityNames: [String!] @field(name: "CITY", javaName: "javaCityNamesField") @condition(condition: {name: "CITY_CONDITION", method: "cityMethod"}, override: true)
+    cityNames: [String!] @field(name: "CITY", javaName: "javaCityNamesField") @condition(condition: {className: "CityCondition", method: "cityMethod"}, override: true)
     countryId: String! @field(name: "COUNTRY_ID", javaName: "javaCountryField")
     city2: [CityInput2]
     city3: [CityInput3]

@@ -40,6 +40,13 @@ public class TestConfiguration {
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
                 references,
+                Set.of(
+                    "no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions",
+                    "no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences",
+                    "no.fellesstudentsystem.graphitron_newtestorder.codereferences.records",
+                    "no.fellesstudentsystem.graphitron_newtestorder.codereferences.services",
+                    "no.fellesstudentsystem.graphitron_newtestorder.codereferences.transforms"
+                ),
                 globalTransforms,
                 extendedClasses
         );
@@ -60,6 +67,7 @@ public class TestConfiguration {
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
                 List.of(),
+                Set.of(),
                 List.of(),
                 List.of()
         );

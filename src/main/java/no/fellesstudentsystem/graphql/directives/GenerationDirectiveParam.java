@@ -16,7 +16,9 @@ public enum GenerationDirectiveParam {
     ENUM("enumReference"),
     SERVICE("service"),
     ERROR("error"),
+    CLASSNAME("className"),
     METHOD("method"),
+
     RECORD("record"),
     HANDLERS("handlers"),
     HANDLER("handler"),

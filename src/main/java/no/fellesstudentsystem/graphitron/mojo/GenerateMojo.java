@@ -62,11 +62,18 @@ public class GenerateMojo extends AbstractMojo {
     private String jooqGeneratedPackage;
 
     /**
-     * External references that can be used in code generation.
+     * External reference elements that can be used in code generation.
      */
     @Parameter(property = "generate.externalReferences")
     @SuppressWarnings("unused")
     private List<ExternalMojoClassReference> externalReferences;
+
+    /**
+     * External reference elements that can be used in code generation.
+     */
+    @Parameter(property = "generate.externalReferenceImports")
+    @SuppressWarnings("unused")
+    private Set<String> externalReferenceImports;
 
     /**
      * Transforms that apply to all records, or a subset of records.
@@ -150,5 +157,9 @@ public class GenerateMojo extends AbstractMojo {
 
     public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
         this.jooqGeneratedPackage = jooqGeneratedPackage;
+    }
+
+    public Set<String> getExternalReferenceImports() {
+        return externalReferenceImports;
     }
 }

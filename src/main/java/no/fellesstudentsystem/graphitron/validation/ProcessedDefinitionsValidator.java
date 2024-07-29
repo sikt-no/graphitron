@@ -249,26 +249,23 @@ public class ProcessedDefinitionsValidator {
                 .stream()
                 .filter(EnumDefinition::hasJavaEnumMapping)
                 .map(EnumDefinition::getEnumReference)
-                .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> errorMessages.add(String.format("No enum with name '%s' found.", e)));
+                .forEach(e -> errorMessages.add(String.format("No enum with name '%s' found.", e.getSchemaClassReference())));
 
         allFields
                 .stream()
                 .filter(ObjectField::hasServiceReference)
                 .map(ObjectField::getServiceReference)
-                .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> errorMessages.add(String.format("No service with name '%s' found.", e)));
+                .forEach(e -> errorMessages.add(String.format("No service with name '%s' found.", e.getSchemaClassReference())));
 
         allFields
                 .stream()
                 .filter(ObjectField::hasCondition)
                 .map(ObjectField::getCondition)
                 .map(SQLCondition::getConditionReference)
-                .map(CodeReference::getSchemaClassReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e)));
+                .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e.getSchemaClassReference())));
     }
 
     private void validateInterfaces() {

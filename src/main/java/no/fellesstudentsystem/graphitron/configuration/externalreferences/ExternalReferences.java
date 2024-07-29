@@ -1,10 +1,13 @@
 package no.fellesstudentsystem.graphitron.configuration.externalreferences;
 
+import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class ExternalReferences {
     private final Map<String, Class<?>> classes;
@@ -19,16 +22,12 @@ public class ExternalReferences {
         }
     }
 
-    public boolean contains(String schemaName) {
-        return classes.containsKey(schemaName);
-    }
-
-    public Class<?> getClassFrom(String schemaName) {
-        return classes.get(schemaName);
-    }
-
-    public Class<?> getClassFrom(CodeReference reference) {
-        return classes.get(reference.getSchemaClassReference());
+    public boolean contains(CodeReference reference) {
+        try {
+            return getClassFrom(reference) != null;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     /**
@@ -36,7 +35,7 @@ public class ExternalReferences {
      * @throws IllegalArgumentException If method does not exist.
      */
     public Method getMethodFrom(CodeReference reference) {
-        return getMethodFrom(reference.getSchemaClassReference(), reference.getMethodName(), false);
+        return getMethodFrom(reference, false);
     }
 
     /**
@@ -44,27 +43,66 @@ public class ExternalReferences {
      * @throws IllegalArgumentException If method does not exist.
      */
     public Method getNullableMethodFrom(CodeReference reference) {
-        return getMethodFrom(reference.getSchemaClassReference(), reference.getMethodName(), true);
+        return getMethodFrom(reference, true);
     }
 
     /**
      * @return The method this reference points to if it exists.
      * @throws IllegalArgumentException If method does not exist.
      */
-    public Method getMethodFrom(String schemaName, String methodName, boolean nullable) {
-        var classReference = classes.get(schemaName);
-        if (classReference == null) {
-            throw new IllegalArgumentException("Could not find external class with name " + schemaName);
-        }
-        var first = Stream
-                .of(classReference.getMethods())
-                .filter(it -> it.getName().equalsIgnoreCase(methodName))
+    public Method getMethodFrom(CodeReference reference, boolean nullable) {
+        var cls = getClassFrom(reference);
+        var method = Arrays.stream(cls.getMethods())
+                .filter(it -> it.getName().equalsIgnoreCase(reference.getMethodName()))
                 .findFirst();
 
-        if (first.isEmpty() && nullable) {
+        if (method.isPresent()) {
+            return method.get();
+        }
+
+        if (nullable) {
             return null;
         }
 
-        return first.orElseThrow(() -> new IllegalArgumentException("Could not find method with name " + methodName + " in external class " + classReference.getName()));
+        throw new IllegalArgumentException(cls.getName() + " does not contain method named " + reference.getMethodName());
+    }
+
+    public Class<?> getClassFrom(CodeReference reference) {
+        var className = reference.getClassName();
+        if (className != null) {
+            var cls = resolve(className);
+            if (cls != null) {
+                return cls;
+            }
+
+            var resolved = GeneratorConfig.getExternalReferenceImports().stream()
+                    .map(pkg -> pkg + "." + className)
+                    .map(this::resolve)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            if (resolved.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Could not find external class " + className + " in externalReferenceImports.");
+            }
+
+            if (resolved.size() > 1) {
+                throw new IllegalArgumentException(
+                        className + " resolves to more than one class: " + resolved.stream().map(Class::getName).collect(Collectors.joining(", ")));
+            }
+
+            return resolved.get(0);
+        }
+
+        var name = reference.getSchemaClassReference();
+        return classes.get(name);
+    }
+
+    private Class<?> resolve(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
     }
 }

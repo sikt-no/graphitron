@@ -89,14 +89,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                             .map(ObjectField::getValue)
                             .map(it -> (ObjectValue) it)
                             .map(ObjectValue::getObjectFields)
-                            .map(fields ->
-                                    new SQLCondition(
-                                            new CodeReference(
-                                                    stringValueOf(getObjectFieldByName(fields, NAME)),
-                                                    getOptionalObjectFieldByName(fields, METHOD).map(DirectiveHelpers::stringValueOf).orElse(getName())
-                                            )
-                                    )
-                            ).orElse(null);
+                            .map(fields -> new SQLCondition(new CodeReference(fields, getName()))).orElse(null);
 
                     fieldReferences.add(
                             new FieldReference(

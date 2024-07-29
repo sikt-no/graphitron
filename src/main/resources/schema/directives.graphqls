@@ -126,7 +126,15 @@ directive @fetchByID on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
-input ExternalCodeReference { name: String!, method: String }
+input ExternalCodeReference {
+    name: String @deprecated(reason: "Fases ut til fordel for `class`"),
+    """Navnet på klassen man ønsker å referere til.
+
+    Dersom pakken klassen finnes i er importert i `externalReferences` i graphitron-konfigurasjonen så holder det med det forenklede navnet, ellers må det fullstendige navnet (fqcn) oppgis."""
+    className: String
+    """Navnet på metoden man ønsker å referere til."""
+    method: String
+}
 
 input ReferenceElement { table: String, key: String, condition: ExternalCodeReference }
 

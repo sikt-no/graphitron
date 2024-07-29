@@ -35,6 +35,7 @@ public class GeneratorConfig {
             String outputPkg,
             String jooqPkg,
             List<ExternalReference> references,
+            Set<String> imports,
             List<GlobalTransform> globalTransforms,
             List<Extension> extendedClasses
     ) {
@@ -48,6 +49,7 @@ public class GeneratorConfig {
         maxAllowedPageSize = 1000;
 
         externalReferences = new ExternalReferences(references);
+        externalReferenceImports = imports;
 
         GeneratorConfig.globalTransforms = globalTransforms;
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
@@ -77,6 +79,7 @@ public class GeneratorConfig {
         maxAllowedPageSize = mojo.getMaxAllowedPageSize();
 
         externalReferences = new ExternalReferences(mojo.getExternalReferences());
+        externalReferenceImports = mojo.getExternalReferenceImports();
 
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
@@ -94,6 +97,7 @@ public class GeneratorConfig {
         generatedSchemaModelsPackage = null;
         generatedJooqPackage = null;
         externalReferences = new ExternalReferences(List.of());
+        externalReferenceImports = Set.of();
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
     }
@@ -110,6 +114,7 @@ public class GeneratorConfig {
     private static int maxAllowedPageSize;
 
     private static ExternalReferences externalReferences;
+    private static Set<String> externalReferenceImports;
     private static List<GlobalTransform> globalTransforms;
 
     private static ExtendedFunctionality extendedFunctionality;
@@ -142,6 +147,10 @@ public class GeneratorConfig {
 
     public static ExternalReferences getExternalReferences() {
         return externalReferences;
+    }
+
+    public static Set<String> getExternalReferenceImports() {
+        return externalReferenceImports;
     }
 
     public static List<GlobalTransform> getGlobalTransforms(TransformScope scope) {
