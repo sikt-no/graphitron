@@ -1,0 +1,3 @@
+type Query {
+  query(in: DummyInputRecord): Customer @service(service: {name: "RESOLVER_FETCH_SERVICE"})
+}

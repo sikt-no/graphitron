@@ -1,0 +1,3 @@
+type DummyTypeRecord @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}

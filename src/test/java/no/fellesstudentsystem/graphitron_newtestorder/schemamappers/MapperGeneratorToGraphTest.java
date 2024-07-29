@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.schemamappers;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
@@ -9,15 +10,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.MAPPER_ID_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.MAPPER_ID_SERVICE;
 
 @DisplayName("JOOQ Mappers - Mapper content for mapping fields to graph types without records")
 public class MapperGeneratorToGraphTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "schemamappers";
+    @Override
+    protected String getSubpath() {
+        return "schemamappers";
+    }
 
-    public MapperGeneratorToGraphTest() {
-        super(SRC_TEST_RESOURCES_PATH, MAPPER_ID_SERVICE.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(MAPPER_ID_SERVICE);
     }
 
     @Override

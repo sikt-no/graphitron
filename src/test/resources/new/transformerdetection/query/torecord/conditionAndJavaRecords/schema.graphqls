@@ -1,21 +1,5 @@
 type Query {
   # When setting condition we want to find the mappable records. This is tested to ensure the filtering for record generation accounts for these as well.
-  condition1(cityInput: CityInput1): ID @condition(condition: {name: "DUMMY_CONDITION"})
+  condition1(cityInput: CityInput1): ID @condition(condition: {name: "DUMMY_CONDITION"}) # Layer without record. May need to forbid this case if the next one has record set.
   condition2(cityInput: CityInput3): ID @condition(condition: {name: "DUMMY_CONDITION"})
-}
-
-input CityInput1 { # Layer without record. May need to forbid this case if the next one has record set.
-  city: CityInput2
-}
-
-input CityInput2 @record(record: {name: "DUMMY_RECORD"}) {
-  cityId: String! @field(name: "CITY_ID")
-}
-
-input CityInput3 @record(record: {name: "DUMMY_RECORD"}) {
-  city: CityInput4
-}
-
-input CityInput4 @record(record: {name: "DUMMY_RECORD"}) {
-  cityId: String! @field(name: "CITY_ID")
 }

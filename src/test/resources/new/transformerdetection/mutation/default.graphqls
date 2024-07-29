@@ -1,5 +1,0 @@
-# defines common schema.
-
-type Query {
-  dummy: ID # Query with a field is required in the schema.
-}

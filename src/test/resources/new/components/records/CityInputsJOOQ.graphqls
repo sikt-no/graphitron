@@ -1,0 +1,15 @@
+input CityInput1 {
+  city: CityInput2
+}
+
+input CityInput2 @table(name: "CITY") {
+  cityId: String! @field(name: "CITY_ID")
+}
+
+input CityInput3 @table(name: "CITY") {
+  city: CityInput4
+}
+
+input CityInput4 @table(name: "CITY") { # Will not find this. Two tables in a row do not make sense.
+  cityId: String! @field(name: "CITY_ID")
+}

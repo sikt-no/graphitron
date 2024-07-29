@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron_newtestorder.jooqrecordmappers;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
@@ -12,15 +13,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
 
 @DisplayName("JOOQ Validators - Validate mapped jOOQ records")
 public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/validation";
+    @Override
+    protected String getSubpath() {
+        return "jooqmappers/validation";
+    }
 
-    public MapperGeneratorToRecordValidationTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE);
     }
 
     @Override

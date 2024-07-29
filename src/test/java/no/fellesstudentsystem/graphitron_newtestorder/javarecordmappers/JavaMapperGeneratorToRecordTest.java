@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.javarecordmappers;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
@@ -9,22 +10,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
 
 @DisplayName("Java Mappers - Mapper content for mapping graph types to Java records")
 public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "javamappers/torecord";
+    @Override
+    protected String getSubpath() {
+        return "javamappers/torecord";
+    }
 
-    public JavaMapperGeneratorToRecordTest() {
-        super(
-                SRC_TEST_RESOURCES_PATH,
-                DUMMY_SERVICE.get(),
-                DUMMY_ENUM.get(),
-                MAPPER_RECORD_FILM.get(),
-                JAVA_RECORD_CUSTOMER.get(),
-                MAPPER_RECORD_ADDRESS.get()
-        );
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE, DUMMY_ENUM, MAPPER_RECORD_FILM, JAVA_RECORD_CUSTOMER, MAPPER_RECORD_ADDRESS);
     }
 
     @Override

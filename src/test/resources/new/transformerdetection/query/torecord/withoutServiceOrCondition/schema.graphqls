@@ -1,12 +1,4 @@
 type Query {
-  customer1(in1: CustomerInput1): ID
-  customer2(in2: CustomerInput2): ID
-}
-
-input CustomerInput1 @table(name: "CUSTOMER") {
-  id: ID!
-}
-
-input CustomerInput2 @record(record: {name: "DUMMY_RECORD"}) {
-  id: ID!
+  customer1(in1: CustomerInputTable): ID
+  customer2(in2: DummyInputRecord): ID
 }

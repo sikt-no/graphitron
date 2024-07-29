@@ -16,15 +16,14 @@ import java.util.Set;
 
 @DisplayName("JOOQ Mappers - Mapper content for mapping graph types to jOOQ records")
 public class MapperGeneratorToRecordWithTransformTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/torecord";
+    @Override
+    protected String getSubpath() {
+        return "jooqmappers/torecord";
+    }
 
-    public MapperGeneratorToRecordWithTransformTest() {
-        super(
-                SRC_TEST_RESOURCES_PATH,
-                Set.of(),
-                Set.of(new GlobalTransform(SomeTransform.class.getName(), "someTransform", TransformScope.ALL_MUTATIONS)),
-                List.of()
-        );
+    @Override
+    protected Set<GlobalTransform> getGlobalTransforms() {
+        return Set.of(new GlobalTransform(SomeTransform.class.getName(), "someTransform", TransformScope.ALL_MUTATIONS));
     }
 
     @Override

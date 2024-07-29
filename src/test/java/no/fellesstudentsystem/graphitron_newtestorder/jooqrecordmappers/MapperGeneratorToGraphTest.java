@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.jooqrecordmappers;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
@@ -9,15 +10,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
 
 @DisplayName("JOOQ Mappers - Mapper content for mapping jOOQ records to graph types")
 public class MapperGeneratorToGraphTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "jooqmappers/tograph";
+    @Override
+    protected String getSubpath() {
+        return "jooqmappers/tograph";
+    }
 
-    public MapperGeneratorToGraphTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_RECORD.get(), DUMMY_ENUM.get(), MAPPER_FETCH_SERVICE.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE, DUMMY_RECORD, DUMMY_ENUM, MAPPER_FETCH_SERVICE);
     }
 
     @Override

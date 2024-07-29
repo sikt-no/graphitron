@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.javarecordmappers;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
@@ -9,16 +10,21 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
 
 @DisplayName("Java Mappers - Mapper classes for mapping Java records")
 public class JavaMapperGeneratorClassesTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "javamappers";
+    @Override
+    protected String getSubpath() {
+        return "javamappers";
+    }
 
-    public JavaMapperGeneratorClassesTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_RECORD.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE, DUMMY_RECORD);
     }
 
     @Override

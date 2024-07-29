@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.javarecordmappers;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
@@ -10,21 +11,21 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
 
 // This is split here so the dummy transformer is not included in other tests.
 @DisplayName("Java Mappers - Mapper containing additional records")
 public class JavaMapperGeneratorNestingTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "javamappers";
-    public JavaMapperGeneratorNestingTest() {
-        super(
-                SRC_TEST_RESOURCES_PATH,
-                DUMMY_SERVICE.get(),
-                MAPPER_RECORD_ADDRESS.get(),
-                MAPPER_RECORD_CITY.get(),
-                JAVA_RECORD_CUSTOMER.get()
-        );
+    @Override
+    protected String getSubpath() {
+        return "javamappers";
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE, MAPPER_RECORD_ADDRESS, MAPPER_RECORD_CITY, JAVA_RECORD_CUSTOMER);
     }
 
     @Override

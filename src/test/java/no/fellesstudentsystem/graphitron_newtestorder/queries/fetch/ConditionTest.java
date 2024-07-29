@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphitron_newtestorder.queries.fetch;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
@@ -9,16 +10,21 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.RECORD_FETCH_CONDITION;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.RECORD_FETCH_CONDITION;
 
 @DisplayName("Fetch condition queries - Queries that apply custom conditions")
 public class ConditionTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "queries/fetch";
+    @Override
+    protected String getSubpath() {
+        return "queries/fetch";
+    }
 
-    public ConditionTest() {
-        super(SRC_TEST_RESOURCES_PATH, RECORD_FETCH_CONDITION.get(), DUMMY_RECORD.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(RECORD_FETCH_CONDITION, DUMMY_RECORD);
     }
 
     @Override

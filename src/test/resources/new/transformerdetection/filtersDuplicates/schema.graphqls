@@ -1,8 +1,4 @@
 type Query {
-  customer: Customer @service(service: {name: "DUMMY_SERVICE"})
-  customerList: [Customer] @service(service : {name: "DUMMY_SERVICE"})
-}
-
-type Customer @record(record: {name: "DUMMY_RECORD"}) {
-  id: ID!
+  query: DummyTypeRecord @service(service: {name: "DUMMY_SERVICE"})
+  queryList: [DummyTypeRecord] @service(service : {name: "DUMMY_SERVICE"})
 }

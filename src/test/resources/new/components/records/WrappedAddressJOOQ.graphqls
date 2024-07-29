@@ -1,0 +1,6 @@
+type AddressWrapped @table(name: "ADDRESS") {
+  id: ID!
+
+  city: AddressCity0 # This should not be found.
+  cityRecord: AddressCity1 # Table ignores record directive.
+}

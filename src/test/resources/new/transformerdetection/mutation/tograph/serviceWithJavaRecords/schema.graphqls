@@ -1,20 +1,15 @@
 type Mutation {
-  customer: Customer @service(service: {name: "DUMMY_SERVICE"})
-  # films: [Film] # Irrelevant other mutation, should not find this. TODO: This is actually found right now, but should not be.
-}
-
-type Film implements Node @table @record(record: {name: "DUMMY_RECORD"}) {
-  id: ID!
+  mutation: Customer @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type Customer @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
   wrapper: Wrapper
-  historicalAddresses: [Address!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+  addresses: [Address!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type Wrapper {
-  historicalAddressesWrapped: [AddressWrapped!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+  addressesWrapped: [AddressWrapped!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type Address @record(record: {name: "DUMMY_RECORD"}) {
@@ -22,19 +17,4 @@ type Address @record(record: {name: "DUMMY_RECORD"}) {
 
   city: AddressCity0
   cityRecord: AddressCity1
-}
-
-type AddressWrapped @record(record: {name: "DUMMY_RECORD"}) {
-  id: ID!
-
-  city: AddressCity0
-  cityRecord: AddressCity1
-}
-
-type AddressCity0 @table(name: "CITY") {
-  city: String!
-}
-
-type AddressCity1 @record(record: {name: "DUMMY_RECORD"}) {
-  city: String!
 }

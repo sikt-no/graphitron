@@ -3,19 +3,3 @@ type Query {
   condition1(cityInput: CityInput1): ID @condition(condition: {name: "DUMMY_CONDITION"})
   condition2(cityInput: CityInput3): ID @condition(condition: {name: "DUMMY_CONDITION"})
 }
-
-input CityInput1 { # Layer without record.
-  city: CityInput2
-}
-
-input CityInput2 @table(name: "CITY") {
-  cityId: String! @field(name: "CITY_ID")
-}
-
-input CityInput3 @table(name: "CITY") { # Will not find this. Two tables in a row do not make sense.
-  city: CityInput4
-}
-
-input CityInput4 @table(name: "CITY") { # Will not find this. Two tables in a row do not make sense.
-  cityId: String! @field(name: "CITY_ID")
-}

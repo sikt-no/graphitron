@@ -1,24 +1,37 @@
 package no.fellesstudentsystem.graphitron_newtestorder.resolvers.fetch;
 
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.TestComponent;
 import no.fellesstudentsystem.graphitron_newtestorder.dummygenerators.DummyTransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.*;
 
 @DisplayName("Fetch resolvers - Resolvers with input records")
 public class RecordTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "resolvers/standard/fetch/operation";
+    @Override
+    protected String getSubpath() {
+        return "resolvers/fetch/standard";
+    }
 
-    public RecordTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_RECORD.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE);
+    }
+
+    @Override
+    protected Set<TestComponent> getComponents() {
+        return makeComponents(DUMMY_TYPE);
     }
 
     @Override
@@ -27,14 +40,26 @@ public class RecordTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Query resolver with input Java records")
+    @DisplayName("Query root resolver with input Java records")
     void withInputJavaRecord() {
-        assertGeneratedContentMatches("withInputJavaRecord");
+        assertGeneratedContentMatches("operation/withInputJavaRecord", DUMMY_INPUT_RECORD);
+    }
+
+    @Test
+    @DisplayName("Query root resolver with input jOOQ records")
+    void withInputJOOQRecord() {
+        assertGeneratedContentMatches("operation/withInputJOOQRecord", CUSTOMER_INPUT_TABLE);
+    }
+
+    @Test
+    @DisplayName("Query resolver with input Java records")
+    void splitQueryWithInputJavaRecord() {
+        assertGeneratedContentMatches("splitquery/withInputJavaRecord", SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD);
     }
 
     @Test
     @DisplayName("Query resolver with input jOOQ records")
-    void withInputJOOQRecord() {
-        assertGeneratedContentMatches("withInputJOOQRecord");
+    void splitQueryWithInputJOOQRecord() {
+        assertGeneratedContentMatches("splitquery/withInputJOOQRecord", SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE);
     }
 }

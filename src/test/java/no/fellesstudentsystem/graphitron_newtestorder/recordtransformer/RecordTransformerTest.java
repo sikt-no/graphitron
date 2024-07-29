@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron_newtestorder.recordtransformer;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
+import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
@@ -11,16 +12,21 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
 
 @DisplayName("Record Transformer - Content for the RecordTransformer")
 public class RecordTransformerTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "recordtransformer";
+    @Override
+    protected String getSubpath() {
+        return "recordtransformer";
+    }
 
-    public RecordTransformerTest() {
-        super(SRC_TEST_RESOURCES_PATH, DUMMY_SERVICE.get(), DUMMY_RECORD.get());
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(DUMMY_SERVICE, DUMMY_RECORD);
     }
 
     @Override

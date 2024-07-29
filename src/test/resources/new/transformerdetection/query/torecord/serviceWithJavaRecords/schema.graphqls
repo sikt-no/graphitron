@@ -1,23 +1,6 @@
 type Query {
-  # When setting service.
+  # Layer without record. Maybe this case should not be generated after all? For services this would not really work out.
+  # This is a silly case and out of scope for now.
   service1(cityInput: CityInput1): ID @service(service: {name: "DUMMY_SERVICE"})
   service2(cityInput: CityInput3): ID @service(service: {name: "DUMMY_SERVICE"})
-}
-
-# Layer without record. Maybe this case should not be generated after all? For services this would not really work out.
-# This is a silly case and out of scope for now.
-input CityInput1 {
-  city: CityInput2
-}
-
-input CityInput2 @record(record: {name: "DUMMY_RECORD"}) {
-  cityId: String! @field(name: "CITY_ID")
-}
-
-input CityInput3 @record(record: {name: "DUMMY_RECORD"}) {
-  city: CityInput4
-}
-
-input CityInput4 @record(record: {name: "DUMMY_RECORD"}) {
-  cityId: String! @field(name: "CITY_ID")
 }

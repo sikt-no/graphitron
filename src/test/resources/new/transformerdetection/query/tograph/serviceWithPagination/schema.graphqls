@@ -1,8 +1,8 @@
 type Query {
-  customerQueryConnection(first: Int = 100, after: String): CustomerConnection @service(service : {name: "DUMMY_SERVICE"})
+  queryConnection(first: Int = 100, after: String): CustomerConnection @service(service : {name: "DUMMY_SERVICE"})
 
   # We expect only one match despite this.
-  customerQueryDirect: Customer @service(service : {name: "DUMMY_SERVICE"})
+  queryDirect: Customer @service(service : {name: "DUMMY_SERVICE"})
 }
 
 type CustomerConnection {

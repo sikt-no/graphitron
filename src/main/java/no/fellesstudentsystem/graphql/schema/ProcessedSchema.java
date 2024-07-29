@@ -769,7 +769,7 @@ public class ProcessedSchema {
             array.add(field);
         }
 
-        if (!field.isInput() && !isMutation) {
+        if (!field.isInput()) {
             array.addAll(((ObjectField) field).getArguments().stream().flatMap(it ->
                     findTransformableFields(
                             it,

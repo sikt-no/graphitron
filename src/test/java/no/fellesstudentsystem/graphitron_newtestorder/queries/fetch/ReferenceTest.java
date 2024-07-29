@@ -6,18 +6,14 @@ import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerat
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferenceTestSet.DUMMY_RECORD;
-
 @DisplayName("Fetch queries - Queries using input records")
 public class ReferenceTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "queries/fetch";
-
-    public ReferenceTest() {
-        super(SRC_TEST_RESOURCES_PATH);
+    @Override
+    protected String getSubpath() {
+        return "queries/fetch";
     }
 
     @Override

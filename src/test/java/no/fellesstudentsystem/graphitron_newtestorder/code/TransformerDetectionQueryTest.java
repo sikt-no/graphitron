@@ -3,13 +3,14 @@ package no.fellesstudentsystem.graphitron_newtestorder.code;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.COMMON_SCHEMA_NAME;
-import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.SRC_ROOT;
+import java.util.Set;
+
+import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.*;
 
 @DisplayName("ProcessedSchema - Can find query fields that can be used for transformer generation")
 public class TransformerDetectionQueryTest extends AbstractTransformerDetectionTest {
     public TransformerDetectionQueryTest() {
-        super(AbstractTransformerDetectionTest.TEST_PATH + "query/", SRC_ROOT + "/" + COMMON_SCHEMA_NAME);
+        super(AbstractTransformerDetectionTest.TEST_PATH + "query/");
     }
 
     @Test
@@ -17,9 +18,10 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     public void serviceWithJavaRecordOutputs() {
         checkFoundNames(
                 "tograph/serviceWithJavaRecords",
-                "historicalAddresses",
-                "customerQuery",
-                "historicalAddressesWrapped",
+                Set.of(WRAPPED_ADDRESS_JAVA),
+                "addresses",
+                "query",
+                "addressesWrapped",
                 "city",
                 "cityRecord"
         );
@@ -30,9 +32,10 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     public void serviceWithJOOQRecordOutputs() {
         checkFoundNames(
                 "tograph/serviceWithJOOQRecords",
-                "historicalAddresses",
-                "customerQuery",
-                "historicalAddressesWrapped",
+                Set.of(WRAPPED_ADDRESS_JOOQ),
+                "addresses",
+                "query",
+                "addressesWrapped",
                 "cityRecord"
         );
     }
@@ -40,49 +43,53 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     @Test
     @DisplayName("Java records in fetch queries with conditions")
     public void conditionAndJavaRecords() {
-        checkFoundNames("torecord/conditionAndJavaRecords", "cityInput", "city", "city");
+        checkFoundNames("torecord/conditionAndJavaRecords", Set.of(CITY_INPUTS_JAVA), "cityInput", "city", "city");
     }
 
     @Test
     @DisplayName("jOOQ records in fetch queries with conditions")
     public void conditionAndJOOQRecords() {
-        checkFoundNames("torecord/conditionAndJOOQRecords", "cityInput", "city");
+        checkFoundNames("torecord/conditionAndJOOQRecords", Set.of(CITY_INPUTS_JOOQ), "cityInput", "city");
     }
 
     @Test
     @DisplayName("Records in non-root fetch queries with conditions")
     public void conditionRecordsOnSplitQuery() {
-        checkFoundNames("conditionRecordsOnSplitQuery", "input2", "input1", "address1");
+        checkFoundNames("conditionRecordsOnSplitQuery", Set.of(SPLIT_QUERY_WRAPPER), "input2", "input1", "address1");
     }
 
     @Test
     @DisplayName("Java record inputs in fetch services")
     public void serviceWithJavaRecordInputs() {
-        checkFoundNames("torecord/serviceWithJavaRecords", "cityInput", "city", "city");
+        checkFoundNames("torecord/serviceWithJavaRecords", Set.of(CITY_INPUTS_JAVA), "cityInput", "city", "city");
     }
 
     @Test
     @DisplayName("jOOQ record inputs in fetch services")
     public void serviceWithJOOQRecordInputs() {
-        checkFoundNames("torecord/serviceWithJOOQRecords", "cityInput", "city");
+        checkFoundNames("torecord/serviceWithJOOQRecords", Set.of(CITY_INPUTS_JOOQ), "cityInput", "city");
     }
 
     @Test
     @DisplayName("Records in non-root fetch services")
     public void serviceRecordsOnSplitQuery() {
-        checkFoundNames("serviceRecordsOnSplitQuery", "input2", "input1", "address1", "address2");
+        checkFoundNames(
+                "serviceRecordsOnSplitQuery",
+                Set.of(SPLIT_QUERY_WRAPPER, DUMMY_TYPE_RECORD, DUMMY_INPUT_RECORD, CUSTOMER_TABLE, CUSTOMER_INPUT_TABLE),
+                "query1", "input1", "query2", "input2"
+        );
     }
 
     @Test
     @DisplayName("Records in fetch services with pagination")
     public void serviceWithPagination() {
-        checkFoundNames("tograph/serviceWithPagination", "customerQueryConnection");
+        checkFoundNames("tograph/serviceWithPagination", "queryConnection");
     }
 
     @Test
     @DisplayName("Service without record on first Graph output type")
     public void serviceWithoutTopLevelRecord() {
-        checkFoundNames("tograph/serviceWithoutTopLevelRecord", "customerQuery", "customers");
+        checkFoundNames("tograph/serviceWithoutTopLevelRecord", "query", "customers");
     }
 
     @Test
@@ -94,13 +101,13 @@ public class TransformerDetectionQueryTest extends AbstractTransformerDetectionT
     @Test
     @DisplayName("Query with jOOQ record and no conditions or services")
     public void withoutServiceOrCondition() {
-        checkFoundNames("torecord/withoutServiceOrCondition", "in1", "in2");
+        checkFoundNames("torecord/withoutServiceOrCondition", Set.of(DUMMY_TYPE, DUMMY_INPUT_RECORD, CUSTOMER_INPUT_TABLE), "in2", "in1");
     }
 
     @Test
     @DisplayName("Query with jOOQ record and no conditions or services")
     public void withoutServiceOrConditionSplitQuery() {
-        checkFoundNames("torecord/withoutServiceOrConditionSplitQuery", "in1", "in2");
+        checkFoundNames("torecord/withoutServiceOrConditionSplitQuery", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_TYPE, DUMMY_INPUT_RECORD, CUSTOMER_INPUT_TABLE), "in2", "in1");
     }
 
     @Test

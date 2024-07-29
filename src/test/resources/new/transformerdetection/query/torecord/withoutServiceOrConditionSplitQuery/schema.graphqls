@@ -1,22 +1,6 @@
-type Query {
-  wrapper: Wrapper @notGenerated
-}
-
 type Wrapper {
   id: ID
 
-  customer1(in1: CustomerInput1): Target @splitQuery
-  customer2(in2: CustomerInput2): Target @splitQuery
-}
-
-input CustomerInput1 @table(name: "CUSTOMER") {
-  id: ID!
-}
-
-input CustomerInput2 @record(record: {name: "DUMMY_RECORD"}) {
-  id: ID!
-}
-
-type Target {
-  id: ID
+  customer1(in1: CustomerInputTable): DummyType @splitQuery
+  customer2(in2: DummyInputRecord): DummyType @splitQuery
 }

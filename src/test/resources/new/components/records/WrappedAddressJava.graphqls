@@ -1,0 +1,6 @@
+type AddressWrapped @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+
+  city: AddressCity0
+  cityRecord: AddressCity1
+}

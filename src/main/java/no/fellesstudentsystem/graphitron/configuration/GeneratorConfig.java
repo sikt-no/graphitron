@@ -50,7 +50,6 @@ public class GeneratorConfig {
         externalReferences = new ExternalReferences(references);
 
         GeneratorConfig.globalTransforms = globalTransforms;
-        recordValidation = new RecordValidation();
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
     }
 

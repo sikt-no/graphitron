@@ -10,20 +10,23 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class TestConfiguration {
     public static final String
-            COMMON_SCHEMA_NAME = "default.graphqls",
+            SCHEMA_EXTENSION = ".graphqls",
+            COMMON_TEST_SCHEMA_NAME = "schema" + SCHEMA_EXTENSION,
             DEFAULT_OUTPUT_PACKAGE = "fake.code.generated",
             DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.jooq.generated.testdata",
             SRC_ROOT = "src/test/resources/new",
-            SRC_COMMON_SCHEMA = SRC_ROOT + "/" + COMMON_SCHEMA_NAME,
-            SRC_DIRECTIVES = "src/main/resources/schema/directives.graphqls",
+            COMPONENT_PATH = SRC_ROOT + "/components",
+            SRC_DIRECTIVES = "src/main/resources/schema/directives" + SCHEMA_EXTENSION,
             EXPECTED_OUTPUT_NAME = "expected";
 
     @NotNull
-    public static ProcessedSchema getProcessedSchema(String schemaPath, String subpathSchema, boolean checkTypes) {
-        GeneratorConfig.setSchemaFiles(SRC_COMMON_SCHEMA, SRC_DIRECTIVES, subpathSchema, schemaPath + "/schema.graphqls");
+    public static ProcessedSchema getProcessedSchema(String schemaPath, Set<String> components, boolean checkTypes) {
+        GeneratorConfig.setSchemaFiles(Stream.concat(Stream.of(SRC_DIRECTIVES, schemaPath + "/" + COMMON_TEST_SCHEMA_NAME), components.stream()).collect(Collectors.toSet()));
 
         var processedSchema = GraphQLGenerator.getProcessedSchema();
         processedSchema.validate(checkTypes);

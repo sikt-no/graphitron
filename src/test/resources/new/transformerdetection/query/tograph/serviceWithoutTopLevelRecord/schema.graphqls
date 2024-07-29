@@ -1,5 +1,5 @@
 type Query {
-  customerQuery: OuterWrapper @service(service: {name: "DUMMY_SERVICE"})
+  query: OuterWrapper @service(service: {name: "DUMMY_SERVICE"})
 }
 
 type OuterWrapper {

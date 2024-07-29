@@ -4,18 +4,26 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.TestComponent;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+
+import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.*;
 
 @DisplayName("Fetch resolvers - Resolvers for queries")
 public class ResolverTest extends GeneratorTest {
-    public static final String SRC_TEST_RESOURCES_PATH = "resolvers/standard/fetch/operation";
+    @Override
+    protected String getSubpath() {
+        return "resolvers/fetch/standard";
+    }
 
-    public ResolverTest() {
-        super(SRC_TEST_RESOURCES_PATH);
+    @Override
+    protected Set<TestComponent> getComponents() {
+        return makeComponents(DUMMY_TYPE);
     }
 
     @Override
@@ -24,14 +32,26 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Basic resolver with no parameters")
+    @DisplayName("Basic root resolver with no parameters")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("operation/default");
+    }
+
+    @Test
+    @DisplayName("Root resolvers with various input data types")
+    void inputDatatypes() {
+        assertGeneratedContentMatches("operation/inputDatatypes", DUMMY_INPUT);
+    }
+
+    @Test
+    @DisplayName("Basic resolver with no parameters")
+    void splitQuery() {
+        assertGeneratedContentMatches("splitquery/default", SPLIT_QUERY_WRAPPER);
     }
 
     @Test
     @DisplayName("Resolvers with various input data types")
-    void inputDatatypes() {
-        assertGeneratedContentMatches("inputDatatypes");
+    void splitQueryInputDatatypes() {
+        assertGeneratedContentMatches("splitquery/inputDatatypes", DUMMY_INPUT, SPLIT_QUERY_WRAPPER);
     }
 }
