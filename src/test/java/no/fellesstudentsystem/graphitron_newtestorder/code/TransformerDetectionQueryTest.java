@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("ProcessedSchema - Can find query fields that can be used for transformer generation")
 public class TransformerDetectionQueryTest extends AbstractTransformerDetectionTest {

@@ -36,7 +36,7 @@ public abstract class GeneratorTest {
     protected Path tempOutputDirectory;
 
     private final String sourceTestPath;
-    private final Set<TestComponent> components;
+    private final Set<SchemaComponent> components;
     protected final boolean checkProcessedSchemaDefault;
     protected ListAppender<ILoggingEvent> logWatcher;
     private final Set<ExternalReference> references;
@@ -56,7 +56,7 @@ public abstract class GeneratorTest {
         return generateFiles(schemaParentFolder, Set.of());
     }
 
-    protected Map<String, List<String>> generateFiles(String schemaParentFolder, Set<TestComponent> extraComponents) {
+    protected Map<String, List<String>> generateFiles(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
         var allComponents = Stream.concat(components.stream(), extraComponents.stream()).collect(Collectors.toSet());
         var allReferences = Stream.concat(references.stream(), extraComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
 
@@ -136,7 +136,7 @@ public abstract class GeneratorTest {
     }
 
     @NotNull
-    public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<TestComponent> components) {
+    public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> components) {
         return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, components.stream().flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet()), checkProcessedSchemaDefault);
     }
 
@@ -144,7 +144,7 @@ public abstract class GeneratorTest {
         assertGeneratedContentMatches(sourceTestPath + resourceRootFolder, generateFiles(resourceRootFolder));
     }
 
-    protected void assertGeneratedContentMatches(String resourceRootFolder, TestComponent... extraComponents) {
+    protected void assertGeneratedContentMatches(String resourceRootFolder, SchemaComponent... extraComponents) {
         assertGeneratedContentMatches(sourceTestPath + resourceRootFolder, generateFiles(resourceRootFolder, Set.of(extraComponents)));
     }
 
@@ -152,7 +152,7 @@ public abstract class GeneratorTest {
         assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));
     }
 
-    protected void assertFilesAreGenerated(String schemaFolder, Set<TestComponent> extraComponents, String... expectedFiles) {
+    protected void assertFilesAreGenerated(String schemaFolder, Set<SchemaComponent> extraComponents, String... expectedFiles) {
         assertThat(generateFiles(schemaFolder, extraComponents).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));
     }
 
@@ -190,7 +190,7 @@ public abstract class GeneratorTest {
         return entries.stream().map(ReferencedEntry::get).collect(Collectors.toSet());
     }
 
-    protected Set<TestComponent> makeComponents(TestComponent... entries) {
+    protected Set<SchemaComponent> makeComponents(SchemaComponent... entries) {
         return Stream.of(entries).collect(Collectors.toSet());
     }
 
@@ -202,7 +202,7 @@ public abstract class GeneratorTest {
         return true;
     }
 
-    protected Set<TestComponent> getComponents() {
+    protected Set<SchemaComponent> getComponents() {
         return Set.of();
     }
 

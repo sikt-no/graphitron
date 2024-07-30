@@ -8,7 +8,7 @@ import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUM
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.COMPONENT_PATH;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.SCHEMA_EXTENSION;
 
-public enum TestComponent {
+public enum SchemaComponent {
     PAGE_INFO("special/PageInfo"),
     NODE("special/Node"),
     ERROR("special/ERROR"),
@@ -39,11 +39,11 @@ public enum TestComponent {
     private final Set<String> fileNames;
     private final Set<ReferencedEntry> references;
 
-    TestComponent(String path, TestComponent... includes) {
+    SchemaComponent(String path, SchemaComponent... includes) {
         this(path, Set.of(), includes);
     }
 
-    TestComponent(String path, Set<ReferencedEntry> references, TestComponent... includes) {
+    SchemaComponent(String path, Set<ReferencedEntry> references, SchemaComponent... includes) {
         fileNames = Stream.concat(Stream.of(toFullPath(path)), Stream.of(includes).flatMap(it -> it.getPaths().stream())).collect(Collectors.toSet());
         this.references = Stream.concat(references.stream(), Stream.of(includes).flatMap(it -> it.getReferences().stream())).collect(Collectors.toSet());
     }

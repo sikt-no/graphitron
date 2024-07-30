@@ -97,17 +97,6 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithLookup_shouldGenerateLookupResolverAndQuery() {
-        assertGeneratedContentMatches("queryWithLookup");
-    }
-
-    @Test
-    void generate_queryWithComplexLookup_shouldGenerateLookupResolversAndQueries() {
-        assertGeneratedContentMatches("queryWithLookupMultipleParameters");
-    }
-
-
-    @Test
     void generate_queryThatReturnsInterface_shouldCreateResolver() {
         assertGeneratedContentMatches("queryReturningInterface");
         assertThat(getLogMessagesWithLevelWarn()).isEmpty();

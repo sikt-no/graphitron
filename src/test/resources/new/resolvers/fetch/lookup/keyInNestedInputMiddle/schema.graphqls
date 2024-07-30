@@ -1,0 +1,11 @@
+type Query {
+  query(in: Input1): DummyType
+}
+
+input Input1 {
+  in: Input2 @lookupKey
+}
+
+input Input2 {
+  id: [ID]
+}

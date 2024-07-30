@@ -154,4 +154,14 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     void generate_joinWhenFutureHasExplicitJoin_shouldCreateAppropriateJoinType() {
         assertGeneratedContentMatches("referenceWithFutureExplicitJoin");
     }
+
+    @Test
+    void generate_queryWithLookup_shouldGenerateLookupResolverAndQuery() {
+        assertGeneratedContentMatches("queryWithLookup");
+    }
+
+    @Test
+    void generate_queryWithComplexLookup_shouldGenerateLookupResolversAndQueries() {
+        assertGeneratedContentMatches("queryWithLookupMultipleParameters");
+    }
 }

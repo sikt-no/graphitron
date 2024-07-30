@@ -4,7 +4,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
-import no.fellesstudentsystem.graphitron_newtestorder.TestComponent;
+import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.DUMMY_CONNECTION;
-import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.SPLIT_QUERY_WRAPPER;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_CONNECTION;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.SPLIT_QUERY_WRAPPER;
 
 @DisplayName("Paginated resolvers - Resolvers with pagination")
 public class ResolverPaginationTest extends GeneratorTest {
@@ -28,7 +28,7 @@ public class ResolverPaginationTest extends GeneratorTest {
     }
 
     @Override
-    protected Set<TestComponent> getComponents() {
+    protected Set<SchemaComponent> getComponents() {
         return makeComponents(DUMMY_CONNECTION);
     }
 

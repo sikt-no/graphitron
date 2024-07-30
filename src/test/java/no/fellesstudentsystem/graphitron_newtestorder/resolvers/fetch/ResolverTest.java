@@ -4,7 +4,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
-import no.fellesstudentsystem.graphitron_newtestorder.TestComponent;
+import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.TestComponent.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("Fetch resolvers - Resolvers for queries")
 public class ResolverTest extends GeneratorTest {
@@ -22,7 +22,7 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Override
-    protected Set<TestComponent> getComponents() {
+    protected Set<SchemaComponent> getComponents() {
         return makeComponents(DUMMY_TYPE);
     }
 

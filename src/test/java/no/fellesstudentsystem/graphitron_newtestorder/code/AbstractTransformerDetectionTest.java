@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron_newtestorder.code;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.FieldSpecification;
-import no.fellesstudentsystem.graphitron_newtestorder.TestComponent;
+import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,9 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractTransformerDetectionTest {
     protected static final String TEST_PATH = SRC_ROOT + "/transformerdetection/";
     private final String testPath;
-    private final Set<TestComponent> components;
+    private final Set<SchemaComponent> components;
 
-    protected AbstractTransformerDetectionTest(String testPath, TestComponent... components) {
+    protected AbstractTransformerDetectionTest(String testPath, SchemaComponent... components) {
         this.testPath = testPath;
         this.components = Set.of(components);
     }
@@ -37,7 +37,7 @@ public abstract class AbstractTransformerDetectionTest {
         GeneratorConfig.clear();
     }
 
-    public List<String> getTransformableFieldNames(String schemaParentFolder, Set<TestComponent> extraComponents) {
+    public List<String> getTransformableFieldNames(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
         var allComponents = Stream.concat(components.stream(), extraComponents.stream()).flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
         return TestConfiguration
                 .getProcessedSchema(testPath + schemaParentFolder, allComponents, false)
@@ -51,7 +51,7 @@ public abstract class AbstractTransformerDetectionTest {
         checkFoundNames(path, Set.of(), expected);
     }
 
-    protected void checkFoundNames(String path, Set<TestComponent> extraComponents, String... expected) {
+    protected void checkFoundNames(String path, Set<SchemaComponent> extraComponents, String... expected) {
         // Uses isEqualTo because duplicate field names should be checked for as well.
         assertThat(getTransformableFieldNames(path, extraComponents)).isEqualTo(List.of(expected));
     }
