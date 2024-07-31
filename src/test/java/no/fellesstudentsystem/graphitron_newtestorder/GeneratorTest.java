@@ -57,12 +57,7 @@ public abstract class GeneratorTest {
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        var allComponents = Stream.concat(components.stream(), extraComponents.stream()).collect(Collectors.toSet());
-        var allReferences = Stream.concat(references.stream(), extraComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
-
-        setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses, tempOutputDirectory.toString());
-
-        GraphQLGenerator.generate(makeGenerators(getProcessedSchema(schemaParentFolder, allComponents)));
+        GraphQLGenerator.generate(makeGenerators(getProcessedSchema(schemaParentFolder, extraComponents)));
         return readGeneratedFiles(tempOutputDirectory);
     }
 
@@ -136,8 +131,18 @@ public abstract class GeneratorTest {
     }
 
     @NotNull
-    public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> components) {
-        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, components.stream().flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet()), checkProcessedSchemaDefault);
+    public ProcessedSchema getProcessedSchema(String schemaParentFolder, SchemaComponent... extraComponents) {
+        return getProcessedSchema(schemaParentFolder, Set.of(extraComponents));
+    }
+
+    @NotNull
+    public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
+        var allComponents = Stream.concat(components.stream(), extraComponents.stream()).flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
+        var allReferences = Stream.concat(references.stream(), extraComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
+
+        setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses, tempOutputDirectory.toString());
+
+        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, allComponents, checkProcessedSchemaDefault);
     }
 
     protected void assertGeneratedContentMatches(String resourceRootFolder) {
@@ -194,7 +199,9 @@ public abstract class GeneratorTest {
         return Stream.of(entries).collect(Collectors.toSet());
     }
 
-    protected abstract List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema);
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of();
+    }
 
     protected abstract String getSubpath();
 

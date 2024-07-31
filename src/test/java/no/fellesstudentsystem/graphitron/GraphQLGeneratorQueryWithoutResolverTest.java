@@ -182,4 +182,14 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
                 .map(ILoggingEvent::getFormattedMessage)
                 .collect(Collectors.toSet());
     }
+
+    @Test
+    void generate_queryWithSorting_shouldCreateQueryResolverWithSortingSupport() {
+        assertGeneratedContentMatches("queryWithSorting");
+    }
+
+    @Test
+    void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() {
+        assertGeneratedContentMatches("queryWithPaginationAndSorting");
+    }
 }

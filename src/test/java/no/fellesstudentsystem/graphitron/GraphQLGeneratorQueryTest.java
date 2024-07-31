@@ -42,16 +42,6 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() {
-        assertGeneratedContentMatches("queryWithPaginationAndSorting");
-    }
-
-    @Test
-    void generate_queryWithSorting_shouldCreateQueryResolverWithSortingSupport() {
-        assertGeneratedContentMatches("queryWithSorting");
-    }
-
-    @Test
     void generate_whenOrderByNonIndexedColumn_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/queryWithOrderByNonIndexedColumn"))
                 .isInstanceOf(IllegalArgumentException.class)

@@ -13,12 +13,15 @@ public enum SchemaComponent {
     NODE("special/Node"),
     ERROR("special/ERROR"),
     ORDER_DIRECTION("special/OrderDirection"),
+    ORDER("special/Order", ORDER_DIRECTION),
     DATE("Date"),
 
     CUSTOMER("basic/Customer"),
     CUSTOMER_TABLE("basic/CustomerTable"),
     CUSTOMER_INPUT_TABLE("basic/CustomerInputTable"),
-    CUSTOMER_CONNECTION("basic/CustomerConnection", CUSTOMER_TABLE, PAGE_INFO),
+    CUSTOMER_CONNECTION_ONLY("basic/CustomerConnection", PAGE_INFO),
+    CUSTOMER_CONNECTION(CUSTOMER, CUSTOMER_CONNECTION_ONLY),
+    CUSTOMER_CONNECTION_ORDER(CUSTOMER_CONNECTION_ONLY, ORDER),
 
     DUMMY_TYPE("basic/DummyType"),
     DUMMY_TYPE_RECORD("basic/DummyTypeRecord", Set.of(DUMMY_RECORD)),
@@ -39,12 +42,21 @@ public enum SchemaComponent {
     private final Set<String> fileNames;
     private final Set<ReferencedEntry> references;
 
+    SchemaComponent(SchemaComponent... includes) {
+        this("", includes);
+    }
+
     SchemaComponent(String path, SchemaComponent... includes) {
         this(path, Set.of(), includes);
     }
 
     SchemaComponent(String path, Set<ReferencedEntry> references, SchemaComponent... includes) {
-        fileNames = Stream.concat(Stream.of(toFullPath(path)), Stream.of(includes).flatMap(it -> it.getPaths().stream())).collect(Collectors.toSet());
+        var included = Stream.of(includes).flatMap(it -> it.getPaths().stream());
+        if (path == null || path.isEmpty()) {
+            fileNames = included.collect(Collectors.toSet());
+        } else {
+            fileNames = Stream.concat(Stream.of(toFullPath(path)), included).collect(Collectors.toSet());
+        }
         this.references = Stream.concat(references.stream(), Stream.of(includes).flatMap(it -> it.getReferences().stream())).collect(Collectors.toSet());
     }
 
