@@ -70,11 +70,6 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     }
 
     @Test
-    void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() {
-        assertGeneratedContentMatches("splitQueryForTypeWithoutTable");
-    }
-
-    @Test
     void generate_whenImplementsNodeWithoutTable_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implementsNodeWithoutTable"))
                 .isInstanceOf(IllegalArgumentException.class)

@@ -6,7 +6,7 @@ enum OrderByField {
   NAME @index(name : "IDX_LAST_NAME")
 }
 
-type Customer @table {
+type CustomerTable @table(name: "Customer") {
   nested: Nested
 }
 

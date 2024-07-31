@@ -65,4 +65,12 @@ public class ResolverFetchService {
     public Integer countQueryMap(Set<String> ids, CustomerRecord record) {
         return 0;
     }
+
+    public DummyRecord queryJavaRecord() {
+        return null;
+    }
+
+    public DummyRecord queryJavaRecord(Set<String> id) {
+        return null;
+    }
 }

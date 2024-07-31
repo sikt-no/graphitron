@@ -27,7 +27,7 @@ public class ResolverSortingIDFunctionTest extends CodeBlockTest {
         compareCodeBlockResult(
                 "default",
                 "(it) -> orderBy == null ? it.getId() :\n" +
-                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
+                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.CustomerTable, java.lang.String>>of(\n" +
                         "        \"NAME\", type -> type.getName()\n" +
                         "    ).get(orderBy.getOrderByField().toString()).apply(it)",
                 CUSTOMER_CONNECTION_ORDER
@@ -40,7 +40,7 @@ public class ResolverSortingIDFunctionTest extends CodeBlockTest {
         compareCodeBlockResult(
                 "twoFields",
                 "(it) -> orderBy == null ? it.getId() :\n" +
-                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
+                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.CustomerTable, java.lang.String>>of(\n" +
                         "        \"NAME\", type -> type.getName(),\n" +
                         "        \"STORE\", type -> type.getStoreId()\n" +
                         "    ).get(orderBy.getOrderByField().toString()).apply(it)",
@@ -54,7 +54,7 @@ public class ResolverSortingIDFunctionTest extends CodeBlockTest {
         compareCodeBlockResult(
                 "nestedField",
                 "(it) -> orderBy == null ? it.getId() :\n" +
-                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
+                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.CustomerTable, java.lang.String>>of(\n" +
                         "        \"NAME\", type -> type.getNested().getName()\n" +
                         "    ).get(orderBy.getOrderByField().toString()).apply(it)",
                 CUSTOMER_CONNECTION_ORDER
@@ -67,7 +67,7 @@ public class ResolverSortingIDFunctionTest extends CodeBlockTest {
         compareCodeBlockResult(
                 "doubleNestedField",
                 "(it) -> orderBy == null ? it.getId() :\n" +
-                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
+                        "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.CustomerTable, java.lang.String>>of(\n" +
                         "        \"NAME\", type -> type.getNested().getNested().getName()\n" +
                         "    ).get(orderBy.getOrderByField().toString()).apply(it)",
                 CUSTOMER_CONNECTION_ORDER

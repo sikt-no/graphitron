@@ -2,7 +2,7 @@ package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.WrapperDBQueries;
 import fake.graphql.example.api.WrapperResolver;
-import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.CustomerTable;
 import fake.graphql.example.model.CustomerConnection;
 import fake.graphql.example.model.CustomerConnectionEdge;
 import fake.graphql.example.model.Order;
@@ -34,7 +34,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                 "queryForWrapper", wrapper.getId(), pageSize, 1000,
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, orderBy, pageSize,after, selectionSet),
                 (ctx, ids) -> WrapperDBQueries.countQueryForWrapper(ctx, ids),
-                (it) -> orderBy == null ? it.getId() : Map.<String, Function<Customer, String>>of("NAME", type -> type.getName()).get(orderBy.getOrderByField().toString()).apply(it),
+                (it) -> orderBy == null ? it.getId() : Map.<String, Function<CustomerTable, String>>of("NAME", type -> type.getName()).get(orderBy.getOrderByField().toString()).apply(it),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                     var page = connection.getPageInfo();

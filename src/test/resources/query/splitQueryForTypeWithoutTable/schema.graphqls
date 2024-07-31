@@ -1,5 +1,5 @@
 type Query {
-  store(id: ID!): Store
+  store(id: ID!): Store @notGenerated
 }
 
 type Store @table {

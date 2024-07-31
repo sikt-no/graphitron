@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron_newtestorder.resolvers.services;
+package no.fellesstudentsystem.graphitron_newtestorder.resolvers.services.fetch;
 
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
@@ -18,7 +18,7 @@ import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.RES
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("Fetch service resolvers - Resolvers that call custom services with records")
-public class FetchServiceResolverRecordTest extends GeneratorTest {
+public class InputRecordTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
         return "resolvers/fetch/services";

@@ -7,7 +7,7 @@ enum OrderByField {
   STORE @index(name : "IDX_FK_STORE_ID")
 }
 
-type Customer @table {
+type CustomerTable @table(name: "Customer") {
   name: String @field(name: "LAST_NAME")
   storeId: String @field(name: "STORE_ID")
 }

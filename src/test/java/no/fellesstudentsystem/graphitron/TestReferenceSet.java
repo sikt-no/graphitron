@@ -7,8 +7,6 @@ import no.fellesstudentsystem.graphitron.enums.RatingListTest;
 import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphitron.records.*;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
-import no.fellesstudentsystem.graphitron.services.TestFetchCityService;
-import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
 
 public enum TestReferenceSet {
     // Enums
@@ -24,16 +22,11 @@ public enum TestReferenceSet {
 
     // Services
     SERVICE_CUSTOMER("TEST_CUSTOMER", TestCustomerService.class),
-    SERVICE_FETCH_CUSTOMER("TEST_FETCH_CUSTOMER", TestFetchCustomerService.class),
-    SERVICE_FETCH_CITY("TEST_FETCH_CITY", TestFetchCityService.class),
 
     // Records
     RECORD_CUSTOMER("TEST_CUSTOMER_RECORD", TestCustomerRecord.class),
-    RECORD_ADDRESS("TEST_ADDRESS_RECORD", TestAddressRecord.class),
     RECORD_CUSTOMER_RESPONSE_1("TEST_CUSTOMER_RESPONSE1", EditCustomerResponse1.class),
-    RECORD_CUSTOMER_RESPONSE_2("TEST_CUSTOMER_RESPONSE2", EditCustomerResponse2.class),
-    RECORD_CITY("TEST_CITY_RECORD", TestCityRecord.class),
-    RECORD_ID("TEST_ID_RECORD", TestIDRecord.class);
+    RECORD_CUSTOMER_RESPONSE_2("TEST_CUSTOMER_RESPONSE2", EditCustomerResponse2.class);
 
     private final ExternalReference reference;
 

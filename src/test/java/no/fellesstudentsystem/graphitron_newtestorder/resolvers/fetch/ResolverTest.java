@@ -80,6 +80,12 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Resolver created from a type that inherits the table from another type")
+    void splitQueryFromTypeWithoutTable() {
+        assertGeneratedContentMatches("splitquery/fromTypeWithoutTable", CUSTOMER_TABLE);
+    }
+
+    @Test
     @DisplayName("Resolver that is not generated")
     void splitQueryNotGenerated() {
         assertGeneratedContentMatches("splitquery/notGenerated", SPLIT_QUERY_WRAPPER);

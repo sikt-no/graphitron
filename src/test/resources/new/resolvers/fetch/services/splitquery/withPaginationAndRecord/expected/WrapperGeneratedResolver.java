@@ -38,7 +38,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                 (ids) -> resolverFetchService.queryMap(ids, inRecord, pageSize, after),
                 (ids) -> resolverFetchService.countQueryMap(ids, inRecord),
                 (it) -> it.getId(),
-                (transform, response) -> transform.customerRecordToGraphType(response, ""),
+                (transform, response) -> transform.customerTableRecordToGraphType(response, ""),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                     var page = connection.getPageInfo();

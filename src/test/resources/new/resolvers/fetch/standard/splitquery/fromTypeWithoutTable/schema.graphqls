@@ -1,0 +1,13 @@
+type Query {
+  query: Address @notGenerated
+}
+
+type Address @table {
+  wrapper: Wrapper
+}
+
+type Wrapper {
+  id: ID
+
+  customer: CustomerTable @splitQuery
+}

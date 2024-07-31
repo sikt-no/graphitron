@@ -192,4 +192,9 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     void generate_queryWithPaginationAndSorting_shouldCreateQueryResolverWithPaginationAndSortingSupport() {
         assertGeneratedContentMatches("queryWithPaginationAndSorting");
     }
+
+    @Test
+    void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() {
+        assertGeneratedContentMatches("splitQueryForTypeWithoutTable");
+    }
 }

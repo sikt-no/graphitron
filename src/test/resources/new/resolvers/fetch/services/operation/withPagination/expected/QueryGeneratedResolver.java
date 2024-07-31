@@ -33,7 +33,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                 () -> resolverFetchService.queryList(pageSize, after),
                 (ids) -> resolverFetchService.countQueryList(),
                 (it) -> it.getId(),
-                (transform, response) -> transform.customerRecordToGraphType(response, ""),
+                (transform, response) -> transform.customerTableRecordToGraphType(response, ""),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                     var page = connection.getPageInfo();

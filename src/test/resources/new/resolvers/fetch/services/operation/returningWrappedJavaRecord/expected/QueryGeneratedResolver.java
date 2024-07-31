@@ -2,13 +2,13 @@ package fake.code.generated.resolvers.query;
 
 import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.QueryResolver;
-import fake.graphql.example.model.OuterWrapper;
+import fake.graphql.example.model.Wrapper;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphitron.services.TestFetchCustomerService;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.ResolverFetchService;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import org.jooq.DSLContext;
 
@@ -17,14 +17,11 @@ public class QueryGeneratedResolver implements QueryResolver {
     DSLContext ctx;
 
     @Override
-    public CompletableFuture<OuterWrapper> customersQuery(DataFetchingEnvironment env) throws
-            Exception {
+    public CompletableFuture<Wrapper> query(DataFetchingEnvironment env) throws Exception {
         var transform = new RecordTransformer(env, this.ctx);
-        var testFetchCustomerService = new TestFetchCustomerService(transform.getCtx());
-
+        var resolverFetchService = new ResolverFetchService(transform.getCtx());
         return new ServiceDataFetcher<>(transform).load(
-                () -> testFetchCustomerService.customersQuery2(),
-                (transform, response) -> transform.outerWrapperRecordToGraphType(response, "")
-        );
+                () -> resolverFetchService.queryJavaRecord(),
+                (transform, response) -> transform.wrapperRecordToGraphType(response, ""));
     }
 }

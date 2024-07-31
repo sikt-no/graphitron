@@ -2,7 +2,7 @@ package fake.code.generated.resolvers.query;
 
 import fake.code.generated.queries.query.QueryDBQueries;
 import fake.graphql.example.api.QueryResolver;
-import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.CustomerTable;
 import fake.graphql.example.model.CustomerConnection;
 import fake.graphql.example.model.CustomerConnectionEdge;
 import fake.graphql.example.model.Order;
@@ -33,7 +33,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                 pageSize, 1000,
                 (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, orderBy, pageSize, after, selectionSet),
                 (ctx, ids) -> QueryDBQueries.countQueryForQuery(ctx),
-                (it) -> orderBy == null ? it.getId() : Map.<String, Function<Customer, String>>of("NAME", type -> type.getName()).get(orderBy.getOrderByField().toString()).apply(it),
+                (it) -> orderBy == null ? it.getId() : Map.<String, Function<CustomerTable, String>>of("NAME", type -> type.getName()).get(orderBy.getOrderByField().toString()).apply(it),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                     var page = connection.getPageInfo();
