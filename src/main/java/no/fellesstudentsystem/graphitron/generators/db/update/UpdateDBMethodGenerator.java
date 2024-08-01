@@ -75,15 +75,14 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 code.add(declareVariable(VARIABLE_RECORD_LIST, ARRAY_LIST.className));
                 recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
             }
-            code.beginControlFlow("return $N.transactionResult(configuration -> ", VariableNames.CONTEXT_NAME);
-            code.addStatement("$T transactionCtx = $T.using(configuration)", DSL_CONTEXT.className, DSL.className);
             code.addStatement(
-                    "return $T.stream(transactionCtx.$L($N).execute()).sum()",
+                    "return $N.transactionResult(config -> $T.stream($T.using(config).$L($N).execute()).sum())",
+                    VariableNames.CONTEXT_NAME,
                     ARRAYS.className,
+                    DSL.className,
                     recordMethod,
                     batchInputVariable
             );
-            code.endControlFlow(")");
         }
 
         return spec

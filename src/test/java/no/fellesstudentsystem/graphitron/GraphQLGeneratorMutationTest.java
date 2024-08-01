@@ -4,7 +4,6 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.RecordValidation;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
-import no.fellesstudentsystem.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -35,7 +34,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
         return List.of(
                 new UpdateResolverClassGenerator(schema),
-                new UpdateDBClassGenerator(schema),
                 new MutationExceptionStrategyConfigurationGenerator(schema)
         );
     }
