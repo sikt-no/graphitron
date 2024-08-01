@@ -1,5 +1,5 @@
 type Query {
-  inventory(id: ID!): Inventory
+  inventory: Inventory @notGenerated
 }
 
 type Inventory @table {

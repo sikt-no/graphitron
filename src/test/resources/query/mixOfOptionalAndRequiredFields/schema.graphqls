@@ -4,9 +4,7 @@
 # nullOnAllNull-mapping som i tillegg til null også behandler "tomme objekter" som null.
 
 type Query {
-  inventory(
-    id: String! @field(name: "INVENTORY_ID")
-  ): Inventory
+  inventory: Inventory @notGenerated
 }
 
 type Inventory @table {

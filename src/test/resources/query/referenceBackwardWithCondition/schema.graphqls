@@ -1,5 +1,5 @@
 type Query {
-  address(id: ID!): Address
+  address: Address @notGenerated
 }
 
 type Address @table {

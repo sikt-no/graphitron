@@ -13,5 +13,5 @@ type Language implements Node @table {
 }
 
 type Query {
-  film: Film
+  film: Film @notGenerated
 }

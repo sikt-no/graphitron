@@ -9,5 +9,5 @@ type FilmTitle {
 }
 
 type Query {
-  films: [Film]
+  films: [Film] @notGenerated
 }

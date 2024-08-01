@@ -1,5 +1,5 @@
 type Query {
-  customer(id: ID!): Customer
+  customer: Customer @notGenerated
 }
 
 type Customer @table {

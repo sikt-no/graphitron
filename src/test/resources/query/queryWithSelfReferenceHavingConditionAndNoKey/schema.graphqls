@@ -5,6 +5,6 @@ type Store @table {
 }
 
 type Query {
-  stores: [Store]
+  stores: [Store] @notGenerated
 }
 

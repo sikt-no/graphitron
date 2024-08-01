@@ -9,5 +9,5 @@ type Address @table {
 }
 
 type Query {
-  address(cityID: String! @field(name : "CITY_ID")): [Address!]!
+  address: Address @notGenerated
 }

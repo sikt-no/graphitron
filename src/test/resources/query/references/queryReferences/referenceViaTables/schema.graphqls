@@ -1,5 +1,5 @@
 type Query {
-  payment(id: ID!): Payment
+  payment: Payment @notGenerated
 }
 
 type Payment @table {

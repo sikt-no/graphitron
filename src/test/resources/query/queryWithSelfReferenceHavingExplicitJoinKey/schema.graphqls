@@ -4,6 +4,6 @@ type Film @table {
 }
 
 type Query {
-  films: [Film]
+  films: [Film] @notGenerated
 }
 

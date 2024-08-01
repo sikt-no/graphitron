@@ -20,18 +20,6 @@ type Film implements Node @table {
   title: String!
 }
 
-type FilmConnection {
-  edges: [FilmConnectionEdge]
-  pageInfo: PageInfo
-  nodes: [Film!]!
-}
-
-type FilmConnectionEdge {
-  cursor: String
-  node: Film
-}
-
 type Query {
-  film(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): FilmConnection
-  film2(releaseYear: String! @field(name : "RELEASE_YEAR")): [Film]
+  film: Film @notGenerated
 }

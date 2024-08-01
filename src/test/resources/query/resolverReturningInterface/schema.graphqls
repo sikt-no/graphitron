@@ -1,5 +1,5 @@
 type Query {
-  query(id: ID!): Customer
+  query(id: ID!): Customer @notGenerated
 }
 
 type Customer implements Node @table {

@@ -1,5 +1,5 @@
 type Query {
-  rental(id: ID!): Rental
+  rental: Rental @notGenerated
 }
 
 type Rental @table {

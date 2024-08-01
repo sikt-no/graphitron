@@ -19,5 +19,5 @@ type Rental implements Node @table {
 }
 
 type Query {
-  inventory: [Rental!]!
+  inventory: Rental @notGenerated
 }

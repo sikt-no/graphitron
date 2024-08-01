@@ -1,5 +1,5 @@
 type Query {
-  film(id: ID!): Film
+  film: Film
 }
 
 type Film @table {

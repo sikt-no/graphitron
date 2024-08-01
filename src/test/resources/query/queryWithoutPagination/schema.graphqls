@@ -1,8 +1,7 @@
 type Film implements Node @table {
-  id: ID!
-  title: String!
+  id: ID
 }
 
 type Query {
-  films(releaseYear: String! @field(name : "RELEASE_YEAR")): [Film!]
+  films: Film
 }
