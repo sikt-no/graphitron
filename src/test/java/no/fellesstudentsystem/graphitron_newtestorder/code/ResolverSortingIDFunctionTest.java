@@ -1,34 +1,30 @@
 package no.fellesstudentsystem.graphitron_newtestorder.code;
 
+import com.squareup.javapoet.CodeBlock;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverMethodGenerator;
-import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
-import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
+import no.fellesstudentsystem.graphitron_newtestorder.CodeBlockTest;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
-import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Resolver sorting - Resolvers with custom ordering")
-public class ResolverSortingIDFunctionTest extends GeneratorTest {
+public class ResolverSortingIDFunctionTest extends CodeBlockTest {
     @Override
     protected String getSubpath() {
         return "resolvers/fetch/sorting";
     }
 
-    private String makeFunction(ProcessedSchema schema) {
-        return new FetchResolverMethodGenerator(schema.getQueryType(), schema).getIDFunction(schema.getQueryType().getFieldByName("query")).toString();
-    }
-
-    private void compareResult(String path, String expected, SchemaComponent... components) {
-        assertThat(makeFunction(getProcessedSchema(path, components))).isEqualToIgnoringWhitespace(expected);
+    @Override
+    protected CodeBlock makeCodeBlock(ProcessedSchema schema) {
+        return new FetchResolverMethodGenerator(schema.getQueryType(), schema).getIDFunction(schema.getQueryType().getFieldByName("query"));
     }
 
     @Test
     @DisplayName("Basic resolver with a sorting parameter")
     public void defaultCase() {
-        compareResult(
+        compareCodeBlockResult(
                 "default",
                 "(it) -> orderBy == null ? it.getId() :\n" +
                         "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
@@ -41,7 +37,7 @@ public class ResolverSortingIDFunctionTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver with two sorting parameters")
     void twoFields() {
-        compareResult(
+        compareCodeBlockResult(
                 "twoFields",
                 "(it) -> orderBy == null ? it.getId() :\n" +
                         "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
@@ -55,7 +51,7 @@ public class ResolverSortingIDFunctionTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver with a nested sorting parameter")
     void nestedField() {
-        compareResult(
+        compareCodeBlockResult(
                 "nestedField",
                 "(it) -> orderBy == null ? it.getId() :\n" +
                         "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
@@ -68,7 +64,7 @@ public class ResolverSortingIDFunctionTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver with a double nested sorting parameter")
     void doubleNestedField() {
-        compareResult(
+        compareCodeBlockResult(
                 "doubleNestedField",
                 "(it) -> orderBy == null ? it.getId() :\n" +
                         "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Customer, java.lang.String>>of(\n" +
@@ -81,7 +77,7 @@ public class ResolverSortingIDFunctionTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver with a sorting parameter on a two field index")
     void twoFieldIndex() {
-        compareResult(
+        compareCodeBlockResult(
                 "twoFieldIndex",
                 "(it) -> order == null ? it.getId() :\n" +
                         "    java.util.Map.<java.lang.String, java.util.function.Function<fake.graphql.example.model.Inventory, java.lang.String>>of(\n" +
