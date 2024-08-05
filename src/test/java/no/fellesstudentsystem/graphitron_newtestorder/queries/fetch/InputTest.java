@@ -1,0 +1,134 @@
+package no.fellesstudentsystem.graphitron_newtestorder.queries.fetch;
+
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
+import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Set;
+
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_INPUT;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@DisplayName("Query inputs - Equality, list and null checks for fields")
+public class InputTest extends GeneratorTest {
+    @Override
+    protected String getSubpath() {
+        return "queries/fetch/inputs/required";
+    }
+
+    @Override
+    protected Set<SchemaComponent> getComponents() {
+        return makeComponents(CUSTOMER_TABLE);
+    }
+
+    @Override
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(new FetchDBClassGenerator(schema));
+    }
+
+    @Test
+    @DisplayName("No input")
+    void defaultCase() {
+        assertGeneratedContentMatches("default");
+    }
+
+    // Note: Can not handle dates yet, need to make a better type mapping for fields.
+    @Test
+    @DisplayName("String field")
+    void string() {
+        assertGeneratedContentMatches("string"); // Check the placement, but just this once.
+    }
+
+    @Test
+    @DisplayName("ID field")
+    void id() {
+        assertGeneratedContentContains("id", ", String id,", "CUSTOMER.ID.eq(id)");
+    }
+
+    @Test
+    @DisplayName("Boolean field")
+    void booleanCase() {
+        assertGeneratedContentContains("boolean", ", Boolean bool,", "CUSTOMER.ACTIVE.eq(bool)");
+    }
+
+    @Test
+    @DisplayName("Integer field")
+    void integer() {
+        assertGeneratedContentContains("integer", ", Integer integer,", "FILM.LENGTH.eq(integer)");
+    }
+
+    @Test
+    @DisplayName("Two string fields")
+    void twoFields() {
+        assertGeneratedContentContains(
+                "twoFields",
+                ", String firstName, String lastName,",
+                "CUSTOMER.FIRST_NAME.eq(firstName)",
+                "CUSTOMER.LAST_NAME.eq(lastName)"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed field")
+    void list() {
+        assertGeneratedContentContains(
+                "list",
+                ", List<String> name,",
+                "name.size() > 0 ? CUSTOMER.FIRST_NAME.in(name) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Input type field")
+    void input() {
+        assertGeneratedContentContains(
+                "input",
+                Set.of(DUMMY_INPUT),
+                ", DummyInput in,",
+                "in.getId() != null ? CUSTOMER.ID.eq(in.getId()) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Nested input field")
+    void nestedInput() {
+        assertGeneratedContentContains(
+                "nestedInput",
+                Set.of(DUMMY_INPUT),
+                ", Wrapper in,",
+                "in.getIn().getId() != null ? CUSTOMER.ID.eq(in.getIn().getId()) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Nested and then listed input field with two inner fields")
+    void nestedListedInputTwoFields() {
+        assertGeneratedContentContains(
+                "nestedListedInputTwoFields",
+                "in.getIn().size() > 0 ?" +
+                        "DSL.row(CUSTOMER.FIRST_NAME, CUSTOMER.LAST_NAME).in(" +
+                        "        in.getIn().stream().map(internal_it_ ->" +
+                        "                DSL.row(DSL.inline(internal_it_.getFirst()), DSL.inline(internal_it_.getLast()))" +
+                        "        ).collect(Collectors.toList())" +
+                        ") : DSL.noCondition()"
+                );
+    }
+
+    @Test
+    @DisplayName("Listed, then input nested and listed again field") // Could equivalently be input as well, but field is simpler.
+    void listedNestedListedField() {
+        assertThatThrownBy(() -> getProcessedSchema("listedNestedListedField"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(
+                        "Argument 'in0' is of collection of InputFields ('Wrapper') type." +
+                                " Fields returning collections: 'in1' are not supported on such types (used for generating condition tuples)"
+                );
+    }
+}

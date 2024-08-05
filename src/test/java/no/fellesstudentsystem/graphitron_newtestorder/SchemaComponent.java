@@ -16,6 +16,9 @@ public enum SchemaComponent {
     ORDER("special/Order", ORDER_DIRECTION),
     DATE("Date"),
 
+    DUMMY_ENUM("enums/DummyEnum"),
+    DUMMY_ENUM_CONVERTED("enums/DummyEnumConverted", Set.of(ReferencedEntry.DUMMY_JOOQ_ENUM)),
+
     CUSTOMER("basic/Customer"),
     CUSTOMER_TABLE("basic/CustomerTable"),
     CUSTOMER_INPUT_TABLE("basic/CustomerInputTable"),

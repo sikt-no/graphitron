@@ -178,7 +178,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     /**
      * @return CodeBlock consisting of a function for a getId call.
      */
-    public CodeBlock getIDFunction(ObjectField referenceField) {
+    private CodeBlock getIDFunction(ObjectField referenceField) {
         return referenceField
                 .getOrderField()
                 .map(orderInputField -> {

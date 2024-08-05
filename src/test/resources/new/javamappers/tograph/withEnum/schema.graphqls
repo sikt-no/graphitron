@@ -3,12 +3,8 @@ type Query {
 }
 
 type Film @record(record: {name: "MAPPER_RECORD_FILM"}) {
-  rating1: Rating! @field(name: "enum1")
-  rating2: RatingNoConverter! @field(name: "enum2")
-  rating1List: [Rating]! @field(name: "enum1")
-  rating2List: [RatingNoConverter]! @field(name: "enum2")
+  enum1: DummyEnum! # No jOOQ converter.
+  enum2: DummyEnumConverted! # With jOOQ converter.
+  enum1List: [DummyEnum]!
+  enum2List: [DummyEnumConverted]!
 }
-
-enum RatingNoConverter { G, PG, R } # No jOOQ converter.
-
-enum Rating @enum(enumReference: {name: "DUMMY_ENUM"}) { G, PG, R } # With jOOQ converter.

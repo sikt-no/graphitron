@@ -9,11 +9,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_CONNECTION_ORDER;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.SPLIT_QUERY_WRAPPER;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
-@DisplayName("Sorted fetch resolvers - Resolvers with special ordering")
+@DisplayName("Sorting - Resolvers with custom ordering")
 public class SortingTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
@@ -35,5 +35,41 @@ public class SortingTest extends GeneratorTest {
     @DisplayName("Basic resolver with a sorting parameter on a split query")
     void splitQuery() {
         assertGeneratedContentMatches("splitQuery", SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION_ORDER);
+    }
+
+    @Test
+    @DisplayName("Resolver with two sorting parameters")
+    void twoFields() {
+        assertGeneratedContentContains(
+                "twoFields", Set.of(CUSTOMER_CONNECTION_ORDER),
+                "of(\"NAME\", type -> type.getName(), \"STORE\", type -> type.getStoreId())"
+        );
+    }
+
+    @Test
+    @DisplayName("Resolver with a nested sorting parameter")
+    void nestedField() {
+        assertGeneratedContentContains(
+                "nestedField", Set.of(CUSTOMER_CONNECTION_ORDER),
+                "\"NAME\", type -> type.getNested().getName()"
+        );
+    }
+
+    @Test
+    @DisplayName("Resolver with a double nested sorting parameter")
+    void doubleNestedField() {
+        assertGeneratedContentContains(
+                "doubleNestedField", Set.of(CUSTOMER_CONNECTION_ORDER),
+                "\"NAME\", type -> type.getNested().getNested().getName()"
+        );
+    }
+
+    @Test
+    @DisplayName("Resolver with a sorting parameter on a two field index")
+    void twoFieldIndex() {
+        assertGeneratedContentContains(
+                "twoFieldIndex", Set.of(PAGE_INFO, ORDER),
+                "\"STORE_ID_FILM_ID\", type -> type.getStoreId() + \",\" + type.getFilmId()"
+        );
     }
 }

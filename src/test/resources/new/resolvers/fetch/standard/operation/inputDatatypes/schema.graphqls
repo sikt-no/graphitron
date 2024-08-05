@@ -4,7 +4,7 @@ type Query {
     str: String
     bool: Boolean
     i: Int
-    e: Enum
+    e: DummyEnum
     in: DummyInput
     # date: Date # Can not handle this yet, need to make a better type mapping for fields.
     idList: [ID]
@@ -16,14 +16,10 @@ type Query {
     str: String!
     bool: Boolean!
     i: Int!
-    e: Enum!
+    e: DummyEnum!
     in: DummyInput!
     # date: Date!
     idList: [ID!]!
     inList: [DummyInput!]!
   ): DummyType
-}
-
-enum Enum {
-  A, B
 }

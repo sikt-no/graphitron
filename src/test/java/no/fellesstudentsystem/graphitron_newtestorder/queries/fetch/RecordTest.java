@@ -18,7 +18,7 @@ import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUM
 public class RecordTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "queries/fetch";
+        return "queries/fetch/records";
     }
 
     @Override

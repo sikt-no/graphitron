@@ -1,0 +1,7 @@
+type Query {
+  query(integer: Int! @field(name: "LENGTH")): Film
+}
+
+type Film @table {
+  id: ID
+}

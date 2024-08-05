@@ -78,21 +78,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
         assertGeneratedContentMatches("queryWithInputTypeArguments");
     }
 
-    @Test
-    void generate_queryWithInputWithListInput_shouldCreateQueryResolverThatHandlesInputWithListOfInputTypes() {
-        assertGeneratedContentMatches("queryWithInputWithListInput");
-    }
-
-    @Test
-    void generate_queryWithInputs_shouldCreateConditionsWithoutExtraNullChecksWhenIterable() {
-        assertGeneratedContentMatches("queryWithLayeredAndListedChecks");
-    }
-
-    @Test
-    void generate_queryWithMultipleAndOptionalArguments_shouldCreateQueryResolverThatHandlesMultipleAndOptionalArguments() {
-        assertGeneratedContentMatches("queryWithMultipleArguments");
-    }
-
     @Disabled
     @Test
     void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() {
@@ -103,11 +88,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     @Test
     void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultisetWhichContainsFieldWithCondition() {
         assertGeneratedContentMatches("queryWithMultisetContainingFieldWithCondition");
-    }
-
-    @Test
-    void generate_queryWithoutPagination_shouldCreateQueryAndQueryResolverWithoutPaginationSupport() {
-        assertGeneratedContentMatches("queryWithoutPagination");
     }
 
     @Test

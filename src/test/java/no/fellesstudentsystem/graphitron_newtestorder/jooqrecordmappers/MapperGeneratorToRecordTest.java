@@ -5,6 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +25,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_SERVICE, DUMMY_ENUM, MAPPER_FETCH_SERVICE);
+        return makeReferences(DUMMY_SERVICE, DUMMY_JOOQ_ENUM, MAPPER_FETCH_SERVICE);
     }
 
     @Override
@@ -66,7 +67,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     @Test
     @DisplayName("Records with enum fields")
     void withEnum() {
-        assertGeneratedContentMatches("withEnum");
+        assertGeneratedContentMatches("withEnum", SchemaComponent.DUMMY_ENUM, SchemaComponent.DUMMY_ENUM_CONVERTED);
     }
 
     @Test

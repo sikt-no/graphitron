@@ -40,7 +40,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Root resolvers with various input data types")
     void inputDatatypes() {
-        assertGeneratedContentMatches("operation/inputDatatypes", DUMMY_INPUT);
+        assertGeneratedContentMatches("operation/inputDatatypes", DUMMY_INPUT, DUMMY_ENUM);
     }
 
     @Test
@@ -70,7 +70,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Resolvers with various input data types")
     void splitQueryInputDatatypes() {
-        assertGeneratedContentMatches("splitquery/inputDatatypes", DUMMY_INPUT, SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentMatches("splitquery/inputDatatypes", DUMMY_INPUT, DUMMY_ENUM, SPLIT_QUERY_WRAPPER);
     }
 
     @Test

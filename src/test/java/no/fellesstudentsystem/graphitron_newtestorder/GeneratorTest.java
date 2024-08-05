@@ -137,12 +137,13 @@ public abstract class GeneratorTest {
 
     @NotNull
     public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        var allComponents = Stream.concat(components.stream(), extraComponents.stream()).flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
-        var allReferences = Stream.concat(references.stream(), extraComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
+        var allComponents = Stream.concat(components.stream(), extraComponents.stream()).collect(Collectors.toSet());
+        var allPaths = allComponents.stream().flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
+        var allReferences = Stream.concat(references.stream(), allComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
 
         setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses, tempOutputDirectory.toString());
 
-        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, allComponents, checkProcessedSchemaDefault);
+        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, allPaths, checkProcessedSchemaDefault);
     }
 
     protected void assertGeneratedContentMatches(String resourceRootFolder) {
@@ -151,6 +152,19 @@ public abstract class GeneratorTest {
 
     protected void assertGeneratedContentMatches(String resourceRootFolder, SchemaComponent... extraComponents) {
         assertGeneratedContentMatches(sourceTestPath + resourceRootFolder, generateFiles(resourceRootFolder, Set.of(extraComponents)));
+    }
+
+    public static void assertGeneratedContentContains(Map<String, List<String>> generatedFiles, String... expected) {
+        var allFileContent = generatedFiles.values().stream().flatMap(Collection::stream).collect(Collectors.joining("\n")); // Add newlines for readability when the test fails.
+        Stream.of(expected).forEach(it -> assertThat(allFileContent).containsIgnoringWhitespaces(it));
+    }
+
+    protected void assertGeneratedContentContains(String resourceRootFolder, String... expected) {
+        assertGeneratedContentContains(generateFiles(resourceRootFolder), expected);
+    }
+
+    protected void assertGeneratedContentContains(String resourceRootFolder, Set<SchemaComponent> extraComponents, String... expected) {
+        assertGeneratedContentContains(generateFiles(resourceRootFolder, extraComponents), expected);
     }
 
     protected void assertFilesAreGenerated(String schemaFolder, String... expectedFiles) {

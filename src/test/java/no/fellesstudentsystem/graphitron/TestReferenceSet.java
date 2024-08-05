@@ -5,7 +5,9 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.enums.RatingListTest;
 import no.fellesstudentsystem.graphitron.enums.RatingTest;
-import no.fellesstudentsystem.graphitron.records.*;
+import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
+import no.fellesstudentsystem.graphitron.records.EditCustomerResponse2;
+import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 
 public enum TestReferenceSet {

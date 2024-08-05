@@ -6,7 +6,7 @@ type Wrapper {
     str: String
     bool: Boolean
     i: Int
-    e: Enum
+    e: DummyEnum
     in: DummyInput
     # date: Date # Can not handle this yet, need to make a better type mapping for fields.
     idList: [ID]
@@ -18,14 +18,10 @@ type Wrapper {
     str: String!
     bool: Boolean!
     i: Int!
-    e: Enum!
+    e: DummyEnum!
     in: DummyInput!
     # date: Date!
     idList: [ID!]!
     inList: [DummyInput!]!
   ): DummyType @splitQuery
-}
-
-enum Enum {
-  A, B
 }

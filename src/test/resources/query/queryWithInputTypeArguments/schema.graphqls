@@ -3,23 +3,9 @@ type CustomerEmail {
   workEmail: String! @field(name : "EMAIL")
 }
 
-input CustomerInput {
-  "Optional"
-  firstName: String @field(name: "FIRST_NAME")
-  "Mandatory"
-  lastName: String! @field(name: "LAST_NAME")
-  email: CustomerInputEmail
-}
-
-input CustomerInputEmail {
-  privateEmail: String @field(name : "EMAIL")
-  workEmail: String! @field(name : "EMAIL")
-}
-
 type Customer implements Node @table {
   id: ID!
   firstName: String! @field(name: "FIRST_NAME")
-  lastName: String! @field(name: "LAST_NAME")
   email: CustomerEmail
 }
 
@@ -35,9 +21,8 @@ type CustomerConnectionEdge {
 }
 
 type Query {
-  customersNoPage(active: String!, storeId: ID! @field(name : "STORE_ID"), pin: CustomerInput): Customer
-  customersWithPage(active: String!, storeIds: [Int!] @field(name : "STORE_ID"), pin: CustomerInput, first: Int = 100, after: String): CustomerConnection!
-  films(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): QueryFilmConnection
+  customersWithPage(active: String!, storeIds: [Int!] @field(name : "STORE_ID"), first: Int = 100, after: String): CustomerConnection!
+  films(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): QueryFilmConnection @notGenerated
 }
 
 type QueryFilmConnection {

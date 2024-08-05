@@ -1,15 +1,15 @@
 package fake.code.generated.mappers;
 
 import fake.code.generated.transform.RecordTransformer;
+import fake.graphql.example.model.DummyEnum;
+import fake.graphql.example.model.DummyEnumConverted;
 import fake.graphql.example.model.Film;
-import fake.graphql.example.model.Rating;
-import fake.graphql.example.model.RatingNoConverter;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyEnum;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.FilmRecord;
 
 public class FilmTypeMapper {
@@ -23,20 +23,20 @@ public class FilmTypeMapper {
             for (var itFilmRecord : filmRecord) {
                 if (itFilmRecord == null) continue;
                 var film = new Film();
-                if (select.contains(pathHere + "rating1")) {
-                    film.setRating1(itFilmRecord.getRating() == null ? null : Map.of(DummyEnum.G, Rating.G, DummyEnum.PG, Rating.PG, DummyEnum.R, Rating.R).getOrDefault(itFilmRecord.getRating(), null));
+                if (select.contains(pathHere + "enum1")) {
+                    film.setEnum1(itFilmRecord.getRating() == null ? null : Map.of("A", DummyEnum.A, "B", DummyEnum.B, "C", DummyEnum.C).getOrDefault(itFilmRecord.getRating(), null));
                 }
 
-                if (select.contains(pathHere + "rating2")) {
-                    film.setRating2(itFilmRecord.getRating() == null ? null : Map.of("G", RatingNoConverter.G, "PG", RatingNoConverter.PG, "R", RatingNoConverter.R).getOrDefault(itFilmRecord.getRating(), null));
+                if (select.contains(pathHere + "enum2")) {
+                    film.setEnum2(itFilmRecord.getRating() == null ? null : Map.of(DummyJOOQEnum.A, DummyEnumConverted.A, DummyJOOQEnum.B, DummyEnumConverted.B, DummyJOOQEnum.C, DummyEnumConverted.C).getOrDefault(itFilmRecord.getRating(), null));
                 }
 
-                if (select.contains(pathHere + "rating1List")) {
-                    film.setRating1List(itFilmRecord.getRating() == null ? null : itFilmRecord.getRating().stream().map(itRating -> Map.of(DummyEnum.G, Rating.G, DummyEnum.PG, Rating.PG, DummyEnum.R, Rating.R).getOrDefault(itRating, null)).collect(Collectors.toList()));
+                if (select.contains(pathHere + "enum1List")) {
+                    film.setEnum1List(itFilmRecord.getRating() == null ? null : itFilmRecord.getRating().stream().map(itDummyEnum -> Map.of("A", DummyEnum.A, "B", DummyEnum.B, "C", DummyEnum.C).getOrDefault(itDummyEnum, null)).collect(Collectors.toList()));
                 }
 
-                if (select.contains(pathHere + "rating2List")) {
-                    film.setRating2List(itFilmRecord.getRating() == null ? null : itFilmRecord.getRating().stream().map(itRatingNoConverter -> Map.of("G", RatingNoConverter.G, "PG", RatingNoConverter.PG, "R", RatingNoConverter.R).getOrDefault(itRatingNoConverter, null)).collect(Collectors.toList()));
+                if (select.contains(pathHere + "enum2List")) {
+                    film.setEnum2List(itFilmRecord.getRating() == null ? null : itFilmRecord.getRating().stream().map(itDummyEnumConverted -> Map.of(DummyJOOQEnum.A, DummyEnumConverted.A, DummyJOOQEnum.B, DummyEnumConverted.B, DummyJOOQEnum.C, DummyEnumConverted.C).getOrDefault(itDummyEnumConverted, null)).collect(Collectors.toList()));
                 }
 
                 filmList.add(film);

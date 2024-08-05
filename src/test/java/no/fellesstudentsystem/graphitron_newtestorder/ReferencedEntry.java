@@ -4,7 +4,7 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyCondition;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyEnum;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyService;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.CustomerJavaRecord;
@@ -24,7 +24,7 @@ public enum ReferencedEntry {
     DUMMY_CONDITION("DUMMY_CONDITION", DummyCondition.class),
 
     // Dummy enum.
-    DUMMY_ENUM("DUMMY_ENUM", DummyEnum.class),
+    DUMMY_JOOQ_ENUM("DUMMY_JOOQ_ENUM", DummyJOOQEnum.class),
 
     // Mapping services.
     MAPPER_FETCH_SERVICE("MAPPER_FETCH_SERVICE", MapperFetchService.class),

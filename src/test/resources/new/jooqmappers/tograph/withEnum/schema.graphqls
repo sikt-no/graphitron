@@ -3,12 +3,8 @@ type Query {
 }
 
 type Film @table {
-  rating1: Rating! @field(name: "RATING")
-  rating2: RatingNoConverter! @field(name: "RATING")
-  rating1List: [Rating]! @field(name: "RATING")
-  rating2List: [RatingNoConverter]! @field(name: "RATING")
+  enum1: DummyEnum! @field(name: "RATING") # No jOOQ converter.
+  enum2: DummyEnumConverted! @field(name: "RATING") # With jOOQ converter.
+  enum1List: [DummyEnum]! @field(name: "RATING")
+  enum2List: [DummyEnumConverted]! @field(name: "RATING")
 }
-
-enum RatingNoConverter { G, PG, R } # No jOOQ converter.
-
-enum Rating @enum(enumReference: {name: "DUMMY_ENUM"}) { G, PG, R } # With jOOQ converter.

@@ -94,13 +94,6 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
         ).isTrue();
     }
 
-    @Test
-    void generate_whenArgumentHasListOfInputsWithListField_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/listOfInputWithNestedList"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Argument 'inputWithListField' is of collection of InputFields ('InputWithListField') type. Fields returning collections: 'ids' are not supported on such types (used for generating condition tuples)");
-    }
-
     @Disabled
     @Test
     void generate_whenMultisetRequireReferenceConditionOnItself_shouldThrowException() {
@@ -123,15 +116,6 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
         assertThatThrownBy(() ->  generateFiles("error/multisetIncorrectWhereConstruction"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("The multiset context in FILM is set to generate a where statement but cannot find a path between FILM and RENTAL");
-    }
-
-    @Test
-    void generate_whenArgumentHasListOfInputsWithOptionalField_shouldThrowException() {
-        assertThatThrownBy(() -> getProcessedSchema("error/listOfInputWithOptionalField"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Problems have been found that prevent code generation:\n" +
-                        "Argument 'inputWithOptionalField' is of collection of InputFields ('InputWithOptionalField') type. Optional fields on such types are not supported. The following fields will be treated as mandatory in the resulting, generated condition tuple: 'title', 'rating'"
-                );
     }
 
     @Test
