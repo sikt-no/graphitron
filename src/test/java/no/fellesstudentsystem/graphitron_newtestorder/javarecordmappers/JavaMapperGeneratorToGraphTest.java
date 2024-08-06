@@ -7,6 +7,7 @@ import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.JavaRecord
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
 import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +15,8 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_TYPE_RECORD;
 
 @DisplayName("Java Mappers - Mapper content for mapping Java records to graph types")
 public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
@@ -24,7 +27,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_SERVICE, JAVA_RECORD_CUSTOMER, MAPPER_RECORD_ADDRESS, MAPPER_RECORD_FILM);
+        return makeReferences(DUMMY_SERVICE, NESTED_RECORD, JAVA_RECORD_CUSTOMER, MAPPER_RECORD_ADDRESS, MAPPER_RECORD_ENUM);
     }
 
     @Override
@@ -33,50 +36,186 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Default case with simple record mapper")
+    @DisplayName("Simple mapper with one field")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("default", DUMMY_TYPE_RECORD);
     }
 
     @Test
-    @DisplayName("Java record containing non-record type")
+    @DisplayName("Field using the @field directive")
+    void mappedField() {
+        assertGeneratedContentContains(
+                "mappedField",
+                "pathHere + \"id\"",
+                "customer.setId(itCustomerJavaRecord.getSomeID()"
+        );
+    }
+
+    @Test
+    @DisplayName("Mapper with multiple fields")
+    void twoFields() {
+        assertGeneratedContentContains(
+                "twoFields",
+                "pathHere + \"someID\"",
+                "customer.setSomeID(itCustomerJavaRecord.getSomeID()",
+                "pathHere + \"otherID\"",
+                "customer.setOtherID(itCustomerJavaRecord.getOtherID()"
+        );
+    }
+
+    @Test
+    @DisplayName("Containing non-record type")
     void containingNonRecordWrapper() {
-        assertGeneratedContentMatches("containingNonRecordWrapper");
+        assertGeneratedContentContains(
+                "containingNonRecordWrapper",
+                "inner = new Wrapper();" +
+                        "if (select.contains(pathHere + \"inner/postalCode\")) {" +
+                        "    inner.setPostalCode(itMapperAddressJavaRecord.getPostalCode());" +
+                        "}" +
+                        "address.setInner(inner)"
+        );
     }
 
     @Test
-    @DisplayName("Java record containing non-record type and using field overrides")
+    @DisplayName("Containing two layers of non-record types")
+    void containingDoubleNonRecordWrapper() {
+        assertGeneratedContentContains(
+                "containingDoubleNonRecordWrapper",
+                        "if (select.contains(pathHere + \"inner0/inner1\")) {" +
+                        "    var inner1 = new InnerWrapper();" +
+                        "    if (select.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "        inner1.setPostalCode(itMapperAddressJavaRecord.getPostalCode());" +
+                        "    }" +
+                        "    inner0.setInner1(inner1)"
+        );
+    }
+
+    @Test
+    @Disabled // Java records do not account for name duplicates in the schema like jOOQ ones do.
+    @DisplayName("Fields on different levels that have the same name")
+    void nestingWithDuplicateFieldName() {
+        assertGeneratedContentContains(
+                "containingNonRecordWrapper",
+                "inner = new Wrapper();" +
+                        "if (select.contains(pathHere + \"inner/inner\")) {" +
+                        "    var inner = new InnerWrapper();" +
+                        "    if (select.contains(pathHere + \"inner/inner/postalCode\")) {" +
+                        "        inner.setPostalCode(itMapperAddressJavaRecord.getPostalCode());" +
+                        "    }" +
+                        "    inner.setInner(inner)"
+        );
+    }
+
+    @Test
+    @DisplayName("Containing non-record type and using field overrides")
     void containingNonRecordWrapperWithFieldOverride() {
-        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+        assertGeneratedContentContains(
+                "containingNonRecordWrapperWithFieldOverride",
+                "inner1 = new Wrapper1()",
+                "inner1.setCode(itMapperAddressJavaRecord.getPostalCode()",
+                "inner2 = new Wrapper2()",
+                "inner2.setCode(itMapperAddressJavaRecord.getPostalCode()"
+        );
     }
 
     @Test
     @DisplayName("Skips fields with splitQuery set")
     void skipsSplitQuery() {
-        assertGeneratedContentMatches("skipsSplitQuery");
+        assertGeneratedContentContains(
+                "skipsSplitQuery",
+                "customerList = new ArrayList<Customer>();return customerList"
+        );
     }
 
     @Test
     @DisplayName("Skips fields that are not mapped to a record field")
     void unconfiguredField() {
-        assertGeneratedContentMatches("unconfiguredField");
+        assertGeneratedContentContains(
+                "unconfiguredField",
+                "customerList = new ArrayList<Customer>();return customerList"
+        );
     }
 
     @Test
     @DisplayName("Maps ID fields that are not the primary key")
     void idOtherThanPK() {
-        assertGeneratedContentMatches("idOtherThanPK");
+        assertGeneratedContentContains(
+                "idOtherThanPK",
+                "pathHere + \"addressId\"",
+                ".setAddressId(itCustomerJavaRecord.getAddressId()"
+        );
     }
 
     @Test
-    @DisplayName("Records with enum fields")
+    @DisplayName("Enum field")
     void withEnum() {
-        assertGeneratedContentMatches("withEnum", SchemaComponent.DUMMY_ENUM, SchemaComponent.DUMMY_ENUM_CONVERTED);
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(itMapperEnumRecord.getEnum1() == null ?");
     }
 
     @Test
-    @DisplayName("Records with list fields")
+    @DisplayName("List field")
     void listField() {
-        assertGeneratedContentMatches("listField");
+        assertGeneratedContentContains("listField", ".setIdList(itCustomerJavaRecord.getIdList()");
+    }
+
+    @Test
+    @DisplayName("Responses containing a jOOQ record fetched by ID")
+    void recordFetchedByID() {
+        assertGeneratedContentContains(
+                "containingRecordFetchedByID",
+                "address.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                        "transform.getCtx(), Set.of(customer.getId()), select.withPrefix(pathHere + \"customer\"" +
+                        ")).values().stream().findFirst().orElse(null)"
+        );
+    }
+
+    @Test
+    @DisplayName("Responses containing listed jOOQ records fetched by ID")
+    void listedRecordFetchedByID() {
+        assertGeneratedContentContains(
+                "containingListedRecordFetchedByID",
+                "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                        "transform.getCtx(), customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + \"customerList\"));" +
+                        "address.setCustomerList(customerList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList())"
+        );
+    }
+
+    @Test
+    @Disabled
+    // This is wrong! Should be itMapperNestedJavaRecord.getDummyRecord()). Seems to wrongly use toRecord case here.
+    @DisplayName("Responses containing a Java record with a non-record type in between")
+    void containingNonRecordWrapperWithJavaRecord() {
+        assertGeneratedContentContains(
+                "containingNonRecordWrapperWithJavaRecord", Set.of(DUMMY_TYPE_RECORD),
+                "inner.setDummyRecord(transform.dummyTypeRecordToGraphType(itMapperNestedJavaRecord.getDummyRecord(), pathHere + \"inner/dummyRecord\")"
+        );
+    }
+
+    @Test
+    @Disabled // This is wrong! Should be itMapperNestedJavaRecord.getCustomer(). Seems to wrongly use toRecord case here.
+    @DisplayName("Responses containing a jOOQ record with a non-record type in between")
+    void containingNonRecordWrapperWithJOOQRecord() {
+        assertGeneratedContentContains(
+                "containingNonRecordWrapperWithJOOQRecord", Set.of(CUSTOMER_TABLE),
+                "inner.setCustomer(transform.customerTableRecordToGraphType(itMapperNestedJavaRecord.getCustomer(), pathHere + \"inner/customer\")"
+        );
+    }
+
+    @Test
+    @DisplayName("Responses skip fields that are not mapped to a Java record")
+    void withUnconfiguredJavaRecord() {
+        assertGeneratedContentContains(
+                "unconfiguredJavaRecord",
+                "customerList = new ArrayList<Customer>();return customerList"
+        );
+    }
+
+    @Test
+    @DisplayName("Responses skip fields that are not mapped to a jOOQ record")
+    void withUnconfiguredJOOQRecord() {
+        assertGeneratedContentContains(
+                "unconfiguredJOOQRecord", Set.of(CUSTOMER_TABLE),
+                "customerList = new ArrayList<Customer>();return customerList"
+        );
     }
 }

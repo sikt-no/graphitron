@@ -1,4 +1,0 @@
-type Query {
-  query(in: DummyInputRecord): DummyType
-  queryListed(in: [DummyInputRecord]): [DummyType]
-}

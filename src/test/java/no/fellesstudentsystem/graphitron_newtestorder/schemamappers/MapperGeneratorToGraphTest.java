@@ -40,6 +40,10 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @Test
     @DisplayName("Default case with listed fields")
     void listedFields() {
-        assertGeneratedContentMatches("listedFields");
+        assertGeneratedContentContains(
+                "listedFields",
+                "Response0 recordToGraphType(List<String> response0Record,",
+                "Response1 recordToGraphType(List<String> response1Record,"
+        );
     }
 }

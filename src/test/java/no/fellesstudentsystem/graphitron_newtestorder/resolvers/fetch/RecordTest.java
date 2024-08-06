@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
 import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
-import no.fellesstudentsystem.graphitron_newtestorder.reducedgenerators.dummygenerators.DummyTransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,30 +35,70 @@ public class RecordTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema), new DummyTransformerClassGenerator(schema));
+        return List.of(new FetchResolverClassGenerator(schema));
     }
 
     @Test
-    @DisplayName("Query root resolver with input Java records")
-    void withInputJavaRecord() {
-        assertGeneratedContentMatches("operation/withInputJavaRecord", DUMMY_INPUT_RECORD);
+    @DisplayName("Root-level input Java records")
+    void inputJavaRecord() {
+        assertGeneratedContentContains(
+                "operation/inputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
+                "query(DummyInputRecord in,",
+                "transform = new RecordTransformer(env, this.ctx)",
+                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "queryForQuery(ctx, inRecord,"
+        );
     }
 
     @Test
-    @DisplayName("Query root resolver with input jOOQ records")
-    void withInputJOOQRecord() {
-        assertGeneratedContentMatches("operation/withInputJOOQRecord", CUSTOMER_INPUT_TABLE);
+    @DisplayName("Listed input Java records")
+    void listedInputJavaRecord() {
+        assertGeneratedContentContains(
+                "operation/listedInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
+                "query(List<DummyInputRecord> in,",
+                "inRecordList = transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "queryForQuery(ctx, inRecordList,"
+        );
     }
 
     @Test
-    @DisplayName("Query resolver with input Java records")
-    void splitQueryWithInputJavaRecord() {
-        assertGeneratedContentMatches("splitquery/withInputJavaRecord", SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD);
+    @DisplayName("Root-level input jOOQ records")
+    void inputJOOQRecord() {
+        assertGeneratedContentContains(
+                "operation/inputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
+                "query(CustomerInputTable in,",
+                "transform = new RecordTransformer(env, this.ctx)",
+                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "queryForQuery(ctx, inRecord,"
+        );
     }
 
     @Test
-    @DisplayName("Query resolver with input jOOQ records")
-    void splitQueryWithInputJOOQRecord() {
-        assertGeneratedContentMatches("splitquery/withInputJOOQRecord", SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE);
+    @DisplayName("Listed input jOOQ records")
+    void listedInputJOOQRecord() {
+        assertGeneratedContentContains(
+                "operation/listedInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
+                "query(List<CustomerInputTable> in,",
+                "inRecordList = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "queryForQuery(ctx, inRecordList,"
+        );
+    }
+
+    @Test
+    @DisplayName("Input Java records")
+    void splitQueryInputJavaRecord() {
+        assertGeneratedContentContains(
+                "splitquery/inputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
+                "queryForWrapper(ctx, ids, inRecord,"
+        );
+    }
+
+    @Test
+    @DisplayName("Input jOOQ records")
+    void splitQueryInputJOOQRecord() {
+        assertGeneratedContentContains(
+                "splitquery/inputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
+                "queryForWrapper(ctx, ids, inRecord,"
+        );
     }
 }

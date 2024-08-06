@@ -1,7 +1,0 @@
-type Query {
-  query(in: In): ID @service(service: {className: "DummyService"})
-}
-
-input In @record(record: {className: "DummyRecord"}) {
-  id: ID!
-}

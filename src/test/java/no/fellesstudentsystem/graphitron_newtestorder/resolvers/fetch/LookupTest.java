@@ -33,109 +33,140 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Root lookup resolver with one key") // Note that lookup is not defined for non-listed keys.
+    @DisplayName("One key") // Note that lookup is not defined for non-listed keys.
     void defaultCase() {
         assertGeneratedContentMatches("default");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with an integer key")
+    @DisplayName("One key not on root level") // The rest of the logic should be the same, so no need to make another set of tests for it. Note that this is not fully supported and tested.
+    void splitQuery() {
+        assertGeneratedContentMatches("splitQuery", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Integer key")
     void integerKey() {
-        assertGeneratedContentMatches("integerKey");
+        assertGeneratedContentContains("integerKey", "keys = List.of(ResolverHelpers.formatString(i))");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with several flat keys")
+    @DisplayName("Several flat keys")
     void multipleKeys() {
-        assertGeneratedContentMatches("multipleKeys");
+        assertGeneratedContentContains("multipleKeys", "keys = List.of(id0, id1, id2)");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with one key and one other field")
+    @DisplayName("One key and one other field")
     void otherNonKeyField() {
-        assertGeneratedContentMatches("otherNonKeyField");
+        assertGeneratedContentContains("otherNonKeyField", "keys = List.of(id0)", "queryForQuery(ctx, id0, id1,");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with various key types") // Note that this result has a different order than the input in schema.
+    @DisplayName("Various key types") // Note that this result has a different order than the input in schema.
     void mixedKeys() {
-        assertGeneratedContentMatches("mixedKeys", DUMMY_INPUT);
+        assertGeneratedContentContains(
+                "mixedKeys", Set.of(DUMMY_INPUT),
+                "keys = List.of(id, ResolverHelpers.formatString(i), in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))",
+                "queryForQuery(ctx, id, in, i,"
+        );
     }
 
     @Test
-    @DisplayName("Root lookup resolver with an input type key")
+    @DisplayName("Input type key")
     void inputKey() {
-        assertGeneratedContentMatches("inputKey", DUMMY_INPUT);
+        assertGeneratedContentContains(
+                "inputKey", Set.of(DUMMY_INPUT),
+                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+        );
     }
 
     @Test
     @Disabled // Does not work. Does not treat outer field as list.
-    @DisplayName("Root lookup resolver with a nested input type key")
+    @DisplayName("Nested input type key")
     void nestedInputKey() {
-        assertGeneratedContentMatches("nestedInputKey", DUMMY_INPUT);
+        assertGeneratedContentContains(
+                "nestedInputKey", Set.of(DUMMY_INPUT),
+                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).collect(Collectors.toList()))"
+        );
     }
 
     @Test
     @Disabled // Does not work. Does not treat outer field as list.
-    @DisplayName("Root lookup resolver with a nested input type integer key")
+    @DisplayName("Nested input type integer key")
     void nestedInputIntegerKey() {
-        assertGeneratedContentMatches("nestedInputIntegerKey");
+        assertGeneratedContentContains(
+                "nestedInputIntegerKey",
+                "List.of(ResolverHelpers.formatString(in.stream().map(it -> it != null ? it.getIn().getId() : null).collect(Collectors.toList())))"
+        );
     }
 
     @Test
     @Disabled // Does not work. Does not treat outer field as list.
-    @DisplayName("Root lookup resolver with a nested input type key where the directive is placed on a intermediate level")
+    @DisplayName("Nested input type key where the directive is placed on a intermediate level")
     void nestedInputKeyMiddle() {
-        assertGeneratedContentMatches("nestedInputKeyMiddle", DUMMY_INPUT);
+        assertGeneratedContentContains(
+                "nestedInputKeyMiddle", Set.of(DUMMY_INPUT),
+                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).collect(Collectors.toList()))"
+        );
     }
 
     @Test
     @Disabled // Does not work. Assumes outer input is list.
-    @DisplayName("Root lookup resolver with a nested input type key where the list wrapping is placed on a intermediate level")
+    @DisplayName("Nested input type key where the list wrapping is placed on a intermediate level")
     void nestedInputKeyWithMiddleList() {
-        assertGeneratedContentMatches("nestedInputKeyWithMiddleList", DUMMY_INPUT);
+        assertGeneratedContentContains(
+                "nestedInputKeyWithMiddleList", Set.of(DUMMY_INPUT),
+                "keys = List.of(in.getIn().stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+        );
     }
 
     @Test
-    @DisplayName("Root lookup resolver with a key inside an input type")
-    void keyInInput() {
-        assertGeneratedContentMatches("keyInInput");
+    @DisplayName("Key inside a listed input type")
+    void keyInListedInput() {
+        assertGeneratedContentContains(
+                "keyInListedInput",
+                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+        );
     }
 
     @Test
-    @DisplayName("Root lookup resolver with a key inside an input type and double key directive")
-    void keyInInputWithDuplicateKey() {
-        assertGeneratedContentMatches("keyInInputWithDuplicateKey");
+    @DisplayName("Listed key inside an input type")
+    void listedKeyInInput() {
+        assertGeneratedContentContains("listedKeyInInput", "keys = List.of(in.getId())");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with a key inside a nested input type")
+    @DisplayName("Key inside an input type and double key directive")
+    void keyInInputWithDuplicateDirective() {
+        assertGeneratedContentContains(
+                "keyInInputWithDuplicateDirective",
+                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+        );
+    }
+
+    @Test
+    @DisplayName("Key inside a nested input type")
     void keyInNestedInput() {
-        assertGeneratedContentMatches("keyInNestedInput");
+        assertGeneratedContentContains("keyInNestedInput", "keys = List.of(in1.getIn2().getId())");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with a key inside a nested input type where the directive is placed on a intermediate level")
+    @DisplayName("Key inside a nested input type where the directive is placed on a intermediate level")
     void keyInNestedInputMiddle() {
-        assertGeneratedContentMatches("keyInNestedInputMiddle");
+        assertGeneratedContentContains("keyInNestedInputMiddle", "keys = List.of(in1.getIn2().getId())");
     }
 
     @Test
-    @DisplayName("Root lookup resolver with an integer key inside a nested input type")
+    @DisplayName("Integer key inside a nested input type")
     void integerKeyInInput() {
-        assertGeneratedContentMatches("integerKeyInInput");
+        assertGeneratedContentContains("integerKeyInInput", "keys = List.of(ResolverHelpers.formatString(in.getI()))");
     }
 
     @Test
     @Disabled // Does not work. Maybe it should not?
-    @DisplayName("Root lookup resolver with a key that is not a list")
+    @DisplayName("Key that is not a list")
     void withoutList() {
-        assertGeneratedContentMatches("withoutList");
-    }
-
-    @Test
-    @DisplayName("Lookup resolver that is not on root level with one key") // The rest of the logic should be the same, so no need to make another set of tests for it. Note that this is not fully supported and tested.
-    void splitquery() {
-        assertGeneratedContentMatches("splitquery", SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentContains("withoutList", "keys = List.of(List.of(id))");
     }
 }

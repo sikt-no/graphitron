@@ -1,0 +1,15 @@
+type Query {
+  query(in: Address): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
+  inner0: Wrapper
+}
+
+input Wrapper {
+  inner1: InnerWrapper
+}
+
+input InnerWrapper {
+  postalCode: String!
+}

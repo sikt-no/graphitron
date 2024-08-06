@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
 import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
-import no.fellesstudentsystem.graphitron_newtestorder.reducedgenerators.dummygenerators.DummyTransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,24 +37,39 @@ public class OutputRecordTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema), new DummyTransformerClassGenerator(schema));
+        return List.of(new FetchResolverClassGenerator(schema));
     }
 
     @Test
     @DisplayName("Root service returning Java records")
     void returningJavaRecord() {
-        assertGeneratedContentMatches("operation/returningJavaRecord");
+        assertGeneratedContentContains(
+                "operation/returningJavaRecord",
+                "public CompletableFuture<DummyTypeRecord>",
+                "resolverFetchService.queryJavaRecord(),",
+                "transform.dummyTypeRecordToGraphType(response, \"\")"
+        );
     }
 
     @Test
     @DisplayName("Service returning Java records wrapped in a non-record graph type") // The naming of the methods may be a bit off here. This test just ensures the resolver uses the right one.
     void returningWrappedJavaRecord() {
-        assertGeneratedContentMatches("operation/returningWrappedJavaRecord");
+        assertGeneratedContentContains(
+                "operation/returningWrappedJavaRecord",
+                "public CompletableFuture<Wrapper>",
+                "resolverFetchService.queryJavaRecord(),",
+                "transform.wrapperRecordToGraphType(response, \"\")"
+        );
     }
 
     @Test
     @DisplayName("Service returning Java records")
     void returningJavaRecordOnSplitQuery() {
-        assertGeneratedContentMatches("splitquery/returningJavaRecord", SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentContains(
+                "splitquery/returningJavaRecord", Set.of(SPLIT_QUERY_WRAPPER),
+                "public CompletableFuture<DummyTypeRecord>",
+                "resolverFetchService.queryJavaRecord(ids)",
+                "transform.dummyTypeRecordToGraphType(response, \"\")"
+        );
     }
 }

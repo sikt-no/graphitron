@@ -1,9 +1,9 @@
 type Query {
-  query(in: Input1): DummyType
+  query(in1: Input1): DummyType
 }
 
 input Input1 {
-  in: Input2 @lookupKey
+  in2: Input2 @lookupKey
 }
 
 input Input2 {

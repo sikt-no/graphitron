@@ -4,7 +4,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.COMPONENT_PATH;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.SCHEMA_EXTENSION;
 
@@ -27,9 +27,9 @@ public enum SchemaComponent {
     CUSTOMER_CONNECTION_ORDER(CUSTOMER_CONNECTION_ONLY, ORDER),
 
     DUMMY_TYPE("basic/DummyType"),
-    DUMMY_TYPE_RECORD("basic/DummyTypeRecord", Set.of(DUMMY_RECORD)),
+    DUMMY_TYPE_RECORD("basic/DummyTypeRecord", Set.of(ID_RECORD)),
     DUMMY_INPUT("basic/DummyInput"),
-    DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(DUMMY_RECORD)),
+    DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(ID_RECORD)),
     DUMMY_CONNECTION("basic/DummyConnection", DUMMY_TYPE, PAGE_INFO),
 
     SPLIT_QUERY_WRAPPER("SplitQueryWrapper"),

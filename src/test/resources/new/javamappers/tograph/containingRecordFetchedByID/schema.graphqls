@@ -2,11 +2,10 @@ type Query {
   query: Address @service(service: {name: "DUMMY_SERVICE"})
 }
 
-type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
-  cityJOOQ: AddressCityJOOQ @fetchByID
-  cityJOOQList: [AddressCityJOOQ] @fetchByID # TODO: Needs dummy node interface generator.
+type Address @record(record: {name: "NESTED_RECORD"}) {
+  customer: Customer @fetchByID
 }
 
-type AddressCityJOOQ implements Node @table(name: "City") {
-  city: String
+type Customer implements Node @table {
+  id: ID
 }

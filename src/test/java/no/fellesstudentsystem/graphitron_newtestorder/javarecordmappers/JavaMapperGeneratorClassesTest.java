@@ -14,6 +14,8 @@ import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_INPUT_TABLE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Java Mappers - Mapper classes for mapping Java records")
 public class JavaMapperGeneratorClassesTest extends GeneratorTest {
@@ -35,6 +37,6 @@ public class JavaMapperGeneratorClassesTest extends GeneratorTest {
     @Test
     @DisplayName("Mapper generator ignores JOOQ records")
     void ignoresJOOQRecordClasses() {
-        assertFilesAreGenerated("ignoresJOOQRecordClasses");
+        assertFilesAreGenerated("ignoresJOOQRecordClasses", Set.of(CUSTOMER_TABLE, CUSTOMER_INPUT_TABLE));
     }
 }

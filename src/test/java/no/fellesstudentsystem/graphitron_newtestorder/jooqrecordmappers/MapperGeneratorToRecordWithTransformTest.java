@@ -34,6 +34,10 @@ public class MapperGeneratorToRecordWithTransformTest extends GeneratorTest {
     @Test
     @DisplayName("Default case for global record transforms")
     void defaultCase() {
-        assertGeneratedContentMatches("withTransforms");
+        assertGeneratedContentContains(
+                "withTransforms",
+                "customerRecordList = (ArrayList<CustomerRecord>) SomeTransform.someTransform(ctx, customerRecordList);" +
+                        "return customerRecordList"
+        );
     }
 }

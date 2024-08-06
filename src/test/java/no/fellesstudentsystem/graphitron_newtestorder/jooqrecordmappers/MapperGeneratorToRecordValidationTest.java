@@ -16,12 +16,13 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_INPUT_TABLE;
 
 @DisplayName("JOOQ Validators - Validate mapped jOOQ records")
 public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "jooqmappers/validation";
+        return "jooqmappers";
     }
 
     @Override
@@ -40,33 +41,89 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Default case with simple record mapper")
+    @DisplayName("Simple mapper with one field")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("validation/default", CUSTOMER_INPUT_TABLE);
     }
 
     @Test
-    @DisplayName("jOOQ record containing non-record type")
+    @DisplayName("Field using the @field directive")
+    void mappedField() {
+        assertGeneratedContentContains(
+                "torecord/mappedField",
+                "pathHere + \"first\"",
+                ".put(\"firstName\", pathHere + itCustomerRecordListIndex + \"/first\""
+        );
+    }
+
+    @Test
+    @DisplayName("Mapper with multiple fields")
+    void twoFields() {
+        assertGeneratedContentContains(
+                "torecord/twoFields",
+                "pathHere + \"id\"",
+                ".put(\"id\", pathHere + itCustomerRecordListIndex + \"/id\"",
+                "pathHere + \"first\"",
+                ".put(\"firstName\", pathHere + itCustomerRecordListIndex + \"/first\""
+        );
+    }
+
+    @Test
+    @DisplayName("Record containing non-record type")
     void containingNonRecordWrapper() {
-        assertGeneratedContentMatches("containingNonRecordWrapper");
+        assertGeneratedContentContains(
+                "torecord/containingNonRecordWrapper",
+                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner/postalCode\""
+        );
     }
 
     @Test
-    @DisplayName("jOOQ record containing non-record type and using field overrides")
+    @DisplayName("Mapper with two layers of non-record types")
+    void containingDoubleNonRecordWrapper() {
+        assertGeneratedContentContains(
+                "torecord/containingDoubleNonRecordWrapper",
+                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner0/inner1/postalCode\""
+        );
+    }
+
+    @Test
+    @DisplayName("Fields on different levels that have the same name")
+    void nestingWithDuplicateFieldName() {
+        assertGeneratedContentContains(
+                "torecord/nestingWithDuplicateFieldName",
+                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner/inner/postalCode\""
+        );
+    }
+
+    @Test
+    @DisplayName("Record containing non-record type and using field overrides")
     // This does not inherit @field the same way the mappers do, and may therefore have unwanted deviations.
     void containingNonRecordWrapperWithFieldOverride() {
-        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+        assertGeneratedContentContains(
+                "torecord/containingNonRecordWrapperWithFieldOverride",
+                "pathHere + \"inner1/code\"",
+                ".put(\"postalCode\", pathHere + itAddressRecordListIndex + \"/inner1/code\"",
+                "pathHere + \"inner2/code\"",
+                ".put(\"code\", pathHere + itAddressRecordListIndex + \"/inner2/code\""
+        );
     }
 
     @Test
     @DisplayName("Handles fields that are not mapped to a record field") // TODO: This currently does not check for field existence.
     void unconfiguredField() {
-        assertGeneratedContentMatches("unconfiguredField");
+        assertGeneratedContentContains(
+                "torecord/unconfiguredField",
+                ".put(\"id1\", pathHere + itCustomerRecordListIndex + \"/id1\")",
+                ".put(\"wrongName\", pathHere + itCustomerRecordListIndex + \"/id2\""
+        );
     }
 
     @Test
-    @DisplayName("jOOQ record containing jOOQ record") // Can not do anything with records, so will skip them.
+    @DisplayName("Record containing jOOQ record") // Can not do anything with jOOQ records, so will skip them.
     void containingRecords() {
-        assertGeneratedContentMatches("containingRecords");
+        assertGeneratedContentContains(
+                "torecord/containingRecords",
+                "validationErrors = new HashSet<GraphQLError>();return validationErrors"
+        );
     }
 }

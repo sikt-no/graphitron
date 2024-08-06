@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("JOOQ Mappers - Mapper content for mapping jOOQ records to graph types")
 public class MapperGeneratorToGraphTest extends GeneratorTest {
@@ -33,50 +34,130 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Default case with simple record mapper")
+    @DisplayName("Simple mapper with one field")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("default", CUSTOMER_TABLE);
+    }
+
+    @Test
+    @DisplayName("Field using the @field directive")
+    void mappedField() {
+        assertGeneratedContentContains(
+                "mappedField",
+                "pathHere + \"first\"",
+                "customer.setFirst(itCustomerRecord.getFirstName()"
+        );
+    }
+
+    @Test
+    @DisplayName("Mapper with multiple fields")
+    void twoFields() {
+        assertGeneratedContentContains(
+                "twoFields",
+                "pathHere + \"id\"",
+                "customer.setId(itCustomerRecord.getId()",
+                "pathHere + \"first\"",
+                "customer.setFirst(itCustomerRecord.getFirstName()"
+        );
     }
 
     @Test
     @DisplayName("Mapper with a non-record outer wrapper")
-    void withNonRecordWrapper() {
-        assertGeneratedContentMatches("withNonRecordWrapper");
+    void outerNonRecordWrapper() {
+        assertGeneratedContentContains(
+                "outerNonRecordWrapper",
+                "pathHere + \"customer\"",
+                        "wrapper.setCustomer(transform.customerRecordToGraphType(wrapperRecord, pathHere + \"customer\")"
+        );
     }
 
     @Test
-    @DisplayName("jOOQ record containing jOOQ record")
+    @DisplayName("Record containing jOOQ record")
     void containingRecords() {
-        assertGeneratedContentMatches("containingRecords");
+        assertGeneratedContentContains(
+                "containingRecords",
+                "customerList = new ArrayList<Customer>();return customerList"
+        );
     }
 
     @Test
-    @DisplayName("jOOQ record containing non-record type")
+    @DisplayName("Record containing non-record type")
     void containingNonRecordWrapper() {
-        assertGeneratedContentMatches("containingNonRecordWrapper");
+        assertGeneratedContentContains(
+                "containingNonRecordWrapper",
+                "address_inner = new Wrapper();" +
+                        "if (select.contains(pathHere + \"inner/postalCode\")) {" +
+                        "    address_inner.setPostalCode(itAddressRecord.getPostalCode());" +
+                        "}" +
+                        "address.setInner(address_inner)"
+        );
     }
 
     @Test
-    @DisplayName("jOOQ record containing non-record type and using field overrides")
+    @DisplayName("Mapper with two layers of non-record types")
+    void containingDoubleNonRecordWrapper() {
+        assertGeneratedContentContains(
+                "containingDoubleNonRecordWrapper",
+                "address_inner0 = new Wrapper();" +
+                        "if (select.contains(pathHere + \"inner0/inner1\")) {" +
+                        "    var wrapper_inner1 = new InnerWrapper();" +
+                        "    if (select.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "        wrapper_inner1.setPostalCode(itAddressRecord.getPostalCode());" +
+                        "    }" +
+                        "    address_inner0.setInner1(wrapper_inner1);" +
+                        "}" +
+                        "address.setInner0(address_inner0)"
+        );
+    }
+
+    @Test
+    @DisplayName("Fields on different levels that have the same name")
+    void nestingWithDuplicateFieldName() {
+        assertGeneratedContentContains(
+                "nestingWithDuplicateFieldName",
+                "address_inner = new Wrapper();" +
+                        "if (select.contains(pathHere + \"inner/inner\")) {" +
+                        "    var wrapper_inner = new InnerWrapper();" +
+                        "    if (select.contains(pathHere + \"inner/inner/postalCode\")) {" +
+                        "        wrapper_inner.setPostalCode(itAddressRecord.getPostalCode());" +
+                        "    }" +
+                        "    address_inner.setInner(wrapper_inner);" +
+                        "}" +
+                        "address.setInner(address_inner)"
+        );
+    }
+
+    @Test
+    @DisplayName("Record containing non-record type and using field overrides")
     void containingNonRecordWrapperWithFieldOverride() {
-        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+        assertGeneratedContentContains(
+                "containingNonRecordWrapperWithFieldOverride",
+                "address_inner1 = new Wrapper1()",
+                "address_inner1.setCode(itAddressRecord.getPostalCode()",
+                "address_inner2 = new Wrapper2()",
+                "address_inner2.setCode(itAddressRecord.getPostalCode()"
+        );
     }
 
     @Test
     @DisplayName("Handles fields that are not mapped to a record field") // TODO: This currently produces illegal code.
     void unconfiguredField() {
-        assertGeneratedContentMatches("unconfiguredField");
+        assertGeneratedContentContains(
+                "unconfiguredField",
+                ".setId1(itCustomerRecord.getId1()",
+                ".setId2(itCustomerRecord.getWrongName()"
+        );
     }
 
     @Test
     @DisplayName("Maps ID fields that are not the primary key")
     void idOtherThanPK() {
-        assertGeneratedContentMatches("idOtherThanPK");
+        assertGeneratedContentContains("idOtherThanPK", ".setAddressId(itCustomerRecord.getAddressId()");
     }
 
     @Test
-    @DisplayName("Records with enum fields")
+    @DisplayName("Enum field")
     void withEnum() {
-        assertGeneratedContentMatches("withEnum", SchemaComponent.DUMMY_ENUM, SchemaComponent.DUMMY_ENUM_CONVERTED);
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(itFilmRecord.getRating() == null ?");
     }
 }

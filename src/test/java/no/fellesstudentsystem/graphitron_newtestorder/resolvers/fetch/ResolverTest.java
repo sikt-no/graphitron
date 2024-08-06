@@ -46,7 +46,13 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Root resolver that returns a list")
     void returningList() {
-        assertGeneratedContentMatches("operation/returningList");
+        assertGeneratedContentContains("operation/returningList", "public CompletableFuture<List<DummyType>> query(");
+    }
+
+    @Test
+    @DisplayName("Root resolver that returns an optional list")
+    void returningOptionalList() {
+        assertGeneratedContentContains("operation/returningOptionalList", "public CompletableFuture<List<DummyType>> query(");
     }
 
     @Test
@@ -58,7 +64,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Root resolver that is generated as abstract")
     void notGeneratedAbstractResolver() {
-        assertGeneratedContentMatches("operation/notGeneratedAbstractResolver");
+        assertGeneratedContentContains("operation/notGeneratedAbstractResolver", "abstract class");
     }
 
     @Test
@@ -76,7 +82,13 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver that returns a list")
     void splitQueryReturningList() {
-        assertGeneratedContentMatches("splitquery/returningList", SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentContains("splitquery/returningList", Set.of(SPLIT_QUERY_WRAPPER), "public CompletableFuture<List<DummyType>> query(");
+    }
+
+    @Test
+    @DisplayName("Resolver that returns an optional list")
+    void splitQueryReturningOptionalList() {
+        assertGeneratedContentContains("splitquery/returningOptionalList", Set.of(SPLIT_QUERY_WRAPPER), "public CompletableFuture<List<DummyType>> query(");
     }
 
     @Test
@@ -94,6 +106,6 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver that is generated as abstract")
     void splitQueryNotGeneratedAbstractResolver() {
-        assertGeneratedContentMatches("splitquery/notGeneratedAbstractResolver", SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentContains("splitquery/notGeneratedAbstractResolver", Set.of(SPLIT_QUERY_WRAPPER), "abstract class");
     }
 }

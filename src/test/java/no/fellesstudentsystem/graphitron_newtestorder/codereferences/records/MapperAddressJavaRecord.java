@@ -1,14 +1,7 @@
 package no.fellesstudentsystem.graphitron_newtestorder.codereferences.records;
 
-import no.sikt.graphitron.jooq.generated.testdata.tables.City;
-
-import java.util.List;
-
 public class MapperAddressJavaRecord {
     String id, postalCode;
-    City cityJOOQ;
-    MapperCityJavaRecord cityJava;
-    List<City> cityJOOQList;
 
     public String getId() {
         return id;
@@ -24,29 +17,5 @@ public class MapperAddressJavaRecord {
 
     public void setPostalCode(String postalCode) {
         this.postalCode = postalCode;
-    }
-
-    public City getCityJOOQ() {
-        return cityJOOQ;
-    }
-
-    public void setCityJOOQ(City cityJOOQ) {
-        this.cityJOOQ = cityJOOQ;
-    }
-
-    public MapperCityJavaRecord getCityJava() {
-        return cityJava;
-    }
-
-    public void setCityJava(MapperCityJavaRecord cityJava) {
-        this.cityJava = cityJava;
-    }
-
-    public List<City> getCityJOOQList() {
-        return cityJOOQList;
-    }
-
-    public void setCityJOOQList(List<City> cityJOOQList) {
-        this.cityJOOQList = cityJOOQList;
     }
 }

@@ -1,11 +1,3 @@
 type Query {
-  customerQuery(in: CustomerInput): Customer @service(service: {name: "DUMMY_SERVICE"})
-}
-
-input CustomerInput @table(name: "CUSTOMER") {
-  id: ID!
-}
-
-type Customer @table {
-  id: ID!
+  customerQuery(in: CustomerInputTable): CustomerTable @service(service: {name: "DUMMY_SERVICE"})
 }

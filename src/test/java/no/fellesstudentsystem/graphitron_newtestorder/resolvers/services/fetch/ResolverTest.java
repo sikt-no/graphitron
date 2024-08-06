@@ -47,7 +47,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Basic root service with a parameter")
     void withInput() {
-        assertGeneratedContentMatches("operation/withInput");
+        assertGeneratedContentContains("operation/withInput", "query(String id,", "resolverFetchService.query(id)");
     }
 
     @Test
@@ -59,7 +59,13 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Root service with pagination and a record input")
     void withPaginationAndRecord() {
-        assertGeneratedContentMatches("operation/withPaginationAndRecord", CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE);
+        assertGeneratedContentContains(
+                "operation/withPaginationAndRecord", Set.of(CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
+                "query(Integer first, String after, CustomerInputTable in,",
+                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "resolverFetchService.queryList(inRecord, pageSize, after",
+                "resolverFetchService.countQueryList(inRecord"
+        );
     }
 
     @Test
@@ -71,7 +77,11 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Basic service with a parameter")
     void splitQueryWithInput() {
-        assertGeneratedContentMatches("splitquery/withInput", SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentContains(
+                "splitquery/withInput", Set.of(SPLIT_QUERY_WRAPPER),
+                "query(Wrapper wrapper, String id,",
+                "resolverFetchService.query(ids, id)"
+        );
     }
 
     @Test
@@ -83,6 +93,12 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Service with pagination and a record input")
     void splitQueryWithPaginationAndRecord() {
-        assertGeneratedContentMatches("splitquery/withPaginationAndRecord", SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE);
+        assertGeneratedContentContains(
+                "splitquery/withPaginationAndRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
+                "query(Wrapper wrapper, Integer first, String after, CustomerInputTable in,",
+                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "resolverFetchService.queryMap(ids, inRecord, pageSize, after",
+                "resolverFetchService.countQueryMap(ids, inRecord"
+        );
     }
 }

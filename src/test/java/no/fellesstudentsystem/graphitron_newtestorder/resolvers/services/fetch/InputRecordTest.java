@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
 import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
-import no.fellesstudentsystem.graphitron_newtestorder.reducedgenerators.dummygenerators.DummyTransformerClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,30 +35,50 @@ public class InputRecordTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema), new DummyTransformerClassGenerator(schema));
+        return List.of(new FetchResolverClassGenerator(schema));
     }
 
     @Test
     @DisplayName("Root service including input Java records")
     void withInputJavaRecord() {
-        assertGeneratedContentMatches("operation/withInputJavaRecord", DUMMY_INPUT_RECORD);
+        assertGeneratedContentContains(
+                "operation/withInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
+                "query(DummyInputRecord in,",
+                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "resolverFetchService.query(inRecord)"
+        );
     }
 
     @Test
     @DisplayName("Root service including input jOOQ records")
     void withInputJOOQRecord() {
-        assertGeneratedContentMatches("operation/withInputJOOQRecord", CUSTOMER_INPUT_TABLE);
+        assertGeneratedContentContains(
+                "operation/withInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
+                "query(CustomerInputTable in,",
+                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "resolverFetchService.query(inRecord)"
+        );
     }
 
     @Test
     @DisplayName("Service including input Java records")
     void withInputJavaRecordOnSplitQuery() {
-        assertGeneratedContentMatches("splitquery/withInputJavaRecord", SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD);
+        assertGeneratedContentContains(
+                "splitquery/withInputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
+                "query(Wrapper wrapper, DummyInputRecord in,",
+                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
+                "resolverFetchService.query(ids, inRecord)"
+        );
     }
 
     @Test
     @DisplayName("Service including input jOOQ records")
     void withInputJOOQRecordOnSplitQuery() {
-        assertGeneratedContentMatches("splitquery/withInputJOOQRecord", SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE);
+        assertGeneratedContentContains(
+                "splitquery/withInputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
+                "query(Wrapper wrapper, CustomerInputTable in,",
+                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
+                "resolverFetchService.query(ids, inRecord)"
+        );
     }
 }

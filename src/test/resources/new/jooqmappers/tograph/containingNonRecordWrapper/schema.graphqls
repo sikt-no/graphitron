@@ -3,14 +3,9 @@ type Query {
 }
 
 type Address @table {
-  inner: InnerWrapper
-  inner2: Wrapper2 # Double wrapper. Also checks for naming conflicts.
+  inner: Wrapper
 }
 
-type Wrapper2 {
-  inner: InnerWrapper
-}
-
-type InnerWrapper {
+type Wrapper {
   postalCode: String!
 }

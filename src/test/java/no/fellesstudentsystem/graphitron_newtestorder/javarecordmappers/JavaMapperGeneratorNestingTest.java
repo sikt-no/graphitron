@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 // This is split here so the dummy transformer is not included in other tests.
 @DisplayName("Java Mappers - Mapper containing additional records")
@@ -25,7 +26,7 @@ public class JavaMapperGeneratorNestingTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_SERVICE, MAPPER_RECORD_ADDRESS, MAPPER_RECORD_CITY, JAVA_RECORD_CUSTOMER);
+        return makeReferences(DUMMY_SERVICE, NESTED_RECORD, JAVA_RECORD_CUSTOMER);
     }
 
     @Override
@@ -34,44 +35,26 @@ public class JavaMapperGeneratorNestingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Responses containing other records")
-    void responsesContainingRecords() {
-        assertGeneratedContentMatches("tograph/containingRecords");
+    @DisplayName("Responses containing a jOOQ record")
+    void responsesContainingJOOQRecord() {
+        assertGeneratedContentMatches("tograph/containingJOOQRecord", CUSTOMER_TABLE);
     }
 
     @Test
-    @DisplayName("Responses containing jOOQ records fetched by ID")
-    void responsesContainingRecordFetchedByID() {
-        assertGeneratedContentMatches("tograph/containingRecordFetchedByID");
+    @DisplayName("Responses containing a Java record")
+    void responsesContainingJavaRecord() {
+        assertGeneratedContentMatches("tograph/containingJavaRecord", DUMMY_TYPE_RECORD);
     }
 
     @Test
-    @DisplayName("Responses containing other records with a non-record type in between")
-    void responsesContainingNonRecordWrapperWithRecord() {
-        assertGeneratedContentMatches("tograph/containingNonRecordWrapperWithRecord");
+    @DisplayName("Inputs containing a Java record")
+    void inputsContainingJavaRecord() {
+        assertGeneratedContentMatches("torecord/containingJavaRecord", DUMMY_INPUT_RECORD);
     }
 
     @Test
-    @DisplayName("Responses skip fields that are not mapped to a record")
-    void responsesWithUnconfiguredRecord() {
-        assertGeneratedContentMatches("tograph/unconfiguredRecord");
-    }
-
-    @Test
-    @DisplayName("Inputs containing other records")
-    void inputsContainingRecords() {
-        assertGeneratedContentMatches("torecord/containingRecords");
-    }
-
-    @Test
-    @DisplayName("Inputs containing other records with a non-record type in between")
-    void inputsContainingNonRecordWrapperWithRecord() {
-        assertGeneratedContentMatches("torecord/containingNonRecordWrapperWithRecord");
-    }
-
-    @Test
-    @DisplayName("Inputs skip fields that are not mapped to a record")
-    void inputsWithUnconfiguredRecord() {
-        assertGeneratedContentMatches("torecord/unconfiguredRecord");
+    @DisplayName("Inputs containing a jOOQ record")
+    void inputsContainingJOOQRecord() {
+        assertGeneratedContentMatches("torecord/containingJOOQRecord", CUSTOMER_INPUT_TABLE);
     }
 }

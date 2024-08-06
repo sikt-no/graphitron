@@ -46,18 +46,29 @@ public class InterfaceResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Many types implement interface")
     void manyImplementations() {
-        assertGeneratedContentMatches("manyImplementations");
+        assertGeneratedContentContains(
+                "manyImplementations",
+                "AddressDBQueries.loadAddressByIdsAsNode(",
+                "CustomerDBQueries.loadCustomerByIdsAsNode(",
+                "FilmDBQueries.loadFilmByIdsAsNode("
+        );
     }
 
     @Test
     @DisplayName("Type implements two interfaces")
     void doubleInterface() {
-        assertGeneratedContentMatches("doubleInterface");
+        assertGeneratedContentContains(
+                "doubleInterface",
+                "FilmDBQueries.loadFilmByIdsAsNode(",
+                "CompletableFuture<Titled> titled(String title, ",
+                "getTablePartOf(title)",
+                "FilmDBQueries.loadFilmByTitlesAsTitled("
+        );
     }
 
     @Test
     @DisplayName("Implementing type has no path from Query")
     void withoutPathFromQuery() {
-        assertGeneratedContentMatches("withoutPathFromQuery");
+        assertGeneratedContentContains("withoutPathFromQuery", "CustomerDBQueries.loadCustomerByIdsAsNode(");
     }
 }

@@ -41,7 +41,11 @@ public class ResolverPaginationTest extends GeneratorTest {
     @Test
     @DisplayName("Root resolver with an additional parameter")
     void withOtherInput() {
-        assertGeneratedContentMatches("operation/withOtherInput");
+        assertGeneratedContentContains(
+                "operation/withOtherInput",
+                "query(Integer first, String after, String other,",
+                "queryForQuery(ctx, other, pageSize, after,"
+        );
     }
 
     @Test
@@ -53,6 +57,10 @@ public class ResolverPaginationTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver with an additional parameter")
     void splitQueryWithOtherInput() {
-        assertGeneratedContentMatches("splitquery/withOtherInput", SPLIT_QUERY_WRAPPER);
+        assertGeneratedContentContains(
+                "splitquery/withOtherInput", Set.of(SPLIT_QUERY_WRAPPER),
+                "query(Wrapper wrapper, Integer first, String after, String other,",
+                "queryForWrapper(ctx, ids, other, pageSize, after,"
+        );
     }
 }

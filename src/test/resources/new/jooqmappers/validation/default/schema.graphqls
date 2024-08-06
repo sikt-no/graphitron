@@ -1,8 +1,3 @@
 type Query {
-  query(in: Customer): ID @service(service: {name: "DUMMY_SERVICE"})
-}
-
-input Customer @table {
-  id: ID
-  first: String @field(name: "FIRST_NAME")
+  query(in: CustomerInputTable): ID @service(service: {name: "DUMMY_SERVICE"})
 }

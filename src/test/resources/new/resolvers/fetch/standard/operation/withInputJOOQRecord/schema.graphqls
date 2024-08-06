@@ -1,4 +1,0 @@
-type Query {
-  query(in: CustomerInputTable): DummyType
-  queryListed(in: [CustomerInputTable]): [DummyType]
-}

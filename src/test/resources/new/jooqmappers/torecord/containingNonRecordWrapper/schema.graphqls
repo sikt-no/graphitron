@@ -3,9 +3,9 @@ type Query {
 }
 
 input Address @table {
-  inner: InnerWrapper
+  inner: Wrapper
 }
 
-input InnerWrapper {
+input Wrapper {
   postalCode: String!
 }

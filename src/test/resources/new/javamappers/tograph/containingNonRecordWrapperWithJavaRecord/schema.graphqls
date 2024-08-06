@@ -1,0 +1,11 @@
+type Query {
+  query: Address @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Address @record(record: {name: "NESTED_RECORD"}) {
+  inner: InnerWrapper
+}
+
+type InnerWrapper {
+  dummyRecord: DummyTypeRecord
+}

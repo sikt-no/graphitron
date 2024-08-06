@@ -7,10 +7,7 @@ import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyrefere
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyService;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.CustomerJavaRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperAddressJavaRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperCityJavaRecord;
-import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.MapperFilmJavaRecord;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.records.*;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.services.*;
 
 public enum ReferencedEntry {
@@ -34,7 +31,9 @@ public enum ReferencedEntry {
     // Mapping records.
     MAPPER_RECORD_CITY("MAPPER_RECORD_CITY", MapperCityJavaRecord.class),
     MAPPER_RECORD_ADDRESS("MAPPER_RECORD_ADDRESS", MapperAddressJavaRecord.class),
-    MAPPER_RECORD_FILM("MAPPER_RECORD_FILM", MapperFilmJavaRecord.class),
+    MAPPER_RECORD_ENUM("MAPPER_RECORD_ENUM", MapperEnumRecord.class),
+    ID_RECORD("ID_RECORD", IDJavaRecord.class),
+    NESTED_RECORD("NESTED_RECORD", MapperNestedJavaRecord.class),
 
     // Input record services.
     JAVA_RECORD_FETCH_SERVICE("JAVA_RECORD_FETCH_SERVICE", JavaRecordInputFetchService.class),

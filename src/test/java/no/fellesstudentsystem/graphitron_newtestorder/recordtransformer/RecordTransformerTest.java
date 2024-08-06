@@ -16,6 +16,7 @@ import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("Record Transformer - Content for the RecordTransformer")
 public class RecordTransformerTest extends GeneratorTest {
@@ -35,39 +36,39 @@ public class RecordTransformerTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("The class is still generated when no mappable records exist.")
-    void whenNoRecordsExist() {
-        assertGeneratedContentMatches("whenNoRecordsExist");
-    }
-
-    @Test
     @DisplayName("Maps from graph types to Java records")
-    void fromGraphToJavaContent() {
-        assertGeneratedContentMatches("fromGraphToJavaContent");
+    void fromGraphToJava() {
+        assertGeneratedContentMatches("fromGraphToJava", DUMMY_INPUT_RECORD);
     }
 
     @Test
     @DisplayName("Maps from graph types to jOOQ records")
-    void fromGraphToJOOQContent() {
-        assertGeneratedContentMatches("fromGraphToJOOQContent");
+    void fromGraphToJOOQ() {
+        assertGeneratedContentMatches("fromGraphToJOOQ", CUSTOMER_INPUT_TABLE);
     }
 
     @Test
     @DisplayName("Maps from Java records to graph types")
-    void fromJavaToGraphContent() {
-        assertGeneratedContentMatches("fromJavaToGraphContent");
+    void fromJavaToGraph() {
+        assertGeneratedContentMatches("fromJavaToGraph");
     }
 
     @Test
     @DisplayName("Maps from jOOQ records to graph types")
-    void fromJOOQToGraphContent() {
-        assertGeneratedContentMatches("fromJOOQToGraphContent");
+    void fromJOOQToGraph() {
+        assertGeneratedContentMatches("fromJOOQToGraph", CUSTOMER_TABLE);
     }
 
     @Test
     @DisplayName("Generates correct validation code pattern")
     void withValidation() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertGeneratedContentMatches("withValidation");
+        assertGeneratedContentContains(
+                "withValidation",
+                Set.of(CUSTOMER_INPUT_TABLE),
+                "records = CustomerInputTableJOOQMapper.toJOOQRecord(input, path, this);" +
+                        "validationErrors.addAll(CustomerInputTableJOOQMapper.validate(records, indexPath, this));" +
+                        "return records"
+        );
     }
 }

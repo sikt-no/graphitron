@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_INPUT_TABLE;
 
 @DisplayName("JOOQ Mappers - Mapper content for mapping graph types to jOOQ records")
 public class MapperGeneratorToRecordTest extends GeneratorTest {
@@ -34,45 +35,116 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Default case with simple record mapper")
+    @DisplayName("Simple mapper with one field")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("default", CUSTOMER_INPUT_TABLE);
     }
 
     @Test
-    @DisplayName("jOOQ record containing non-record type")
+    @DisplayName("Field using the @field directive")
+    void mappedField() {
+        assertGeneratedContentContains(
+                "mappedField",
+                "pathHere + \"first\"",
+                "customerRecord.setFirstName(itCustomer.getFirst()"
+        );
+    }
+
+    @Test
+    @DisplayName("Mapper with multiple fields")
+    void twoFields() {
+        assertGeneratedContentContains(
+                "twoFields",
+                "pathHere + \"id\"",
+                "customerRecord.setId(itCustomer.getId()",
+                "pathHere + \"first\"",
+                "customerRecord.setFirstName(itCustomer.getFirst()"
+        );
+    }
+
+    @Test
+    @DisplayName("Record containing non-record type")
     void containingNonRecordWrapper() {
-        assertGeneratedContentMatches("containingNonRecordWrapper");
+        assertGeneratedContentContains(
+                "containingNonRecordWrapper",
+                "if (address_inner != null) {" +
+                        "    if (arguments.contains(pathHere + \"inner/postalCode\")) {" +
+                        "        addressRecord.setPostalCode(address_inner.getPostalCode());" +
+                        "    }" +
+                        "}" +
+                        "addressRecordList.add(addressRecord)"
+        );
     }
 
     @Test
-    @DisplayName("jOOQ record containing non-record type and using field overrides")
+    @DisplayName("Mapper with two layers of non-record types")
+    void containingDoubleNonRecordWrapper() {
+        assertGeneratedContentContains(
+                "containingDoubleNonRecordWrapper",
+                "address_inner0 = itAddress.getInner0();" +
+                        "if (address_inner0 != null) {" +
+                        "    var wrapper_inner1 = address_inner0.getInner1();" +
+                        "    if (wrapper_inner1 != null) {" +
+                        "        if (arguments.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "            addressRecord.setPostalCode(wrapper_inner1.getPostalCode());"
+        );
+    }
+
+    @Test
+    @DisplayName("Fields on different levels that have the same name")
+    void nestingWithDuplicateFieldName() {
+        assertGeneratedContentContains(
+                "nestingWithDuplicateFieldName",
+                "address_inner = itAddress.getInner();" +
+                        "if (address_inner != null) {" +
+                        "    var wrapper_inner = address_inner.getInner();" +
+                        "    if (wrapper_inner != null) {" +
+                        "        if (arguments.contains(pathHere + \"inner/inner/postalCode\")) {" +
+                        "            addressRecord.setPostalCode(wrapper_inner.getPostalCode()"
+        );
+    }
+
+    @Test
+    @DisplayName("Record containing non-record type and using field overrides")
     @Disabled // This confuses the temporary variable a bit, but otherwise works.
     void containingNonRecordWrapperWithFieldOverride() {
-        assertGeneratedContentMatches("containingNonRecordWrapperWithFieldOverride");
+        assertGeneratedContentContains(
+                "containingNonRecordWrapperWithFieldOverride",
+                "address_inner1 = itAddress.getInner1()",
+                ".setPostalCode(address_inner1.getCode()",
+                "address_inner2 = itAddress.getInner2()",
+                ".setPostalCode(address_inner2.getCode()"
+        );
     }
 
     @Test
     @DisplayName("Handles fields that are not mapped to a record field") // TODO: This currently produces illegal code.
     void unconfiguredField() {
-        assertGeneratedContentMatches("unconfiguredField");
+        assertGeneratedContentContains(
+                "unconfiguredField",
+                ".setId1(itCustomer.getId1()",
+                ".setWrongName(itCustomer.getId2()"
+        );
     }
 
     @Test
     @DisplayName("Maps ID fields that are not the primary key")
     void idOtherThanPK() {
-        assertGeneratedContentMatches("idOtherThanPK");
+        assertGeneratedContentContains("idOtherThanPK", ".setAddressId(itCustomer.getAddressId()");
     }
 
     @Test
     @DisplayName("Records with enum fields")
     void withEnum() {
-        assertGeneratedContentMatches("withEnum", SchemaComponent.DUMMY_ENUM, SchemaComponent.DUMMY_ENUM_CONVERTED);
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setRating(itFilmInput.getE() == null ?");
     }
 
     @Test
-    @DisplayName("jOOQ record containing jOOQ record")
+    @DisplayName("Record containing jOOQ record")
     void containingRecords() {
-        assertGeneratedContentMatches("containingRecords");
+        assertGeneratedContentContains(
+                "containingRecords",
+                "customerRecordList = new ArrayList<CustomerRecord>();return customerRecordList"
+        );
     }
 }

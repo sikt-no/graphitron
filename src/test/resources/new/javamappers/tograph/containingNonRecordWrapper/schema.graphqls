@@ -3,9 +3,9 @@ type Query {
 }
 
 type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
-  inner: InnerWrapper
+  inner: Wrapper
 }
 
-type InnerWrapper {
+type Wrapper {
   postalCode: String!
 }

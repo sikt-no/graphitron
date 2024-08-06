@@ -5,6 +5,7 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
+import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Fetch queries - Queries using input records")
 public class RecordTest extends GeneratorTest {
@@ -27,19 +29,58 @@ public class RecordTest extends GeneratorTest {
     }
 
     @Override
+    protected Set<SchemaComponent> getComponents() {
+        return makeComponents(CUSTOMER_TABLE);
+    }
+
+    @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
         return List.of(new FetchDBClassGenerator(schema));
     }
 
     @Test
-    @DisplayName("Query with input Java records")
-    void withInputJavaRecord() {
-        assertGeneratedContentMatches("withInputJavaRecord");
+    @DisplayName("Input Java records")
+    void inputJavaRecord() {
+        assertGeneratedContentContains(
+                "inputJavaRecord",
+                "customerForQuery(DSLContext ctx, DummyRecord inRecord,",
+                "inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition()",
+                "inRecord != null ? CUSTOMER.ID.eq(inRecord.getOtherID()) : DSL.noCondition()"
+        );
     }
 
     @Test
-    @DisplayName("Query with input jOOQ records")
-    void withInputJOOQRecord() {
-        assertGeneratedContentMatches("withInputJOOQRecord");
+    @DisplayName("Listed input Java records")
+    void listedInputJavaRecord() {
+        assertGeneratedContentContains(
+                "listedInputJavaRecord",
+                "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
+                "DSL.row(CUSTOMER.ID, CUSTOMER.ID).in(" +
+                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).collect(Collectors.toList())" +
+                        ") : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Input jOOQ records")
+    void inputJOOQRecord() {
+        assertGeneratedContentContains(
+                "inputJOOQRecord",
+                "customerForQuery(DSLContext ctx, CustomerRecord inRecord,",
+                "inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition()",
+                "inRecord != null ? CUSTOMER.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed input jOOQ records")
+    void listedInputJOOQRecord() {
+        assertGeneratedContentContains(
+                "listedInputJOOQRecord",
+                "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
+                "DSL.row(CUSTOMER.ID, CUSTOMER.FIRST_NAME).in(" +
+                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).collect(Collectors.toList())" +
+                        ") : DSL.noCondition()"
+        );
     }
 }

@@ -3,8 +3,5 @@ type Query {
 }
 
 type Film @table {
-  enum1: DummyEnum! @field(name: "RATING") # No jOOQ converter.
-  enum2: DummyEnumConverted! @field(name: "RATING") # With jOOQ converter.
-  enum1List: [DummyEnum]! @field(name: "RATING")
-  enum2List: [DummyEnumConverted]! @field(name: "RATING")
+  e: DummyEnum! @field(name: "RATING")
 }

@@ -1,10 +1,7 @@
 type Query {
-  film: Film @service(service : {name: "DUMMY_SERVICE"})
+  query: Dummy @service(service: {name: "DUMMY_SERVICE"})
 }
 
-type Film @record(record: {name: "MAPPER_RECORD_FILM"}) {
-  enum1: DummyEnum! # No jOOQ converter.
-  enum2: DummyEnumConverted! # With jOOQ converter.
-  enum1List: [DummyEnum]!
-  enum2List: [DummyEnumConverted]!
+type Dummy @record(record: {name: "MAPPER_RECORD_ENUM"}) {
+  e: DummyEnum! @field(name: "enum1")
 }

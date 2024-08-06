@@ -1,0 +1,8 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer @table {
+  id: ID
+  first: String @field(name: "FIRST_NAME")
+}
