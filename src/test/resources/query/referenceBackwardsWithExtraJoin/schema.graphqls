@@ -5,13 +5,9 @@ type Query {
 type City @table {
   id: ID!
   store0: Store @reference(
-    via: [{table: "ADDRESS", key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}, {table: "CUSTOMER", key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}],
-    condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}
-  ) # Optional
+    references: [{table: "ADDRESS", key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}, {table: "CUSTOMER", key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}}]) # Optional
   store1: Store! @reference(
-    via: [{table: "ADDRESS", key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}, {table: "CUSTOMER", key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}],
-    condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}
-  ) # Required
+    references: [{table: "ADDRESS", key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}, {table: "CUSTOMER", key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {condition: {name: "TEST_STORE_CUSTOMER", method: "customerStore"}}]) # Required
 }
 
 type Store @table {

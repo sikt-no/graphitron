@@ -206,17 +206,17 @@ There are, of course, many cases where the connection between two tables is more
 In such cases, Graphitron requires some extra parameters to make the right connections.
 This is done through the **reference** directive, which contains the following parameters:
 
-* _table_ - This defaults to the table of the type that is referenced by the field the directive is set on.
+* _references_ - This parameter contains an ordered list of reference elements that is used to compose the path from
+the table of this type to the table corresponding to the type of the field.
+* _reference element_:
+  * _table_ - This defaults to the table of the type that is referenced by the field the directive is set on.
 Setting this overrides whatever table may be set there. This must match a table name from jOOQs _Table_ class.
-* _key_ - If there are multiple foreign keys from one type to another, then this parameter is required for defining which
+  * _key_ - If there are multiple foreign keys from one type to another, then this parameter is required for defining which
 key that should be used. This must match a key name from jOOQs _Keys_ class.
-* _condition_ - This parameter is used to place an additional constraint on the two tables, by referring to the correct [entry](#code-references)
+  * _condition_ - This parameter is used to place an additional constraint on the two tables, by referring to the correct [entry](#code-references)
 in the POM XML. In the cases where there is no way to deduce the key between the tables and the _key_ parameter is not set,
 this condition will be assumed to be an _on_ condition to be used in a join operation between the tables.
 The result will be a left join if the field is optional, otherwise a standard join.
-* _via_ - Invokes extra steps of the logic that all the previous parameters already use,
-allowing the usage of joins through tables which are not types in the schema.
-This parameter only specifies the extra steps to be taken in addition to the usual functionality og the previous parameters.
 
 Note that joins only apply to the field they are set on. Graphitron either sets separate aliases or uses implicit joins to
 manage several simultaneous joins from one table to another. If the field is a scalar type,
@@ -242,7 +242,7 @@ The method returns a jOOQ condition, which will be appended after the where-stat
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(condition : {className: "CustomerCondition", method: "addressJoin"})
+  addresses: [Address!]! @splitQuery @reference(references: [{condition : {className: "CustomerCondition", method: "addressJoin"}}])
 }
 ```
 
@@ -267,7 +267,7 @@ are redundant since there is only one key between the tables. Assume the _Addres
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")
+  addresses: [Address!]! @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 ```
 
@@ -280,7 +280,7 @@ _Generated result_:
 Providing both a key and a condition will result in a sum of both the first and previous examples,
 meaning both a join on a key and one additional condition will be applied.
 
-Using the _via_ parameter will create additional occurrences of what the previous examples have already shown.
+Using the _references_ parameter will create additional occurrences of what the previous examples have already shown.
 Note that this parameter only works by adding additional steps before the other parameters,
 meaning they most likely have to be set as well. The same rules apply to the intermediate steps as to other join operations.
 If there is only one key between two tables, only the table reference is required.
@@ -290,7 +290,7 @@ _Schema_:
 ```graphql
 type Payment @table {
   # The path here is PAYMENT -> RENTAL -> INVENTORY -> FILM
-  film: Film! @splitQuery @reference(via: [{table: "RENTAL"}, {table: "INVENTORY"}])
+  film: Film! @splitQuery @reference(references: [{table: "RENTAL"}, {table: "INVENTORY"}])
 }
 ```
 

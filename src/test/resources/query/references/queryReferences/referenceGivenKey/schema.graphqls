@@ -4,7 +4,7 @@ type Customer @table {
 
 type Address @table {
   id: ID!
-  customers: [Customer!]! @splitQuery @reference(key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")
+  customers: [Customer!]! @splitQuery @reference(references: [{key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 
 type Query {

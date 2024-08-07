@@ -4,7 +4,7 @@ type Query {
 
 type Store @table {
   id: ID!
-  city: City! @reference(via: [{table: "CUSTOMER"}, {table: "ADDRESS"}])
+  city: City! @reference(references: [{table: "CUSTOMER"}, {table: "ADDRESS"}])
   payment: Payment!
 }
 

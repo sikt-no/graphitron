@@ -88,17 +88,8 @@ In addition, this directive permits fields to be mapped to different tables than
 If neither table or key are provided and none can be automatically inferred, the condition is assumed to be sufficient to complete the join.
 """
 directive @reference(
-  """The jOOQ table to connect to."""
-  table: String
-
-  """The key to use to create this reference."""
-  key: String,
-
-  """Extra condition for this reference. Available values are set in the plugin configuration."""
-  condition: ExternalCodeReference,
-
-  """Extra reference steps that must be taken to complete the mapping."""
-  via: [ReferenceElement!]
+  """The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type of the field."""
+  references: [ReferenceElement!]!
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """Adjust constraints for this field, argument or input field."""
@@ -136,5 +127,12 @@ input ExternalCodeReference {
     method: String
 }
 
-input ReferenceElement { table: String, key: String, condition: ExternalCodeReference }
+input ReferenceElement {
+  """The jOOQ table to connect to."""
+  table: String,
+  """The key to use to create this reference."""
+  key: String,
+  """Extra condition for this reference. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference
+}
 

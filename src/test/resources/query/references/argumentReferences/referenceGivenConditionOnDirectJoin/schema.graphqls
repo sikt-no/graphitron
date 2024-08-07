@@ -1,5 +1,5 @@
 type Query {
-  customer(id: ID!, address: String @reference(table: "ADDRESS", condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"})): Customer
+  customer(id: ID!, address: String @reference(references: [{table: "ADDRESS", condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"}}])): Customer
 }
 
 type Customer @table {

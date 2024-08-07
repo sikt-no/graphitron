@@ -4,5 +4,5 @@ type Query {
 
 type Customer @table {
   id: ID!
-  city: String! @reference(via: [{table: "ADDRESS", key: "FAKE_KEY"}], key: "NOT_A_KEY")
+  city: String! @reference(references: [{table: "ADDRESS", key: "FAKE_KEY"}, {key: "NOT_A_KEY"}])
 }

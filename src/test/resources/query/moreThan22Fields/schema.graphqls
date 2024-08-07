@@ -30,7 +30,7 @@ type Film implements Node @table {
   duration1: Duration1
   duration2: Duration2
   rate: Int @field(name: "RENTAL_RATE")
-  languageName: String! @field(name: "name") @reference(table: "LANGUAGE", key: "FILM__FILM_LANGUAGE_ID_FKEY")
+  languageName: String! @field(name: "name") @reference(references: [{table: "LANGUAGE", key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
   rating: Rating
 }
 

@@ -53,12 +53,12 @@ type QueryFilmConnectionEdge {
 
 type FilmCategory implements Node @table(name: "FILM_CATEGORY") {
   id: ID!
-  name: String! @field(name: "NAME") @reference(table: "CATEGORY")
+  name: String! @field(name: "NAME") @reference(references: [{table: "CATEGORY"}])
 }
 
 input OriginalCategoryInput {
   lastUpdated: DateTime! @field(name : "LAST_UPDATED")
-  name: Name! @field(name: "NAME") @reference(table: "CATEGORY")
+  name: Name! @field(name: "NAME") @reference(references: [{table: "CATEGORY"}])
 }
 
 input OriginalCategoryInputWithOneField {
@@ -67,7 +67,7 @@ input OriginalCategoryInputWithOneField {
 
 input OriginalCategoryInputNested {
   originalCategoryField: OriginalCategoryInputWithOneField!
-  name: Name! @field(name: "NAME") @reference(table: "CATEGORY")
+  name: Name! @field(name: "NAME") @reference(references: [{table: "CATEGORY"}])
 }
 
 type Film implements Node @table {

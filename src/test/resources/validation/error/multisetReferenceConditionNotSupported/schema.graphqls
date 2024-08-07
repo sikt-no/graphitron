@@ -4,7 +4,7 @@ type Query {
 
 type Customer @table {
   id: ID!
-  historicalAddresses: [Address!]! @reference(condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"})
+  historicalAddresses: [Address!]! @reference(references: [{condition : {name: "TEST_CUSTOMER_ADDRESS", method: "customerAddress"}}])
 }
 
 type Address @table {

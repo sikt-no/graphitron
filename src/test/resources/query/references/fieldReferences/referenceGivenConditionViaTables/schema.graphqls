@@ -6,7 +6,6 @@ type Rental @table {
   id: ID!
   # join path: RENTAL -> INVENTORY -> FILM -> FILM_ACTOR(via condition)
   mainActorLastName: String! @field(name: "LAST_NAME") @reference(
-    via: [{table: "INVENTORY"}, {table: "FILM"}, {table: "FILM_ACTOR", condition: {name: "TEST_FILM_ACTOR", method: "film_filmActor"}}],
-    table: "ACTOR"
+    references: [{table: "INVENTORY"}, {table: "FILM"}, {table: "FILM_ACTOR", condition: {name: "TEST_FILM_ACTOR", method: "film_filmActor"}}, {table: "ACTOR"}],
   )
 }

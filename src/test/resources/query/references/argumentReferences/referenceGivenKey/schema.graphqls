@@ -3,5 +3,5 @@ type Address @table {
 }
 
 type Query {
-  address(cityID: String! @field(name : "CITY_ID"), lastName: String @field(name: "LAST_NAME") @reference(table: "CUSTOMER", key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")): [Address!]!
+  address(cityID: String! @field(name : "CITY_ID"), lastName: String @field(name: "LAST_NAME") @reference(references: [{table: "CUSTOMER", key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])): [Address!]!
 }

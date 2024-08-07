@@ -1,6 +1,6 @@
 type Query {
   #join path: PAYMENT -> RENTAL -> INVENTORY -> FILM -> LANGUAGE(via key)
-  payment(id: ID!, name: String @reference(via: [{table: "RENTAL"}, {table: "INVENTORY"}, {table: "FILM"}], key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY")): Payment
+  payment(id: ID!, name: String @reference(references: [{table: "RENTAL"}, {table: "INVENTORY"}, {table: "FILM"}, {key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])): Payment
 }
 
 type Payment @table {

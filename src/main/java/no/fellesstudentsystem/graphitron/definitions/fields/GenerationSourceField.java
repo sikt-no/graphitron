@@ -42,15 +42,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         if (field.hasDirective(REFERENCE.getName())) {
             var refrenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
 
-            Optional.ofNullable(refrenceDirective.getArgument(VIA.getName()))
+            Optional.ofNullable(refrenceDirective.getArgument(REFERENCES.getName()))
                     .map(Argument::getValue)
-                    .ifPresent(this::addViaFieldReferences);
-
-            if (refrenceDirective.getArguments().stream()
-                    .map(Argument::getName)
-                    .anyMatch(it -> it.equals(GenerationDirectiveParam.TABLE.getName()) || it.equals(GenerationDirectiveParam.CONDITION.getName()) || it.equals(KEY.getName()))) {
-                fieldReferences.add(new FieldReference(field));
-            }
+                    .ifPresent(this::addFieldReferences);
         }
 
         if (field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null) {
@@ -74,10 +68,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     /**
-     * Construct references from the {@link no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam#VIA via} parameter.
+     * Construct references from the {@link no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam#REFERENCES references} parameter.
      */
-    private void addViaFieldReferences(Value<?> viaValue) {
-        var values = viaValue instanceof ArrayValue ? ((ArrayValue) viaValue).getValues() : List.of(((ObjectValue) viaValue));
+    private void addFieldReferences(Value<?> referencesValue) {
+        var values = referencesValue instanceof ArrayValue ? ((ArrayValue) referencesValue).getValues() : List.of(((ObjectValue) referencesValue));
 
         values.stream()
                 .filter(value -> value instanceof ObjectValue)

@@ -5,7 +5,7 @@ type Query {
 type Payment @table {
   id: ID!
   #via tables starting from the referring type (PAYMENT): PAYMENT -> RENTAL -> INVENTORY -> FILM
-  film: Film! @splitQuery @reference(via: [{table: "RENTAL"}, {table: "INVENTORY"}])
+  film: Film! @splitQuery @reference(references: [{table: "RENTAL"}, {table: "INVENTORY"}])
 }
 
 type Film @table {

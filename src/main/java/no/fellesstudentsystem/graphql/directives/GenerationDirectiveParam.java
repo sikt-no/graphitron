@@ -11,7 +11,7 @@ public enum GenerationDirectiveParam {
     TABLE("table"),
     CONDITION("condition"),
     OVERRIDE("override"),
-    VIA("via"),
+    REFERENCES("references"),
     TYPE("typeName"),
     ENUM("enumReference"),
     SERVICE("service"),
