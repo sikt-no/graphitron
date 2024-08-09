@@ -59,6 +59,11 @@ public class SchemaDefinition implements ObjectSpecification<OperationField> {
         return new ArrayList<>(fieldsByName.values());
     }
 
+    @Override
+    public OperationField getFieldByName(String name) {
+        return fieldsByName.get(name);
+    }
+
     /**
      * @return Is this object an operation node? That should be either the Query or the Mutation type.
      */

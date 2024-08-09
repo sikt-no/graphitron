@@ -55,9 +55,7 @@ public abstract class AbstractObjectDefinition<T extends TypeDefinition<T>, U ex
         return new ArrayList<>(fieldsByName.values());
     }
 
-    /**
-     * @return The field with this name. Null if it does not exist.
-     */
+    @Override
     public U getFieldByName(String name) {
         return fieldsByName.get(name);
     }

@@ -20,7 +20,7 @@ import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_M
 public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
     public static final String SAVE_DIRECTORY_NAME = "query";
 
-    private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
+    protected final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
 
     public FetchDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);

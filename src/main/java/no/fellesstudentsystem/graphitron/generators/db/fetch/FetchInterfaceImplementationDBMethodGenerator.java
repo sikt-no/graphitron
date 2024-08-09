@@ -59,8 +59,13 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
         var context = new FetchContext(processedSchema, implementationReference, implementation);
         var selectCode = generateSelectRow(context);
 
-        String argumentName = target.getArguments().get(0).getName() + "s";
+        var argument = target.getArguments().get(0);
+        var argumentName = argument.getName() + "s";
         var querySource = context.renderQuerySource(implementationTableObject);
+
+        var where = argument.isID()
+                ? CodeBlock.of("has$N", StringUtils.capitalize(argumentName))
+                : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
 
         var code = CodeBlock.builder()
                 .add(createSelectAliases(context.getJoinSet()))
@@ -71,11 +76,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends DBMethodGener
                 .add(indentIfMultiline(CodeBlock.of("$L.getId(),\n$L", querySource, selectCode)))
                 .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
-                .add(".where($L.has$N($N))\n",
-                        querySource,
-                        StringUtils.capitalize(argumentName),
-                        argumentName
-                )
+                .add(".where($L.$L($N))\n", querySource, where, argumentName)
                 .add(createSelectConditions(context.getConditionList()))
                 .addStatement(".$L($T::value1, $T::value2)",
                         (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),

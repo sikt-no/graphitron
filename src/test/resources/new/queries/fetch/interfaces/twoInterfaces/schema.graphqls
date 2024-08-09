@@ -1,0 +1,13 @@
+type Query {
+  node(id: ID!): Node
+  named(firstName: String!): Named
+}
+
+interface Named {
+  firstName: String @field(name: "FIRST_NAME")
+}
+
+type Customer implements Node & Named @table {
+  id: ID
+  firstName: String @field(name: "FIRST_NAME")
+}
