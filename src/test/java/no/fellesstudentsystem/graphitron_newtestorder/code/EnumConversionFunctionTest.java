@@ -9,8 +9,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.toGraphEnumConverter;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_SERVICE;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.MAPPER_RECORD_ENUM;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM_CONVERTED;

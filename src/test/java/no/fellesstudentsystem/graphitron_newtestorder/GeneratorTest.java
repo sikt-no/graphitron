@@ -137,13 +137,16 @@ public abstract class GeneratorTest {
 
     @NotNull
     public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
+        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), checkProcessedSchemaDefault);
+    }
+
+    protected Set<String> mergeComponentsAndSetConfig(Set<SchemaComponent> extraComponents) {
         var allComponents = Stream.concat(components.stream(), extraComponents.stream()).collect(Collectors.toSet());
         var allPaths = allComponents.stream().flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
         var allReferences = Stream.concat(references.stream(), allComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
 
         setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses, tempOutputDirectory.toString());
-
-        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, allPaths, checkProcessedSchemaDefault);
+        return allPaths;
     }
 
     protected void assertGeneratedContentMatches(String resourceRootFolder) {

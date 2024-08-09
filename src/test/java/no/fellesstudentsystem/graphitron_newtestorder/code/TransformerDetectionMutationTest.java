@@ -9,8 +9,9 @@ import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("ProcessedSchema - Can find mutation fields that can be used for transformer generation")
 public class TransformerDetectionMutationTest extends AbstractTransformerDetectionTest {
-    public TransformerDetectionMutationTest() {
-        super(AbstractTransformerDetectionTest.TEST_PATH + "mutation/");
+    @Override
+    protected String getSubpath() {
+        return super.getSubpath() + "/mutation";
     }
 
     @Test

@@ -9,8 +9,9 @@ import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("ProcessedSchema - Can find query fields that can be used for transformer generation")
 public class TransformerDetectionQueryTest extends AbstractTransformerDetectionTest {
-    public TransformerDetectionQueryTest() {
-        super(AbstractTransformerDetectionTest.TEST_PATH + "query/");
+    @Override
+    protected String getSubpath() {
+        return super.getSubpath() + "/query";
     }
 
     @Test

@@ -4,7 +4,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.ID_RECORD;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.COMPONENT_PATH;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.SCHEMA_EXTENSION;
 
