@@ -1,3 +1,0 @@
-schema:
-  - ./src/test/resources/**/*.graphql*
-  - ./src/main/resources/schema/directives.graphqls
