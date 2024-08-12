@@ -15,7 +15,6 @@ public class Alias implements JoinElement {
     private final String name, shortName, variableValue;
     private final JOOQMapping type;
 
-
     public Alias(String prefix, JOOQMapping table, boolean isLeft) {
         var name = prefix + "_" + table.getMappingName() + (isLeft ? "_left" : "");
         this.name = name.toLowerCase();
@@ -37,19 +36,16 @@ public class Alias implements JoinElement {
      */
     @Override
     public String getMappingName() {
-        return name;
-    }
-
-    /**
-     * @return Shortened version of the alias name.
-     */
-    public String getShortName() {
-        return shortName;
+        return prefixStringIfFirstCharIsDigit(name);
     }
 
     @Override
     public String getCodeName() {
-        return shortName;
+        return prefixStringIfFirstCharIsDigit(shortName);
+    }
+
+    private String prefixStringIfFirstCharIsDigit(String string) {
+        return (Character.isDigit(string.charAt(0)) ? "_" : "") + string;
     }
 
     @Override
