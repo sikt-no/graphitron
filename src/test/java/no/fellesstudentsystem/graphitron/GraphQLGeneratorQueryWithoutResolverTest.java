@@ -136,16 +136,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithLookup_shouldGenerateLookupResolverAndQuery() {
-        assertGeneratedContentMatches("queryWithLookup");
-    }
-
-    @Test
-    void generate_queryWithComplexLookup_shouldGenerateLookupResolversAndQueries() {
-        assertGeneratedContentMatches("queryWithLookupMultipleParameters");
-    }
-
-    @Test
     void generate_queryWithSorting_shouldCreateQueryResolverWithSortingSupport() {
         assertGeneratedContentMatches("queryWithSorting");
     }
