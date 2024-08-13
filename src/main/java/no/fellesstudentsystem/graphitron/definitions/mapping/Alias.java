@@ -17,8 +17,9 @@ public class Alias implements JoinElement {
 
     public Alias(String prefix, JOOQMapping table, boolean isLeft) {
         var name = prefix + "_" + table.getMappingName() + (isLeft ? "_left" : "");
-        this.name = name.toLowerCase();
-        this.shortName = createShortAliasName(Arrays.stream(prefix.split("_")).findFirst().orElse(prefix), name);
+        this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
+        this.shortName = prefixStringIfFirstCharIsDigit(
+                createShortAliasName(Arrays.stream(prefix.split("_")).findFirst().orElse(prefix), name));
         this.type = table;
         this.variableValue = table.getMappingName();
     }
@@ -26,8 +27,9 @@ public class Alias implements JoinElement {
     public Alias(String prefix, JoinListSequence joinSequence, boolean isLeft) {
         this.type = joinSequence.getLast().getTable();
         var name = prefix + (isLeft ? "_left" : "");
-        this.name = name.toLowerCase();
-        this.shortName = createShortAliasName(StringUtils.substringAfterLast(prefix, "_"), name);
+        this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
+        this.shortName = prefixStringIfFirstCharIsDigit(
+                createShortAliasName(StringUtils.substringAfterLast(prefix, "_"), name));
         this.variableValue = joinSequence.render().toString();
     }
 
@@ -36,16 +38,19 @@ public class Alias implements JoinElement {
      */
     @Override
     public String getMappingName() {
-        return prefixStringIfFirstCharIsDigit(name);
+        return name;
+    }
+
+    /**
+     * @return Shortened version of the alias name.
+     */
+    public String getShortName() {
+        return shortName;
     }
 
     @Override
     public String getCodeName() {
-        return prefixStringIfFirstCharIsDigit(shortName);
-    }
-
-    private String prefixStringIfFirstCharIsDigit(String string) {
-        return (Character.isDigit(string.charAt(0)) ? "_" : "") + string;
+        return getShortName();
     }
 
     @Override
@@ -86,5 +91,9 @@ public class Alias implements JoinElement {
 * */
     public String getVariableValue() {
         return variableValue;
+    }
+
+    private String prefixStringIfFirstCharIsDigit(String string) {
+        return (Character.isDigit(string.charAt(0)) ? "_" : "") + string;
     }
 }
