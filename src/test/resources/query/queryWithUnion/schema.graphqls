@@ -42,29 +42,7 @@ union FilmDetailsA = FilmDataA | FilmDataB | FilmDataC
 
 union FilmDetailsB = FilmDataC | FilmDataD
 
-type FilmConnection {
-  edges: [FilmConnectionEdge]
-  pageInfo: PageInfo
-  nodes: [Film!]!
-}
-
-type FilmConnectionEdge {
-  cursor: String
-  node: Film
-}
-
-type InventoryConnection {
-  edges: [InventoryConnectionEdge]
-  pageInfo: PageInfo
-  nodes: [Inventory!]!
-}
-
-type InventoryConnectionEdge {
-  cursor: String
-  node: Inventory
-}
-
 type Query {
-  films(first: Int = 100, after: String): FilmConnection
-  inventory(first: Int = 100, after: String): InventoryConnection
+  films: Film
+  inventory: Inventory
 }

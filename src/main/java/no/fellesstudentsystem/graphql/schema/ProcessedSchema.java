@@ -72,9 +72,11 @@ public class ProcessedSchema {
                 .stream()
                 .collect(Collectors.toMap(ExceptionDefinition::getName, Function.identity()));
 
-        rootObject = new no.fellesstudentsystem.graphitron.definitions.objects.SchemaDefinition(createSchemaDefinition());
-        queryType = rootObject.getQuery() != null ? getObject(rootObject.getQuery()) : null;
-        mutationType = rootObject.getMutation() != null ? getObject(rootObject.getMutation()) : null;
+        rootObject = isObject(SCHEMA_QUERY.getName()) || isObject(SCHEMA_MUTATION.getName())
+                ? new no.fellesstudentsystem.graphitron.definitions.objects.SchemaDefinition(createSchemaDefinition())
+                : null;
+        queryType = rootObject != null && rootObject.getQuery() != null ? getObject(rootObject.getQuery()) : null;
+        mutationType = rootObject != null && rootObject.getMutation() != null ? getObject(rootObject.getMutation()) : null;
 
         inputs = InputDefinition.processInputDefinitions(typeRegistry.getTypes(InputObjectTypeDefinition.class))
                 .stream()

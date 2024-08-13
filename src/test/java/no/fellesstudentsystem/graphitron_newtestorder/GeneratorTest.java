@@ -220,7 +220,9 @@ public abstract class GeneratorTest {
         return List.of();
     }
 
-    protected abstract String getSubpath();
+    protected String getSubpath() {
+        return "";
+    }
 
     protected boolean getCheckProcessedSchemaDefault() {
         return true;

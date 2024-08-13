@@ -86,16 +86,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithPagination_shouldCreateQueryResolverWithPaginationSupport() {
-        assertGeneratedContentMatches("queryWithPagination");
-    }
-
-    @Test
-    void generate_queryWithResolverPagination_shouldCreateResolverWithPaginationOnResolver() {
-        assertGeneratedContentMatches("queryWithResolverPagination");
-    }
-
-    @Test
     void generate_queryWithSelfReferenceFindingImplicitJoinKey() {
         assertGeneratedContentMatches("queryWithSelfReferenceFindingImplicitJoinKey");
     }

@@ -9,31 +9,9 @@ type Customer implements Node @table {
   email: CustomerEmail
 }
 
-type CustomerConnection {
-  edges: [CustomerConnectionEdge]
-  pageInfo: PageInfo
-  nodes: [Customer!]!
-}
-
-type CustomerConnectionEdge {
-  cursor: String
-  node: Customer
-}
-
 type Query {
-  customersWithPage(active: String!, storeIds: [Int!] @field(name : "STORE_ID"), first: Int = 100, after: String): CustomerConnection!
-  films(releaseYear: String! @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): QueryFilmConnection @notGenerated
-}
-
-type QueryFilmConnection {
-  edges: [QueryFilmConnectionEdge]
-  pageInfo: PageInfo
-  nodes: [Film!]!
-}
-
-type QueryFilmConnectionEdge {
-  cursor: String
-  node: Film
+  customer: Customer!
+  film: Film @notGenerated
 }
 
 type FilmCategory implements Node @table(name: "FILM_CATEGORY") {
