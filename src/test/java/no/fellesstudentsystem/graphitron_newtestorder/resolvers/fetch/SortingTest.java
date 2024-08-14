@@ -26,19 +26,19 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Basic resolver with a sorting parameter")
+    @DisplayName("One sorting parameter")
     void defaultCase() {
         assertGeneratedContentMatches("default", CUSTOMER_CONNECTION_ORDER);
     }
 
     @Test
-    @DisplayName("Basic resolver with a sorting parameter on a split query")
+    @DisplayName("A sorting parameter on a split query")
     void splitQuery() {
         assertGeneratedContentMatches("splitQuery", SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION_ORDER);
     }
 
     @Test
-    @DisplayName("Resolver with two sorting parameters")
+    @DisplayName("Multiple fields")
     void twoFields() {
         assertGeneratedContentContains(
                 "twoFields", Set.of(CUSTOMER_CONNECTION_ORDER),
@@ -47,7 +47,7 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Resolver with a nested sorting parameter")
+    @DisplayName("Nested sorting parameter")
     void nestedField() {
         assertGeneratedContentContains(
                 "nestedField", Set.of(CUSTOMER_CONNECTION_ORDER),
@@ -56,7 +56,7 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Resolver with a double nested sorting parameter")
+    @DisplayName("Double nested sorting parameter")
     void doubleNestedField() {
         assertGeneratedContentContains(
                 "doubleNestedField", Set.of(CUSTOMER_CONNECTION_ORDER),
@@ -65,11 +65,17 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Resolver with a sorting parameter on a two field index")
+    @DisplayName("Sorting parameter on a two field index")
     void twoFieldIndex() {
         assertGeneratedContentContains(
                 "twoFieldIndex", Set.of(PAGE_INFO, ORDER),
                 "\"STORE_ID_FILM_ID\", type -> type.getStoreId() + \",\" + type.getFilmId()"
         );
+    }
+
+    @Test
+    @DisplayName("Sorting parameter without pagination") // The resolver is just standard without the pagination ID-handling.
+    void withoutPagination() {
+        assertGeneratedContentMatches("withoutPagination", ORDER, CUSTOMER_TABLE);
     }
 }
