@@ -1,7 +1,8 @@
 type Query {
-  query(e: DummyEnum @field(name: "RATING")): FilmTable
+  query: FilmTable
 }
 
 type FilmTable @table(name: "FILM") {
   id: ID
+  e: DummyEnum @field(name: "RATING")
 }

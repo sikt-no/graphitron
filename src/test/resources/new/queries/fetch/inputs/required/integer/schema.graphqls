@@ -1,5 +1,5 @@
 type Query {
-  query(integer: Int! @field(name: "LENGTH")): Film
+  query(length: Int!): Film
 }
 
 type Film @table {

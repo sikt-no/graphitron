@@ -4,7 +4,6 @@ import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
 import fake.graphql.example.model.Film;
-import java.lang.String;
 import java.util.Arrays;
 import java.util.Objects;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
@@ -12,13 +11,12 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Film filmForQuery(DSLContext ctx, SelectionSet select) {
-        var film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2782157680");
+    public static Film queryForQuery(DSLContext ctx, SelectionSet select) {
         return ctx
                 .select(
                         DSL.row(
-                                FILM.getId(),
-                                select.optional("title", FILM.TITLE),
+                                select.optional("title0", FILM.TITLE),
+                                select.optional("title1", FILM.TITLE),
                                 select.optional("title2", FILM.TITLE),
                                 select.optional("title3", FILM.TITLE),
                                 select.optional("title4", FILM.TITLE),
@@ -39,10 +37,10 @@ public class QueryDBQueries {
                                 select.optional("title19", FILM.TITLE),
                                 select.optional("title20", FILM.TITLE),
                                 select.optional("title21", FILM.TITLE),
-                                select.optional("languageName", film_filmlanguageidfkey_left.NAME)
+                                select.optional("title22", FILM.TITLE)
                         ).mapping(Film.class, r ->
                                 Arrays.stream(r).allMatch(Objects::isNull) ? null : new Film(
-                                        (String) r[0],
+                                        FILM.TITLE.getDataType().convert(r[0]),
                                         FILM.TITLE.getDataType().convert(r[1]),
                                         FILM.TITLE.getDataType().convert(r[2]),
                                         FILM.TITLE.getDataType().convert(r[3]),
@@ -64,12 +62,11 @@ public class QueryDBQueries {
                                         FILM.TITLE.getDataType().convert(r[19]),
                                         FILM.TITLE.getDataType().convert(r[20]),
                                         FILM.TITLE.getDataType().convert(r[21]),
-                                        film_filmlanguageidfkey_left.NAME.getDataType().convert(r[22])
+                                        FILM.TITLE.getDataType().convert(r[22])
                                 )
                         )
                 )
                 .from(FILM)
-                .leftJoin(film_filmlanguageidfkey_left)
                 .fetchOne(it -> it.into(Film.class));
     }
 }

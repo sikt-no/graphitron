@@ -42,7 +42,7 @@ public class OptionalInputTest extends GeneratorTest {
     @Test
     @DisplayName("Listed field")
     void list() {
-        assertGeneratedContentContains("list", "name != null && name.size() > 0 ? CUSTOMER.FIRST_NAME.in(name) :DSL.noCondition()");
+        assertGeneratedContentContains("list", "email != null && email.size() > 0 ? CUSTOMER.EMAIL.in(email) :DSL.noCondition()");
     }
 
     @Test

@@ -14,11 +14,11 @@ import java.util.Set;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM_CONVERTED;
 
-@DisplayName("Query input enums - Positioning of enums in queries")
+@DisplayName("Query enums - Positioning of enums in queries")
 public class EnumTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "queries/fetch/enums/input";
+        return "queries/fetch/enums";
     }
 
     @Override
@@ -27,10 +27,10 @@ public class EnumTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("JOOQ enum")
-    void jOOQQuery() {
+    @DisplayName("Input JOOQ enum")
+    void inputJOOQ() {
         assertGeneratedContentContains(
-                "jOOQQuery", Set.of(DUMMY_ENUM_CONVERTED),
+                "input/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
                 ", DummyEnumConverted e,",
                 "e != null ? FILM.RATING.convert(DummyEnumConverted.class,",
                 ".eq(e) : DSL.noCondition()"
@@ -38,13 +38,31 @@ public class EnumTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("String enum")
-    void stringQuery() {
+    @DisplayName("Input string enum")
+    void inputString() {
         assertGeneratedContentContains(
-                "stringQuery", Set.of(DUMMY_ENUM),
+                "input/string", Set.of(DUMMY_ENUM),
                 ", DummyEnum e,",
                 "e != null ? FILM.RATING.convert(DummyEnum.class,",
                 ".eq(e) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Output JOOQ enum")
+    void outputJOOQ() {
+        assertGeneratedContentContains(
+                "output/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
+                "FILM.RATING.convert(DummyEnumConverted.class,"
+        );
+    }
+
+    @Test
+    @DisplayName("Output string enum")
+    void outputString() {
+        assertGeneratedContentContains(
+                "output/string", Set.of(DUMMY_ENUM),
+                "FILM.RATING.convert(DummyEnum.class,"
         );
     }
 }

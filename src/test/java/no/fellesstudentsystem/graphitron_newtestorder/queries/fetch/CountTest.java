@@ -40,6 +40,6 @@ public class CountTest extends GeneratorTest {
     @Test
     @DisplayName("Connection with an extra field")
     void withOtherField() {
-        assertGeneratedContentContains("withOtherField", ", String name)", ".where(CUSTOMER.FIRST_NAME.eq(name)");
+        assertGeneratedContentContains("withOtherField", ", String email)", ".where(CUSTOMER.EMAIL.eq(email)");
     }
 }

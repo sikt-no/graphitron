@@ -13,6 +13,27 @@ import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUM
 
 @DisplayName("Query input enums - Enum conversion for queries")
 public class InputEnumConversionFunctionTest extends CodeBlockTest {
+    public static final String EXPECTED_JOOQ = ".convert(fake.graphql.example.model.DummyEnumConverted.class," +
+            " s -> s == null ? null : java.util.Map.of(" +
+            "no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A," +
+            " no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B," +
+            " no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C" +
+            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.of(" +
+            "fake.graphql.example.model.DummyEnumConverted.A, no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.A," +
+            " fake.graphql.example.model.DummyEnumConverted.B, no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.B," +
+            " fake.graphql.example.model.DummyEnumConverted.C, no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.C" +
+            ").getOrDefault(s, null))";
+    public static final String EXPECTED_STRING = ".convert(fake.graphql.example.model.DummyEnum.class," +
+            " s -> s == null ? null : java.util.Map.of(" +
+            "\"A\", fake.graphql.example.model.DummyEnum.A," +
+            " \"B\", fake.graphql.example.model.DummyEnum.B," +
+            " \"C\", fake.graphql.example.model.DummyEnum.C" +
+            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.of(" +
+            "fake.graphql.example.model.DummyEnum.A, \"A\"," +
+            " fake.graphql.example.model.DummyEnum.B, \"B\"," +
+            " fake.graphql.example.model.DummyEnum.C, \"C\"" +
+            ").getOrDefault(s, null))";
+
     @Override
     protected String getSubpath() {
         return "queries/fetch/enums/input";
@@ -38,38 +59,12 @@ public class InputEnumConversionFunctionTest extends CodeBlockTest {
     @Test
     @DisplayName("jOOQ enum converter")
     public void jOOQ() {
-        compareCodeBlockResult(
-                "jOOQ",
-                ".convert(fake.graphql.example.model.DummyEnumConverted.class," +
-                        " s -> s == null ? null : java.util.Map.of(" +
-                        "no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A," +
-                        " no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B," +
-                        " no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C" +
-                        ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.of(" +
-                        "fake.graphql.example.model.DummyEnumConverted.A, no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.A," +
-                        " fake.graphql.example.model.DummyEnumConverted.B, no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.B," +
-                        " fake.graphql.example.model.DummyEnumConverted.C, no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum.C" +
-                        ").getOrDefault(s, null))",
-                DUMMY_ENUM_CONVERTED
-        );
+        compareCodeBlockResult("jOOQ", EXPECTED_JOOQ, DUMMY_ENUM_CONVERTED);
     }
 
     @Test
     @DisplayName("String enum converter")
     public void string() {
-        compareCodeBlockResult(
-                "string",
-                ".convert(fake.graphql.example.model.DummyEnum.class," +
-                        " s -> s == null ? null : java.util.Map.of(" +
-                        "\"A\", fake.graphql.example.model.DummyEnum.A," +
-                        " \"B\", fake.graphql.example.model.DummyEnum.B," +
-                        " \"C\", fake.graphql.example.model.DummyEnum.C" +
-                        ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.of(" +
-                        "fake.graphql.example.model.DummyEnum.A, \"A\"," +
-                        " fake.graphql.example.model.DummyEnum.B, \"B\"," +
-                        " fake.graphql.example.model.DummyEnum.C, \"C\"" +
-                        ").getOrDefault(s, null))",
-                DUMMY_ENUM
-        );
+        compareCodeBlockResult("string", EXPECTED_STRING, DUMMY_ENUM);
     }
 }

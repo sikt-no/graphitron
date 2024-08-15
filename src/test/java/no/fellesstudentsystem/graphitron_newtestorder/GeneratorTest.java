@@ -162,13 +162,28 @@ public abstract class GeneratorTest {
         Stream.of(expected).forEach(it -> assertThat(allFileContent).containsIgnoringWhitespaces(it));
     }
 
-    protected void assertGeneratedContentContains(String resourceRootFolder, String... expected) {
-        assertGeneratedContentContains(generateFiles(resourceRootFolder), expected);
-    }
-
     protected void assertGeneratedContentContains(String resourceRootFolder, Set<SchemaComponent> extraComponents, String... expected) {
         assertGeneratedContentContains(generateFiles(resourceRootFolder, extraComponents), expected);
     }
+
+    protected void assertGeneratedContentContains(String resourceRootFolder, String... expected) {
+        assertGeneratedContentContains(resourceRootFolder, Set.of(), expected);
+    }
+
+    // Avoid using these three methods if possible, they have worse performance than the ones above.
+    public static void resultDoesNotContain(Map<String, List<String>> generatedFiles, String... expected) {
+        var allFileContent = generatedFiles.values().stream().flatMap(Collection::stream).collect(Collectors.joining("\n")); // Add newlines for readability when the test fails.
+        Stream.of(expected).forEach(it -> assertThat(allFileContent).doesNotContain(it)); // Note, does not ignore whitespaces. There is no method for that.
+    }
+
+    protected void resultDoesNotContain(String resourceRootFolder, Set<SchemaComponent> extraComponents, String... expected) {
+        resultDoesNotContain(generateFiles(resourceRootFolder, extraComponents), expected);
+    }
+
+    protected void resultDoesNotContain(String resourceRootFolder, String... expected) {
+        resultDoesNotContain(resourceRootFolder, Set.of(), expected);
+    }
+
 
     protected void assertFilesAreGenerated(String schemaFolder, String... expectedFiles) {
         assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));

@@ -17,7 +17,7 @@ import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUM
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM_CONVERTED;
 
 @DisplayName("Graph enums - Enum conversion when mapping enums")
-public class EnumConversionFunctionTest extends CodeBlockTest {
+public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     @Override
     protected String getSubpath() {
         return "enums";

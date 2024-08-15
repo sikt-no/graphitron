@@ -1,11 +1,10 @@
 type Query {
-  film: Film
+  query: Film
 }
 
-"""Type med flere enn 22 felter"""
-type Film implements Node @table {
-  id: ID!
-  title: String!
+type Film @table {
+  title0: String! @field(name: "TITLE")
+  title1: String! @field(name: "TITLE")
   title2: String! @field(name: "TITLE")
   title3: String! @field(name: "TITLE")
   title4: String! @field(name: "TITLE")
@@ -25,6 +24,7 @@ type Film implements Node @table {
   title18: String! @field(name: "TITLE")
   title19: String! @field(name: "TITLE")
   title20: String! @field(name: "TITLE")
-  title21: String! @field(name: "TITLE")
-  languageName: String! @field(name: "name") @reference(references: [{table: "LANGUAGE", key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+
+  length: Int
+  rating: DummyEnum
 }

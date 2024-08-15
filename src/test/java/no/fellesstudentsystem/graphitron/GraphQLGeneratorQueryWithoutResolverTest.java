@@ -38,11 +38,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
         assertGeneratedContentMatches("correctWhereConditionPathUsage");
     }
 
-    @Test
-    void generate_whenMixOfOptionalAndRequiredFieldsOnRequiredLeafNode_shouldGenerateQueryThatIncludesOneRequiredField() {
-        assertGeneratedContentMatches("mixOfOptionalAndRequiredFields");
-    }
-
     @Test //jOOQ' støtter maks 22 type-safe records. Flere enn 22 er støttet, men uten type safety.
     void generate_whenTypeHasMoreThan22Fields_shouldGenerateValidResolver() {
         assertGeneratedContentMatches("moreThan22Fields");

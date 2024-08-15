@@ -1,0 +1,11 @@
+type Query {
+  query: Wrapper1
+}
+
+type Wrapper1 {
+  customer: Wrapper2
+}
+
+type Wrapper2 {
+  customer: CustomerTable
+}

@@ -1,0 +1,8 @@
+type Query {
+  query: FilmTable
+}
+
+type FilmTable @table(name: "FILM") {
+  id: ID
+  e: DummyEnumConverted @field(name: "RATING")
+}

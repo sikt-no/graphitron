@@ -61,7 +61,13 @@ public class InputTest extends GeneratorTest {
     @Test
     @DisplayName("Integer field")
     void integer() {
-        assertGeneratedContentContains("integer", ", Integer integer,", "FILM.LENGTH.eq(integer)");
+        assertGeneratedContentContains("integer", ", Integer length,", "FILM.LENGTH.eq(length)");
+    }
+
+    @Test
+    @DisplayName("Field with @field directive")
+    void fieldOverride() {
+        assertGeneratedContentContains("fieldOverride", ", String name,", "CUSTOMER.FIRST_NAME.eq(name)");
     }
 
     @Test
@@ -80,8 +86,8 @@ public class InputTest extends GeneratorTest {
     void list() {
         assertGeneratedContentContains(
                 "list",
-                ", List<String> name,",
-                "name.size() > 0 ? CUSTOMER.FIRST_NAME.in(name) : DSL.noCondition()"
+                ", List<String> email,",
+                "email.size() > 0 ? CUSTOMER.EMAIL.in(email) : DSL.noCondition()"
         );
     }
 
