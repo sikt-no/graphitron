@@ -84,7 +84,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Java records do not account for name duplicates in the schema like jOOQ ones do.
+    @Disabled("Java records do not account for name duplicates in the schema like jOOQ ones do.")
     @DisplayName("Fields on different levels that have the same name")
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(

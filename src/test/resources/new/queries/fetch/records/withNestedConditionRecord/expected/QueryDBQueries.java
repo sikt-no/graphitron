@@ -16,7 +16,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
                 .fetchOne(it -> it.into(Customer.class));
     }
 }

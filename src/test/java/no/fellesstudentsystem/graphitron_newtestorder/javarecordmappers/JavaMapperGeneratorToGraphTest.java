@@ -91,7 +91,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Java records do not account for name duplicates in the schema like jOOQ ones do.
+    @Disabled("Java records do not account for name duplicates in the schema like jOOQ ones do.")
     @DisplayName("Fields on different levels that have the same name")
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(
@@ -181,8 +181,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled
-    // This is wrong! Should be itMapperNestedJavaRecord.getDummyRecord()). Seems to wrongly use toRecord case here.
+    @Disabled("This is wrong! Should be itMapperNestedJavaRecord.getDummyRecord()). Seems to wrongly use toRecord case here.")
     @DisplayName("Responses containing a Java record with a non-record type in between")
     void containingNonRecordWrapperWithJavaRecord() {
         assertGeneratedContentContains(
@@ -192,7 +191,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // This is wrong! Should be itMapperNestedJavaRecord.getCustomer(). Seems to wrongly use toRecord case here.
+    @Disabled("This is wrong! Should be itMapperNestedJavaRecord.getCustomer(). Seems to wrongly use toRecord case here.")
     @DisplayName("Responses containing a jOOQ record with a non-record type in between")
     void containingNonRecordWrapperWithJOOQRecord() {
         assertGeneratedContentContains(

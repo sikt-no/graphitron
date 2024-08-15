@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.conditions;
 
-import no.fellesstudentsystem.graphitron.enums.RatingListTest;
 import no.sikt.graphitron.jooq.generated.testdata.tables.Film;
 import org.jooq.Condition;
 
@@ -24,10 +23,6 @@ public class RatingTestConditions {
     }
 
     public static Condition ratingList(Film film, List<String> ratings) {
-        return null;
-    }
-
-    public static Condition ratingListEnumReference(Film film, List<RatingListTest> ratings) {
         return null;
     }
 

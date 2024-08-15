@@ -82,7 +82,7 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Does not work. Does not treat outer field as list.
+    @Disabled("Does not work. Does not treat outer field as list.")
     @DisplayName("Nested input type key")
     void nestedInputKey() {
         assertGeneratedContentContains(
@@ -92,7 +92,7 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Does not work. Does not treat outer field as list.
+    @Disabled("Does not work. Does not treat outer field as list.")
     @DisplayName("Nested input type integer key")
     void nestedInputIntegerKey() {
         assertGeneratedContentContains(
@@ -102,7 +102,7 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Does not work. Does not treat outer field as list.
+    @Disabled("Does not work. Does not treat outer field as list.")
     @DisplayName("Nested input type key where the directive is placed on a intermediate level")
     void nestedInputKeyMiddle() {
         assertGeneratedContentContains(
@@ -112,7 +112,7 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Does not work. Assumes outer input is list.
+    @Disabled("Does not work. Assumes outer input is list.")
     @DisplayName("Nested input type key where the list wrapping is placed on a intermediate level")
     void nestedInputKeyWithMiddleList() {
         assertGeneratedContentContains(
@@ -164,7 +164,7 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Does not work. Maybe it should not?
+    @Disabled("Does not work. Maybe it should not?")
     @DisplayName("Key that is not a list")
     void withoutList() {
         assertGeneratedContentContains("withoutList", "keys = List.of(List.of(id))");

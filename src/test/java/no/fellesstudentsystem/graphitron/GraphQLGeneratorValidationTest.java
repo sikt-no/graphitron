@@ -28,14 +28,7 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
     public GraphQLGeneratorValidationTest() {
         super(
                 SRC_TEST_RESOURCES_PATH,
-                List.of(
-                        ENUM_RATING.get(),
-                        CONDITION_FILM_RATING.get(),
-                        CONDITION_STORE_CUSTOMER.get(),
-                        CONDITION_CUSTOMER_ADDRESS.get(),
-                        SERVICE_CUSTOMER.get(),
-                        RECORD_CUSTOMER.get()
-                ),
+                List.of(ENUM_RATING.get(), CONDITION_FILM_RATING.get(), SERVICE_CUSTOMER.get(), RECORD_CUSTOMER.get()),
                 false
         );
     }

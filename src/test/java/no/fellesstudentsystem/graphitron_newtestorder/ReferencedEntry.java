@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphitron_newtestorder;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
@@ -41,7 +42,8 @@ public enum ReferencedEntry {
     JAVA_RECORD_CUSTOMER("JAVA_RECORD_CUSTOMER", CustomerJavaRecord.class),
 
     // Input record conditions.
-    RECORD_FETCH_CONDITION("RECORD_FETCH_CONDITION", QueryCustomerCondition.class);
+    RECORD_FETCH_CONDITION("RECORD_FETCH_CONDITION", RecordCustomerCondition.class),
+    QUERY_FETCH_CONDITION("QUERY_FETCH_CONDITION", QueryCustomerCondition.class);
 
     private final ExternalReference reference;
 

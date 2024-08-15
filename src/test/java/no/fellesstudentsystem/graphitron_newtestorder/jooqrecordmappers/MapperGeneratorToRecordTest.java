@@ -106,7 +106,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
 
     @Test
     @DisplayName("Record containing non-record type and using field overrides")
-    @Disabled // This confuses the temporary variable a bit, but otherwise works.
+    @Disabled("This confuses the temporary variable a bit, but otherwise works.")
     void containingNonRecordWrapperWithFieldOverride() {
         assertGeneratedContentContains(
                 "containingNonRecordWrapperWithFieldOverride",

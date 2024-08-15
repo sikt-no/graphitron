@@ -1,0 +1,3 @@
+type Query {
+  query(enumInput: [DummyEnumConverted!]! @condition(condition: {name: "QUERY_FETCH_CONDITION"})): CustomerTable
+}

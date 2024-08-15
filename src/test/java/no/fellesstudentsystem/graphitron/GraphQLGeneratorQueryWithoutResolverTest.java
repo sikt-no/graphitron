@@ -15,19 +15,9 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     public static final String SRC_TEST_RESOURCES_PATH = "query";
 
     public GraphQLGeneratorQueryWithoutResolverTest() {
-        super(
-                SRC_TEST_RESOURCES_PATH,
-                List.of(
-                        ENUM_RATING_LIST.get(),
-                        CONDITION_CITY.get(),
-                        CONDITION_FILM_ACTOR.get(),
-                        CONDITION_FILM_RATING.get(),
-                        CONDITION_STORE_CUSTOMER.get(),
-                        CONDITION_CUSTOMER_ADDRESS.get(),
-                        SERVICE_CUSTOMER.get()
-                )
-        );
+        super(SRC_TEST_RESOURCES_PATH, List.of(CONDITION_STORE_CUSTOMER.get()));
     }
+
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
         return List.of(new FetchDBClassGenerator(schema));
@@ -46,21 +36,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     @Test
     void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() {
         assertGeneratedContentMatches("multipleAliasesForSameType");
-    }
-
-    @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithExtraConditions() {
-        assertGeneratedContentMatches("queryWithConditions");
-    }
-
-    @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithEnumConditionInputs() {
-        assertGeneratedContentMatches("queryWithEnumConditions");
-    }
-
-    @Test
-    void generate_queryWithConditions_shouldCreateQueriesWithEnumListConditionInputs() {
-        assertGeneratedContentMatches("queryWithEnumListConditions");
     }
 
     @Test

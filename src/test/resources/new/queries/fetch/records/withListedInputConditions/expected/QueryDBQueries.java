@@ -28,13 +28,13 @@ public class QueryDBQueries {
                                         in.stream().map(internal_it_ ->
                                                 DSL.row(
                                                         DSL.inline(internal_it_.getId()),
-                                                        no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerString(CUSTOMER, internal_it_.getId()),
-                                                        no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerString(CUSTOMER, internal_it_.getFirst())
+                                                        no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, internal_it_.getId()),
+                                                        no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, internal_it_.getFirst())
                                                 )
                                         ).collect(Collectors.toList())
                                 ) : DSL.noCondition()
                 )
-                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJOOQRecordList(CUSTOMER))
+                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(CUSTOMER))
                 .fetchOne(it -> it.into(Customer.class));
     }
 
@@ -43,7 +43,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJOOQRecordList(CUSTOMER))
+                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(CUSTOMER))
                 .orderBy(CUSTOMER.getIdFields())
                 .fetch(it -> it.into(Customer.class));
     }

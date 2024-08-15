@@ -19,7 +19,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
                 .orderBy(CUSTOMER.getIdFields())
                 .seek(CUSTOMER.getIdValues(after))
                 .limit(pageSize + 1)
@@ -30,7 +30,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.count())
                 .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
                 .fetchOne(0, Integer.class);
     }
 }

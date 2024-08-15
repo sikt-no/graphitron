@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron;
 import no.fellesstudentsystem.graphitron.conditions.*;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
-import no.fellesstudentsystem.graphitron.enums.RatingListTest;
 import no.fellesstudentsystem.graphitron.enums.RatingTest;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
 import no.fellesstudentsystem.graphitron.records.EditCustomerResponse2;
@@ -13,13 +12,11 @@ import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 public enum TestReferenceSet {
     // Enums
     ENUM_RATING("RATING_TEST", RatingTest.class),
-    ENUM_RATING_LIST("TEST_ENUM_RATING_LIST", RatingListTest.class),
 
     // Conditions
     CONDITION_STORE_CUSTOMER("TEST_STORE_CUSTOMER", StoreTestConditions.class),
     CONDITION_CUSTOMER_ADDRESS("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
     CONDITION_FILM_ACTOR("TEST_FILM_ACTOR", FilmActorTestConditions.class),
-    CONDITION_CITY("TEST_CITY", CityTestConditions.class),
     CONDITION_FILM_RATING("TEST_FILM_RATING", RatingTestConditions.class),
 
     // Services

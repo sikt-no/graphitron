@@ -20,8 +20,8 @@ public class QueryDBQueries {
                 .from(CUSTOMER)
                 .where(inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition())
                 .and(inRecord != null ? CUSTOMER.FIRST.eq(inRecord.getFirst()) : DSL.noCondition())
-                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerString(CUSTOMER, inRecord != null ? inRecord.getFirst() : null))
-                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, inRecord != null ? inRecord.getFirst() : null))
+                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
                 .fetchOne(it -> it.into(Customer.class));
     }
 
@@ -41,12 +41,12 @@ public class QueryDBQueries {
                                                 DSL.row(
                                                         DSL.inline(internal_it_.getId()),
                                                         DSL.inline(internal_it_.getFirst()),
-                                                        no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerString(CUSTOMER, internal_it_.getFirst())
+                                                        no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, internal_it_.getFirst())
                                                 )
                                         ).collect(Collectors.toList())
                                 ) : DSL.noCondition()
                 )
-                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.customerJavaRecordList(CUSTOMER, inRecordList))
+                .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJavaRecordList(CUSTOMER, inRecordList))
                 .orderBy(CUSTOMER.getIdFields())
                 .fetch(it -> it.into(Customer.class));
     }
