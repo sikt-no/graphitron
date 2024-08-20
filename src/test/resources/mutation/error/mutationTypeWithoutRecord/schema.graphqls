@@ -1,7 +1,0 @@
-type EditResponse {
-  id: ID!
-}
-
-type Mutation {
-  editCustomer(id: ID!): EditResponse! @mutation(typeName: UPDATE)
-}

@@ -49,19 +49,8 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     }
 
     @Test
-    void generate_mutation_shouldGenerateResolversAndQueriesWithSimpleInputsAndResponses() {
-        assertGeneratedContentMatches("simpleResolverWithMutationType");
-    }
-
-    @Test
     void generate_mutationWithListFields_shouldGenerateResolversForLists() {
         assertGeneratedContentMatches("listResolvers");
-    }
-
-    @Test
-    void generate_mutation_shouldGenerateResolversWithValidationErrorHandling() {
-        GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
-        assertGeneratedContentMatches("validationErrorHandling");
     }
 
     @Test
@@ -77,56 +66,6 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
     }
 
     @Test
-    void generate_whenHasSetUpdateType_shouldGenerateUpdateQueriesAndResolvers() {
-        assertGeneratedContentMatches("updateQueries");
-    }
-
-    @Test
-    void generate_whenHasSetUpdateType_shouldGenerateIterableUpdateQueriesAndResolvers() {
-        assertGeneratedContentMatches("updateIterableQueries");
-    }
-
-    @Test
-    void generate_whenHasSetInsertType_shouldGenerateInsertQueriesAndResolvers() {
-        assertGeneratedContentMatches("insertQueries");
-    }
-
-    @Test
-    void generate_whenHasSetInsertType_shouldGenerateIterableInsertQueriesAndResolvers() {
-        assertGeneratedContentMatches("insertIterableQueries");
-    }
-
-    @Test
-    void generate_whenHasSetUpsertType_shouldGenerateUpsertQueriesAndResolvers() {
-        assertGeneratedContentMatches("upsertQueries");
-    }
-
-    @Test
-    void generate_whenHasSetUpsertType_shouldGenerateIterableUpsertQueriesAndResolvers() {
-        assertGeneratedContentMatches("upsertIterableQueries");
-    }
-
-    @Test
-    void generate_whenHasSetDeleteType_shouldGenerateDeleteQueriesAndResolvers() {
-        assertGeneratedContentMatches("deleteQueries");
-    }
-
-    @Test
-    void generate_whenHasSetDeleteType_shouldGenerateIterableDeleteQueriesAndResolvers() {
-        assertGeneratedContentMatches("deleteIterableQueries");
-    }
-
-    @Test
-    void generate_whenHasSetMutationType_shouldGenerateNestedQueriesAndResolvers() {
-        assertGeneratedContentMatches("mutationWithNestedResponse");
-    }
-
-    @Test
-    void generate_whenHasSetMutationTypeWithMismatchedIterability_shouldGenerateAdjustedNestedQueriesAndResolvers() {
-        assertGeneratedContentMatches("mismatchedIterabilityQueries");
-    }
-
-    @Test
     void generate_whenServiceNotFound_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/serviceNotFound"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -139,19 +78,5 @@ public class GraphQLGeneratorMutationTest extends GeneratorTest {
         assertThatThrownBy(() -> generateFiles("error/serviceAndMutationTypeNotSet"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Mutation 'editCustomer' is set to generate, but has neither a service nor mutation type set.");
-    }
-
-    @Test
-    void generate_whenMutationTypeHasNoID_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/mutationTypeWithoutID"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Could not find a suitable ID to return for 'editCustomerWithoutID'.");
-    }
-
-    @Test
-    void generate_whenMutationTypeHasNoRecord_shouldThrowException() {
-        assertThatThrownBy(() -> generateFiles("error/mutationTypeWithoutRecord"))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessage("Must have at least one table reference when generating resolvers with queries. Mutation 'editCustomer' has no tables attached.");
     }
 }

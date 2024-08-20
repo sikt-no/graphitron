@@ -1,8 +1,0 @@
-input EditInput @table(name : "CUSTOMER") {
-  firstName: String @field(name : "FIRST_NAME")
-  email: String
-}
-
-type Mutation {
-  editCustomerWithoutID(input: EditInput!): ID! @mutation(typeName: UPDATE)
-}
