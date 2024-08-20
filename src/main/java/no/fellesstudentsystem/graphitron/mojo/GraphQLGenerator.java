@@ -17,6 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.schema.SchemaReader.getTypeDefinitionRegistry;
 
@@ -40,7 +42,7 @@ public class GraphQLGenerator {
         var processedSchema = getProcessedSchema();
         processedSchema.validate();
 
-        var generators = List.of(
+        var generators = List.<ClassGenerator<?>>of(
                 new FetchDBClassGenerator(processedSchema),
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema),
@@ -66,6 +68,13 @@ public class GraphQLGenerator {
             g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
             LOGGER.info("Generated sources to: " + GeneratorConfig.outputPackage() + "." + g.getDefaultSaveDirectoryName());
         }
+    }
+
+    public static Map<String, List<String>> generateAsStrings(List<ClassGenerator<? extends GenerationTarget>> generators) {
+        return generators
+                .stream()
+                .flatMap(it -> it.generateQualifyingObjects().entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, it -> List.of(it.getValue().split("\n"))));
     }
 
     /**

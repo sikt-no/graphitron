@@ -33,10 +33,10 @@ public class TestConfiguration {
         return processedSchema;
     }
 
-    public static void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses, String outputDirectory) {
+    public static void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
         GeneratorConfig.setProperties(
                 Set.of(),
-                outputDirectory,
+                "",
                 DEFAULT_OUTPUT_PACKAGE,
                 DEFAULT_JOOQ_PACKAGE,
                 references,
@@ -52,12 +52,8 @@ public class TestConfiguration {
         );
     }
 
-    public static void setProperties(List<ExternalReference> references, String outputDirectory) {
-        setProperties(references, List.of(), List.of(), outputDirectory);
-    }
-
     public static void setProperties(List<ExternalReference> references) {
-        setProperties(references, "");
+        setProperties(references, List.of(), List.of());
     }
 
     public static void setProperties() {

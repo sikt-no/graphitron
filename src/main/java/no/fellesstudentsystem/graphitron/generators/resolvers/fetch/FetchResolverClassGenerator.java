@@ -6,6 +6,7 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverClassGe
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 
@@ -20,8 +21,8 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        processedSchema
+    public List<TypeSpec> generateTypeSpecs() {
+        return processedSchema
                 .getObjects()
                 .values()
                 .stream()
@@ -29,7 +30,7 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
                 .filter(obj -> !obj.getName().equals(SCHEMA_MUTATION.getName()))
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs.isEmpty())
-                .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName()));
+                .collect(Collectors.toList());
     }
 
     @Override

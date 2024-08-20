@@ -35,6 +35,6 @@ public class RecordTransformerClassTest extends GeneratorTest {
     @Test
     @DisplayName("The class is still generated when no mappable records exist.")
     void whenNoRecordsExist() {
-        assertFilesAreGenerated("whenNoRecordsExist", "RecordTransformer.java");
+        assertFilesAreGenerated("whenNoRecordsExist", "RecordTransformer");
     }
 }

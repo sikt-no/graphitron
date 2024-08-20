@@ -7,14 +7,12 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.objects.ExceptionDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
-import java.io.File;
-import java.io.IOException;
 import java.util.*;
 
 import static no.fellesstudentsystem.graphitron.configuration.ErrorHandlerType.DATABASE;
@@ -25,17 +23,16 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameForm
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
-public class ExceptionToErrorMappingProviderGenerator implements ClassGenerator<ObjectDefinition> {
+public class ExceptionToErrorMappingProviderGenerator extends AbstractClassGenerator<ObjectDefinition> {
     private static final String DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME = "dataAccessMappingsForMutation";
     private static final String GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME = "genericMappingsForMutation";
 
     private static final TypeName DATA_ACCESS_ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
     private static final TypeName GENERIC_ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
     private static final String MAPPING_VARIABLE_PREFIX = "m";
-    private final ProcessedSchema processedSchema;
 
     public ExceptionToErrorMappingProviderGenerator(ProcessedSchema processedSchema) {
-        this.processedSchema = processedSchema;
+        super(processedSchema);
     }
 
     @Override
@@ -74,31 +71,17 @@ public class ExceptionToErrorMappingProviderGenerator implements ClassGenerator<
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
+    public List<TypeSpec> generateTypeSpecs() {
         if (processedSchema.getExceptions().entrySet().stream().anyMatch(it -> !it.getValue().getExceptionToErrorMappings().isEmpty())) {
-            Optional.ofNullable(processedSchema.getMutationType())
+            var generated = Optional
+                    .ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
-                    .filter(it -> !it.methodSpecs.isEmpty())
-                    .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
+                    .filter(it -> !it.methodSpecs.isEmpty());
+            if (generated.isPresent()) {
+                return List.of(generated.get());
+            }
         }
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath) {
-        writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
-        var file = JavaFile
-                .builder(packagePath + "." + directoryOverride, generatedClass)
-                .indent("    ")
-                .build();
-        try {
-            file.writeTo(new File(path));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        return List.of();
     }
 
     @Override

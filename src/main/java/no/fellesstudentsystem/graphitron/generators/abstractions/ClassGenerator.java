@@ -4,6 +4,7 @@ import com.squareup.javapoet.TypeSpec;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * A class generator uses a GraphQL object in order to generate an entire class, based on only the data contained
@@ -39,6 +40,17 @@ public interface ClassGenerator<T extends GenerationTarget> {
      * @param directoryOverride Override the directory within the package where the class is saved to.
      */
     void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride);
+
+    /**
+     * Generate the classes and write them to a String.
+     */
+    Map<String, String> generateQualifyingObjects();
+
+    /**
+     * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and render the file as a string.
+     * @param generatedClass A complete javapoet {@link TypeSpec}.
+     */
+    String writeToString(TypeSpec generatedClass);
 
     /**
      * @return The final directory path within the package where the classes are ultimately saved.

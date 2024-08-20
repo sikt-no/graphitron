@@ -59,8 +59,8 @@ public class TransformerClassGenerator extends AbstractClassGenerator<ObjectDefi
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        writeToFile(generate(null), path, packagePath, getDefaultSaveDirectoryName());
+    public List<TypeSpec> generateTypeSpecs() {
+        return List.of(generate(null));
     }
 
     @Override

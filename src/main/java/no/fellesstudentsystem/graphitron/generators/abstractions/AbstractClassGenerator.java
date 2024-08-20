@@ -10,6 +10,7 @@ import javax.lang.model.element.Modifier;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 abstract public class AbstractClassGenerator<T extends GenerationTarget> implements ClassGenerator<T> {
@@ -49,6 +50,16 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
     }
 
     @Override
+    public Map<String, String> generateQualifyingObjects() {
+        return generateTypeSpecs().stream().collect(Collectors.toMap(it -> it.name, this::writeToString));
+    }
+
+    @Override
+    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
+        generateTypeSpecs().forEach(it -> writeToFile(it, path, packagePath));
+    }
+
+    @Override
     public void writeToFile(TypeSpec generatedClass, String path, String packagePath) {
         writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
     }
@@ -65,4 +76,11 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
             throw new RuntimeException(e);
         }
     }
+
+    @Override
+    public String writeToString(TypeSpec generatedClass) {
+        return JavaFile.builder("", generatedClass).indent("    ").build().toString();
+    }
+
+    abstract public List<TypeSpec> generateTypeSpecs();
 }

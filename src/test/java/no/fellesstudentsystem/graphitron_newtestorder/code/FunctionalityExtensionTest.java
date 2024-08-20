@@ -19,7 +19,7 @@ public class FunctionalityExtensionTest extends GeneratorTest {
     @Test
     @DisplayName("Throw exception from extended validator")
     void useExtendedValidator() {
-        setProperties(List.of(), List.of(), List.of(new Extension(ProcessedDefinitionsValidator.class.getName(), ExceptionThrowingValidator.class.getName())), "");
+        setProperties(List.of(), List.of(), List.of(new Extension(ProcessedDefinitionsValidator.class.getName(), ExceptionThrowingValidator.class.getName())));
         assertThatThrownBy(() -> new ProcessedSchema(new TypeDefinitionRegistry()).validate(false))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage(EXCEPTION_MSG);

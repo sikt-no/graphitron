@@ -4,6 +4,7 @@ import com.squareup.javapoet.*;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
+import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.MethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.InputParser;
@@ -23,7 +24,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 
-public class MutationExceptionStrategyConfigurationGenerator implements ClassGenerator<ObjectDefinition> {
+public class MutationExceptionStrategyConfigurationGenerator extends AbstractClassGenerator<ObjectDefinition> {
     private static final String
             PAYLOAD_NAME = "payload",
             ERRORS_NAME = "errors",
@@ -33,11 +34,10 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
             ParameterizedTypeName.get(MAP.className, ParameterizedTypeName.get(CLASS.className,
                     WildcardTypeName.subtypeOf(THROWABLE.className)), wrapSet(STRING.className));
     private static final TypeName PAYLOAD_FOR_MUTATIONS_TYPE = wrapStringMap(PAYLOAD_CREATOR.className);
-    private final ProcessedSchema processedSchema;
     private final Map<ClassName, Set<String>> seenMutationsForException;
 
     public MutationExceptionStrategyConfigurationGenerator(ProcessedSchema processedSchema) {
-        this.processedSchema = processedSchema;
+        super(processedSchema);
         seenMutationsForException = new HashMap<>();
     }
 
@@ -147,35 +147,21 @@ public class MutationExceptionStrategyConfigurationGenerator implements ClassGen
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
+    public List<TypeSpec> generateTypeSpecs() {
         if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || schemaContainsExceptionToErrorMappings()) {
-            Optional.ofNullable(processedSchema.getMutationType())
+            var generated = Optional
+                    .ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
-                    .filter(it -> !it.methodSpecs.isEmpty())
-                    .ifPresent(spec -> writeToFile(spec, path, packagePath, getDefaultSaveDirectoryName()));
+                    .filter(it -> !it.methodSpecs.isEmpty());
+            if (generated.isPresent()) {
+                return List.of(generated.get());
+            }
         }
+        return List.of();
     }
 
     private boolean schemaContainsExceptionToErrorMappings() {
         return processedSchema.getExceptions().values().stream().anyMatch(it -> !it.getExceptionToErrorMappings().isEmpty());
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath) {
-        writeToFile(generatedClass, path, packagePath, getDefaultSaveDirectoryName());
-    }
-
-    @Override
-    public void writeToFile(TypeSpec generatedClass, String path, String packagePath, String directoryOverride) {
-        var file = JavaFile
-                .builder(packagePath + "." + directoryOverride, generatedClass)
-                .indent("    ")
-                .build();
-        try {
-            file.writeTo(new File(path));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     @Override

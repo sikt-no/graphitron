@@ -58,6 +58,13 @@ abstract public class DBClassGenerator<T extends GenerationTarget> extends Abstr
     }
 
     @Override
+    public String writeToString(TypeSpec generatedClass) {
+        var fileBuilder = JavaFile.builder("", generatedClass).indent("    ");
+        getStaticImports().forEach(it -> fileBuilder.addStaticImport(it, "*"));
+        return fileBuilder.build().toString();
+    }
+
+    @Override
     public String getFileNameSuffix() {
         return FILE_NAME_SUFFIX;
     }

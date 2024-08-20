@@ -38,8 +38,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        processedSchema
+    public List<TypeSpec> generateTypeSpecs() {
+        return processedSchema
                 .getObjects()
                 .values()
                 .stream()
@@ -51,7 +51,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                                         .anyMatch(interfaceDefinition -> it.implementsInterface(interfaceDefinition.getName())))
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs.isEmpty())
-                .forEach(generatedClass -> writeToFile(generatedClass, path, packagePath));
+                .collect(Collectors.toList());
     }
 
     @Override

@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -32,9 +33,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Abstractions for functionality that is used across multiple test classes.
  */
 public abstract class GeneratorTest {
-    @TempDir
-    protected Path tempOutputDirectory;
-
     private final String sourceTestPath;
     private final Set<SchemaComponent> components;
     protected final boolean checkProcessedSchemaDefault;
@@ -57,26 +55,7 @@ public abstract class GeneratorTest {
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        GraphQLGenerator.generate(makeGenerators(getProcessedSchema(schemaParentFolder, extraComponents)));
-        return readGeneratedFiles(tempOutputDirectory);
-    }
-
-    public static Map<String, List<String>> readGeneratedFiles(Path outputDirectory) {
-        Map<String, List<String>> generatedFiles = new HashMap<>();
-        try {
-            Files.walkFileTree(outputDirectory, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (!Files.isDirectory(file)) {
-                        generatedFiles.put(file.getFileName().toString(), readFileAsStrings(file));
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return generatedFiles;
+        return GraphQLGenerator.generateAsStrings(makeGenerators(getProcessedSchema(schemaParentFolder, extraComponents)));
     }
 
     public static void assertGeneratedContentMatches(String expectedOutputFolder, Map<String, List<String>> generatedFiles) {
@@ -91,7 +70,7 @@ public abstract class GeneratorTest {
             Files.walkFileTree(path, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) {
-                    String expectedFileName = expectedOutputFile.getFileName().toString();
+                    String expectedFileName = expectedOutputFile.getFileName().toString().replace(".java", "");
                     expectedFileNames.add(expectedFileName);
                     var expectedFile = readFileAsStrings(expectedOutputFile);
                     if (!generatedFiles.containsKey(expectedFileName)) {
@@ -100,8 +79,8 @@ public abstract class GeneratorTest {
 
                     var generatedFile = generatedFiles.get(expectedFileName);
 
-                    var expectedFileContent = expectedFile.stream().filter(it -> !it.startsWith("import")).collect(Collectors.joining("\n"));
-                    var generatedFileContent = generatedFile.stream().filter(it -> !it.startsWith("import")).collect(Collectors.joining("\n"));
+                    var expectedFileContent = expectedFile.stream().filter(it -> !it.startsWith("import") && !it.startsWith("package")).collect(Collectors.joining("\n"));
+                    var generatedFileContent = generatedFile.stream().filter(it -> !it.startsWith("import") && !it.startsWith("package")).collect(Collectors.joining("\n"));
                     var generatedFileContentOutput = "\nGenerated file content:\n" + String.join("\n", generatedFile) + "\n";
                     assertThat(generatedFileContent).as(() -> generatedFileContentOutput).isEqualToIgnoringWhitespace(expectedFileContent);
 
@@ -145,7 +124,7 @@ public abstract class GeneratorTest {
         var allPaths = allComponents.stream().flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
         var allReferences = Stream.concat(references.stream(), allComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
 
-        setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses, tempOutputDirectory.toString());
+        setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses);
         return allPaths;
     }
 
@@ -158,8 +137,40 @@ public abstract class GeneratorTest {
     }
 
     public static void assertGeneratedContentContains(Map<String, List<String>> generatedFiles, String... expected) {
-        var allFileContent = generatedFiles.values().stream().flatMap(Collection::stream).collect(Collectors.joining("\n")); // Add newlines for readability when the test fails.
-        Stream.of(expected).forEach(it -> assertThat(allFileContent).containsIgnoringWhitespaces(it));
+        if (expected.length < 1) {
+            return;
+        }
+        var allFileContent = processFileContent(generatedFiles);
+
+        var expectedList = Stream.of(expected).collect(Collectors.toList());
+        var expectedNoWhitespace = expectedList.stream().map(it -> it.replaceAll("\\s+", "")).collect(Collectors.toList());
+
+        var found = findHashesByRegex(expectedNoWhitespace, allFileContent.replaceAll("\\s+", ""));
+        for (int i = 0; i < expected.length; i++) {
+            assertThat(found)
+                    .overridingErrorMessage("Expected to find \"%s\" in\n%s\n", expectedList.get(i), allFileContent)
+                    .contains(expectedNoWhitespace.get(i).hashCode());
+        }
+    }
+
+    private static String processFileContent(Map<String, List<String>> generatedFiles) {
+        return generatedFiles
+                .values()
+                .stream()
+                .flatMap(Collection::stream)
+                .filter(it -> !it.isEmpty() && !it.startsWith("import") && !it.startsWith("package"))
+                .collect(Collectors.joining("\n")); // Add newlines for readability when the test fails.
+    }
+
+    private static ArrayList<Integer> findHashesByRegex(List<String> toFind, String searchSpace) {
+        var m = Pattern
+                .compile(toFind.stream().map(Pattern::quote).collect(Collectors.joining("|")))
+                .matcher(searchSpace);
+        var found = new ArrayList<Integer>();
+        while (m.find()) {
+            found.add(m.group(0).hashCode());
+        }
+        return found;
     }
 
     protected void assertGeneratedContentContains(String resourceRootFolder, Set<SchemaComponent> extraComponents, String... expected) {
@@ -172,8 +183,20 @@ public abstract class GeneratorTest {
 
     // Avoid using these three methods if possible, they have worse performance than the ones above.
     public static void resultDoesNotContain(Map<String, List<String>> generatedFiles, String... expected) {
-        var allFileContent = generatedFiles.values().stream().flatMap(Collection::stream).collect(Collectors.joining("\n")); // Add newlines for readability when the test fails.
-        Stream.of(expected).forEach(it -> assertThat(allFileContent).doesNotContain(it)); // Note, does not ignore whitespaces. There is no method for that.
+        if (expected.length < 1) {
+            return;
+        }
+
+        var allFileContent = processFileContent(generatedFiles);
+        var expectedList = Stream.of(expected).collect(Collectors.toList());
+        var expectedNoWhitespace = expectedList.stream().map(it -> it.replaceAll("\\s+","")).collect(Collectors.toList());
+
+        var found = findHashesByRegex(expectedNoWhitespace, allFileContent.replaceAll("\\s+",""));
+        for (int i = 0; i < expected.length; i++) {
+            assertThat(found)
+                    .overridingErrorMessage("Unexpectedly found \"%s\" in\n%s\n", expectedList.get(i), allFileContent)
+                    .doesNotContain(expectedNoWhitespace.get(i).hashCode());
+        }
     }
 
     protected void resultDoesNotContain(String resourceRootFolder, Set<SchemaComponent> extraComponents, String... expected) {
