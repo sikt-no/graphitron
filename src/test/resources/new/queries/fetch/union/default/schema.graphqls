@@ -1,0 +1,5 @@
+union Union = CustomerUnion
+
+type CustomerUnion {
+  email: String
+}

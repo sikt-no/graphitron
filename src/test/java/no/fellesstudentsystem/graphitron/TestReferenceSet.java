@@ -12,7 +12,6 @@ public enum TestReferenceSet {
     ENUM_RATING("RATING_TEST", RatingTest.class),
 
     // Conditions
-    CONDITION_STORE_CUSTOMER("TEST_STORE_CUSTOMER", StoreTestConditions.class),
     CONDITION_FILM_RATING("TEST_FILM_RATING", RatingTestConditions.class),
 
     // Services

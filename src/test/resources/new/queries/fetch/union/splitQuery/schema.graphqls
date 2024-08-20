@@ -1,0 +1,15 @@
+type Wrapper {
+  id: ID!
+
+  query: Customer @splitQuery
+}
+
+type Customer @table {
+  union: Union
+}
+
+union Union = CustomerUnion
+
+type CustomerUnion {
+  email: String
+}
