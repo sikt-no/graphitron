@@ -15,32 +15,32 @@ import org.jooq.impl.DSL;
 public class FilmDBQueries {
     public static Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIds,
             List<String> s, SelectionSet select) {
-        var film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2782157680");
+        var film_filmlanguageidfkey = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2832997198");
         return ctx
                 .select(
                         FILM.getId(),
-                        DSL.row(film_filmlanguageidfkey_left.getId()).mapping(Functions.nullOnAllNull(Language::new))
+                        DSL.row(film_filmlanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(FILM)
-                .leftJoin(film_filmlanguageidfkey_left)
+                .join(film_filmlanguageidfkey)
                 .where(FILM.hasIds(filmIds))
-                .and(s != null && s.size() > 0 ? film_filmlanguageidfkey_left.NAME.in(s) : DSL.noCondition())
-                .orderBy(film_filmlanguageidfkey_left.getIdFields())
+                .and(s != null && s.size() > 0 ? film_filmlanguageidfkey.NAME.in(s) : DSL.noCondition())
+                .orderBy(film_filmlanguageidfkey.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
     public static Map<String, List<Language>> languagesInputForFilm(DSLContext ctx,
             Set<String> filmIds, In s, SelectionSet select) {
-        var film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2782157680");
+        var film_filmlanguageidfkey = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2832997198");
         return ctx
                 .select(
                         FILM.getId(),
-                        DSL.row(film_filmlanguageidfkey_left.getId()).mapping(Functions.nullOnAllNull(Language::new))
+                        DSL.row(film_filmlanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(FILM)
-                .leftJoin(film_filmlanguageidfkey_left)
+                .join(film_filmlanguageidfkey)
                 .where(FILM.hasIds(filmIds))
-                .and(s != null && s.getName() != null && s.getName().size() > 0 ? film_filmlanguageidfkey_left.NAME.in(s.getName()) : DSL.noCondition())
-                .orderBy(film_filmlanguageidfkey_left.getIdFields())
+                .and(s != null && s.getName() != null && s.getName().size() > 0 ? film_filmlanguageidfkey.NAME.in(s.getName()) : DSL.noCondition())
+                .orderBy(film_filmlanguageidfkey.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

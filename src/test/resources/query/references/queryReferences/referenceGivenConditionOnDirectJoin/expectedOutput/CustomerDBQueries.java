@@ -14,20 +14,20 @@ import org.jooq.impl.DSL;
 public class CustomerDBQueries {
     public static Map<String, List<Address>> historicalAddressesForCustomer(DSLContext ctx,
             Set<String> customerIds, SelectionSet select) {
-        var customer_customeraddress_address_left = ADDRESS.as("customer_3932835938");
+        var customer_customeraddress_address = ADDRESS.as("customer_3499930041");
         return ctx
                 .select(
                         CUSTOMER.getId(),
                         DSL.row(
-                                customer_customeraddress_address_left.getId(),
-                                select.optional("address", customer_customeraddress_address_left.ADDRESS)
+                                customer_customeraddress_address.getId(),
+                                select.optional("address", customer_customeraddress_address.ADDRESS)
                         ).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(CUSTOMER)
-                .leftJoin(customer_customeraddress_address_left)
-                .on(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, customer_customeraddress_address_left))
+                .join(customer_customeraddress_address)
+                .on(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, customer_customeraddress_address))
                 .where(CUSTOMER.hasIds(customerIds))
-                .orderBy(customer_customeraddress_address_left.getIdFields())
+                .orderBy(customer_customeraddress_address.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }
