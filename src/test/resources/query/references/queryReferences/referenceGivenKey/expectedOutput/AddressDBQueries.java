@@ -14,16 +14,16 @@ import org.jooq.impl.DSL;
 public class AddressDBQueries {
     public static Map<String, List<Customer>> customersForAddress(DSLContext ctx,
             Set<String> addressIds, SelectionSet select) {
-        var address_customer_left = ADDRESS.customer().as("customer_2761894695");
+        var address_customer = ADDRESS.customer().as("customer_2142662792");
         return ctx
                 .select(
                         ADDRESS.getId(),
-                        DSL.row(address_customer_left.getId()).mapping(Functions.nullOnAllNull(Customer::new))
+                        DSL.row(address_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(ADDRESS)
-                .leftJoin(address_customer_left)
+                .join(address_customer)
                 .where(ADDRESS.hasIds(addressIds))
-                .orderBy(address_customer_left.getIdFields())
+                .orderBy(address_customer.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

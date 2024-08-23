@@ -14,24 +14,24 @@ import org.jooq.impl.DSL;
 public class InventoryDBQueries {
     public static Map<String, List<Actor>> mainActorsForInventory(DSLContext ctx,
             Set<String> inventoryIds, SelectionSet select) {
-        var inventory_film_left = INVENTORY.film().as("film_2557797379");
-        var inventory_film_filmactor_film_actor_left = FILM_ACTOR.as("inventory_3785506450");
-        var inventory_3785506450_actor_left = inventory_film_filmactor_film_actor_left.actor().as("actor_2652322051");
+        var inventory_film = INVENTORY.film().as("film_3370283276");
+        var inventory_film_filmactor_film_actor = FILM_ACTOR.as("inventory_572048882");
+        var inventory_572048882_actor = inventory_film_filmactor_film_actor.actor().as("actor_2273064954");
         return ctx
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                inventory_3785506450_actor_left.getId(),
-                                select.optional("lastName", inventory_3785506450_actor_left.LAST_NAME)
+                                inventory_572048882_actor.getId(),
+                                select.optional("lastName", inventory_572048882_actor.LAST_NAME)
                         ).mapping(Functions.nullOnAllNull(Actor::new))
                 )
                 .from(INVENTORY)
-                .leftJoin(inventory_film_left)
-                .leftJoin(inventory_film_filmactor_film_actor_left)
-                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(inventory_film_left, inventory_film_filmactor_film_actor_left))
-                .leftJoin(inventory_3785506450_actor_left)
+                .join(inventory_film)
+                .join(inventory_film_filmactor_film_actor)
+                .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(inventory_film, inventory_film_filmactor_film_actor))
+                .join(inventory_572048882_actor)
                 .where(INVENTORY.hasIds(inventoryIds))
-                .orderBy(inventory_3785506450_actor_left.getIdFields())
+                .orderBy(inventory_572048882_actor.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }

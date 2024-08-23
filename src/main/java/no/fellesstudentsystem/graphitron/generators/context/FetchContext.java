@@ -229,7 +229,7 @@ public class FetchContext {
                 getCurrentJoinSequence(),
                 getReferenceTable(),
                 field.getFieldReferences(),
-                field.isNullable() && !fieldIsNullable(getReferenceOrPreviousTable().getMappingName(), field.getUpperCaseName()).orElse(true),
+                true,
                 false
         );
         return !newJoinSequence.isEmpty() ? newJoinSequence : currentSequence;
@@ -247,8 +247,8 @@ public class FetchContext {
         }
 
         var referencesFromField = referenceObjectField.getFieldReferences();
-        var nullable = referenceObjectField.isNullable();
-        var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, nullable, true);
+        var requiresLeftJoin = !(referenceObjectField.isIterableWrapped() && referenceObjectField.isNonNullable() && referenceObjectField.isResolver());
+        var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, requiresLeftJoin, true);
         var updatedSequence = !newJoinSequence.isEmpty() ? newJoinSequence : previousSequence;
 
         if (refTable == null) {
@@ -264,7 +264,7 @@ public class FetchContext {
                 new FieldReference(refTable),
                 new TableRelation(lastTable, refTable),
                 updatedSequence,
-                nullable
+                requiresLeftJoin
         ); // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
         return !finalSequence.isEmpty() ? finalSequence : JoinListSequence.of(refTable);
     }
@@ -274,7 +274,6 @@ public class FetchContext {
      * @return The new join sequence, with the provided join sequence extended by all the references provided.
      */
     private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin, boolean checkLastRef) {
-        requiresLeftJoin = true;
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
 
         var relations = new ArrayList<TableRelation>();
@@ -299,7 +298,6 @@ public class FetchContext {
     }
 
     private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
-        requiresLeftJoin = true;
         var previous = relation.getFrom();
         var target = relation.getToTable();
         if (previous == null) {

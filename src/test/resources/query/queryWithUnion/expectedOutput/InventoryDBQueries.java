@@ -19,28 +19,28 @@ import org.jooq.impl.DSL;
 public class InventoryDBQueries {
     public static Map<String, List<Film2>> filmsForInventory(DSLContext ctx,
             Set<String> inventoryIds, SelectionSet select) {
-        var inventory_film_left = INVENTORY.film().as("film_2557797379");
+        var inventory_film = INVENTORY.film().as("film_3370283276");
         return ctx
                 .select(
                         INVENTORY.getId(),
                         DSL.row(
-                                inventory_film_left.getId(),
-                                DSL.row(inventory_film_left.DESCRIPTION).mapping(Functions.nullOnAllNull(FilmDataA::new)),
-                                DSL.row(inventory_film_left.LENGTH).mapping(Functions.nullOnAllNull(FilmDataB::new)),
-                                DSL.row(inventory_film_left.RELEASE_YEAR).mapping(Functions.nullOnAllNull(FilmDataC::new)),
-                                DSL.row(inventory_film_left.RELEASE_YEAR).mapping(Functions.nullOnAllNull(FilmDataC::new)),
-                                DSL.row(inventory_film_left.RATING).mapping(Functions.nullOnAllNull(FilmDataD::new)),
+                                inventory_film.getId(),
+                                DSL.row(inventory_film.DESCRIPTION).mapping(Functions.nullOnAllNull(FilmDataA::new)),
+                                DSL.row(inventory_film.LENGTH).mapping(Functions.nullOnAllNull(FilmDataB::new)),
+                                DSL.row(inventory_film.RELEASE_YEAR).mapping(Functions.nullOnAllNull(FilmDataC::new)),
+                                DSL.row(inventory_film.RELEASE_YEAR).mapping(Functions.nullOnAllNull(FilmDataC::new)),
+                                DSL.row(inventory_film.RATING).mapping(Functions.nullOnAllNull(FilmDataD::new)),
                                 DSL.row(
-                                        select.optional("extra/title", inventory_film_left.TITLE),
-                                        select.optional("extra/description", inventory_film_left.DESCRIPTION),
-                                        select.optional("extra/length", inventory_film_left.LENGTH)
+                                        select.optional("extra/title", inventory_film.TITLE),
+                                        select.optional("extra/description", inventory_film.DESCRIPTION),
+                                        select.optional("extra/length", inventory_film.LENGTH)
                                 ).mapping(Extra::new)
                         ).mapping((a0, a1_0, a1_1, a1_2, a2_0, a2_1, a3) -> a0 == null && a1_0 != null && a1_1 != null && a1_2 != null && a2_0 != null && a2_1 != null && (a3 == null || new Extra().equals(a3)) ? null : new Film2(a0, a1_0 != null ? a1_0 : a1_1 != null ? a1_1 : a1_2, a2_0 != null ? a2_0 : a2_1, a3))
                 )
                 .from(INVENTORY)
-                .leftJoin(inventory_film_left)
+                .join(inventory_film)
                 .where(INVENTORY.hasIds(inventoryIds))
-                .orderBy(inventory_film_left.getIdFields())
+                .orderBy(inventory_film.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
 }
