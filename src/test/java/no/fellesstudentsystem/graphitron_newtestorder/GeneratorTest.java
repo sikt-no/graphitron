@@ -11,10 +11,10 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget
 import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.junit.ComparisonFailure;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.function.Executable;
-import org.opentest4j.MultipleFailuresError;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
@@ -22,9 +22,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.regex.Pattern.DOTALL;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -40,6 +42,21 @@ public abstract class GeneratorTest {
     private final Set<ExternalReference> references;
     private final Set<GlobalTransform> globalTransforms;
     private final List<Extension> extendedClasses;
+
+    private final static String
+            MSG_CONTAIN_EXPECT = "Expected to find",
+            MSG_NOT_CONTAIN_EXPECT = "Unexpectedly found",
+            MSG_CONTAIN_ACTUAL = "in:",
+
+            MSG_GENERATED_EXPECT = "Expected the generated code:",
+            MSG_GENERATED_ACTUAL = "to be equivalent with excluding imports:",
+            MSG_IMPORT_EXPECT = "Expected the generated imports:",
+            MSG_IMPORT_ACTUAL = "to be equivalent with:",
+            MSG_EXPECT = String.format("(%s)", String.join("|", MSG_CONTAIN_EXPECT, MSG_NOT_CONTAIN_EXPECT, MSG_GENERATED_EXPECT, MSG_IMPORT_EXPECT)),
+            MSG_ACTUAL = String.format("(%s)", String.join("|", MSG_CONTAIN_ACTUAL, MSG_GENERATED_ACTUAL, MSG_IMPORT_ACTUAL));
+    private final static Pattern
+            PATTERN_EXP = Pattern.compile(MSG_EXPECT + "(.*?)" + MSG_ACTUAL, DOTALL),
+            PATTERN_ACTUAL = Pattern.compile(MSG_ACTUAL + "(.*?)(java\\.lang\\.|$)", DOTALL);
 
     public GeneratorTest() {
         sourceTestPath = SRC_ROOT + "/" + getSubpath() + "/";
@@ -83,8 +100,10 @@ public abstract class GeneratorTest {
                     assertList.add(
                             () -> assertThat(formatGeneratedFile(generatedFile))
                                     .withFailMessage(
-                                            "\u001B[33;1mExpected the generated code:\u001B[0;35m\n%s\n\n\u001B[33;1mto be equivalent with excluding imports:\u001B[0;35m\n%s\n\u001B[0m",
+                                            "\u001B[33;1m%s\u001B[0;35m\n%s\n\n\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[0m",
+                                            MSG_GENERATED_EXPECT,
                                             String.join("\n", generatedFile),
+                                            MSG_GENERATED_ACTUAL,
                                             expected
                                     )
                                     .isEqualToIgnoringWhitespace(expected)
@@ -95,8 +114,10 @@ public abstract class GeneratorTest {
                     assertList.add(
                             () -> assertThat(simplifyImports(generatedFileImports))
                                     .withFailMessage(
-                                            "\u001B[33;1mExpected the generated imports:\u001B[0;35m\n%s\n\n\u001B[33;1mto be equivalent with:\u001B[0;35m\n%s\n\u001B[0m",
+                                            "\u001B[33;1m%s\u001B[0;35m\n%s\n\n\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[0m",
+                                            MSG_IMPORT_EXPECT,
                                             String.join("\n", generatedFileImports),
+                                            MSG_IMPORT_ACTUAL,
                                             String.join("\n", expectedFileImports)
                                     )
                                     .containsExactlyInAnyOrderElementsOf(simplifyImports(expectedFileImports)) // Allows us to ignore import order.
@@ -142,7 +163,29 @@ public abstract class GeneratorTest {
         try {
             assertAll(assertList);
         } catch (AssertionError e) {
-            throw new MultipleFailuresError(e.getMessage(), List.of());
+            var message = e.getMessage();
+            var messageNoColour = message.replaceAll("\u001B\\[[;\\d]*m", "");
+
+            var matcherExp = PATTERN_EXP.matcher(messageNoColour);
+            var expected = new ArrayList<String>();
+            while (matcherExp.find()) {
+               expected.add(matcherExp.group(2).strip());
+            }
+
+            var matcherActual = PATTERN_ACTUAL.matcher(messageNoColour);
+            var actual = new ArrayList<String>();
+            while (matcherActual.find()) {
+                var match = matcherActual.group(2).strip();
+                if (actual.stream().noneMatch(it -> it.equals(match))) {
+                    actual.add(match);
+                }
+            }
+
+            // Prints the failures to the console twice, so that IDE comparison will show up.
+            throw new ComparisonFailure(message, String.join("\n\n", expected), String.join("\n\n", actual));
+
+            // Prints the failures to the console.
+            // throw new MultipleFailuresError(e.getMessage(), List.of());
         }
     }
 
@@ -191,7 +234,13 @@ public abstract class GeneratorTest {
         var asserts = new ArrayList<Executable>();
         Stream.of(expected).forEach(it ->
                 asserts.add(() -> assertThat(allFileContent)
-                        .withFailMessage("\u001B[33;1mExpected to find\u001B[0;35m\n%s\n\u001B[33;1min:\u001B[0;35m\n%s\n\u001B[0m", it, allFileContent)
+                        .withFailMessage(
+                                "\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[0m",
+                                MSG_CONTAIN_EXPECT,
+                                it,
+                                MSG_CONTAIN_ACTUAL,
+                                allFileContent
+                        )
                         .containsIgnoringWhitespaces(it)
                 ));
         assertAllWithReducedStackTrace(asserts);
@@ -224,7 +273,13 @@ public abstract class GeneratorTest {
         var asserts = new ArrayList<Executable>();
         Stream.of(expected).forEach(it ->
                 asserts.add(() -> assertThat(allFileContent)
-                        .withFailMessage("\u001B[33;1mUnexpectedly found\u001B[0;35m\n%s\n\u001B[33;1min:\u001B[0;35m\n%s\n\u001B[0m", it, allFileContent)
+                        .withFailMessage(
+                                "\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[33;1min:\u001B[0;35m\n%s\n\u001B[0m",
+                                MSG_NOT_CONTAIN_EXPECT,
+                                it,
+                                MSG_CONTAIN_ACTUAL,
+                                allFileContent
+                        )
                         .doesNotContain(it)
                 ) // Note, does not ignore whitespaces. There is no method for that.
         );
