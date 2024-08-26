@@ -4,6 +4,8 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.ReferenceCustomerCondition;
+import no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.ReferenceFilmCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyCondition;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyJOOQEnum;
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
@@ -43,7 +45,9 @@ public enum ReferencedEntry {
 
     // Input record conditions.
     RECORD_FETCH_CONDITION("RECORD_FETCH_CONDITION", RecordCustomerCondition.class),
-    QUERY_FETCH_CONDITION("QUERY_FETCH_CONDITION", QueryCustomerCondition.class);
+    QUERY_FETCH_CONDITION("QUERY_FETCH_CONDITION", QueryCustomerCondition.class),
+    REFERENCE_CUSTOMER_CONDITION("REFERENCE_CUSTOMER_CONDITION", ReferenceCustomerCondition.class),
+    REFERENCE_FILM_CONDITION("REFERENCE_FILM_CONDITION", ReferenceFilmCondition.class);
 
     private final ExternalReference reference;
 

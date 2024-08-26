@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.ADDRESS_SERVICE;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("JOOQ Mappers - Mapper content for mapping jOOQ records to graph types")
@@ -84,7 +85,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Record containing non-record type")
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
-                "containingNonRecordWrapper",
+                "containingNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                 "address_inner = new Wrapper();" +
                         "if (select.contains(pathHere + \"inner/postalCode\")) {" +
                         "    address_inner.setPostalCode(itAddressRecord.getPostalCode());" +
@@ -97,7 +98,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Mapper with two layers of non-record types")
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
-                "containingDoubleNonRecordWrapper",
+                "containingDoubleNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                 "address_inner0 = new Wrapper();" +
                         "if (select.contains(pathHere + \"inner0/inner1\")) {" +
                         "    var wrapper_inner1 = new InnerWrapper();" +
@@ -114,7 +115,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Fields on different levels that have the same name")
     void nestingWithDuplicateFieldName() {
         assertGeneratedContentContains(
-                "nestingWithDuplicateFieldName",
+                "nestingWithDuplicateFieldName", Set.of(ADDRESS_SERVICE),
                 "address_inner = new Wrapper();" +
                         "if (select.contains(pathHere + \"inner/inner\")) {" +
                         "    var wrapper_inner = new InnerWrapper();" +
@@ -131,7 +132,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Record containing non-record type and using field overrides")
     void containingNonRecordWrapperWithFieldOverride() {
         assertGeneratedContentContains(
-                "containingNonRecordWrapperWithFieldOverride",
+                "containingNonRecordWrapperWithFieldOverride", Set.of(ADDRESS_SERVICE),
                 "address_inner1 = new Wrapper1()",
                 "address_inner1.setCode(itAddressRecord.getPostalCode()",
                 "address_inner2 = new Wrapper2()",

@@ -1,7 +1,3 @@
-type Query {
-  query: Address @notGenerated
-}
-
 type Address @table {
   wrapper: Wrapper
 }

@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Query outputs - Row structure and return types")
 public class OutputTest extends GeneratorTest {

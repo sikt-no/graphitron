@@ -13,8 +13,6 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_INPUT;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Lookup Queries - Queries using lookup keys")
 public class LookupTest extends GeneratorTest {

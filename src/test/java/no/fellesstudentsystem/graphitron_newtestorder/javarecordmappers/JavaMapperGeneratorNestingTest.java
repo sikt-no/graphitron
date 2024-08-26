@@ -37,13 +37,13 @@ public class JavaMapperGeneratorNestingTest extends GeneratorTest {
     @Test
     @DisplayName("Responses containing a jOOQ record")
     void responsesContainingJOOQRecord() {
-        assertGeneratedContentMatches("tograph/containingJOOQRecord", CUSTOMER_TABLE);
+        assertGeneratedContentMatches("tograph/containingJOOQRecord", ADDRESS_SERVICE, CUSTOMER_TABLE);
     }
 
     @Test
     @DisplayName("Responses containing a Java record")
     void responsesContainingJavaRecord() {
-        assertGeneratedContentMatches("tograph/containingJavaRecord", DUMMY_TYPE_RECORD);
+        assertGeneratedContentMatches("tograph/containingJavaRecord", ADDRESS_SERVICE, DUMMY_TYPE_RECORD);
     }
 
     @Test

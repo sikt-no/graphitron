@@ -15,8 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_TYPE_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("Java Mappers - Mapper content for mapping Java records to graph types")
 public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
@@ -67,7 +66,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Containing non-record type")
     void containingNonRecordWrapper() {
         assertGeneratedContentContains(
-                "containingNonRecordWrapper",
+                "containingNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                 "inner = new Wrapper();" +
                         "if (select.contains(pathHere + \"inner/postalCode\")) {" +
                         "    inner.setPostalCode(itMapperAddressJavaRecord.getPostalCode());" +
@@ -80,7 +79,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Containing two layers of non-record types")
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
-                "containingDoubleNonRecordWrapper",
+                "containingDoubleNonRecordWrapper", Set.of(ADDRESS_SERVICE),
                         "if (select.contains(pathHere + \"inner0/inner1\")) {" +
                         "    var inner1 = new InnerWrapper();" +
                         "    if (select.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
@@ -110,7 +109,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Containing non-record type and using field overrides")
     void containingNonRecordWrapperWithFieldOverride() {
         assertGeneratedContentContains(
-                "containingNonRecordWrapperWithFieldOverride",
+                "containingNonRecordWrapperWithFieldOverride", Set.of(ADDRESS_SERVICE),
                 "inner1 = new Wrapper1()",
                 "inner1.setCode(itMapperAddressJavaRecord.getPostalCode()",
                 "inner2 = new Wrapper2()",
@@ -162,7 +161,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Responses containing a jOOQ record fetched by ID")
     void recordFetchedByID() {
         assertGeneratedContentContains(
-                "containingRecordFetchedByID",
+                "containingRecordFetchedByID", Set.of(ADDRESS_SERVICE),
                 "address.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(" +
                         "transform.getCtx(), Set.of(customer.getId()), select.withPrefix(pathHere + \"customer\"" +
                         ")).values().stream().findFirst().orElse(null)"
@@ -173,7 +172,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     @DisplayName("Responses containing listed jOOQ records fetched by ID")
     void listedRecordFetchedByID() {
         assertGeneratedContentContains(
-                "containingListedRecordFetchedByID",
+                "containingListedRecordFetchedByID", Set.of(ADDRESS_SERVICE),
                 "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(" +
                         "transform.getCtx(), customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + \"customerList\"));" +
                         "address.setCustomerList(customerList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList())"

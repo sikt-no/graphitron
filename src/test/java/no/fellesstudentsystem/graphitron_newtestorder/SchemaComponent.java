@@ -4,8 +4,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.ID_RECORD;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.COMPONENT_PATH;
 import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.SCHEMA_EXTENSION;
 
@@ -21,11 +20,15 @@ public enum SchemaComponent {
     DUMMY_ENUM_CONVERTED("enums/DummyEnumConverted", Set.of(ReferencedEntry.DUMMY_JOOQ_ENUM)),
 
     CUSTOMER("basic/Customer"),
+    CUSTOMER_QUERY("basic/CustomerQuery"),
+    CUSTOMER_NOT_GENERATED("basic/CustomerNotGenerated"),
     CUSTOMER_TABLE("basic/CustomerTable"),
     CUSTOMER_INPUT_TABLE("basic/CustomerInputTable"),
     CUSTOMER_CONNECTION_ONLY("basic/CustomerConnection", PAGE_INFO),
     CUSTOMER_CONNECTION(CUSTOMER_TABLE, CUSTOMER_CONNECTION_ONLY),
     CUSTOMER_CONNECTION_ORDER(CUSTOMER_CONNECTION_ONLY, ORDER),
+    CITY_QUERY("basic/CityQuery"),
+    ADDRESS_SERVICE("basic/AddressService", Set.of(DUMMY_SERVICE)),
 
     DUMMY_TYPE("basic/DummyType"),
     DUMMY_TYPE_RECORD("basic/DummyTypeRecord", Set.of(ID_RECORD)),

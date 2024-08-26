@@ -274,7 +274,7 @@ public abstract class GeneratorTest {
         Stream.of(expected).forEach(it ->
                 asserts.add(() -> assertThat(allFileContent)
                         .withFailMessage(
-                                "\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[33;1min:\u001B[0;35m\n%s\n\u001B[0m",
+                                "\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[0m",
                                 MSG_NOT_CONTAIN_EXPECT,
                                 it,
                                 MSG_CONTAIN_ACTUAL,

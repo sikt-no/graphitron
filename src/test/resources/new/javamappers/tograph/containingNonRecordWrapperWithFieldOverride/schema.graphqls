@@ -1,7 +1,3 @@
-type Query {
-  query: Address @service(service: {name: "DUMMY_SERVICE"})
-}
-
 type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
   inner1: Wrapper1
   inner2: Wrapper2 @field(name: "postalCode") # This technically works but generates unnecessary code.
