@@ -44,8 +44,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "inputJavaRecord",
                 "customerForQuery(DSLContext ctx, DummyRecord inRecord,",
-                "inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition()",
-                "inRecord != null ? CUSTOMER.ID.eq(inRecord.getOtherID()) : DSL.noCondition()"
+                "inRecord != null ? CUSTOMER.hasId(inRecord.getId()) : DSL.noCondition()",
+                "inRecord != null ? CUSTOMER.hasId(inRecord.getOtherID()) : DSL.noCondition()"
         );
     }
 
@@ -55,7 +55,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
-                "DSL.row(CUSTOMER.ID, CUSTOMER.ID).in(" +
+                "DSL.row(CUSTOMER.getId(), CUSTOMER.getId()).in(" +
                         "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).collect(Collectors.toList())" +
                         ") : DSL.noCondition()"
         );
@@ -67,7 +67,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "inputJOOQRecord",
                 "customerForQuery(DSLContext ctx, CustomerRecord inRecord,",
-                "inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition()",
+                "inRecord != null ? CUSTOMER.hasId(inRecord.getId()) : DSL.noCondition()",
                 "inRecord != null ? CUSTOMER.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition()"
         );
     }
@@ -78,7 +78,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
-                "DSL.row(CUSTOMER.ID, CUSTOMER.FIRST_NAME).in(" +
+                "DSL.row(CUSTOMER.getId(), CUSTOMER.FIRST_NAME).in(" +
                         "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).collect(Collectors.toList())" +
                         ") : DSL.noCondition()"
         );

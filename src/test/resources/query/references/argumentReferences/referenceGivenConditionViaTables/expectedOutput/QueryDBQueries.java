@@ -22,7 +22,7 @@ public class QueryDBQueries {
                 .leftJoin(rental_film_filmactor_film_actor_left)
                 .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(inventory_3858359801_film_left, rental_film_filmactor_film_actor_left))
                 .leftJoin(rental_1817618132_actor_left)
-                .where(RENTAL.ID.eq(id))
+                .where(RENTAL.hasId(id))
                 .and(rental_1817618132_actor_left.LAST_NAME.eq(lastName))
                 .fetchOne(it -> it.into(Rental.class));
     }

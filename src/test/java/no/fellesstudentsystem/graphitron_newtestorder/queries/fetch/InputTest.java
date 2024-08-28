@@ -49,7 +49,13 @@ public class InputTest extends GeneratorTest {
     @Test
     @DisplayName("ID field")
     void id() {
-        assertGeneratedContentContains("id", ", String id,", "CUSTOMER.ID.eq(id)");
+        assertGeneratedContentContains("id", ", String id,", "CUSTOMER.hasId(id)");
+    }
+
+    @Test
+    @DisplayName("ID field that is not the primary ID")
+    void idOther() {
+        assertGeneratedContentContains("idOther", "CUSTOMER.hasAddressId(id)");
     }
 
     @Test
@@ -91,6 +97,18 @@ public class InputTest extends GeneratorTest {
         );
     }
 
+    @Test  // Special case methods for IDs.
+    @DisplayName("ID list field")
+    void idList() {
+        assertGeneratedContentContains("idList", ", List<String> id,", "CUSTOMER.hasIds(id.stream().collect(Collectors.toSet()))");
+    }
+
+    @Test
+    @DisplayName("ID list field that is not the primary ID")
+    void idOtherList() {
+        assertGeneratedContentContains("idOtherList", "CUSTOMER.hasAddressIds(id.stream().collect(Collectors.toSet()))");
+    }
+
     @Test
     @DisplayName("Input type field")
     void input() {
@@ -98,7 +116,7 @@ public class InputTest extends GeneratorTest {
                 "input",
                 Set.of(DUMMY_INPUT),
                 ", DummyInput in,",
-                "in.getId() != null ? CUSTOMER.ID.eq(in.getId()) : DSL.noCondition()"
+                "in.getId() != null ? CUSTOMER.hasId(in.getId()) : DSL.noCondition()"
         );
     }
 
@@ -109,7 +127,7 @@ public class InputTest extends GeneratorTest {
                 "nestedInput",
                 Set.of(DUMMY_INPUT),
                 ", Wrapper in,",
-                "in.getIn().getId() != null ? CUSTOMER.ID.eq(in.getIn().getId()) : DSL.noCondition()"
+                "in.getIn().getId() != null ? CUSTOMER.hasId(in.getIn().getId()) : DSL.noCondition()"
         );
     }
 

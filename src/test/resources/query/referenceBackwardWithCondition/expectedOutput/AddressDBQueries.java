@@ -25,7 +25,7 @@ public class AddressDBQueries {
                 .leftJoin(address_customerstore_store_left)
                 .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_customer_left, address_customerstore_store_left))
                 .where(ADDRESS.hasIds(addressIds))
-                .and(id != null ? address_customerstore_store_left.ID.eq(id) : DSL.noCondition())
+                .and(id != null ? address_customerstore_store_left.hasId(id) : DSL.noCondition())
                 .orderBy(address_customerstore_store_left.getIdFields())
                 .fetchMap(Record2::value1, Record2::value2);
     }

@@ -21,7 +21,7 @@ public class QueryDBQueries {
                 .where(
                         in != null && in.size() > 0 ?
                                 DSL.row(
-                                        CUSTOMER.ID,
+                                        CUSTOMER.getId(),
                                         DSL.trueCondition(),
                                         DSL.trueCondition()
                                 ).in(

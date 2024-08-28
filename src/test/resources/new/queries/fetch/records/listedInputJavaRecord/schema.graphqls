@@ -4,5 +4,5 @@ type Query {
 
 input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
-  id2: ID! @field(name: "ID", javaName: "otherID")
+  id2: ID! @field(name: "Id", javaName: "otherID")
 }

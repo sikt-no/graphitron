@@ -24,7 +24,7 @@ public class QueryDBQueries {
                 .leftJoin(inventory_film_filmactor_film_actor_left)
                 .on(no.fellesstudentsystem.graphitron.conditions.FilmActorTestConditions.film_filmActor(inventory_film_left, inventory_film_filmactor_film_actor_left))
                 .leftJoin(inventory_3785506450_actor_left)
-                .where(INVENTORY.ID.eq(id))
+                .where(INVENTORY.hasId(id))
                 .fetchOne(it -> it.into(Inventory.class));
     }
 }

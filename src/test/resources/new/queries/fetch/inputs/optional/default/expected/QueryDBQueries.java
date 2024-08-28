@@ -15,7 +15,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(CUSTOMER)
-                .where(id != null ? CUSTOMER.ID.eq(id) : DSL.noCondition())
+                .where(id != null ? CUSTOMER.hasId(id) : DSL.noCondition())
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

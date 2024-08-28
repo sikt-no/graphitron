@@ -25,7 +25,7 @@ public class QueryDBQueries {
                 .leftJoin(rental_61302898_inventory_left)
                 .leftJoin(inventory_2622920513_film_left)
                 .leftJoin(film_2895304902_filmoriginallanguageidfkey_left)
-                .where(PAYMENT.ID.eq(id))
+                .where(PAYMENT.hasId(id))
                 .fetchOne(it -> it.into(Payment.class));
     }
 }

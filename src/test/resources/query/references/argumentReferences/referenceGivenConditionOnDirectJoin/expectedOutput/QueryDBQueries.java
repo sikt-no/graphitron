@@ -16,7 +16,7 @@ public class QueryDBQueries {
                 .from(CUSTOMER)
                 .leftJoin(customer_customeraddress_address_left)
                 .on(no.fellesstudentsystem.graphitron.conditions.CustomerTestConditions.customerAddress(CUSTOMER, customer_customeraddress_address_left))
-                .where(CUSTOMER.ID.eq(id))
+                .where(CUSTOMER.hasId(id))
                 .and(address != null ? customer_customeraddress_address_left.ADDRESS.eq(address) : DSL.noCondition())
                 .fetchOne(it -> it.into(Customer.class));
     }

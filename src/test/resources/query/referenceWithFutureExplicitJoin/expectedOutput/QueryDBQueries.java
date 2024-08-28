@@ -25,7 +25,7 @@ public class QueryDBQueries {
                 .leftJoin(address_166982810_customer_left)
                 .leftJoin(customer_customerstore_store_left)
                 .on(no.fellesstudentsystem.graphitron.conditions.StoreTestConditions.customerStore(address_166982810_customer_left, customer_customerstore_store_left))
-                .where(CUSTOMER.ID.eq(id))
+                .where(CUSTOMER.hasId(id))
                 .fetchOne(it -> it.into(Customer.class));
     }
 }

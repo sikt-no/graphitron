@@ -18,7 +18,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(CUSTOMER)
-                .where(inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition())
+                .where(inRecord != null ? CUSTOMER.hasId(inRecord.getId()) : DSL.noCondition())
                 .and(inRecord != null ? CUSTOMER.FIRST.eq(inRecord.getFirst()) : DSL.noCondition())
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, inRecord != null ? inRecord.getFirst() : null))
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
@@ -33,7 +33,7 @@ public class QueryDBQueries {
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
                                 DSL.row(
-                                        CUSTOMER.ID,
+                                        CUSTOMER.getId(),
                                         CUSTOMER.FIRST,
                                         DSL.trueCondition()
                                 ).in(

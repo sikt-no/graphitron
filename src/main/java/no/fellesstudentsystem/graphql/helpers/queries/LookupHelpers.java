@@ -155,12 +155,13 @@ public class LookupHelpers {
         if (components.length < 2) {
             return components.length < 1 ? empty() : Optional
                     .ofNullable(ref.getArgumentByName(components[0]))
-                    .map(AbstractField::getUpperCaseName)
+                    .map(it -> it.isID() ? it.getMappingFromFieldOverride().asGetCall().toString().substring(1) : it.getUpperCaseName())
                     .map(CodeBlock::of)
                     .orElse(empty());
         }
 
-        return CodeBlock.of(lastInput(components, schema, ref).getUpperCaseName());
+        var lastInput = lastInput(components, schema, ref);
+        return CodeBlock.of(lastInput.isID() ? lastInput.getMappingFromFieldOverride().asGetCall().toString().substring(1) : lastInput.getUpperCaseName());
     }
 
     public static CodeBlock getLookupKeysAsList(ObjectField referenceField, ProcessedSchema processedSchema) {

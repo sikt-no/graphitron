@@ -61,12 +61,21 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var checksNotEmpty = !checks.isEmpty();
             var renderedSequence = context.iterateJoinSequenceFor(field).render();
             if (!referenceField.hasOverridingCondition() && !field.hasOverridingCondition()) {
-                codeBlockBuilder
-                        .add(hasWhere ? ".and(" : "")
-                        .add(checksNotEmpty ? checks + " ? " : "")
-                        .add("$L.$N", renderedSequence, field.getUpperCaseName())
-                        .add(toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
-                        .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
+                if (hasWhere) {
+                    codeBlockBuilder.add(".and(");
+                }
+                if (checksNotEmpty) {
+                    codeBlockBuilder.add(checks + " ? ");
+                }
+                codeBlockBuilder.add(renderedSequence);
+                if (field.isID()) {
+                    codeBlockBuilder.add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
+                } else {
+                    codeBlockBuilder
+                            .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
+                            .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
+                }
+
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
                 }
@@ -134,7 +143,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             if (!field.hasOverridingCondition()) {
                 var enumHandling = toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema);
-                tupleFieldBlocks.add(CodeBlock.of("$L.$N$L", fieldSequence, field.getUpperCaseName(), enumHandling));
+                var tupleBlock = CodeBlock.builder().add(fieldSequence);
+                if (field.isID()) {
+                    tupleBlock.add(field.getMappingFromFieldOverride().asGetCall());
+                } else {
+                    tupleBlock.add(".$N$L", field.getUpperCaseName(), enumHandling);
+                }
+                tupleFieldBlocks.add(tupleBlock.build());
                 tupleVariableBlocks.add(inline(unpacked));
             }
 

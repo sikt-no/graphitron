@@ -22,7 +22,7 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
-                .where(inRecord != null ? CUSTOMER.ID.eq(inRecord.getId()) : DSL.noCondition())
+                .where(inRecord != null ? CUSTOMER.hasId(inRecord.getId()) : DSL.noCondition())
                 .and(inRecord != null ? CUSTOMER.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition())
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, inRecord != null ? inRecord.getFirstName() : null))
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJOOQRecord(CUSTOMER, inRecord))
@@ -41,7 +41,7 @@ public class QueryDBQueries {
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
                                 DSL.row(
-                                        CUSTOMER.ID,
+                                        CUSTOMER.getId(),
                                         CUSTOMER.FIRST_NAME,
                                         DSL.trueCondition()
                                 ).in(

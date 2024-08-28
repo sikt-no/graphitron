@@ -24,7 +24,7 @@ public class QueryDBQueries {
                         ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(CUSTOMER)
-                .where(CUSTOMER.ID.eq(id))
+                .where(CUSTOMER.hasId(id))
                 .orderBy(CUSTOMER.getIdFields())
                 .fetch(0, Customer.class);
     }

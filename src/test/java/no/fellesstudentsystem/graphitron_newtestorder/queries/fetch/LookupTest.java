@@ -68,12 +68,12 @@ public class LookupTest extends GeneratorTest {
     @Test
     @DisplayName("Key inside listed input type")
     void inputKey() {
-        assertGeneratedContentContains("inputKey", ",List<Input> in,", ".select(CUSTOMER.ID,");
+        assertGeneratedContentContains("inputKey", ",List<Input> in,", ".select(CUSTOMER.getId(),");
     }
 
     @Test
     @DisplayName("Key listed inside input type")
     void listedKeyInInput() {
-        assertGeneratedContentContains("listedKeyInInput", ", Input in,", ".select(CUSTOMER.ID,");
+        assertGeneratedContentContains("listedKeyInInput", ", Input in,", ".select(CUSTOMER.getId(),");
     }
 }
