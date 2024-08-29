@@ -1,0 +1,3 @@
+input Dummy {
+  id: ID @reference(references: {table: "UNKNOWN_TABLE"})
+}

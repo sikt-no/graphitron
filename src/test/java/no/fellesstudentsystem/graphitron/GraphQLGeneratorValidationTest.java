@@ -12,6 +12,7 @@ import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -112,19 +113,67 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
     }
 
     @Test
-    void generate_whenUnknownNodeTable_shouldLogWarning() {
-        getProcessedSchema("warning/unknownNodeTable");
-        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table or key with name 'TRACTOR' found in no.sikt.graphitron.jooq.generated.testdata"
-        );
+    @DisplayName("Unknown type table")
+    void unknownTypeTable() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownTypeTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo table with name \"UNKNOWN_TABLE\" found.");
     }
 
     @Test
-    void generate_whenUnknownResourceTable_shouldLogWarning() {
-        getProcessedSchema("warning/unknownResourceTable");
-        assertThat(getLogMessagesWithLevelWarn()).containsOnly(
-                "No table or key with name 'UNKNOWN_TABLE' found in no.sikt.graphitron.jooq.generated.testdata"
-        );
+    @DisplayName("Unknown input table")
+    void unknownInputTable() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownInputTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo table with name \"UNKNOWN_TABLE\" found.");
+    }
+
+    @Test
+    @DisplayName("Unknown field reference table")
+    void unknownFieldReferenceTable() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownFieldReferenceTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo table with name \"UNKNOWN_TABLE\" found.");
+    }
+
+    @Test
+    @DisplayName("Unknown input field reference table")
+    void unknownInputFieldReferenceTable() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownInputFieldReferenceTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo table with name \"UNKNOWN_TABLE\" found.");
+    }
+
+    @Test
+    @DisplayName("Unknown argument reference table")
+    void unknownArgumentReferenceTable() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownArgumentReferenceTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo table with name \"UNKNOWN_TABLE\" found.");
+    }
+
+    @Test
+    @DisplayName("Unknown field reference key")
+    void unknownFieldReferenceKey() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownFieldReferenceKey"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo key with name \"UNKNOWN_KEY\" found.");
+    }
+
+    @Test
+    @DisplayName("Unknown input field reference key")
+    void unknownInputFieldReferenceKey() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownInputFieldReferenceKey"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo key with name \"UNKNOWN_KEY\" found.");
+    }
+
+    @Test
+    @DisplayName("Unknown argument reference key")
+    void unknownArgumentReferenceKey() {
+        assertThatThrownBy(() -> getProcessedSchema("error/unknownArgumentReferenceKey"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Problems have been found that prevent code generation:\nNo key with name \"UNKNOWN_KEY\" found.");
     }
 
     @Test
@@ -220,17 +269,6 @@ public class GraphQLGeneratorValidationTest extends GeneratorTest {
         getProcessedSchema("warning/implicitJoinDoesNotExist");
         assertThat(getLogMessagesWithLevelWarn()).containsOnly("Problems have been found that MAY prevent code generation:\n" +
                 "No field(s) or method(s) with name(s) 'payment' found in table 'STORE'"
-        );
-    }
-
-    @Test
-    void generate_whenKeyMissing_shouldLogWarning() {
-        getProcessedSchema("warning/referenceKeysMissing");
-        assertThat(getLogMessagesWithLevelWarn()).containsOnly("Problems have been found that MAY prevent code generation:\n" +
-                "No field(s) or method(s) with name(s) 'NOT_A_KEY' found in table 'ADDRESS'" + "\n" +
-                "No field(s) or method(s) with name(s) 'FAKE_KEY' found in table 'CUSTOMER'",
-                "No table or key with name 'FAKE_KEY' found in no.sikt.graphitron.jooq.generated.testdata",
-                "No table or key with name 'NOT_A_KEY' found in no.sikt.graphitron.jooq.generated.testdata"
         );
     }
 

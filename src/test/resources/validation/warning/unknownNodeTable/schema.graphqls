@@ -1,7 +1,0 @@
-type Query {
-    actor(id: ID!): Actor
-}
-
-type Actor @table(name: "TRACTOR") {
-    id: ID!
-}

@@ -1,14 +1,15 @@
 package no.fellesstudentsystem.graphitron.validation;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.configuration.externalreferences.CodeReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.GenerationSourceField;
 import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.MutationType;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
@@ -41,8 +42,8 @@ public class ProcessedDefinitionsValidator {
     protected final ProcessedSchema schema;
     private final List<ObjectField> allFields;
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
-    private final List<String> warningMessages = new ArrayList<>();
-    private final List<String> errorMessages = new ArrayList<>();
+    private final Set<String> warningMessages = new LinkedHashSet<>();
+    private final Set<String> errorMessages = new LinkedHashSet<>();
     protected static final String
             ERROR_MISSING_FIELD = "Input type %s referencing table %s does not map all fields required by the database. Missing required fields: %s",
             ERROR_MISSING_NON_NULLABLE = "Input type %s referencing table %s does not map all fields required by the database as non-nullable. Nullable required fields: %s";
@@ -63,7 +64,8 @@ public class ProcessedDefinitionsValidator {
     public void validateThatProcessedDefinitionsConformToJOOQNaming() {
         schema.getObjects().values().forEach(it -> checkPaginationSpecs(it.getFields()));
 
-        validateTableAndFieldUsage();
+        validateTablesAndKeys();
+        validateRequiredMethodCalls();
         validateInterfaces();
         validateInputFields();
         validateExternalMappingReferences();
@@ -81,21 +83,42 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    private void validateTableAndFieldUsage() {
-        var tableMethodsRequired = getUsedTablesWithRequiredMethods();
-        tableMethodsRequired
-                .keySet()
+    private void validateTablesAndKeys() {
+        var recordTypes = schema.getRecordTypes().values();
+        recordTypes
                 .stream()
-                .filter(it -> !TableReflection.tableOrKeyExists(it))
-                .forEach(it ->
-                        LOGGER.warn(
-                                "No table or key with name '{}' found in {}",
-                                it,
-                                GeneratorConfig.getGeneratedJooqPackage()
-                        )
-                );
+                .filter(RecordObjectSpecification::hasTable)
+                .map(RecordObjectSpecification::getTable)
+                .map(JOOQMapping::getMappingName)
+                .filter(it -> !TableReflection.tableExists(it))
+                .forEach(it -> errorMessages.add(String.format("No table with name \"%s\" found.", it)));
 
-        tableMethodsRequired
+        var allReferences = recordTypes
+                .stream()
+                .flatMap(it -> it.getFields().stream())
+                .flatMap(it -> it.isInput() ? Stream.of(it) : Stream.concat(Stream.of(it), ((ObjectField) it).getArguments().stream()))
+                .flatMap(it -> it.getFieldReferences().stream())
+                .collect(Collectors.toList());
+
+        allReferences
+                .stream()
+                .filter(FieldReference::hasTable)
+                .map(FieldReference::getTable)
+                .map(JOOQMapping::getMappingName)
+                .filter(it -> !TableReflection.tableExists(it))
+                .forEach(it -> errorMessages.add(String.format("No table with name \"%s\" found.", it)));
+
+        allReferences
+                .stream()
+                .filter(FieldReference::hasKey)
+                .map(FieldReference::getKey)
+                .map(JOOQMapping::getMappingName)
+                .filter(it -> !TableReflection.keyExists(it))
+                .forEach(it -> errorMessages.add(String.format("No key with name \"%s\" found.", it)));
+    }
+
+    private void validateRequiredMethodCalls() {
+        getUsedTablesWithRequiredMethods()
                 .entrySet()
                 .stream()
                 .filter(it -> TableReflection.tableOrKeyExists(it.getKey()))
@@ -218,9 +241,6 @@ public class ProcessedDefinitionsValidator {
         for (var reference : field.getFieldReferences()) {
             if (reference.hasKey() && lastTable != null) {
                 var key = reference.getKey();
-                if (!TableReflection.keyExists(key.getMappingName())) {
-                    requiredJOOQTypesAndMethods.put(key.getMappingName(), new HashSet<>());
-                }
                 var nextTable = reference.hasTable()
                         ? reference.getTable().getMappingName()
                         : (schema.isRecordType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
