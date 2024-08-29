@@ -57,7 +57,8 @@ public class PaginationTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery", Set.of(SPLIT_QUERY_WRAPPER),
-                ",Set<String> wrapperIds, Integer pageSize, String after,"
+                ",Set<String> wrapperIds, Integer pageSize, String after,",
+                ".limit(pageSize * wrapperIds.size() + 1)"
         );
     }
 }

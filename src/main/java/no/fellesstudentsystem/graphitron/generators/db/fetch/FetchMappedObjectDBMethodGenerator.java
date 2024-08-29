@@ -149,7 +149,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                                         GraphQLReservedName.PAGINATION_AFTER.getName(), OBJECT.className, GraphQLReservedName.PAGINATION_AFTER.getName(), ",")
                                 .unindent().unindent(),
                         () -> code.add(".seek($N.getIdValues($N))\n", refTable, GraphQLReservedName.PAGINATION_AFTER.getName()));
-                code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
+                if (referenceField.isResolver()) {
+                    code.add(".limit($N * $N.size() + 1)\n", PAGE_SIZE_NAME, idParamName);
+                } else {
+                    code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
+                }
             }
         }
 
