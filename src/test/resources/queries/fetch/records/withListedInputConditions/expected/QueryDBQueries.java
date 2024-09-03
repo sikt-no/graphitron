@@ -1,13 +1,15 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
-import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.util.List;
 import java.util.stream.Collectors;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;

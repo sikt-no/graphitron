@@ -1,8 +1,8 @@
 package no.fellesstudentsystem.graphitron.codereferences.conditions;
 
-import no.sikt.graphitron.jooq.generated.testdata.tables.Address;
-import no.sikt.graphitron.jooq.generated.testdata.tables.City;
-import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Address;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.City;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
 import org.jooq.Condition;
 
 public class ReferenceCustomerCondition {

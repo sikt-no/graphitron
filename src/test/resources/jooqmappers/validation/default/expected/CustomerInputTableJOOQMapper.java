@@ -7,7 +7,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import no.sikt.graphitron.validation.RecordValidator;
 
 public class CustomerInputTableJOOQMapper {

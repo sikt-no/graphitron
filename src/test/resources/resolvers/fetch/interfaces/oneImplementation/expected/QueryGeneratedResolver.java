@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
 import org.jooq.DSLContext;
 
 public abstract class QueryGeneratedResolver implements QueryResolver {

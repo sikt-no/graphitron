@@ -1,7 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
-import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 
 import fake.code.generated.model.Film;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;

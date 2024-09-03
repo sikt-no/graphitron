@@ -2,7 +2,7 @@ package no.fellesstudentsystem.graphitron.codereferences.conditions;
 
 import no.fellesstudentsystem.graphitron.codereferences.records.StaffInput1JavaRecord;
 import no.fellesstudentsystem.graphitron.codereferences.records.StaffNameJavaRecord;
-import no.sikt.graphitron.jooq.generated.testdata.tables.Staff;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Staff;
 import org.jooq.Condition;
 
 import java.util.List;

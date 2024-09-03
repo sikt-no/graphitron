@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.codereferences.records;
 
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.AddressRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.AddressRecord;
 
 import java.util.List;
 

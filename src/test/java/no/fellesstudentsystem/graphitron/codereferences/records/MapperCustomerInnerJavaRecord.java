@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.codereferences.records;
 
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 
 public class MapperCustomerInnerJavaRecord {
     private CustomerRecord someRecord;

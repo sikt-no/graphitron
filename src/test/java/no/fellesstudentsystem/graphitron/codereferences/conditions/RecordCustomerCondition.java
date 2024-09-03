@@ -1,8 +1,8 @@
 package no.fellesstudentsystem.graphitron.codereferences.conditions;
 
 import no.fellesstudentsystem.graphitron.codereferences.records.CustomerJavaRecord;
-import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.Condition;
 
 import java.util.List;

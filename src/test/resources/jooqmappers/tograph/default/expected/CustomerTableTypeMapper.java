@@ -5,7 +5,7 @@ import fake.graphql.example.model.CustomerTable;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 
 public class CustomerTableTypeMapper {
     public static List<CustomerTable> recordToGraphType(List<CustomerRecord> customerRecord,

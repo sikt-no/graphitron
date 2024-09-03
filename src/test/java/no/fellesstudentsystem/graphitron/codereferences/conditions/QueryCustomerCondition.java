@@ -1,7 +1,7 @@
 package no.fellesstudentsystem.graphitron.codereferences.conditions;
 
 import no.fellesstudentsystem.graphitron.codereferences.dummyreferences.DummyJOOQEnum;
-import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
 import org.jooq.Condition;
 
 import java.util.List;

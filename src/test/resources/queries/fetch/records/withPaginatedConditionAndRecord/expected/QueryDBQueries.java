@@ -1,7 +1,9 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
-import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Keys.*;
+import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.lang.Integer;
@@ -9,7 +11,7 @@ import java.lang.String;
 import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;

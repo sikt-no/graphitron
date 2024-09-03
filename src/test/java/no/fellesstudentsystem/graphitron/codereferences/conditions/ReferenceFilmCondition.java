@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.codereferences.conditions;
 
-import no.sikt.graphitron.jooq.generated.testdata.tables.Film;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Film;
 import org.jooq.Condition;
 
 public class ReferenceFilmCondition {

@@ -244,4 +244,15 @@ public class OutputTest extends GeneratorTest {
                 ".getId(),DSL.row(",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
+
+    @Test
+    @DisplayName("Simple table type return from multiple schemas")
+    void typesFromMultipleSchemas() {
+        assertGeneratedContentContains("fromMultipleSchemas",
+                Set.of(CUSTOMER_TABLE),
+                "fromSchema1ForQuery",
+                "fromSchema2ForQuery",
+                "PG_USER.getId()",
+                ".from(PG_USER)");
+    }
 }

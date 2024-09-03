@@ -167,7 +167,27 @@
                             <generator>
                                 <name>no.sikt.graphitron.jooq.IdBasedGenerator</name>
                                 <database>
-                                    <inputSchema>public</inputSchema>
+                                    <includes>public.*|pg_catalog\.pg_user</includes>
+                                    <syntheticObjects>
+                                        <!-- Legger til syntetisk nøkkel for å få Keys-klassen generert for pg_catalog -->
+                                        <primaryKeys>
+                                            <primaryKey>
+                                                <name>PK__PG_USER</name>
+                                                <tables>pg_catalog\.pg_user</tables>
+                                                <fields>
+                                                    <field>USESYSID</field>
+                                                </fields>
+                                            </primaryKey>
+                                        </primaryKeys>
+                                    </syntheticObjects>
+                                    <schemata>
+                                        <schema>
+                                            <inputSchema>public</inputSchema>
+                                        </schema>
+                                        <schema>
+                                            <inputSchema>pg_catalog</inputSchema>
+                                        </schema>
+                                    </schemata>
                                     <schemaVersionProvider>${testdata.schema.version}</schemaVersionProvider>
                                     <includeIndexes>true</includeIndexes>
                                 </database>

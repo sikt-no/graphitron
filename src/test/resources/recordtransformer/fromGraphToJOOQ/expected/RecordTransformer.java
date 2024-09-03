@@ -6,7 +6,7 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
 import java.util.List;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
-import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
 public class RecordTransformer extends AbstractTransformer {
