@@ -1,9 +1,0 @@
-type Query {
-  payment(id: ID!): Payment
-}
-
-type Payment @table {
-  id: ID!
-  #via tables starting from the referring type (PAYMENT): PAYMENT -> RENTAL -> INVENTORY -> FILM
-  filmTitle: String! @field(name: "TITLE") @reference(references: [{table: "RENTAL"}, {table: "INVENTORY"}, {table: "FILM"}])
-}

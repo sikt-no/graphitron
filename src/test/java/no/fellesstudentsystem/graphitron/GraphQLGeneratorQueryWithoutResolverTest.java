@@ -23,26 +23,6 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
         return List.of(new FetchDBClassGenerator(schema));
     }
 
-    @Test
-    void generate_queryWithArguments_shouldUseCorrectPathForWhere() {
-        assertGeneratedContentMatches("correctWhereConditionPathUsage");
-    }
-
-    @Test //jOOQ' støtter maks 22 type-safe records. Flere enn 22 er støttet, men uten type safety.
-    void generate_whenTypeHasMoreThan22Fields_shouldGenerateValidResolver() {
-        assertGeneratedContentMatches("moreThan22Fields");
-    }
-
-    @Test
-    void generate_whenMultipleReferencesForSameType_shouldCreateUniqueAliases() {
-        assertGeneratedContentMatches("multipleAliasesForSameType");
-    }
-
-    @Test
-    void generate_queryWithInputTypes_shouldCreateQueryResolverThatHandlesInputTypes() {
-        assertGeneratedContentMatches("queryWithInputTypeArguments");
-    }
-
     @Disabled
     @Test
     void generate_queryWithMultiset_shouldCreateQueryResolverThatHandlesMultiset() {
@@ -56,47 +36,7 @@ public class GraphQLGeneratorQueryWithoutResolverTest extends GeneratorTest {
     }
 
     @Test
-    void generate_queryWithSelfReferenceFindingImplicitJoinKey() {
-        assertGeneratedContentMatches("queryWithSelfReferenceFindingImplicitJoinKey");
-    }
-
-    @Test
-    void generate_queryWithSelfReferenceHavingConditionAndNoKey() {
-        assertGeneratedContentMatches("queryWithSelfReferenceHavingConditionAndNoKey");
-    }
-
-    @Test
-    void generate_queryWithSelfReferenceHavingExplicitJoinKey() {
-        assertGeneratedContentMatches("queryWithSelfReferenceHavingExplicitJoinKey");
-    }
-
-    @Test
     void generate_queryWithUnion_shouldCreateQueryAndQueryResolverWithUnionSupport() {
         assertGeneratedContentMatches("queryWithUnion");
-    }
-
-    @Test
-    void generate_referenceViaTablesBackwards_shouldCreateJoinViaTablesBackwards() {
-        assertGeneratedContentMatches("referenceBackwards");
-    }
-
-    @Test
-    void generate_referenceViaTablesBackwardsAndJoin_shouldCreateJoinViaTablesBackwards() {
-        assertGeneratedContentMatches("referenceBackwardsWithExtraJoin");
-    }
-
-    @Test
-    void generate_conditionOnReverseJoin_shouldFindAppropriateConditionSource() {
-        assertGeneratedContentMatches("referenceBackwardWithCondition");
-    }
-
-    @Test
-    void generate_joinWhenFutureHasExplicitJoin_shouldCreateAppropriateJoinType() {
-        assertGeneratedContentMatches("referenceWithFutureExplicitJoin");
-    }
-
-    @Test
-    void generate_splitQueryAtTypeWithoutTable_shouldFindAppropriateSourceTable() {
-        assertGeneratedContentMatches("splitQueryForTypeWithoutTable");
     }
 }

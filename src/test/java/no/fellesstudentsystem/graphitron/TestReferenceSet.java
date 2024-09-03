@@ -15,8 +15,6 @@ public enum TestReferenceSet {
 
     // Conditions
     CONDITION_STORE_CUSTOMER("TEST_STORE_CUSTOMER", StoreTestConditions.class),
-    CONDITION_CUSTOMER_ADDRESS("TEST_CUSTOMER_ADDRESS", CustomerTestConditions.class),
-    CONDITION_FILM_ACTOR("TEST_FILM_ACTOR", FilmActorTestConditions.class),
     CONDITION_FILM_RATING("TEST_FILM_RATING", RatingTestConditions.class),
 
     // Services

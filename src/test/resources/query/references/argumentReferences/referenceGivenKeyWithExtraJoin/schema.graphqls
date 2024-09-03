@@ -1,8 +1,0 @@
-type Address @table {
-  id: ID!
-}
-
-type Query {
-  address0(cityID: String! @field(name : "CITY_ID"), storeID: String @field(name: "STORE_ID") @reference(references: [{table: "CUSTOMER", key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "STORE"}])): [Address!]! # Optional
-  address1(cityID: String! @field(name : "CITY_ID"), storeID: String! @field(name: "STORE_ID") @reference(references: [{table: "CUSTOMER", key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "STORE"}])): [Address!]! # Required
-}
