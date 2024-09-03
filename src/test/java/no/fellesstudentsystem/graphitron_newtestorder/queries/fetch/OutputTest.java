@@ -226,4 +226,22 @@ public class OutputTest extends GeneratorTest {
                         "&& r[22] == null && r[23] == null ? null : new Customer("
         );
     }
+
+    @Test
+    @DisplayName("Type containing a table type")
+    void innerTable() {
+        assertGeneratedContentContains(
+                "innerTable",
+                ".row(DSL.row",
+                ".mapping(Functions.nullOnAllNull(Address::new))).mapping(Functions.nullOnAllNull(Customer::new");
+    }
+
+    @Test
+    @DisplayName("Type with a query that references itself")
+    void innerTableSelfReference() {
+        assertGeneratedContentContains(
+                "innerTableSelfReference",
+                ".getId(),DSL.row(",
+                ".mapping(Functions.nullOnAllNull(Film::new");
+    }
 }
