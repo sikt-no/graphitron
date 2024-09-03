@@ -1,0 +1,3 @@
+type City @table {
+  email: String! @reference(references: [{key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}, {table: "CUSTOMER", condition: {name: "REFERENCE_CUSTOMER_CONDITION"}}])
+}
