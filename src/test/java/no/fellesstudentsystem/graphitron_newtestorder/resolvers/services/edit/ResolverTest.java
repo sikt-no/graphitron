@@ -253,7 +253,6 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled // Depends on the method ordering fix
     @DisplayName("Service method that can not be found")
     void undefinedServiceMethod() {
         assertThatThrownBy(() -> generateFiles("undefinedServiceMethod"))

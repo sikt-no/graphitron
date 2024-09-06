@@ -6,16 +6,16 @@ import no.sikt.graphitron.jooq.generated.testdata.tables.Customer;
 import org.jooq.Condition;
 
 public class ReferenceCustomerCondition {
-    public static Condition address(Customer c, Address a) {
+    public static Condition addressCustomer(Customer c, Address a) {
         return null;
     }
-    public static Condition address(City c, Address a) {
+    public static Condition addressCity(City c, Address a) {
         return null;
     }
-    public static Condition city(Customer cu, City ci) {
+    public static Condition cityCustomer(Customer cu, City ci) {
         return null;
     }
-    public static Condition city(Address a, City c) {
+    public static Condition cityAddress(Address a, City c) {
         return null;
     }
     public static Condition district(Customer c, Address a) {

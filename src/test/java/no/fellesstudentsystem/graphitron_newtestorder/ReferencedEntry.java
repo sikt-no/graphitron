@@ -55,6 +55,8 @@ public enum ReferencedEntry {
     // Input record conditions.
     RECORD_FETCH_CONDITION("RECORD_FETCH_CONDITION", RecordCustomerCondition.class),
     RECORD_FETCH_STAFF_CONDITION("RECORD_FETCH_STAFF_CONDITION", RecordStaffCondition.class),
+
+    // Query conditions.
     REFERENCE_CUSTOMER_CONDITION("REFERENCE_CUSTOMER_CONDITION", ReferenceCustomerCondition.class),
     REFERENCE_FILM_CONDITION("REFERENCE_FILM_CONDITION", ReferenceFilmCondition.class),
     QUERY_FETCH_CONDITION("QUERY_FETCH_CONDITION", QueryCustomerCondition.class),

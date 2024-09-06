@@ -145,10 +145,9 @@ public class ConditionTest extends GeneratorTest {
     void onInputParam() {
         assertGeneratedContentContains(
                 "onInputParam", Set.of(STAFF, NAME_INPUT),
-                ".where(STAFF.FIRST_NAME.eq(name.getFirstname()))" +
-                ".and(STAFF.LAST_NAME.eq(name.getLastname()))" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
-                ".orderBy"
+                "STAFF.FIRST_NAME.eq(name.getFirstname())",
+                "STAFF.LAST_NAME.eq(name.getLastname())",
+                ".name(STAFF, name.getFirstname(), name.getLastname())"
         );
     }
 
@@ -168,13 +167,12 @@ public class ConditionTest extends GeneratorTest {
     void onInputAndScalarParams() {
         assertGeneratedContentContains(
                 "onInputAndScalarParams", Set.of(STAFF, NAME_INPUT),
-                ".where(STAFF.FIRST_NAME.eq(name.getFirstname()))" +
-                ".and(STAFF.LAST_NAME.eq(name.getLastname()))" +
-                ".and(email != null ? STAFF.EMAIL.eq(email) : DSL.noCondition())" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, email))" +
-                ".and(STAFF.ACTIVE.eq(active))" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
-                ".orderBy"
+                "STAFF.FIRST_NAME.eq(name.getFirstname())",
+                "STAFF.LAST_NAME.eq(name.getLastname())",
+                "email != null ? STAFF.EMAIL.eq(email) : DSL.noCondition()",
+                ".email(STAFF, email)",
+                "STAFF.ACTIVE.eq(active)",
+                ".name(STAFF, name.getFirstname(), name.getLastname())"
         );
     }
 
@@ -204,12 +202,11 @@ public class ConditionTest extends GeneratorTest {
     public void onInputParamAndField() {
         assertGeneratedContentContains(
                 "onInputParamAndField", Set.of(STAFF, NAME_INPUT),
-                ".where(STAFF.FIRST_NAME.eq(name.getFirstname()))" +
-                ".and(STAFF.LAST_NAME.eq(name.getLastname()))" +
-                ".and(active != null ? STAFF.ACTIVE.eq(active) : DSL.noCondition())" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, name.getFirstname(), name.getLastname(), active))" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
-                ".orderBy"
+                "STAFF.FIRST_NAME.eq(name.getFirstname())",
+                "STAFF.LAST_NAME.eq(name.getLastname())",
+                "active != null ? STAFF.ACTIVE.eq(active) : DSL.noCondition())",
+                ".field(STAFF, name.getFirstname(), name.getLastname(), active)",
+                ".name(STAFF, name.getFirstname(), name.getLastname())"
         );
     }
 
@@ -240,11 +237,10 @@ public class ConditionTest extends GeneratorTest {
     public void onNestedInputParam() {
         assertGeneratedContentContains(
                 "onNestedInputParam", Set.of(STAFF, NAME_INPUT),
-                ".where(STAFF.FIRST_NAME.eq(staff.getName().getFirstname()))" +
-                ".and(STAFF.LAST_NAME.eq(staff.getName().getLastname()))" +
-                ".and(staff.getActive() != null ? STAFF.ACTIVE.eq(staff.getActive()) : DSL.noCondition())" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.staffMin(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getActive() != null ? staff.getActive() : null))" +
-                ".orderBy"
+                "STAFF.FIRST_NAME.eq(staff.getName().getFirstname())",
+                "STAFF.LAST_NAME.eq(staff.getName().getLastname())",
+                "staff.getActive() != null ? STAFF.ACTIVE.eq(staff.getActive()) : DSL.noCondition())",
+                ".staffMin(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getActive() != null ? staff.getActive() : null))"
         );
     }
 
@@ -263,12 +259,11 @@ public class ConditionTest extends GeneratorTest {
     public void onFieldNestedInputParam() {
         assertGeneratedContentContains(
                 "onFieldNestedInputParam", Set.of(STAFF, NAME_INPUT),
-                ".where(STAFF.FIRST_NAME.eq(staff.getName().getFirstname()))" +
-                ".and(STAFF.LAST_NAME.eq(staff.getName().getLastname()))" +
-                ".and(STAFF.EMAIL.eq(staff.getEmail()))" +
-                ".and(STAFF.ACTIVE.eq(staff.getActive()))" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive()))" +
-                ".orderBy"
+                "STAFF.FIRST_NAME.eq(staff.getName().getFirstname())",
+                "STAFF.LAST_NAME.eq(staff.getName().getLastname())",
+                "STAFF.EMAIL.eq(staff.getEmail())",
+                "STAFF.ACTIVE.eq(staff.getActive())",
+                ".staff(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive())"
         );
     }
 
@@ -277,7 +272,7 @@ public class ConditionTest extends GeneratorTest {
     public void onFieldOverrideNestedInputParam() {
         assertGeneratedContentContains(
                 "onFieldOverrideNestedInputParam", Set.of(STAFF, NAME_INPUT),
-                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive()))" +
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.staff(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive()))" +
                 ".orderBy"
         );
     }
@@ -300,7 +295,7 @@ public class ConditionTest extends GeneratorTest {
     public void onMultiLevelInputAndFieldDifferentOverride() {
         assertGeneratedContentContains(
                 "onMultiLevelInputAndFieldDifferentOverride", Set.of(STAFF, NAME_INPUT),
-                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive() ))" +
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.staff(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive() ))" +
                 ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
                 ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, staff.getInfo().getJobEmail().getEmail()))" +
                 ".orderBy"
@@ -367,7 +362,7 @@ public class ConditionTest extends GeneratorTest {
     void onListedEnum() {
         assertGeneratedContentContains(
                 "onListedEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".enumInput(CUSTOMER, enumInput == null ? null : enumInput.stream().map(itDummyEnumConverted -> Map.of(", // Note, the null check is not necessary here.
+                ".enumInputList(CUSTOMER, enumInputList == null ? null : enumInputList.stream().map(itDummyEnumConverted -> Map.of(", // Note, the null check is not necessary here.
                         ").getOrDefault(itDummyEnumConverted, null)).collect(Collectors.toList()))"
         );
     }
@@ -387,7 +382,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithListedEnum() {
         assertGeneratedContentContains(
                 "onParamWithListedEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".queryEnum(CUSTOMER, enumInput == null ? null : enumInput.stream().map(itDummyEnumConverted -> Map.of(", // Note, the null check is not necessary here.
+                ".queryEnumList(CUSTOMER, enumInputList == null ? null : enumInputList.stream().map(itDummyEnumConverted -> Map.of(", // Note, the null check is not necessary here.
                         ").getOrDefault(itDummyEnumConverted, null)).collect(Collectors.toList())"
         );
     }

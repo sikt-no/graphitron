@@ -1,13 +1,9 @@
 type Query {
-  customer(in: CustomerInput): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"})
-  customerListed(in: [CustomerInput]): [Customer] @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecordList"})
+  customer(in: CustomerInput): CustomerTable @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"})
+  customerListed(in: [CustomerInput]): CustomerTable @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecordList"})
 }
 
 input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {
   id: ID!
   first: String! @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerString"})
-}
-
-type Customer @table {
-  id: ID!
 }

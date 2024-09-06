@@ -27,7 +27,7 @@ public class QueryCustomerCondition {
         return null;
     }
 
-    public static Condition query(Customer c, List<String> s) {
+    public static Condition queryList(Customer c, List<String> s) {
         return null;
     }
 
@@ -35,7 +35,7 @@ public class QueryCustomerCondition {
         return null;
     }
 
-    public static Condition enumInput(Customer c, List<DummyJOOQEnum> e) {
+    public static Condition enumInputList(Customer c, List<DummyJOOQEnum> e) {
         return null;
     }
 
@@ -43,7 +43,7 @@ public class QueryCustomerCondition {
         return null;
     }
 
-    public static Condition queryEnum(Customer c, List<DummyJOOQEnum> e) {
+    public static Condition queryEnumList(Customer c, List<DummyJOOQEnum> e) {
         return null;
     }
 }

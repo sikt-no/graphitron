@@ -3,7 +3,7 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.Tables.*;
 
-import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.CustomerTable;
 import java.util.List;
 import java.util.stream.Collectors;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
@@ -13,30 +13,22 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static Customer customerForQuery(DSLContext ctx, CustomerRecord inRecord,
-                                             SelectionSet select) {
+    public static CustomerTable customerForQuery(DSLContext ctx, CustomerRecord inRecord,
+                                                 SelectionSet select) {
         return ctx
-                .select(
-                        DSL.row(
-                                CUSTOMER.getId()
-                        ).mapping(Functions.nullOnAllNull(Customer::new))
-                )
+                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(CUSTOMER)
                 .where(inRecord != null ? CUSTOMER.hasId(inRecord.getId()) : DSL.noCondition())
                 .and(inRecord != null ? CUSTOMER.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition())
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, inRecord != null ? inRecord.getFirstName() : null))
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJOOQRecord(CUSTOMER, inRecord))
-                .fetchOne(it -> it.into(Customer.class));
+                .fetchOne(it -> it.into(CustomerTable.class));
     }
 
-    public static List<Customer> customerListedForQuery(DSLContext ctx,
-                                                         List<CustomerRecord> inRecordList, SelectionSet select) {
+    public static CustomerTable customerListedForQuery(DSLContext ctx,
+                                                       List<CustomerRecord> inRecordList, SelectionSet select) {
         return ctx
-                .select(
-                        DSL.row(
-                                CUSTOMER.getId()
-                        ).mapping(Functions.nullOnAllNull(Customer::new))
-                )
+                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(CUSTOMER)
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
@@ -55,7 +47,6 @@ public class QueryDBQueries {
                                 ) : DSL.noCondition()
                 )
                 .and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(CUSTOMER, inRecordList))
-                .orderBy(CUSTOMER.getIdFields())
-                .fetch(it -> it.into(Customer.class));
+                .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

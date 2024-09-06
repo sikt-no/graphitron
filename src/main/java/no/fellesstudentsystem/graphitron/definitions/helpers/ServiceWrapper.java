@@ -26,7 +26,11 @@ public class ServiceWrapper {
         var reference = field.getServiceReference();
         var references = GeneratorConfig.getExternalReferences();
         service = references.getClassFrom(reference);
-        method = references.getNullableMethodFrom(reference);
+        method = references.getMethodsFrom(reference).stream().findFirst().orElseThrow(() -> new IllegalArgumentException(
+                "Service reference " +
+                        GeneratorConfig.getExternalReferences().getClassFrom(reference).getName() +
+                        " does not contain method named " + reference.getMethodName()
+        ));
         serviceClassName = ClassName.get(service);
 
         if (response != null && response.hasJavaRecordReference()) {

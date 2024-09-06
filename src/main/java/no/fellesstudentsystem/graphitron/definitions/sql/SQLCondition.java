@@ -23,22 +23,35 @@ public class SQLCondition {
     }
 
     public CodeBlock formatToString(List<CodeBlock> methodInputs) {
-        var method = GeneratorConfig.getExternalReferences().getMethodFrom(conditionReference);
-        var methodName = method.getName();
+        var methods = GeneratorConfig.getExternalReferences().getMethodsFrom(conditionReference);
+        if (methods.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Condition reference " +
+                            GeneratorConfig.getExternalReferences().getClassFrom(conditionReference).getName() +
+                            " does not contain method named " + conditionReference.getMethodName()
+            );
+        }
 
-        var declaringName = method.getDeclaringClass().getName();
-        if (methodInputs.size() < method.getParameterTypes().length) {
+        var methodName = conditionReference.getMethodName();
+        var method = methods.stream().filter(it -> it.getParameterTypes().length == methodInputs.size()).findFirst();
+        if (method.isEmpty()) {
+            var declaringName = methods.stream().findAny().get().getDeclaringClass().getName();
+            var possibleInputs = methods
+                    .stream()
+                    .map(it -> Arrays.stream(it.getParameterTypes()).map(Class::getCanonicalName).collect(Collectors.joining(", ")))
+                    .collect(Collectors.joining(" or "));
             throw new IllegalArgumentException(
                     String.format(
-                            "Too few inputs for method '%s' in class '%s'.\nInputs were %s, but expected %s.",
+                            "Wrong number of inputs for method '%s' in class '%s'.\nInputs were %s, but expected %s.",
                             methodName,
                             declaringName,
                             CodeBlock.join(methodInputs, ", ").toString(),
-                            Arrays.stream(method.getParameterTypes()).map(Class::getCanonicalName).collect(Collectors.joining(", "))
+                            possibleInputs
                     )
             );
         }
 
+        var declaringName = method.get().getDeclaringClass().getName();
         return CodeBlock
                 .builder()
                 .add("$N.$L(", declaringName, methodName)

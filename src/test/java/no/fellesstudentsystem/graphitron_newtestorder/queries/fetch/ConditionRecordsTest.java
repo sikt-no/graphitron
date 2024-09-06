@@ -12,15 +12,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_RECORD;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.JAVA_RECORD_STAFF_INPUT1;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.JAVA_RECORD_STAFF_INPUT2;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.JAVA_RECORD_STAFF_INPUT3;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.JAVA_RECORD_STAFF_NAME;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.RECORD_FETCH_CONDITION;
-import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.RECORD_FETCH_STAFF_CONDITION;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.NAME_INPUT_JAVA;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.STAFF;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("Fetch condition queries - Queries that apply custom conditions with records")
 public class ConditionRecordsTest extends GeneratorTest {
@@ -50,31 +43,31 @@ public class ConditionRecordsTest extends GeneratorTest {
     @Test
     @DisplayName("Conditions with input Java records")
     void withInputJavaRecordAndCondition() {
-        assertGeneratedContentMatches("withInputJavaRecordAndCondition");
+        assertGeneratedContentMatches("withInputJavaRecordAndCondition", CUSTOMER_TABLE);
     }
 
     @Test
     @DisplayName("Conditions with input jOOQ records")
     void withInputJOOQRecordAndCondition() {
-        assertGeneratedContentMatches("withInputJOOQRecordAndCondition");
+        assertGeneratedContentMatches("withInputJOOQRecordAndCondition", CUSTOMER_TABLE);
     }
 
     @Test
     @DisplayName("Conditions with listed inputs")
     void withListedInputConditions() {
-        assertGeneratedContentMatches("withListedInputConditions");
+        assertGeneratedContentMatches("withListedInputConditions", CUSTOMER_TABLE);
     }
 
     @Test
     @DisplayName("Condition with nested input records")
     void withNestedConditionRecord() {
-        assertGeneratedContentMatches("withNestedConditionRecord");
+        assertGeneratedContentMatches("withNestedConditionRecord", CUSTOMER_TABLE);
     }
 
     @Test
     @DisplayName("Condition with input record and pagination")
     void withPaginatedConditionAndRecord() {
-        assertGeneratedContentMatches("withPaginatedConditionAndRecord");
+        assertGeneratedContentMatches("withPaginatedConditionAndRecord", CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE);
     }
 
     @Test
@@ -82,11 +75,10 @@ public class ConditionRecordsTest extends GeneratorTest {
     void inputJavaRecordCondition() {
         assertGeneratedContentContains(
                 "inputJavaRecordCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(STAFF.FIRST_NAME.eq(nameRecord.getFirstName()))" +
-                ".and(STAFF.LAST_NAME.eq(nameRecord.getLastName()))" +
-                ".and(STAFF.ACTIVE.eq(active))" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordStaffCondition.name(STAFF, nameRecord))" +
-                ".orderBy"
+                "STAFF.FIRST_NAME.eq(nameRecord.getFirstName())",
+                "STAFF.LAST_NAME.eq(nameRecord.getLastName())",
+                "STAFF.ACTIVE.eq(active)",
+                ".name(STAFF, nameRecord))"
         );
     }
 
@@ -95,24 +87,11 @@ public class ConditionRecordsTest extends GeneratorTest {
     void listInputJavaRecordAndFieldCondition() {
         assertGeneratedContentContains(
                 "listInputJavaRecordAndFieldCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(active != null ? STAFF.ACTIVE.eq(active) : DSL.noCondition())" +
-                ".and(" +
-                        "namesRecordList != null && namesRecordList.size() > 0 ?" +
-                        "DSL.row(" +
-                                "STAFF.FIRST_NAME," +
-                                "STAFF.LAST_NAME" +
-                        ").in(" +
-                                "namesRecordList.stream().map(internal_it_ ->" +
-                                                                     "DSL.row(" +
-                                                                             "DSL.inline(internal_it_.getFirstName())," +
-                                                                             "DSL.inline(internal_it_.getLastName())" +
-                                                                     ")" +
-                                ").collect(Collectors.toList())" +
-                        ") : DSL.noCondition()" +
-                ")" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordStaffCondition.nameList(STAFF, namesRecordList))" +
-                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.RecordStaffCondition.fieldWithListInput(STAFF, namesRecordList, active))" +
-                ".orderBy"
+                "STAFF.ACTIVE.eq(active)",
+                "STAFF.FIRST_NAME,STAFF.LAST_NAME).in(namesRecordList.stream().map(internal_it_ ->" +
+                        "DSL.row(DSL.inline(internal_it_.getFirstName()),DSL.inline(internal_it_.getLastName())",
+                ".nameList(STAFF, namesRecordList)",
+                ".fieldWithListInput(STAFF, namesRecordList, active)"
         );
     }
 

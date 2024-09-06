@@ -1,5 +1,5 @@
 type Query {
-  customer(in: CustomerInput1): Customer @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
+  customer(in: CustomerInput1): CustomerTable @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
 }
 
 input CustomerInput1 @record(record: {name: "DUMMY_RECORD"}) {
@@ -7,9 +7,5 @@ input CustomerInput1 @record(record: {name: "DUMMY_RECORD"}) {
 }
 
 input CustomerInput2 @record(record: {name: "DUMMY_RECORD"}) {
-  id: ID!
-}
-
-type Customer @table {
   id: ID!
 }

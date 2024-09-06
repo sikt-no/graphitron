@@ -31,40 +31,13 @@ public class ExternalReferences {
     }
 
     /**
-     * @return The method this reference points to if it exists.
-     * @throws IllegalArgumentException If method does not exist.
+     * @return The methods this reference points to.
      */
-    public Method getMethodFrom(CodeReference reference) {
-        return getMethodFrom(reference, false);
-    }
-
-    /**
-     * @return The method this reference points to if it exists.
-     * @throws IllegalArgumentException If method does not exist.
-     */
-    public Method getNullableMethodFrom(CodeReference reference) {
-        return getMethodFrom(reference, true);
-    }
-
-    /**
-     * @return The method this reference points to if it exists.
-     * @throws IllegalArgumentException If method does not exist.
-     */
-    public Method getMethodFrom(CodeReference reference, boolean nullable) {
-        var cls = getClassFrom(reference);
-        var method = Arrays.stream(cls.getMethods())
+    public List<Method> getMethodsFrom(CodeReference reference) {
+        return Arrays
+                .stream(getClassFrom(reference).getMethods())
                 .filter(it -> it.getName().equalsIgnoreCase(reference.getMethodName()))
-                .findFirst();
-
-        if (method.isPresent()) {
-            return method.get();
-        }
-
-        if (nullable) {
-            return null;
-        }
-
-        throw new IllegalArgumentException(cls.getName() + " does not contain method named " + reference.getMethodName());
+                .collect(Collectors.toList());
     }
 
     public Class<?> getClassFrom(CodeReference reference) {

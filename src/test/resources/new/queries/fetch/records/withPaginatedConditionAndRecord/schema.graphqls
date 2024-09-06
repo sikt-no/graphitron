@@ -1,21 +1,3 @@
 type Query {
-  customer(in: CustomerInput, first: Int = 100, after: String): CustomerConnection @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
-}
-
-type CustomerConnection {
-  edges: [CustomerConnectionEdge]
-  nodes: [Customer!]!
-}
-
-type CustomerConnectionEdge {
-  cursor: String
-  node: Customer
-}
-
-input CustomerInput @table(name: "CUSTOMER") {
-  id: ID!
-}
-
-type Customer @table {
-  id: ID!
+  customer(in: CustomerInputTable, first: Int = 100, after: String): CustomerConnection @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJavaRecord"}, override: true)
 }

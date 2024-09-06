@@ -55,8 +55,8 @@ public class ReferenceQueryTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
-                "leftJoin(customer_address_address_left).on(",
-                ".address(CUSTOMER, customer_address_address_left)"
+                "leftJoin(customer_addresscustomer_address_left).on(",
+                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)"
         );
     }
 
@@ -74,9 +74,9 @@ public class ReferenceQueryTest extends ReferenceTest {
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_address_address_left = ADDRESS.as(", // Note, no implicit join anymore.
-                ".leftJoin(customer_address_address_left).on(",
-                ".address(CUSTOMER, customer_address_address_left)" // Note, condition overrides as it uses "on".
+                "customer_addresscustomer_address_left = ADDRESS.as(", // Note, no implicit join anymore.
+                ".leftJoin(customer_addresscustomer_address_left).on(",
+                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)" // Note, condition overrides as it uses "on".
         );
     }
 
@@ -87,7 +87,7 @@ public class ReferenceQueryTest extends ReferenceTest {
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
                 "customer_address_left = CUSTOMER.address().as(", // Note, implicit join is present when we use a key, but not table.
                 ".leftJoin(customer_address_left).where(CUSTOMER.hasIds(customerIds)).and(",
-                ".address(CUSTOMER, customer_address_left)" // Note, no condition override unlike table case.
+                ".addressCustomer(CUSTOMER, customer_address_left)" // Note, no condition override unlike table case.
         );
     }
 
@@ -116,8 +116,8 @@ public class ReferenceQueryTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_city_city_left).on(",
-                ".city(CUSTOMER, customer_city_city_left)"
+                ".leftJoin(customer_citycustomer_city_left).on(",
+                ".cityCustomer(CUSTOMER, customer_citycustomer_city_left)"
         );
     }
 

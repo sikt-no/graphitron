@@ -49,8 +49,8 @@ public class ReferenceRowTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_QUERY),
-                "leftJoin(customer_address_address_left).on(",
-                ".address(CUSTOMER, customer_address_address_left)"
+                "leftJoin(customer_addresscustomer_address_left).on(",
+                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)"
         );
     }
 
@@ -79,8 +79,8 @@ public class ReferenceRowTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_city_city_left).on(",
-                ".city(CUSTOMER, customer_city_city_left)"
+                ".leftJoin(customer_citycustomer_city_left).on(",
+                ".cityCustomer(CUSTOMER, customer_citycustomer_city_left)"
         );
     }
 

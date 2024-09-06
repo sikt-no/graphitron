@@ -16,7 +16,7 @@ public class RecordCustomerCondition {
         return null;
     }
 
-    public static Condition customerJOOQRecordList(Customer customer) {
+    public static Condition customerJOOQRecordList(Customer customer, List<CustomerRecord> record) {
         return null;
     }
 
