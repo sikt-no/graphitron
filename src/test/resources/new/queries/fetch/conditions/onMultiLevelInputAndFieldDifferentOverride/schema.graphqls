@@ -1,0 +1,19 @@
+type Query {
+  query(
+    staff: StaffInput!
+  ) : [Staff] @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "field"}, override: true)
+}
+
+input StaffInput {
+  info: ContactInfoInput!
+  active: Boolean!
+}
+
+input ContactInfoInput {
+  name: NameInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "name"}, override: true)
+  jobEmail: EmailInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "email"})
+}
+
+input EmailInput {
+  email: String!
+}

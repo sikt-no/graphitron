@@ -16,4 +16,7 @@ public class StoreTestConditions {
     public static Condition storeStore(Store store1, Store store2) {
         return null;
     }
+    public static Condition customer(Customer customer, String firstname, String lastname) {
+        return null;
+    }
 }

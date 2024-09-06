@@ -15,7 +15,13 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.QUERY_FETCH_CONDITION;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.QUERY_FETCH_STAFF_CONDITION;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM_CONVERTED;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_INPUT;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.NAME_INPUT;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.STAFF;
 
 @DisplayName("Fetch query conditions - External conditions for queries")
 public class ConditionTest extends GeneratorTest {
@@ -26,7 +32,7 @@ public class ConditionTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(QUERY_FETCH_CONDITION);
+        return makeReferences(QUERY_FETCH_CONDITION, QUERY_FETCH_STAFF_CONDITION);
     }
 
     @Override
@@ -131,6 +137,189 @@ public class ConditionTest extends GeneratorTest {
                 "onParamAndOverrideField",
                 ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.email(CUSTOMER, email))" +
                         ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryCustomerCondition.query(CUSTOMER, email, name)).fetch"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on a parameter of input type")
+    void onInputParam() {
+        assertGeneratedContentContains(
+                "onInputParam", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.FIRST_NAME.eq(name.getFirstname()))" +
+                ".and(STAFF.LAST_NAME.eq(name.getLastname()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Overriding condition on a parameter of input type")
+    void onInputParamOverride() {
+        assertGeneratedContentContains(
+                "onInputParamOverride", Set.of(STAFF, NAME_INPUT),
+                ".where(active != null ? STAFF.ACTIVE.eq(active) : DSL.noCondition())" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Conditions on parameters of input and scalar type")
+    void onInputAndScalarParams() {
+        assertGeneratedContentContains(
+                "onInputAndScalarParams", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.FIRST_NAME.eq(name.getFirstname()))" +
+                ".and(STAFF.LAST_NAME.eq(name.getLastname()))" +
+                ".and(email != null ? STAFF.EMAIL.eq(email) : DSL.noCondition())" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, email))" +
+                ".and(STAFF.ACTIVE.eq(active))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Overriding condition on parameter of input type and condition on scalar type")
+    public void onInputOverrideAndScalarParams() {
+        assertGeneratedContentContains("onInputOverrideAndScalarParams", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.EMAIL.eq(email))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, email))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Overriding condition on field where parameter has input type")
+    public void onFieldOverrideInputParam() {
+        assertGeneratedContentContains(
+                "onFieldOverrideInputParam", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, name.getFirstname(), name.getLastname(), active))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on both parameter of input type and field")
+    public void onInputParamAndField() {
+        assertGeneratedContentContains(
+                "onInputParamAndField", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.FIRST_NAME.eq(name.getFirstname()))" +
+                ".and(STAFF.LAST_NAME.eq(name.getLastname()))" +
+                ".and(active != null ? STAFF.ACTIVE.eq(active) : DSL.noCondition())" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, name.getFirstname(), name.getLastname(), active))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on parameter of input type and override condition on field")
+    public void onInputParamAndFieldOverride() {
+        assertGeneratedContentContains(
+                "onInputParamAndFieldOverride", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, name.getFirstname(), name.getLastname(), active))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Override condition on both parameter of input type and field")
+    public void onInputParamAndFieldOverrideBoth() {
+        assertGeneratedContentContains(
+                "onInputParamAndFieldOverrideBoth", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, name.getFirstname(), name.getLastname(), active))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, name.getFirstname(), name.getLastname()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on parameter of nested input type")
+    public void onNestedInputParam() {
+        assertGeneratedContentContains(
+                "onNestedInputParam", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.FIRST_NAME.eq(staff.getName().getFirstname()))" +
+                ".and(STAFF.LAST_NAME.eq(staff.getName().getLastname()))" +
+                ".and(staff.getActive() != null ? STAFF.ACTIVE.eq(staff.getActive()) : DSL.noCondition())" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.staffMin(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getActive() != null ? staff.getActive() : null))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Override condition on parameter of nested input type")
+    public void onNestedInputOverrideParam() {
+        assertGeneratedContentContains(
+                "onNestedInputOverrideParam", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.staffMin(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getActive()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on field where parameter has nested input type")
+    public void onFieldNestedInputParam() {
+        assertGeneratedContentContains(
+                "onFieldNestedInputParam", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.FIRST_NAME.eq(staff.getName().getFirstname()))" +
+                ".and(STAFF.LAST_NAME.eq(staff.getName().getLastname()))" +
+                ".and(STAFF.EMAIL.eq(staff.getEmail()))" +
+                ".and(STAFF.ACTIVE.eq(staff.getActive()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Overriding condition on field where parameter has nested input type")
+    public void onFieldOverrideNestedInputParam() {
+        assertGeneratedContentContains(
+                "onFieldOverrideNestedInputParam", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, staff.getName().getFirstname(), staff.getName().getLastname(), staff.getEmail(), staff.getActive()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Overriding condition and condition on parameters of input types on same level within a multi-level input type")
+    public void onMultiLevelInputDifferentOverride() {
+        assertGeneratedContentContains(
+                "onMultiLevelInputDifferentOverride", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()))" +
+                ".and(STAFF.ACTIVE.eq(staff.getActive()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, staff.getInfo().getJobEmail().getEmail()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Overriding condition and condition on parameters of input types on same level within a multi-level input and override condition on field")
+    public void onMultiLevelInputAndFieldDifferentOverride() {
+        assertGeneratedContentContains(
+                "onMultiLevelInputAndFieldDifferentOverride", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.field(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive() ))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, staff.getInfo().getJobEmail().getEmail()))" +
+                ".orderBy"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on toplevel parameter input type, overriding condition and condition on input types on same level within multi-level input, and condition on scalar values")
+    public void onMultiLevelInputAndScalarDifferentOverride() {
+        assertGeneratedContentContains(
+                "onMultiLevelInputAndScalarDifferentOverride", Set.of(STAFF, NAME_INPUT),
+                ".where(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.firstname(STAFF, staff.getInfo().getName().getFirstname()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.lastname(STAFF, staff.getInfo().getName().getLastname()))" +
+                ".and(STAFF.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()))" +
+                ".and(STAFF.ACTIVE.eq(staff.getActive()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.staff(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))" +
+                ".and(no.fellesstudentsystem.graphitron_newtestorder.codereferences.conditions.QueryStaffCondition.email(STAFF, staff.getInfo().getJobEmail().getEmail()))" +
+                ".orderBy"
         );
     }
 

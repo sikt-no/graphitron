@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron.generators.db.fetch;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.TypeName;
 import graphql.language.FieldDefinition;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
@@ -16,6 +15,8 @@ import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -339,39 +340,53 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     private CodeBlock createWhere(FetchContext context, boolean hasWhere) {
-        var referenceField = context.getReferenceObjectField();
-        var inputConditions = getInputConditions(((ObjectField)referenceField).getNonReservedArguments());
+        var inputConditions = getInputConditions((ObjectField) context.getReferenceObjectField());
         var flatInputs = inputConditions.getIndependentConditions();
         var codeBlockBuilder = CodeBlock.builder();
+        var declaredInputConditions = inputConditions.getDeclaredConditionsByField();
+        var inputsWithRecord = flatInputs
+                .stream()
+                .filter(it -> processedSchema.hasRecord(it.getInput()))
+                .collect(Collectors.toList());
+        var inputsWithoutRecord = flatInputs
+                .stream()
+                .filter(it -> !processedSchema.hasRecord(it.getInput()))
+                .collect(Collectors.toList());
 
-        var inputsWithoutRecord = flatInputs.stream().filter(it -> !processedSchema.hasRecord(it.getInput())).collect(Collectors.toList());
         for (var inputCondition : inputsWithoutRecord) {
             var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
             var checksNotEmpty = !checks.isEmpty();
             var renderedSequence = context.iterateJoinSequenceFor(field).render();
-            if (!referenceField.hasOverridingCondition() && !field.hasOverridingCondition()) {
+
+            if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
                 if (hasWhere) {
                     codeBlockBuilder.add(".and(");
                 }
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(checks + " ? ");
                 }
+
                 codeBlockBuilder.add(renderedSequence);
+
                 if (field.isID()) {
-                    codeBlockBuilder.add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
+                    codeBlockBuilder
+                            .add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
                 } else {
                     codeBlockBuilder
-                            .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema))
+                            .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(
+                                    field.getTypeName(), field.isIterableWrapped(), processedSchema))
                             .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
                 }
 
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
                 }
+
                 codeBlockBuilder.add(")\n");
             }
+
             if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
             }
@@ -380,77 +395,121 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 var conditionInputs = List.of(renderedSequence, getCheckedNameWithPath(inputCondition));
                 codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
             }
+
             if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
             }
         }
 
-        if (!referenceField.hasOverridingCondition()) {
-            for (var conditionTuple : inputConditions.getConditionTuples()) {
-                codeBlockBuilder.add(createTupleCondition(context, hasWhere, conditionTuple.getPath(), conditionTuple.getConditions()));
+        for (var conditionTuple : inputConditions.getConditionTuples()) {
+            if (inputConditions.getConditionTuples()
+                               .stream()
+                               .anyMatch(it -> conditionTuple.getPath().startsWith(it.getPath())
+                                               && conditionTuple.getPath().length() > it.getPath().length())) {
+                continue;
+            }
+
+            codeBlockBuilder.add(createTupleCondition(
+                    context, hasWhere, conditionTuple.getPath(), conditionTuple.getConditions()));
+
+            if (!codeBlockBuilder.isEmpty()) {
                 hasWhere = true;
             }
         }
 
-        if (referenceField.hasCondition()) {
-            var inputsWithRecords = flatInputs.stream().filter(it -> processedSchema.hasRecord(it.getInput())).collect(Collectors.toList());
+        for (var inputCondition : inputsWithRecord) {
+            var field = inputCondition.getInput();
+
+            if (field.hasCondition()) {
+                var conditionInputs = List.of(
+                        context.iterateJoinSequenceFor(field).render(), getCheckedNameWithPath(inputCondition));
+                codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
+
+                hasWhere = true;
+            }
+        }
+
+        for (var condition : declaredInputConditions.entrySet()) {
             var inputs = Stream.concat(
                     Stream.of(context.getCurrentJoinSequence().render()),
-                    Stream.concat(
-                            inputsWithRecords
-                                    .stream()
-                                    .filter(c1 -> inputsWithRecords.stream().noneMatch(c2 -> !c1.getNamePath().equals(c2.getNamePath()) && c1.getNamePath().startsWith(c2.getNamePath())))
-                                    .map(this::getCheckedNameWithPath),
-                            inputsWithoutRecord
-                                    .stream()
-                                    .filter(c1 -> inputsWithRecords.stream().noneMatch(c2 -> c1.getNamePath().startsWith(c2.getNamePath())))
-                                    .map(this::getCheckedNameWithPath)
-                    )
+                    condition.getValue().stream().map(this::getCheckedNameWithPath)
             ).collect(Collectors.toList());
-            codeBlockBuilder.add(wrapCondition(referenceField.getCondition().formatToString(inputs), hasWhere));
+
+            codeBlockBuilder.add(wrapCondition(
+                    condition.getKey().getCondition().formatToString(inputs),
+                    hasWhere));
+
+            hasWhere = true;
         }
+
         return codeBlockBuilder.build();
     }
 
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
         var nameWithPath = condition.getNameWithPath();
         var checks = condition.getChecksAsSequence();
-        var enumConverter = toGraphEnumConverter(condition.getInput().getTypeName(), nameWithPath, condition.getInput().isIterableWrapped(), true, processedSchema);
+        var enumConverter = toGraphEnumConverter(
+                condition.getInput().getTypeName(),
+                nameWithPath,
+                condition.getInput().isIterableWrapped(),
+                true,
+                processedSchema);
+
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
                 enumConverter.isEmpty() ? nameWithPath : enumConverter
         );
     }
 
-    private CodeBlock createTupleCondition(FetchContext context, boolean hasWhere, String argumentInputFieldName, List<InputCondition> conditions) {
-        var checks = String.join(" && ", conditions.stream().map(InputCondition::getChecksAsSequence).collect(Collectors.toSet()));
+    private CodeBlock createTupleCondition(
+            FetchContext context,
+            boolean hasWhere,
+            String argumentInputFieldName,
+            List<InputCondition> conditions) {
 
+        var selectedConditions = new HashSet<InputCondition>();
         var tupleFieldBlocks = new ArrayList<CodeBlock>();
         var tupleVariableBlocks = new ArrayList<CodeBlock>();
+
         for (var condition : conditions) {
             var field = condition.getInput();
             var fieldSequence = context.iterateJoinSequenceFor(field).render();
-            var unpacked = CodeBlock.of(VARIABLE_INTERNAL_ITERATION + condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+            var unpacked = CodeBlock.of(
+                    VARIABLE_INTERNAL_ITERATION + condition
+                            .getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
 
-            if (!field.hasOverridingCondition()) {
+            if (!field.hasOverridingCondition() && !condition.isOverriddenByAncestors()) {
                 var enumHandling = toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema);
                 var tupleBlock = CodeBlock.builder().add(fieldSequence);
+
                 if (field.isID()) {
                     tupleBlock.add(field.getMappingFromFieldOverride().asGetCall());
                 } else {
                     tupleBlock.add(".$N$L", field.getUpperCaseName(), enumHandling);
                 }
+
                 tupleFieldBlocks.add(tupleBlock.build());
                 tupleVariableBlocks.add(inline(unpacked));
+                selectedConditions.add(condition);
             }
 
-            if (field.hasCondition()) {
+            if (field.hasCondition() && !condition.isOverriddenByAncestors()) {
                 tupleFieldBlocks.add(CodeBlock.of("$T.trueCondition()", DSL.className));
 
                 var conditionInputs = List.of(fieldSequence, unpacked);
                 tupleVariableBlocks.add(field.getCondition().formatToString(conditionInputs));
+                selectedConditions.add(condition);
             }
         }
+
+        if (tupleFieldBlocks.isEmpty()) {
+            return empty();
+        }
+
+        var checks = String.join(" && ", selectedConditions
+                .stream()
+                .map(InputCondition::getChecksAsSequence)
+                .collect(Collectors.toSet()));
 
         return wrapCondition(
                 CodeBlock
@@ -493,22 +552,45 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     @NotNull
-    protected InputConditions getInputConditions(List<? extends InputField> inputFields) {
-        var iterableInputFieldNamePaths = new ArrayList<String>();
+    protected InputConditions getInputConditions(ObjectField referenceField) {
+        var pathNameForIterableFields = new ArrayList<String>();
         var flatInputs = new ArrayList<InputCondition>();
-        var inputBuffer = inputFields
+        var declaredConditionsByField = new LinkedHashMap<GenerationField, List<InputCondition>>();
+        var ancestorsWithDeclaredCondition = new HashSet<GenerationField>();
+
+        if (referenceField.hasCondition()) {
+            declaredConditionsByField.put(referenceField, new ArrayList<>());
+            ancestorsWithDeclaredCondition.add(referenceField);
+        }
+
+        var inputBuffer = referenceField
+                .getNonReservedArguments()
                 .stream()
-                .map(it -> new InputCondition(it, inferFieldNamingConvention(it), processedSchema.hasRecord(it)))
+                .map(it -> new InputCondition(
+                        it,
+                        inferFieldNamingConvention(it),
+                        processedSchema.hasRecord(it),
+                        referenceField.hasOverridingCondition()))
                 .collect(Collectors.toCollection(LinkedList::new));
+
         while (!inputBuffer.isEmpty() && inputBuffer.size() < Integer.MAX_VALUE) {
             var inputCondition = inputBuffer.poll();
             var inputField = inputCondition.getInput();
 
-            if (inputField.isIterableWrapped() && processedSchema.isInputType(inputField)) {
-                iterableInputFieldNamePaths.add(inputCondition.getNameWithPathString());
-            }
-
             if (processedSchema.isInputType(inputField)) {
+                if (ancestorsWithDeclaredCondition.contains(inputField)) {
+                    ancestorsWithDeclaredCondition.remove(inputField);
+                    continue;
+                } else if (inputField.hasCondition() && !processedSchema.hasRecord(inputField)) {
+                    ancestorsWithDeclaredCondition.add(inputField);
+                    declaredConditionsByField.put(inputField, new ArrayList<>());
+                    inputBuffer.addFirst(inputCondition);
+                }
+
+                if (inputField.isIterableWrapped()) {
+                    pathNameForIterableFields.add(inputCondition.getNameWithPathString());
+                }
+
                 inputBuffer.addAll(
                         0,
                         processedSchema
@@ -519,25 +601,75 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                                 .collect(Collectors.toList())
                 );
             }
+
             if (!processedSchema.isInputType(inputField) || processedSchema.hasRecord(inputField)) {
-                flatInputs.add(inputCondition.applyTo(inputField));
+                var flatInput = inputCondition.applyTo(inputField);
+
+                flatInputs.add(flatInput);
+
+                for (var ancestor : ancestorsWithDeclaredCondition) {
+                    declaredConditionsByField.get(ancestor).add(flatInput);
+                }
             }
         }
 
-        var conditionTuples = getConditionTuples(iterableInputFieldNamePaths, flatInputs);
-        conditionTuples.stream()
+        var conditionTuples = getConditionTuples(pathNameForIterableFields, flatInputs);
+
+        conditionTuples
+                .stream()
                 .map(InputConditions.ConditionTuple::getConditions)
                 .forEach(flatInputs::removeAll);
 
-        return new InputConditions(flatInputs, conditionTuples);
+        filterDeclaredConditions(declaredConditionsByField, conditionTuples);
+
+        return new InputConditions(flatInputs, conditionTuples, declaredConditionsByField);
     }
 
-    private List<InputConditions.ConditionTuple> getConditionTuples(List<String> iterableInputFieldNamePaths, ArrayList<InputCondition> flatInputs) {
-        return iterableInputFieldNamePaths.stream()
-                .map(s -> new InputConditions.ConditionTuple(s, flatInputs.stream()
+    private List<InputConditions.ConditionTuple> getConditionTuples(
+            List<String> iterableInputFields,
+            List<InputCondition> flatInputs) {
+        return iterableInputFields
+                .stream()
+                .map(s -> new InputConditions.ConditionTuple(
+                        s, flatInputs
+                        .stream()
                         .filter(condition -> condition.getNamePath().startsWith(s))
-                        .collect(Collectors.toList())
-                )).collect(Collectors.toList());
+                        .collect(Collectors.toList())))
+                .collect(Collectors.toList());
+    }
+
+    private void filterDeclaredConditions(
+            LinkedHashMap<GenerationField, List<InputCondition>> declaredConditionsByField,
+            List<InputConditions.ConditionTuple> conditionTuples) {
+        for (var entry : declaredConditionsByField.entrySet()) {
+            var recordConditions = entry
+                    .getValue()
+                    .stream()
+                    .filter(c -> c.hasRecord())
+                    .collect(Collectors.toList());
+            var conditions = entry
+                    .getValue()
+                    .stream()
+                    .filter(c -> !c.hasRecord())
+                    .collect(Collectors.toList());
+
+            var filteredRecordConditions = recordConditions
+                    .stream()
+                    .filter(c1 -> recordConditions
+                            .stream()
+                            .noneMatch(c2 -> !c1.getNamePath().equals(c2.getNamePath()) &&
+                                             c1.getNamePath().startsWith(c2.getNamePath())))
+                    .collect(Collectors.toList());
+
+            conditionTuples
+                    .stream()
+                    .map(InputConditions.ConditionTuple::getConditions)
+                    .forEach(conditions::removeAll);
+
+            declaredConditionsByField.replace(
+                    entry.getKey(),
+                    Stream.concat(filteredRecordConditions.stream(), conditions.stream()).collect(Collectors.toList()));
+        }
     }
 
     protected String inferFieldNamingConvention(GenerationField field) {

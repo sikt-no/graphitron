@@ -315,18 +315,22 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
+    // TODO: It seems we are now handling/validating lists that are directly below parent lists. But what about
+    //  validation of nested lists where a list is not directly below parent list, but are deeper down the hierarchy?
     private void validateInputFields() {
         var oneLayerFlattenedFields = allFields
                 .stream()
                 .filter(schema::hasTableObject)
                 .flatMap(it -> it.getNonReservedArguments().stream())
+                .filter(it -> !schema.hasRecord(it) && !it.hasOverridingCondition())
                 .filter(AbstractField::isIterableWrapped)
                 .filter(schema::isInputType)
                 .collect(Collectors.toList());
-        for (var field : oneLayerFlattenedFields) {
-            var messageStart = String.format("Argument '%s' is of collection of InputFields ('%s') type.", field.getName(), field.getTypeName());
 
+        for (var field : oneLayerFlattenedFields) {
+            var messageStart = String.format("Argument '%s' is a collection of InputFields ('%s') type.", field.getName(), field.getTypeName());
             var inputDefinitionFields = schema.getInputType(field).getFields();
+
             inputDefinitionFields.stream().filter(AbstractField::isIterableWrapped).findFirst().ifPresent(it -> {
                 throw new IllegalArgumentException(
                         String.format(

@@ -14,6 +14,8 @@ import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_INPUT;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.NAME_INPUT;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.STAFF;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Query inputs - Equality, list and null checks for fields")
@@ -151,8 +153,21 @@ public class InputTest extends GeneratorTest {
         assertThatThrownBy(() -> getProcessedSchema("listedNestedListedField"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
-                        "Argument 'in0' is of collection of InputFields ('Wrapper') type." +
+                        "Argument 'in0' is a collection of InputFields ('Wrapper') type." +
                                 " Fields returning collections: 'in1' are not supported on such types (used for generating condition tuples)"
                 );
     }
+
+   @Test
+   @DisplayName("Three-level input type containing two other input types on the same level")
+   void multiLevelInput() {
+        assertGeneratedContentContains(
+                "multiLevelInput", Set.of(STAFF, NAME_INPUT),
+                ".where(STAFF.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
+                ".and(STAFF.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
+                ".and(staff.getInfo().getJobEmail().getEmail() != null ? STAFF.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
+                ".and(STAFF.ACTIVE.eq(staff.getActive()))" +
+                ".orderBy"
+        );
+   }
 }

@@ -1,0 +1,25 @@
+type Query {
+  query(
+    staff: StaffInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "staff"})
+  ) : [Staff]
+}
+
+input StaffInput {
+  info: ContactInfoInput!
+  active: Boolean!
+}
+
+input ContactInfoInput {
+  name: NameConditionInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "name"}, override: true)
+  jobEmail: EmailInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "email"})
+
+}
+
+input NameConditionInput {
+  firstname: String! @field(name: "FIRST_NAME") @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "firstname"})
+  lastname: String! @field(name: "LAST_NAME") @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "lastname"})
+}
+
+input EmailInput {
+  email: String!
+}

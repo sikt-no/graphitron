@@ -1,0 +1,10 @@
+type Query {
+  query(
+    staff: StaffInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "staffMin"}, override: true)
+  ) : [Staff]
+}
+
+input StaffInput {
+  name: NameInput!
+  active: Boolean!
+}

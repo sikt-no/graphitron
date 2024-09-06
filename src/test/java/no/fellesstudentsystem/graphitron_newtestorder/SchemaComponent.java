@@ -36,6 +36,10 @@ public enum SchemaComponent {
     DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(ID_RECORD)),
     DUMMY_CONNECTION("basic/DummyConnection", DUMMY_TYPE, PAGE_INFO),
 
+    NAME_INPUT("basic/NameInput"),
+
+    STAFF("basic/Staff"),
+
     SPLIT_QUERY_WRAPPER("SplitQueryWrapper"),
 
     CITY_INPUTS_JOOQ("records/CityInputsJOOQ"),
@@ -43,6 +47,9 @@ public enum SchemaComponent {
 
     CITY0("records/City0"),
     CITY1("records/City1", Set.of(DUMMY_RECORD)),
+
+    NAME_INPUT_JAVA("records/NameInputJava"),
+
     WRAPPED_ADDRESS_JAVA("records/WrappedAddressJava", Set.of(DUMMY_RECORD), CITY0, CITY1),
     WRAPPED_ADDRESS_JOOQ("records/WrappedAddressJOOQ", CITY0, CITY1);
 

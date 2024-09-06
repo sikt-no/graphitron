@@ -1,0 +1,10 @@
+type Query {
+  query(
+    inputs1: [Input1] @condition(condition: {name: "RECORD_FETCH_STAFF_CONDITION", method: "input1"}, override: true)
+  ) : [Staff]
+}
+
+input Input1 @record(record: {name: "JAVA_RECORD_STAFF_INPUT1"}) {
+  names: [NameInput]
+  active: Boolean
+}

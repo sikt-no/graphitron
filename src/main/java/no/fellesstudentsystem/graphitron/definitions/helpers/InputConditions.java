@@ -1,14 +1,22 @@
 package no.fellesstudentsystem.graphitron.definitions.helpers;
 
+import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+
 import java.util.List;
+import java.util.Map;
 
 public class InputConditions {
     private final List<InputCondition> independentConditions;
     private final List<ConditionTuple> conditionTuples;
+    private final Map<GenerationField, List<InputCondition>> declaredConditionsByField;
 
-    public InputConditions(List<InputCondition> independentConditions, List<ConditionTuple> conditionTuples) {
+    public InputConditions(
+            List<InputCondition> independentConditions,
+            List<ConditionTuple> conditionTuples,
+            Map<GenerationField, List<InputCondition>> declaredConditionsByField) {
         this.independentConditions = independentConditions;
         this.conditionTuples = conditionTuples;
+        this.declaredConditionsByField = declaredConditionsByField;
     }
 
     public List<InputCondition> getIndependentConditions() {
@@ -17,6 +25,10 @@ public class InputConditions {
 
     public List<ConditionTuple> getConditionTuples() {
         return conditionTuples;
+    }
+
+    public Map<GenerationField, List<InputCondition>> getDeclaredConditionsByField() {
+        return declaredConditionsByField;
     }
 
     public static class ConditionTuple {

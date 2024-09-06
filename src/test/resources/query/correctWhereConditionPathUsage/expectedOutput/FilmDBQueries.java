@@ -12,6 +12,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
+
 public class FilmDBQueries {
     public static Map<String, List<Language>> languagesForFilm(DSLContext ctx, Set<String> filmIds,
             List<String> s, SelectionSet select) {
@@ -28,6 +29,7 @@ public class FilmDBQueries {
                 .orderBy(film_filmlanguageidfkey.getIdFields())
                 .fetchGroups(Record2::value1, Record2::value2);
     }
+
     public static Map<String, List<Language>> languagesInputForFilm(DSLContext ctx,
             Set<String> filmIds, In s, SelectionSet select) {
         var film_filmlanguageidfkey = FILM.filmLanguageIdFkey().as("filmLanguageIdFkey_2832997198");

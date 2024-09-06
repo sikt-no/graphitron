@@ -40,9 +40,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         super(field, fieldType, container);
         fieldReferences = new ArrayList<>();
         if (field.hasDirective(REFERENCE.getName())) {
-            var refrenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
+            var referenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
 
-            Optional.ofNullable(refrenceDirective.getArgument(REFERENCES.getName()))
+            Optional.ofNullable(referenceDirective.getArgument(REFERENCES.getName()))
                     .map(Argument::getValue)
                     .ifPresent(this::addFieldReferences);
         }

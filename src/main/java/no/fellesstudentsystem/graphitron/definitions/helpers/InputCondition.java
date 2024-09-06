@@ -6,29 +6,41 @@ import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import java.util.LinkedHashSet;
 import java.util.stream.Collectors;
 
+
 public class InputCondition {
     private final InputField input;
     private final String namePath, startName;
     private final LinkedHashSet<String> nullChecks;
     private final boolean pastWasIterable, hasRecord;
+    private final Boolean isOverriddenByAncestors, isWrappedInList;
 
-    private InputCondition(InputField input, String startName, String namePath, LinkedHashSet<String> nullChecks, boolean pastWasIterable, boolean hasRecord) {
+    private InputCondition(
+            InputField input,
+            String startName,
+            String namePath,
+            LinkedHashSet<String> nullChecks,
+            boolean pastWasIterable,
+            boolean hasRecord,
+            Boolean isOverriddenByAncestors,
+            Boolean isWrappedInList) {
         this.input = input;
+        this.startName = startName;
         this.namePath = namePath;
         this.nullChecks = new LinkedHashSet<>(nullChecks);
         this.pastWasIterable = pastWasIterable;
-        this.startName = startName;
         this.hasRecord = hasRecord;
+        this.isOverriddenByAncestors = isOverriddenByAncestors;
+        this.isWrappedInList = isWrappedInList;
 
         inferAdditionalChecks(input);
     }
 
-    public InputCondition(InputField input, String startName, boolean hasRecord) {
-        this(input, startName, "",  new LinkedHashSet<>(), false, hasRecord);
+    public InputCondition(InputField input, String startName, boolean hasRecord, Boolean isOverriddenByAncestors) {
+        this(input, startName, "", new LinkedHashSet<>(), false, hasRecord, isOverriddenByAncestors, false);
     }
 
     public InputCondition(InputField input, boolean hasRecord) {
-        this(input, "", "",  new LinkedHashSet<>(), false, hasRecord);
+        this(input, "", "",  new LinkedHashSet<>(), false, hasRecord, false, false);
     }
 
     public InputField getInput() {
@@ -57,7 +69,16 @@ public class InputCondition {
     public String getNameWithPathString() {
         return namePath.isEmpty()
                 ? (startName.isEmpty() ? input.getName() : startName)
-                : (namePath + (hasRecord ? input.getMappingForRecordFieldOverride().asGetCall() : input.getMappingFromSchemaName().asGetCall()).toString());
+                : (namePath + (hasRecord ? input.getMappingForRecordFieldOverride().asGetCall()
+                                         : input.getMappingFromSchemaName().asGetCall()).toString());
+    }
+
+    public Boolean isOverriddenByAncestors() {
+        return this.isOverriddenByAncestors;
+    }
+
+    public Boolean isWrappedInList() {
+        return this.isWrappedInList;
     }
 
     public String getChecksAsSequence() {
@@ -65,10 +86,30 @@ public class InputCondition {
     }
 
     public InputCondition iterate(InputField input) {
-        return new InputCondition(input, startName, getNameWithPathString(), nullChecks, pastWasIterable || this.input.isIterableWrapped(), hasRecord);
+        return new InputCondition(
+                input,
+                startName,
+                getNameWithPathString(),
+                nullChecks,
+                pastWasIterable || this.input.isIterableWrapped(),
+                hasRecord,
+                isOverriddenByAncestors || this.input.hasOverridingCondition(),
+                isWrappedInList || this.input.isIterableWrapped());
     }
 
     public InputCondition applyTo(InputField input) {
-        return new InputCondition(input, startName, namePath, nullChecks, pastWasIterable || this.input.isIterableWrapped(), hasRecord);
+        return new InputCondition(
+                input,
+                startName,
+                namePath,
+                nullChecks,
+                pastWasIterable || this.input.isIterableWrapped(),
+                hasRecord,
+                isOverriddenByAncestors,
+                isWrappedInList);
+    }
+
+    public boolean hasRecord() {
+        return hasRecord;
     }
 }

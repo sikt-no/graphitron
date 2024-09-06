@@ -1,0 +1,6 @@
+type Query {
+  query(
+    name: NameInput! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "name"}, override: true)
+    email: String! @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "email"})
+  ) : [Staff]
+}
