@@ -1,0 +1,12 @@
+type Mutation {
+  mutation: Response @service(service: {name: "RESOLVER_MUTATION_SERVICE"})
+}
+
+type Response {
+  errors: [ValidationError]
+}
+
+type ValidationError implements Error {
+  path: [String!]!
+  message: String!
+}

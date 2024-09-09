@@ -42,6 +42,7 @@ public class FormatCodeBlocks {
             NEW_DATA_FETCHER = CodeBlock.of("new $T($N, this.$N)", DATA_FETCHER.className, VARIABLE_ENV, CONTEXT_NAME),
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
+            ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
@@ -66,13 +67,24 @@ public class FormatCodeBlocks {
      * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
      */
     public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable) {
+        return declareRecord(name, input, isIterable, false);
+    }
+
+    /**
+     * @param name Name of a field that should be declared as a record. This will be the name of the variable.
+     * @param input Input type that should be declared as a record.
+     * @param isIterable Is this record wrapped in a list?
+     * @param isResolver Is this declaration to be used in a resolver?
+     * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
+     */
+    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable, boolean isResolver) {
         if (!input.hasRecordReference()) {
             return empty();
         }
 
         var code = CodeBlock.builder().add(declareVariable(name, input.getRecordClassName(), isIterable));
         if (!input.hasJavaRecordReference() && !isIterable) {
-            code.addStatement("$N$L", name, ATTACH);
+            code.addStatement("$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH);
         }
         return code.build();
     }

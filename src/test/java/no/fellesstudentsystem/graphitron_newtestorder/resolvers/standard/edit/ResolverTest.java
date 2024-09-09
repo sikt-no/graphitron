@@ -120,6 +120,12 @@ public class ResolverTest extends GeneratorTest {
         );
     }
 
+    @Test  // Not sure if this is the intended behaviour for such cases. The mutation does not try to unwrap the input.
+    @DisplayName("Input with non-record wrapper containing a record")
+    void wrappedInput() {
+        assertThatThrownBy(() -> generateFiles("wrappedInput")).isInstanceOf(UnsupportedOperationException.class);
+    }
+
     @Test
     @DisplayName("Return field that is not ID")
     void returningString() {

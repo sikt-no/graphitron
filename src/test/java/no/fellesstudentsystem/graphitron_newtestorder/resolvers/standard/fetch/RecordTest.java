@@ -101,4 +101,16 @@ public class RecordTest extends GeneratorTest {
                 "queryForWrapper(ctx, ids, inRecord,"
         );
     }
+
+    @Test
+    @DisplayName("JOOQ input record containing another input jOOQ record")
+    void nestedInputRecord() {
+        assertGeneratedContentContains(
+                "operation/nestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
+                "in0Record = transform.",
+                "in1Record = new CustomerRecord();in1Record.attach(transform.getCtx().configuration()",
+                "if (in0 != null) {var in1 = in0.getIn1();in1Record = transform.customerInputTableToJOOQRecord(in1, \"in0/in1\")",
+                ".queryForQuery(ctx, in0Record, in1Record,"
+        );
+    }
 }

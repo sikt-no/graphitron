@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in0: Wrapper): ID @service(service: {name: "RESOLVER_MUTATION_SERVICE"})
+}
+
+input Wrapper @table(name: "CUSTOMER") {
+  in1: CustomerInputTable  # The inputs need different names to avoid a variable name conflict.
+}

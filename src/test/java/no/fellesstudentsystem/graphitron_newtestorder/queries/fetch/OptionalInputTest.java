@@ -68,9 +68,8 @@ public class OptionalInputTest extends GeneratorTest {
     void listedInput() {
         assertThatThrownBy(() -> getProcessedSchema("listedInput", DUMMY_INPUT))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage(
-                        "Problems have been found that prevent code generation:\n" +
-                                "Argument 'in' is a collection of InputFields ('DummyInput') type." +
+                .hasMessageContaining(
+                        "Argument 'in' is a collection of InputFields ('DummyInput') type." +
                                 " Optional fields on such types are not supported." +
                                 " The following fields will be treated as mandatory in the resulting, generated condition tuple: 'id'"
                 );

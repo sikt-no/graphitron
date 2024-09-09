@@ -1,3 +1,0 @@
-type Mutation {
-  editCustomerSimple(id: ID!): ID! @service(service: {name: "SERVICE_NOT_FOUND"})
-}

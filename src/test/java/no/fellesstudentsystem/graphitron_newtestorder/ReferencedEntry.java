@@ -33,6 +33,9 @@ public enum ReferencedEntry {
     MAPPER_ID_SERVICE("MAPPER_ID_SERVICE", IDMapperService.class),
     RESOLVER_FETCH_SERVICE("RESOLVER_FETCH_SERVICE", ResolverFetchService.class),
 
+    // Mutation services.
+    RESOLVER_MUTATION_SERVICE("RESOLVER_MUTATION_SERVICE", ResolverMutationService.class),
+
     // Mapping records.
     MAPPER_RECORD_CITY("MAPPER_RECORD_CITY", MapperCityJavaRecord.class),
     MAPPER_RECORD_ADDRESS("MAPPER_RECORD_ADDRESS", MapperAddressJavaRecord.class),

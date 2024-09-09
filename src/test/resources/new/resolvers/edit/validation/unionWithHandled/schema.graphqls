@@ -1,0 +1,20 @@
+type Mutation {
+  mutation: Response @service(service: {name: "RESOLVER_MUTATION_SERVICE"})
+}
+
+type Response {
+  errors: [ValidationUnion]
+}
+
+union ValidationUnion = ValidationError | SomeError
+
+type ValidationError implements Error {
+  path: [String!]!
+  message: String!
+}
+
+type SomeError implements Error @error(handlers:
+[{handler: DATABASE, code: "1337", matches: "data error", description: "This is an error for the union type"}]) {
+  path: [String!]!
+  message: String!
+}

@@ -64,7 +64,7 @@ public class MappingCodeBlocks {
         if (input.hasTable() && recursion == 0) {
             code.add(declareBlock);
         } else {
-            code.add(declareRecord(asRecordName(target.getName()), input, target.isIterableWrapped()));
+            code.add(declareRecord(asRecordName(target.getName()), input, target.isIterableWrapped(), true));
         }
 
         input

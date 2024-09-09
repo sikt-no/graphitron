@@ -11,7 +11,7 @@ import static no.fellesstudentsystem.graphitron_newtestorder.TestConfiguration.S
 public enum SchemaComponent {
     PAGE_INFO("special/PageInfo"),
     NODE("special/Node"),
-    ERROR("special/ERROR"),
+    ERROR("special/Error"),
     ORDER_DIRECTION("special/OrderDirection"),
     ORDER("special/Order", ORDER_DIRECTION),
     DATE("Date"),

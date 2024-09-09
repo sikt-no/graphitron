@@ -4,8 +4,6 @@ import no.fellesstudentsystem.graphitron.conditions.*;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalClassReference;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
 import no.fellesstudentsystem.graphitron.enums.RatingTest;
-import no.fellesstudentsystem.graphitron.records.EditCustomerResponse1;
-import no.fellesstudentsystem.graphitron.records.EditCustomerResponse2;
 import no.fellesstudentsystem.graphitron.records.TestCustomerRecord;
 import no.fellesstudentsystem.graphitron.services.TestCustomerService;
 
@@ -21,9 +19,7 @@ public enum TestReferenceSet {
     SERVICE_CUSTOMER("TEST_CUSTOMER", TestCustomerService.class),
 
     // Records
-    RECORD_CUSTOMER("TEST_CUSTOMER_RECORD", TestCustomerRecord.class),
-    RECORD_CUSTOMER_RESPONSE_1("TEST_CUSTOMER_RESPONSE1", EditCustomerResponse1.class),
-    RECORD_CUSTOMER_RESPONSE_2("TEST_CUSTOMER_RESPONSE2", EditCustomerResponse2.class);
+    RECORD_CUSTOMER("TEST_CUSTOMER_RECORD", TestCustomerRecord.class);
 
     private final ExternalReference reference;
 
