@@ -33,6 +33,15 @@ public class ReferenceQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Reverse table path")
+    void tableBackwards() {
+        assertGeneratedContentContains(
+                "tableBackwards", Set.of(CUSTOMER_TABLE),
+                ".leftJoin(address_customer_left"
+        );
+    }
+
+    @Test
     @DisplayName("Key path with only one possible path between the tables")
     void keyWithSinglePath() {
         assertGeneratedContentContains(
@@ -47,6 +56,15 @@ public class ReferenceQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
                 ".leftJoin(film_filmoriginallanguageidfkey_left"
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse key path")
+    void keyBackwards() {
+        assertGeneratedContentContains(
+                "keyBackwards", Set.of(CUSTOMER_TABLE),
+                ".leftJoin(address_customer_left"
         );
     }
 

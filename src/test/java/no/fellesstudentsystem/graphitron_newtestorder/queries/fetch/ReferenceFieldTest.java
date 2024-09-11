@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_QUERY;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Fetch queries - Fetching fields through referenced tables")
 public class ReferenceFieldTest extends ReferenceTest {
@@ -21,6 +22,15 @@ public class ReferenceFieldTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Reverse table path")
+    void tableBackwards() {
+        assertGeneratedContentContains(
+                "tableBackwards", Set.of(CUSTOMER_TABLE),
+                ".leftJoin(address_customer_left"
+        );
+    }
+
+    @Test
     @DisplayName("Key path with only one possible path between the tables")
     void keyWithSinglePath() {
         assertGeneratedContentContains("keyWithSinglePath", Set.of(CUSTOMER_QUERY), ".leftJoin(customer_address_left");
@@ -30,6 +40,15 @@ public class ReferenceFieldTest extends ReferenceTest {
     @DisplayName("Key path with multiple possible paths between the tables")
     void keyWithMultiplePaths() {
         assertGeneratedContentContains("keyWithMultiplePaths", ".leftJoin(film_filmoriginallanguageidfkey_left");
+    }
+
+    @Test
+    @DisplayName("Reverse key path")
+    void keyBackwards() {
+        assertGeneratedContentContains(
+                "keyBackwards", Set.of(CUSTOMER_TABLE),
+                ".leftJoin(address_customer_left"
+        );
     }
 
     @Test

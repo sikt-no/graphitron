@@ -1,3 +1,7 @@
+type Query {
+  query: Address @notGenerated
+}
+
 type Address @table {
   customer: CustomerTable @splitQuery @reference(references: [{table: "CUSTOMER"}])
 }
