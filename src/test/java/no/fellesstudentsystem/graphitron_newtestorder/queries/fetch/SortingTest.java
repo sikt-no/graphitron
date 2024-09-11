@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Sorting - Queries with custom ordering")
 public class SortingTest extends GeneratorTest {
@@ -23,7 +26,7 @@ public class SortingTest extends GeneratorTest {
 
     @Override
     protected Set<SchemaComponent> getComponents() {
-        return makeComponents(ORDER, PAGE_INFO);
+        return makeComponents(ORDER);
     }
 
     @Override
@@ -40,7 +43,7 @@ public class SortingTest extends GeneratorTest {
     @Test
     @DisplayName("Including pagination")
     void paginated() {
-        assertGeneratedContentMatches("paginated", CUSTOMER_CONNECTION_ORDER);
+        assertGeneratedContentMatches("paginated", CUSTOMER_CONNECTION_ORDER, PAGE_INFO);
     }
 
     @Test
@@ -65,5 +68,21 @@ public class SortingTest extends GeneratorTest {
                 "twoFieldIndex",
                 ".ofEntries(Map.entry(\"STORE_ID_FILM_ID\", \"IDX_STORE_ID_FILM_ID\"))"
         );
+    }
+
+    @Test
+    @DisplayName("Sorting on a parameter that has an invalid index")
+    void wrongIndex() {
+        assertThatThrownBy(() -> generateFiles("wrongIndex", Set.of(CUSTOMER_TABLE)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Table 'CUSTOMER' has no index 'WRONG_INDEX' necessary for sorting by 'EMAIL'");
+    }
+
+    @Test
+    @DisplayName("Sorting parameter without index set")
+    void missingDirective() {
+        assertThatThrownBy(() -> generateFiles("missingDirective", Set.of(CUSTOMER_TABLE)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Expected enum field 'NAME' of 'OrderByField' to have an '@%s(%s: ...)' directive, but no such directive was set", INDEX.getName(), NAME.getName());
     }
 }

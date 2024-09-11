@@ -1,9 +1,0 @@
-type Film @table {
-  id: ID!
-  sequel: Film
-}
-
-type Query {
-  films: [Film]
-}
-

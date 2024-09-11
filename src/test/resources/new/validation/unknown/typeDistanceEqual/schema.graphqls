@@ -1,0 +1,11 @@
+type Query {
+  query: Type
+}
+
+type Type0 {
+  id: ID
+}
+
+type Type1 {
+  id: ID
+}

@@ -1,0 +1,22 @@
+type Query {
+  query(orderBy: Order @orderBy, first: Int = 100, after: String): FilmConnection
+}
+
+enum OrderByField {
+  LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
+}
+
+type FilmConnection {
+  edges: [FilmConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [Film!]!
+}
+
+type FilmConnectionEdge {
+  cursor: String
+  node: Film
+}
+
+type Film @table {
+  id: ID!
+}

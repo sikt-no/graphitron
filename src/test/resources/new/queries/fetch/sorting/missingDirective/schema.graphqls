@@ -1,0 +1,7 @@
+type Query {
+  query(orderBy: Order @orderBy): [CustomerTable]
+}
+
+enum OrderByField {
+  NAME
+}

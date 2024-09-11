@@ -423,7 +423,7 @@ public class ProcessedDefinitionsValidator {
                 errorMessages.add(
                         String.format("Type %s ending with the reserved suffix 'Connection' must have either " +
                                 "forward(first and after fields) or backwards(last and before fields) pagination, " +
-                                "yet neither was found. No pagination was generated for this type.", field.getTypeName()
+                                "yet neither was found.", field.getTypeName()
                         )
                 );
             }

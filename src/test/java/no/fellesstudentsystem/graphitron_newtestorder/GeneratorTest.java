@@ -1,8 +1,5 @@
 package no.fellesstudentsystem.graphitron_newtestorder;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
@@ -13,9 +10,7 @@ import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.ComparisonFailure;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.function.Executable;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -38,7 +33,6 @@ public abstract class GeneratorTest {
     private final String sourceTestPath;
     private final Set<SchemaComponent> components;
     protected final boolean checkProcessedSchemaDefault;
-    protected ListAppender<ILoggingEvent> logWatcher;
     private final Set<ExternalReference> references;
     private final Set<GlobalTransform> globalTransforms;
     private final List<Extension> extendedClasses;
@@ -65,6 +59,10 @@ public abstract class GeneratorTest {
         this.references = getExternalReferences();
         this.globalTransforms = getGlobalTransforms();
         this.extendedClasses = getExtendedClasses();
+    }
+
+    public String getSourceTestPath() {
+        return sourceTestPath;
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder) {
@@ -303,22 +301,9 @@ public abstract class GeneratorTest {
         assertThat(generateFiles(schemaFolder, extraComponents).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));
     }
 
-    @BeforeEach
-    public void setup() {
-        ListAppender<ILoggingEvent> logWatch = new ListAppender<>();
-        logWatch.start();
-        ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).addAppender(logWatch);
-        this.logWatcher = logWatch;
-    }
-
     @AfterEach
     public void destroy() {
         GeneratorConfig.clear(); // To prevent any config from remaining when running multiple tests.
-    }
-
-    @AfterEach
-    public void teardown() {
-        ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
     }
 
     protected static List<String> readFileAsStrings(Path file) {

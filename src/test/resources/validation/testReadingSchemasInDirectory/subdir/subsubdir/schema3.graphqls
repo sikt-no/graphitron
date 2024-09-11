@@ -1,7 +1,0 @@
-extend type Query {
-  staff(id: ID!): Staff
-}
-
-type Staff @table {
-  id: ID!
-}

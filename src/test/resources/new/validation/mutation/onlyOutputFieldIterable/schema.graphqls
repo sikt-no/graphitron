@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: CustomerInputTable): Response @mutation(typeName: UPDATE)
+}
+
+type Response {
+  id: [ID]
+}

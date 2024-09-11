@@ -1,8 +1,5 @@
 package no.fellesstudentsystem.graphitron;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import no.fellesstudentsystem.graphitron.configuration.Extension;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReference;
@@ -15,7 +12,6 @@ import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -43,39 +39,10 @@ public abstract class GeneratorTest {
     protected Path tempOutputDirectory;
 
     private final String sourceTestPath, subpathSchema;
-    protected final boolean checkProcessedSchemaDefault;
-    protected ListAppender<ILoggingEvent> logWatcher;
-    private final List<ExternalReference> references;
-    private final List<GlobalTransform> globalTransforms;
-    private final List<Extension> extendedClasses;
 
     public GeneratorTest(String testSubpath) {
-        this(testSubpath, List.of());
-    }
-
-    public GeneratorTest(String testSubpath, List<ExternalReference> references) {
-        this(testSubpath, references, true);
-    }
-
-    public GeneratorTest(String testSubpath, List<ExternalReference> references, boolean checkProcessedSchemaDefault) {
-        this(testSubpath, references, List.of(), List.of(), checkProcessedSchemaDefault);
-    }
-
-    public GeneratorTest(String testSubpath, List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
-        this(testSubpath, references, globalTransforms, extendedClasses, true);
-    }
-
-    public GeneratorTest(String testSubpath, List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses, boolean checkProcessedSchemaDefault) {
-        subpathSchema = SRC_ROOT + "/" + testSubpath + "/" + COMMON_SCHEMA_NAME;
         sourceTestPath = SRC_ROOT + "/" + testSubpath + "/";
-        this.checkProcessedSchemaDefault = checkProcessedSchemaDefault;
-        this.references = references;
-        this.globalTransforms = globalTransforms;
-        this.extendedClasses = extendedClasses;
-    }
-
-    public String getSourceTestPath() {
-        return sourceTestPath;
+        subpathSchema = SRC_ROOT + "/" + testSubpath + "/" + COMMON_SCHEMA_NAME;
     }
 
     protected Map<String, List<String>> generateFiles(String schemaParentFolder) {
@@ -138,24 +105,6 @@ public abstract class GeneratorTest {
         assertThat(generatedFiles.keySet()).containsExactlyInAnyOrderElementsOf(expectedFileNames);
     }
 
-    public static void assertGeneratedFilesMatch(String expectedOutputFolder, Map<String, List<String>> generatedFiles) {
-        var expectedFileNames = new HashSet<String>();
-
-        try {
-            Files.walkFileTree(Paths.get(expectedOutputFolder + "/" + EXPECTED_OUTPUT_NAME), new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) {
-                    expectedFileNames.add(expectedOutputFile.getFileName().toString());
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        assertThat(generatedFiles.keySet()).containsExactlyInAnyOrderElementsOf(expectedFileNames);
-    }
-
     @NotNull
     private static List<String> asImportList(List<String> expectedFile) {
         return expectedFile
@@ -167,15 +116,10 @@ public abstract class GeneratorTest {
 
     @NotNull
     protected ProcessedSchema getProcessedSchema(String schemaParentFolder) {
-        return getProcessedSchema(schemaParentFolder, checkProcessedSchemaDefault);
-    }
-
-    @NotNull
-    protected ProcessedSchema getProcessedSchema(String schemaParentFolder, boolean checkTypes) {
         GeneratorConfig.setSchemaFiles(SRC_COMMON_SCHEMA, SRC_DIRECTIVES, subpathSchema, sourceTestPath + schemaParentFolder + "/schema.graphqls");
 
         var processedSchema = GraphQLGenerator.getProcessedSchema();
-        processedSchema.validate(checkTypes);
+        processedSchema.validate(true);
         return processedSchema;
     }
 
@@ -185,10 +129,6 @@ public abstract class GeneratorTest {
 
     protected void assertGeneratedContentMatches(String resourceRootFolder) {
         assertGeneratedContentMatches(resourceRootFolder, resourceRootFolder);
-    }
-
-    protected void assertFilesAreGenerated(Set<String> expectedFiles, String schemaFolder) {
-        assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(expectedFiles);
     }
 
     private void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
@@ -211,22 +151,12 @@ public abstract class GeneratorTest {
 
     @BeforeEach
     public void setup() {
-        ListAppender<ILoggingEvent> logWatch = new ListAppender<>();
-        logWatch.start();
-        ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).addAppender(logWatch);
-        this.logWatcher = logWatch;
-
-        setProperties(references, globalTransforms, extendedClasses);
+        setProperties(List.of(), List.of(), List.of());
     }
 
     @AfterEach
     public void destroy() {
         GeneratorConfig.clear(); // To prevent any config from remaining when running multiple tests.
-    }
-
-    @AfterEach
-    public void teardown() {
-        ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
     }
 
     protected static List<String> readFileAsStrings(Path file) {

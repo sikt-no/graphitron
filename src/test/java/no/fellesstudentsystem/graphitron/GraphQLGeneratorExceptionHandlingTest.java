@@ -56,18 +56,10 @@ public class GraphQLGeneratorExceptionHandlingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Test that 'IllegalArgumentException' is thrown when 'className' directive argument is not defined for error handler of type 'GENERIC'")
-    void testMissingClassNameArgument() {
-        assertThatThrownBy(() -> generateFiles("error/generalHandlerWithoutClassName"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("'className´ directive argument must be defined for error handler of type GENERIC");
-    }
-
-    @Test
     @DisplayName("Test that 'IllegalArgumentException' is thrown when 'className' points to class not available on classpath")
     void testBadClassNameArgument() {
         assertThatThrownBy(() -> generateFiles("error/unavailableClassName"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Unable to find exception className: org.example.exception.ThereIsNoSuchException, declared for mutation: editCustomerWithOtherError");
+                .hasMessage("Unable to find exception className: org.example.exception.ThereIsNoSuchException, declared for mutation: mutation");
     }
 }

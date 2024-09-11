@@ -244,14 +244,6 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Service that can not be found")
-    void undefinedService() {
-        assertThatThrownBy(() -> generateFiles("undefinedService"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("No service with name 'SERVICE_NOT_FOUND' found.");
-    }
-
-    @Test
     @DisplayName("Service method that can not be found")
     void undefinedServiceMethod() {
         assertThatThrownBy(() -> generateFiles("undefinedServiceMethod"))

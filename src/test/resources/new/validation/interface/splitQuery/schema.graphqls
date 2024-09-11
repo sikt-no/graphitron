@@ -1,0 +1,5 @@
+type Wrapper {
+  id: ID!
+
+  node(id: ID!): Node! @splitQuery
+}

@@ -1,0 +1,10 @@
+type Mutation {
+  mutation(in: Film): ID! @mutation(typeName: INSERT)
+}
+
+input Film @table {
+  film_id: ID!
+  title: String!
+  language_id: Int!
+  fulltext: String!
+}

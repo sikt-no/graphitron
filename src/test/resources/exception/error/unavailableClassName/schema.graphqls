@@ -1,27 +1,13 @@
-input EditInput @table(name : "CUSTOMER") {
-  id: ID!
-  firstName: String @field(name : "FIRST_NAME")
+type Mutation {
+  mutation: Response! @mutation(typeName: UPDATE)
 }
 
-type EditCustomerWithOtherErrorPayload {
-  customers: [Customer!]
+type Response {
   errors: [OtherError!]
 }
 
-type Mutation {
-  editCustomerWithOtherError(input: [EditInput!]!): EditCustomerWithOtherErrorPayload! @mutation(typeName: UPDATE)
-}
-
-type Customer implements Node @table {
-  id: ID!
-  firstName: String! @field(name: "FIRST_NAME")
-}
-
 type OtherError implements Error @error(handlers:
-[
-  {handler: GENERIC, className: "org.example.exception.ThereIsNoSuchException", description: "This is an error"}
-]) {
+[{handler: GENERIC, className: "org.example.exception.ThereIsNoSuchException", description: "This is an error"}]) {
   path: [String!]!
   message: String!
 }
-

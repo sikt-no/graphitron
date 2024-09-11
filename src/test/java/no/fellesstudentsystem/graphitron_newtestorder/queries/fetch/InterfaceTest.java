@@ -5,6 +5,7 @@ import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
 import no.fellesstudentsystem.graphitron_newtestorder.GeneratorTest;
 import no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent;
 import no.fellesstudentsystem.graphitron_newtestorder.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
+import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,8 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.NODE;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @DisplayName("Query interfaces - Interface handling for types implementing interfaces") // Uses Node as default in tests.
 public class InterfaceTest extends GeneratorTest {
@@ -59,5 +62,19 @@ public class InterfaceTest extends GeneratorTest {
                 ",Set<String> ids,",
                 ".where(CUSTOMER.hasIds(ids))"
         );
+    }
+
+    @Test
+    @DisplayName("Type implements interface but does not set table")
+    void withoutTable() {
+        assertThatThrownBy(() -> generateFiles("withoutTable"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(String.format("Type Type needs to have the @%s directive set to be able to implement interface Node", GenerationDirective.TABLE.getName()));
+    }
+
+    @Test
+    @DisplayName("Type implements interface without table set but no queries use the interface")
+    void withoutTableAndQuery() {
+        assertDoesNotThrow(() -> generateFiles("withoutTableAndQuery"));
     }
 }

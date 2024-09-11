@@ -1,7 +1,0 @@
-input InsertInput {
-  id: ID!
-}
-
-type Mutation {
-  registerCustomerInput(input: InsertInput!): ID! @mutation(typeName: INSERT)
-}

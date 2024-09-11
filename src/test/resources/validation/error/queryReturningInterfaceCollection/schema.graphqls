@@ -1,7 +1,0 @@
-type Film implements Node @table {
-  id: ID!
-}
-
-type Query {
-  nodes(ids: [ID!]): [Node]
-}

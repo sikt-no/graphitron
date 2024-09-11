@@ -1,0 +1,3 @@
+type Query {
+  node(id: ID!, title: String): Node
+}

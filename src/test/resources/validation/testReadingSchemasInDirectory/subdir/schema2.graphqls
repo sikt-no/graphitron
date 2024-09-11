@@ -1,7 +1,0 @@
-extend type Query {
-  film(id: ID!): Film
-}
-
-type Film @table {
-  id: ID!
-}

@@ -1,0 +1,13 @@
+type Mutation {
+  mutation(in: CustomerInputTable): Response @mutation(typeName: UPDATE)
+}
+
+type Response {
+  id: ID
+  errors: [SomeError]
+}
+
+type SomeError implements Error {
+  path: [String]
+  message: String
+}
