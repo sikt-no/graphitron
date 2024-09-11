@@ -294,11 +294,20 @@ public abstract class GeneratorTest {
 
 
     protected void assertFilesAreGenerated(String schemaFolder, String... expectedFiles) {
-        assertThat(generateFiles(schemaFolder).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));
+        assertFilesAreGenerated(schemaFolder, Set.of(), expectedFiles);
     }
 
     protected void assertFilesAreGenerated(String schemaFolder, Set<SchemaComponent> extraComponents, String... expectedFiles) {
         assertThat(generateFiles(schemaFolder, extraComponents).keySet()).containsExactlyInAnyOrderElementsOf(Set.of(expectedFiles));
+    }
+
+
+    protected void assertNothingGenerated(String schemaFolder) {
+        assertNothingGenerated(schemaFolder, Set.of());
+    }
+
+    protected void assertNothingGenerated(String schemaFolder, Set<SchemaComponent> extraComponents) {
+        assertThat(generateFiles(schemaFolder, extraComponents).keySet()).isEmpty();
     }
 
     @AfterEach

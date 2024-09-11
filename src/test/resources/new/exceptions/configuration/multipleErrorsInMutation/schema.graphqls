@@ -1,0 +1,9 @@
+type Response {
+  errors0: [ValidationError]
+  errors1: [UnrelatedError]
+}
+
+type UnrelatedError implements Error {
+  path: [String!]!
+  message: String!
+}

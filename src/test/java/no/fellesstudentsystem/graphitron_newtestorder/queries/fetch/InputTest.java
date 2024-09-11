@@ -12,10 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_INPUT;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.NAME_INPUT;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.STAFF;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Query inputs - Equality, list and null checks for fields")

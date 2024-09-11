@@ -1,0 +1,8 @@
+type Response {
+  errors: [SomeError]
+}
+
+type SomeError implements Error {
+  path: [String!]!
+  message: String!
+}

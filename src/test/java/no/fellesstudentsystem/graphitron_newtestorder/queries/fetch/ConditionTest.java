@@ -16,12 +16,7 @@ import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.QUERY_FETCH_CONDITION;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.QUERY_FETCH_STAFF_CONDITION;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_ENUM_CONVERTED;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_INPUT;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.NAME_INPUT;
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.STAFF;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
 
 @DisplayName("Fetch query conditions - External conditions for queries")
 public class ConditionTest extends GeneratorTest {

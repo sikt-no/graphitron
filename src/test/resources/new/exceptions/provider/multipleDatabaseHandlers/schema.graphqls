@@ -1,0 +1,8 @@
+type Response {
+  errors: [SomeError]
+}
+
+type SomeError implements Error @error(handlers: [{handler: DATABASE, code: "C_0"}, {handler: DATABASE, code: "C_1"}]) {
+  path: [String!]!
+  message: String!
+}

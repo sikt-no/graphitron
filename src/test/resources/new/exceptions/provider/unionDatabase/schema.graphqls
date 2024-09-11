@@ -1,0 +1,10 @@
+type Response {
+  errors: [Union]
+}
+
+union Union = SomeError
+
+type SomeError implements Error @error(handlers: [{handler: DATABASE}]) {
+  path: [String!]!
+  message: String!
+}

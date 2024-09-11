@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
-import static no.fellesstudentsystem.graphql.directives.GenerationDirective.*;
+import static no.fellesstudentsystem.graphql.directives.GenerationDirective.INDEX;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirectiveParam.NAME;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

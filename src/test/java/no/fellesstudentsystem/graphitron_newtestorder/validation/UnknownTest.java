@@ -10,7 +10,6 @@ import java.util.Set;
 import static no.fellesstudentsystem.graphitron_newtestorder.ReferencedEntry.DUMMY_CONDITION;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.DUMMY_TYPE;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Schema validation - Unknown and unresolvable values")
 public class UnknownTest extends ValidationTest {

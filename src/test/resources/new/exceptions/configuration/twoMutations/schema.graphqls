@@ -1,0 +1,8 @@
+type Mutation {
+  mutation0: Response @mutation(typeName: UPDATE)
+  mutation1: Response @mutation(typeName: UPDATE)
+}
+
+type Response {
+  errors: [ValidationError]
+}

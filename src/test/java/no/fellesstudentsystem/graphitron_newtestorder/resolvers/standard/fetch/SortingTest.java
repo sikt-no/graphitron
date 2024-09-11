@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.*;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.ORDER;
+import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.PAGE_INFO;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Sorting - Resolvers with custom ordering")

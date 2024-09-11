@@ -37,6 +37,6 @@ public class JavaMapperGeneratorClassesTest extends GeneratorTest {
     @Test
     @DisplayName("Mapper generator ignores JOOQ records")
     void ignoresJOOQRecordClasses() {
-        assertFilesAreGenerated("ignoresJOOQRecordClasses", Set.of(CUSTOMER_TABLE, CUSTOMER_INPUT_TABLE));
+        assertNothingGenerated("ignoresJOOQRecordClasses", Set.of(CUSTOMER_TABLE, CUSTOMER_INPUT_TABLE));
     }
 }

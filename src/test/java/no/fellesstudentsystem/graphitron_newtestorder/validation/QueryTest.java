@@ -10,7 +10,6 @@ import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUS
 import static no.fellesstudentsystem.graphitron_newtestorder.SchemaComponent.CUSTOMER_TABLE;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.LOOKUP_KEY;
 import static no.fellesstudentsystem.graphql.directives.GenerationDirective.ORDER_BY;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Schema validation - Errors thrown when checking the schema")
 public class QueryTest extends ValidationTest {

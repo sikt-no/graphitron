@@ -36,6 +36,6 @@ public class MapperGeneratorClassesTest extends GeneratorTest {
     @Test
     @DisplayName("Mapper generator ignores Java records")
     void ignoresJavaRecordClasses() {
-        assertFilesAreGenerated("ignoresJavaRecordClasses", Set.of(DUMMY_TYPE_RECORD, DUMMY_INPUT_RECORD));
+        assertNothingGenerated("ignoresJavaRecordClasses", Set.of(DUMMY_TYPE_RECORD, DUMMY_INPUT_RECORD));
     }
 }

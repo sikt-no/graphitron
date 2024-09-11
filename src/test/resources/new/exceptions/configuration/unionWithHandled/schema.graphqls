@@ -1,0 +1,11 @@
+type Response {
+  errors: [ValidationUnion]
+}
+
+union ValidationUnion = ValidationError | SomeError
+
+type SomeError implements Error @error(handlers:
+[{handler: DATABASE, code: "1337", matches: "data error", description: "This is an error for the union type"}]) {
+  path: [String!]!
+  message: String!
+}

@@ -37,6 +37,8 @@ public enum SchemaComponent {
     DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(ID_RECORD)),
     DUMMY_CONNECTION("basic/DummyConnection", DUMMY_TYPE, PAGE_INFO),
 
+    MUTATION_RESPONSE("basic/MutationResponse"),
+
     NAME_INPUT("basic/NameInput"),
 
     STAFF("basic/Staff"),
@@ -52,7 +54,9 @@ public enum SchemaComponent {
     NAME_INPUT_JAVA("records/NameInputJava"),
 
     WRAPPED_ADDRESS_JAVA("records/WrappedAddressJava", Set.of(DUMMY_RECORD), CITY0, CITY1),
-    WRAPPED_ADDRESS_JOOQ("records/WrappedAddressJOOQ", CITY0, CITY1);
+    WRAPPED_ADDRESS_JOOQ("records/WrappedAddressJOOQ", CITY0, CITY1),
+
+    VALIDATION_ERROR("basic/ValidationError", ERROR);
 
     private final Set<String> fileNames;
     private final Set<ReferencedEntry> references;
