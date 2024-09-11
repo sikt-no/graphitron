@@ -41,8 +41,11 @@ public class GraphQLGenerator {
     public static void generate() {
         var processedSchema = getProcessedSchema();
         processedSchema.validate();
+        generate(getGenerators(processedSchema));
+    }
 
-        var generators = List.<ClassGenerator<?>>of(
+    public static List<ClassGenerator<?>> getGenerators(ProcessedSchema processedSchema) {
+        return List.of(
                 new FetchDBClassGenerator(processedSchema),
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema),
@@ -55,8 +58,6 @@ public class GraphQLGenerator {
                 new MutationExceptionStrategyConfigurationGenerator(processedSchema),
                 new ExceptionToErrorMappingProviderGenerator(processedSchema)
         );
-
-        generate(generators);
     }
 
     /**
@@ -66,7 +67,7 @@ public class GraphQLGenerator {
     public static void generate(List<ClassGenerator<? extends GenerationTarget>> generators) {
         for (var g : generators) {
             g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
-            LOGGER.info("Generated sources to: " + GeneratorConfig.outputPackage() + "." + g.getDefaultSaveDirectoryName());
+            LOGGER.info("Generated sources to: {}.{}", GeneratorConfig.outputPackage(), g.getDefaultSaveDirectoryName());
         }
     }
 

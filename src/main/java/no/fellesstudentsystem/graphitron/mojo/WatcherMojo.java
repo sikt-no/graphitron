@@ -1,6 +1,8 @@
 package no.fellesstudentsystem.graphitron.mojo;
 
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.fellesstudentsystem.graphitron.generators.abstractions.ClassGenerator;
+import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.jetbrains.annotations.NotNull;
@@ -13,11 +15,13 @@ import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.nio.file.StandardWatchEventKinds.*;
+import static no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator.getProcessedSchema;
 
 /**
  * Mojo for watching the schema files for changes, and regenerating upon updates.
@@ -38,6 +42,16 @@ public class WatcherMojo extends GenerateMojo {
      * Regex for identifying graphql files.
      */
     private final static Pattern GRAPHQL_FILE_PATTERN = Pattern.compile("\\.graphqls?$");
+
+    private final Function<ProcessedSchema, List<ClassGenerator<?>>> generatorFunction;
+
+    public WatcherMojo() {
+        generatorFunction = GraphQLGenerator::getGenerators;
+    }
+
+    public WatcherMojo(Function<ProcessedSchema, List<ClassGenerator<?>>> generatorFunction) {
+        this.generatorFunction = generatorFunction;
+    }
 
     /**
      * @param delay Custom amount of milliseconds to wait for changes.
@@ -168,8 +182,13 @@ public class WatcherMojo extends GenerateMojo {
     private void generate() {
         delete(new File(GeneratorConfig.outputDirectory())); // This is done to ensure that any obsolete files get removed as well.
 
-        try {
-            GraphQLGenerator.generate(); // Note that if this fails, code gets deleted anyway.
+        try { // Note that if this fails, code gets deleted anyway.
+            var processedSchema = getProcessedSchema();
+            processedSchema.validate();
+            var generators = generatorFunction.apply(processedSchema);
+            for (var g : generators) {
+                g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
+            }
         } catch (Exception e) {
             getLog().error("Code generation has failed, an exception was thrown.", e);
             return;
