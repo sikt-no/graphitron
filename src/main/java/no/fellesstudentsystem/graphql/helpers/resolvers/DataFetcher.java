@@ -10,6 +10,7 @@ import no.fellesstudentsystem.graphql.helpers.functions.DBQuery;
 import no.fellesstudentsystem.graphql.helpers.functions.DBQueryRoot;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
+import org.apache.commons.lang3.tuple.Pair;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
 import org.jooq.DSLContext;
@@ -45,7 +46,6 @@ public class DataFetcher extends AbstractFetcher {
      * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
-     * @param idFunction Function that extracts an ID from the fetched type.
      * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <T> Type that the resolver fetches.
@@ -53,9 +53,8 @@ public class DataFetcher extends AbstractFetcher {
     public <T, U> CompletableFuture<U> loadPaginated(
             int pageSize,
             int maxNodes,
-            DBQueryRoot<List<T>> dbFunction,
+            DBQueryRoot<List<Pair<String, T>>> dbFunction,
             DBCount<String> countFunction,
-            Function<T, String> idFunction,
             Function<ConnectionImpl<T>, U> connectionFunction
     ) {
         return CompletableFuture.completedFuture(
@@ -64,7 +63,6 @@ public class DataFetcher extends AbstractFetcher {
                         pageSize,
                         countFunction.callDBMethod(ctx, Set.of()),
                         maxNodes,
-                        idFunction,
                         connectionFunction
                 )
         );
@@ -89,7 +87,6 @@ public class DataFetcher extends AbstractFetcher {
      * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
-     * @param idFunction Function that extracts an ID from the fetched type.
      * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <T> Type that the resolver fetches.
@@ -99,12 +96,11 @@ public class DataFetcher extends AbstractFetcher {
             String id,
             int pageSize,
             int maxNodes,
-            DBQuery<String, List<T>> dbFunction,
+            DBQuery<String, List<Pair<String, T>>> dbFunction,
             DBCount<String> countFunction,
-            Function<T, String> idFunction,
             Function<ConnectionImpl<T>, U> connectionFunction
     ) {
-        return getConnectionLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, idFunction, connectionFunction))
+        return getConnectionLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, connectionFunction))
                 .load(asKeyPath(id), env);
     }
 
@@ -197,9 +193,8 @@ public class DataFetcher extends AbstractFetcher {
             SelectionSet selectionSet,
             int maxNodes,
             int pageSize,
-            DBQuery<String, List<T>> dbFunction,
+            DBQuery<String, List<Pair<String, T>>> dbFunction,
             DBCount<String> countFunction,
-            Function<T, String> idFunction,
             Function<ConnectionImpl<T>, U> connectionFunction
     ) {
         if (keys.isEmpty()) {
@@ -214,11 +209,11 @@ public class DataFetcher extends AbstractFetcher {
                         pageSize,
                         countFunction.callDBMethod(ctx, idSet),
                         maxNodes,
-                        idFunction,
                         connectionFunction
                 )
         );
     }
+
 
     private <T> CompletableFuture<Map<String, T>> getMappedDataLoader(Set<String> keys, SelectionSet selectionSet, DBQuery<String, T> dbFunction) {
         if (keys.isEmpty()) {

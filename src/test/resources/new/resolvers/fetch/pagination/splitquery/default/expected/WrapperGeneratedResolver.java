@@ -30,7 +30,6 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                 "queryForWrapper", wrapper.getId(), pageSize, 1000,
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, pageSize,after, selectionSet),
                 (ctx, ids) -> WrapperDBQueries.countQueryForWrapper(ctx, ids),
-                (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> DummyConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                     var page = connection.getPageInfo();

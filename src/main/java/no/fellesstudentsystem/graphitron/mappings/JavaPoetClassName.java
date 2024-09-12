@@ -13,6 +13,8 @@ import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphitron.validation.RecordValidator;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.exception.DataAccessException;
 
 /**
@@ -21,7 +23,6 @@ import org.jooq.exception.DataAccessException;
  */
 public enum JavaPoetClassName {
     ARRAYS(ClassName.get(java.util.Arrays.class)),
-    ARGUMENTS(ClassName.get(no.fellesstudentsystem.graphql.helpers.arguments.Arguments.class)),
     ARRAY_LIST(ClassName.get(java.util.ArrayList.class)),
     CLASS(ClassName.get(java.lang.Class.class)),
     COLLECTORS(ClassName.get(java.util.stream.Collectors.class)),
@@ -30,7 +31,6 @@ public enum JavaPoetClassName {
     DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING(ClassName.get(DataAccessExceptionContentToErrorMapping.class)),
     DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(ClassName.get(DataAccessExceptionMappingContent.class)),
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
-    DATA_LOADER(ClassName.get(org.dataloader.DataLoader.class)),
     DATA_FETCHER(ClassName.get(DataFetcher.class)),
     DATA_SERVICE_FETCHER(ClassName.get(ServiceDataFetcher.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),
@@ -38,7 +38,6 @@ public enum JavaPoetClassName {
     EXCEPTION(ClassName.get(java.lang.Exception.class)),
     EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ClassName.get(ExceptionToErrorMappingProvider.class)),
     FIELD_HELPERS(ClassName.get(FieldHelperHack.class)),
-    FUNCTION(ClassName.get(java.util.function.Function.class)),
     FUNCTIONS(ClassName.get(org.jooq.Functions.class)),
     GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING(ClassName.get(GenericExceptionContentToErrorMapping.class)),
     GENERIC_EXCEPTION_MAPPING_CONTENT(ClassName.get(GenericExceptionMappingContent.class)),
@@ -46,17 +45,19 @@ public enum JavaPoetClassName {
     HASH_MAP(ClassName.get(java.util.HashMap.class)),
     HASH_SET(ClassName.get(java.util.HashSet.class)),
     ILLEGAL_ARGUMENT_EXCEPTION(ClassName.get(IllegalArgumentException.class)),
+    IMMUTABLE_PAIR(ClassName.get(ImmutablePair.class)),
     INJECT(ClassName.get(javax.inject.Inject.class)),
     INTEGER(ClassName.get(java.lang.Integer.class)),
     LIST(ClassName.get(java.util.List.class)),
     MAP(ClassName.get(java.util.Map.class)),
     MUTATION_EXCEPTION_STRATEGY_CONFIGURATION(ClassName.get(MutationExceptionStrategyConfiguration.class)),
-    OBJECT(ClassName.get(Object.class)),
     OBJECTS(ClassName.get(java.util.Objects.class)),
     OVERRIDE(ClassName.get(java.lang.Override.class)),
+    PAIR(ClassName.get(Pair.class)),
     PAYLOAD_CREATOR(ClassName.get(MutationExceptionStrategyConfiguration.PayloadCreator.class)),
     QUERY_HELPER(ClassName.get(QueryHelper.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
+    RECORD3(ClassName.get(org.jooq.Record3.class)),
     RECORD_VALIDATOR(ClassName.get(RecordValidator.class)),
     RESOLVER_HELPERS(ClassName.get(ResolverHelpers.class)),
     SELECTION_SET(ClassName.get(SelectionSet.class)),

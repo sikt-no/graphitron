@@ -59,6 +59,13 @@ public class GraphQLGeneratorQueryTest extends GeneratorTest {
     }
 
     @Test
+    void generate_queryWithPaginationCombinedWithLookupKey_shouldThrowException() {
+        assertThatThrownBy(() -> generateFiles("error/queryWithPaginationAndLookUp"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(String.format("'customers' has both pagination and @%s defined. These can not be used together", GenerationDirective.LOOKUP_KEY.getName()));
+    }
+
+    @Test
     void generate_whenImplementsNodeWithoutTable_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/implementsNodeWithoutTable"))
                 .isInstanceOf(IllegalArgumentException.class)

@@ -7,8 +7,6 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.RECORD_NAME_SUFFIX;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -36,17 +34,9 @@ public class ServiceWrapper {
         if (response != null && response.hasJavaRecordReference()) {
             returnType = response.getRecordReference();
         } else {
-            returnType = method != null ? extractType(method.getGenericReturnType()) : null;
+            returnType = method != null ? TypeExtractor.extractType(method.getGenericReturnType()) : null;
         }
         methodName = uncapitalize(method != null ? method.getName() : field.getName());
-    }
-
-    /**
-     * @return If the type is a parameterized type such as a List or Set, return the class of the parameter, otherwise return the class of the argument.
-     */
-    public static Class<?> extractType(Type type) {
-        if (type == null) return null;
-        return (Class<?>) (type instanceof ParameterizedType ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
     }
 
     /**

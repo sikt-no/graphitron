@@ -52,6 +52,8 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         argumentsByName = arguments.stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
         Validate.isTrue(!hasLookupKey || getOrderField().isEmpty(),
                 "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
+        Validate.isTrue(!hasLookupKey || !hasPagination(),
+                "'%s' has both pagination and @%s defined. These can not be used together", getName(), LOOKUP_KEY.getName());
     }
 
     private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel, String container) {
@@ -112,6 +114,13 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
      */
     public boolean hasBackwardPagination() {
         return hasBackwardPagination;
+    }
+
+    /**
+     * @return Does this search field use any form of pagination?
+     */
+    public boolean hasPagination() {
+        return hasForwardPagination() || hasBackwardPagination();
     }
 
     @Override

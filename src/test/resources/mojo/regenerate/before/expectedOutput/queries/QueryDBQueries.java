@@ -25,7 +25,7 @@ public class QueryDBQueries {
                 )
                 .from(FILM)
                 .where(FILM.RELEASE_YEAR.eq(releaseYear))
-                .orderBy(FILM.getIdFields())
-                 .fetch(it -> it.into(Film.class));
+                .orderBy(FILM.fields(FILM.getPrimaryKey().getFieldsArray()))
+                .fetch(it -> it.into(Film.class));
     }
 }

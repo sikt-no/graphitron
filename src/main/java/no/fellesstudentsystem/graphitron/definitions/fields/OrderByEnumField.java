@@ -44,25 +44,22 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
     }
 
     /**
-     * Fetches schema fields with their respective paths for all fields in the index identified by the class/instance variable 'indexName'.
+     * Validates that the index referred to by this orderBy field is accessible from the given schema node.
      *
      * @param processedSchema  The processed schema.
      * @param referenceNode   The reference schema node.
-     * @return  A mapping of object fields to their respective paths for all fields in the index. The paths are relative to `referenceNode`.
-     * i.e., the path is empty for index fields directly accessible from `referenceNode`.
      */
-    public Map<ObjectField, List<String>> getSchemaFieldsWithPathForIndex(ProcessedSchema processedSchema, ObjectDefinition referenceNode) {
+    public void validateThatReferredIndexIsAccessibleFromNode(ProcessedSchema processedSchema, ObjectDefinition referenceNode) {
         var index = TableReflection.getIndex(referenceNode.getTable().getMappingName(), indexName).orElseThrow();
 
-        return index.getFields()
+        index.getFields()
                 .stream()
                 .map(SortField::getName)
-                .map(it ->
+                .forEach(it ->
                         getFieldWithPath(processedSchema, referenceNode, it, new ArrayList<>())
                                 .orElseThrow(() -> new IllegalArgumentException(
                                         String.format("OrderByField '%s' refers to index '%s' on field '%s' but this field is not accessible from the schema type '%s'",
-                                                getName(), indexName, it, referenceNode.getName()))))
-                .collect(Collectors.toMap(it -> it.objectField, it -> it.path, (x, y) -> y, LinkedHashMap::new));
+                                                getName(), indexName, it, referenceNode.getName()))));
     }
 
     private Optional<FieldWithPath> getFieldWithPath(ProcessedSchema processedSchema, ObjectDefinition referenceNode, String fieldName, ArrayList<String> path) {

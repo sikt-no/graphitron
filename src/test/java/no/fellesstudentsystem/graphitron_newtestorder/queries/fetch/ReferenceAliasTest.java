@@ -78,10 +78,11 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "query/table", Set.of(CUSTOMER_NOT_GENERATED),
                 "CUSTOMER.address().as(",
-                ",DSL.row(customer_address_left.getId()",
+                "var orderFields = customer_address_left.fields(customer_address_left.getPrimaryKey().getFieldsArray())",
+                "DSL.row(customer_address_left.getId()",
                 ".from(CUSTOMER",
                 ".where(CUSTOMER.hasIds(customerIds",
-                ".orderBy(customer_address_left.getIdFields()"
+                ".orderBy(orderFields"
         );
     }
 

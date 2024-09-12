@@ -38,7 +38,7 @@ public class OutputTest extends GeneratorTest {
                 "listed", Set.of(CUSTOMER_TABLE),
                 "List<CustomerTable> queryForQuery",
                 ".select(DSL.row(",
-                ".orderBy(CUSTOMER.getIdFields()",
+                ".orderBy(orderFields)",
                 ".fetch(it -> it.into(CustomerTable.class"
         );
     }
@@ -50,7 +50,7 @@ public class OutputTest extends GeneratorTest {
                 "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<String, CustomerTable> queryForWrapper",
                 ".select(CUSTOMER.getId(),DSL.row(",
-                ".orderBy(CUSTOMER.getIdFields()",
+                ".orderBy(orderFields)",
                 ".fetchMap(Record2::value1, Record2::value2"
         );
     }
@@ -62,7 +62,7 @@ public class OutputTest extends GeneratorTest {
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<String, List<CustomerTable>> queryForWrapper",
                 ".select(CUSTOMER.getId(),DSL.row(",
-                ".orderBy(CUSTOMER.getIdFields()",
+                ".orderBy(orderFields)",
                 ".fetchGroups(Record2::value1, Record2::value2"
         );
     }

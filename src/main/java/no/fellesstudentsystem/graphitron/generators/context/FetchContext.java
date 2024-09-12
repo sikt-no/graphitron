@@ -197,8 +197,6 @@ public class FetchContext {
      * @return The next iteration of this context based on the provided reference field.
      */
     public FetchContext nextContext(GenerationField referenceObjectField) {
-        var newJoinListSequence = new JoinListSequence();
-        newJoinListSequence.add(getReferenceTable());
         return new FetchContext(
                 processedSchema,
                 referenceObjectField,

@@ -35,12 +35,7 @@ public class PaginationTest extends GeneratorTest {
     @Test
     @DisplayName("Connection with no other fields")
     void defaultCase() {
-        assertGeneratedContentContains(
-                "default",
-                "ctx, Integer pageSize, String after,",
-                ".seek(CUSTOMER.getIdValues(after)",
-                ".limit(pageSize + 1"
-        );
+        assertGeneratedContentMatches("default");
     }
 
     @Test
@@ -55,10 +50,6 @@ public class PaginationTest extends GeneratorTest {
     @Test
     @DisplayName("Connection not on the root level")
     void splitQuery() {
-        assertGeneratedContentContains(
-                "splitQuery", Set.of(SPLIT_QUERY_WRAPPER),
-                ",Set<String> wrapperIds, Integer pageSize, String after,",
-                ".limit(pageSize * wrapperIds.size() + 1)"
-        );
+        assertGeneratedContentMatches("splitQuery", SPLIT_QUERY_WRAPPER);
     }
 }

@@ -29,7 +29,6 @@ public class QueryGeneratedResolver implements QueryResolver {
                 pageSize, 1000,
                 (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, pageSize,after, selectionSet),
                 (ctx, ids) -> QueryDBQueries.countQueryForQuery(ctx),
-                (it) -> it.getId(),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> DummyConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                     var page = connection.getPageInfo();

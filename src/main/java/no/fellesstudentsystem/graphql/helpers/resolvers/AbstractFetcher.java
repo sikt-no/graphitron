@@ -10,6 +10,7 @@ import no.fellesstudentsystem.graphql.helpers.functions.DataLoaderMapper;
 import no.fellesstudentsystem.graphql.helpers.selection.ConnectionSelectionSet;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import no.fellesstudentsystem.graphql.relay.ConnectionImpl;
+import org.apache.commons.lang3.tuple.Pair;
 import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderFactory;
 import org.dataloader.MappedBatchLoaderWithContext;
@@ -88,15 +89,15 @@ public abstract class AbstractFetcher {
         return keys.stream().collect(Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
     }
 
-    protected <T, U> U getPaginatedConnection(List<T> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<T, String> idFunction, Function<ConnectionImpl<T>, U> connectionFunction) {
-        return connectionFunction.apply(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null, idFunction));
+    protected <T, U> U getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, U> connectionFunction) {
+        return connectionFunction.apply(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null));
     }
 
-    protected <T, U> Map<String, U> getPaginatedConnection(Map<String, List<T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<T, String> idFunction, Function<ConnectionImpl<T>, U> connectionFunction) {
-        return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null, idFunction))));
+    protected <T, U> Map<String, U> getPaginatedConnection(Map<String, List<Pair<String, T>>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, U> connectionFunction) {
+        return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null))));
     }
 
-    protected <T> ConnectionImpl<T> createPagedResult(List<T> dbResult, int pageSize, Integer totalCount, Function<T, String> idFunction) {
+    protected <T> ConnectionImpl<T> createPagedResult(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount) {
         var items = dbResult.subList(0, Math.min(dbResult.size(), pageSize));
         DefaultPageInfo pageInfo;
         if (items.isEmpty()) {
@@ -105,8 +106,8 @@ public abstract class AbstractFetcher {
             var itemStart = items.get(0);
             var itemEnd = items.get(items.size() - 1);
             pageInfo = new DefaultPageInfo(
-                    new DefaultConnectionCursor(itemStart != null ? idFunction.apply(itemStart) : null),
-                    new DefaultConnectionCursor(itemEnd != null ? idFunction.apply(itemEnd) : null),
+                    new DefaultConnectionCursor(itemStart != null ? itemStart.getLeft() : null),
+                    new DefaultConnectionCursor(itemEnd != null ? itemEnd.getLeft() : null),
                     false,
                     dbResult.size() > pageSize
             );
@@ -114,13 +115,13 @@ public abstract class AbstractFetcher {
 
         List<Edge<T>> edges = items
                 .stream()
-                .map(item -> new DefaultEdge<>(item, new DefaultConnectionCursor(item != null ? idFunction.apply(item) : null)))
+                .map(item -> new DefaultEdge<>(item.getRight(), new DefaultConnectionCursor(item != null ? item.getLeft() : null)))
                 .collect(Collectors.toList());
 
         return ConnectionImpl
                 .<T>builder()
                 .setPageInfo(pageInfo)
-                .setNodes(items)
+                .setNodes(items.stream().map(Pair::getRight).collect(Collectors.toList()))
                 .setEdges(edges)
                 .setTotalCount(totalCount)
                 .build();

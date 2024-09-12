@@ -35,8 +35,6 @@ public class IdBasedGenerator extends JavaGenerator {
 
         generateGetter(out, primaryKeyFields, "Id", "Id");
         generateFieldsGetter(out, table, primaryKeyFields);
-        generateIDFieldGetter(out, table.getName().toUpperCase(), primaryKeyFields, "Id");
-        generateValuesGetter(out, primaryKeyFields);
 
         var qualifiers = new ArrayList<Map.Entry<String, String>>();
 
@@ -47,7 +45,6 @@ public class IdBasedGenerator extends JavaGenerator {
 
             var sourceFieldNames = resolveFieldNames(fk.getKeyColumns());
             generateGetter(out, sourceFieldNames, qualifier, name);
-            generateIDFieldGetter(out, table.getName().toUpperCase(), sourceFieldNames, qualifier);
             generateHasCondition(out, sourceFieldNames, qualifier);
         }
         generateQualifierMap(out, qualifiers);
@@ -114,29 +111,6 @@ public class IdBasedGenerator extends JavaGenerator {
         out.println();
         out.println("public java.util.List<TableField<%s, ?>> getIdFields() {", recordType);
         out.println("return java.util.List.of(%s);", String.join(", ", fields));
-        out.println("}");
-    }
-
-    /**
-     * FS-Specific helper method. Returns the fields this ID is composed of.
-     */
-    private void generateIDFieldGetter(JavaWriter out, String sourceName, List<String> fieldNames, String qualifier) {
-        var fieldStringNames = fieldNames.stream().map(it -> sourceName + "." + it + ".getName()").collect(Collectors.joining(", "));
-
-        out.println();
-        out.println("public static java.util.List<String> get%sFieldNames() {", qualifier);
-        out.println("return java.util.List.of(%s);", fieldStringNames);
-        out.println("}");
-    }
-
-    private void generateValuesGetter(JavaWriter out, List<String> fields) {
-        out.println();
-        out.println("public Object[] getIdValues(String id) {");
-        out.println("if (id == null) {");
-        out.tab(1).println("return new Object[]{};");
-        out.println("} else {");
-        out.tab(1).println("return id.split(\",\");");
-        out.println("}");
         out.println("}");
     }
 

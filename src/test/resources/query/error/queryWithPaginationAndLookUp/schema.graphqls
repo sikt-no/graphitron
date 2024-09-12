@@ -1,0 +1,17 @@
+type Query {
+  customers(first: Int = 100, after: String, customerIds: [ID]! @field(name : "CUSTOMER_ID") @lookupKey): CustomerConnection #lookupKey and pagination (implied by connection) cannot be used together
+}
+
+type CustomerConnection {
+    edges: [CustomerConnectionEdge]
+    nodes: [Customer!]!
+}
+
+type CustomerConnectionEdge {
+    cursor: String
+    node: Customer
+}
+
+type Customer {
+    id: ID!
+}

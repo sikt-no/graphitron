@@ -2,6 +2,7 @@ package no.fellesstudentsystem.graphitron_newtestorder.codereferences.services;
 
 import no.fellesstudentsystem.graphitron_newtestorder.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphitron.jooq.generated.testdata.tables.records.CustomerRecord;
+import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
 
 import java.util.List;
@@ -34,7 +35,7 @@ public class ResolverFetchService {
         return null;
     }
 
-    public List<CustomerRecord> queryList(int pageSize, String after) {
+    public List<Pair<String, CustomerRecord>> queryList(int pageSize, String after) {
         return List.of();
     }
 
@@ -42,7 +43,7 @@ public class ResolverFetchService {
         return 0;
     }
 
-    public Map<String, CustomerRecord> queryMap(Set<String> ids, int pageSize, String after) {
+    public Map<String, List<Pair<String, CustomerRecord>>> queryMap(Set<String> ids, int pageSize, String after) {
         return Map.of();
     }
 

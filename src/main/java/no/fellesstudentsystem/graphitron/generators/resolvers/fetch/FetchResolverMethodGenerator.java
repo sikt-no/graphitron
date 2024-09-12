@@ -5,16 +5,13 @@ import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
-import no.fellesstudentsystem.graphitron.definitions.fields.OrderByEnumField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.fellesstudentsystem.graphitron.definitions.mapping.MethodMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
-import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -27,7 +24,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameForm
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
-import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -142,7 +138,14 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                     .build();
         }
 
-        var orderField = target.getOrderField().map(AbstractField::getName);
+        var orderField = target.getOrderField()
+               .filter(orderInputField -> {
+                            processedSchema.getOrderByFieldEnum(orderInputField)
+                                    .getFields()
+                                    .forEach(it -> it.validateThatReferredIndexIsAccessibleFromNode(processedSchema, processedSchema.getObjectOrConnectionNode(target)));
+                            return true;
+                        })
+                .map(AbstractField::getName);
         var filteredInputs = parser
                 .getMethodInputsWithOrderField()
                 .keySet()
@@ -153,7 +156,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         var countFunction = countFunction(objectToCall, method, inputsWithId, isService);
         var connectionFunction = connectionFunction(processedSchema.getConnectionObject(target), processedSchema.getObject(CONNECTION_PAGE_INFO_NODE.getName()));
         return dataBlock
-                .add("$N, $L,\n$L,\n$L,\n$L$L,\n$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, getIDFunction(target), transformWrap, connectionFunction)
+                .add("$N, $L,\n$L,\n$L$L,\n$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, transformWrap, connectionFunction)
                 .unindent()
                 .unindent()
                 .addStatement(")")
@@ -173,61 +176,6 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
             code.add("$S, $N.getId(), ", queryMethodName, uncapitalize(localObject.getName()));
         }
         return code.build();
-    }
-
-    /**
-     * @return CodeBlock consisting of a function for a getId call.
-     */
-    private CodeBlock getIDFunction(ObjectField referenceField) {
-        return referenceField
-                .getOrderField()
-                .map(orderInputField -> {
-                    var objectNode = processedSchema.getObjectOrConnectionNode(referenceField);
-
-                    var orderByFieldMapEntries = processedSchema.getOrderByFieldEnum(orderInputField)
-                            .getFields()
-                            .stream()
-                            .map(orderByField -> CodeBlock.of("$S, $L -> $L",
-                                    orderByField.getName(), VARIABLE_TYPE_NAME, createJoinedGetFieldAsStringCallBlock(orderByField, objectNode)))
-                            .collect(CodeBlock.joining(",\n"));
-
-                    return CodeBlock.builder()
-                            .add("(it) -> $N == null ? it.getId() :\n", orderInputField.getName())
-                            .indent()
-                            .indent()
-                            .add("$T.<$T, $T<$T, $T>>of(\n",
-                                    MAP.className, STRING.className, FUNCTION.className, objectNode.getGraphClassName(), STRING.className)
-                            .indent()
-                            .indent()
-                            .add("$L\n", orderByFieldMapEntries)
-                            .unindent()
-                            .unindent()
-                            .add(").get($L.get$L().toString()).apply(it)", orderInputField.getName(), capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()))
-                            .unindent()
-                            .unindent()
-                            .build();
-                })
-                .orElseGet(() -> CodeBlock.of("(it) -> it.getId()")); //Note: getID is FS-specific.
-    }
-
-    private CodeBlock createJoinedGetFieldAsStringCallBlock(OrderByEnumField orderByField, ObjectDefinition objectNode) {
-        return orderByField
-                .getSchemaFieldsWithPathForIndex(processedSchema, objectNode)
-                .entrySet()
-                .stream()
-                .map(fieldWithPath -> createNullSafeGetFieldAsStringCall(fieldWithPath.getKey(), fieldWithPath.getValue()))
-                .collect(CodeBlock.joining(" + \",\" + "));
-    }
-
-    private static CodeBlock createNullSafeGetFieldAsStringCall(ObjectField field,  List<String> path) {
-        var getFieldCall = field.getMappingFromSchemaName().asGetCall();
-        var fullCallBlock = CodeBlock.of("$L$L$L", VARIABLE_TYPE_NAME, path.stream().map(it -> new MethodMapping(it).asGetCall()).collect(CodeBlock.joining("")), getFieldCall);
-
-        if (field.getTypeClass() != null &&
-                (field.getTypeClass().isPrimitive() || field.getTypeClass().equals(STRING.className))) {
-            return fullCallBlock;
-        }
-        return CodeBlock.of("$L == null ? null : $L.toString()", fullCallBlock, fullCallBlock);
     }
 
     /**
