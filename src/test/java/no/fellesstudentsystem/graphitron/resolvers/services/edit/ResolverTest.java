@@ -223,6 +223,27 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Response containing a record fetched by ID")
+    void responseFetchByID() {
+        assertGeneratedContentContains(
+                "responseFetchByID", Set.of(NODE),
+                "response.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                        "transform.getCtx(), Set.of(mutation.getId()), transform.getSelect().withPrefix(\"customer\")).values().stream().findFirst().orElse(null));"
+        );
+    }
+
+    @Test
+    @DisplayName("Response containing a list of records fetched by ID")
+    void responseFetchByIDList() {
+        assertGeneratedContentContains(
+                "responseFetchByIDList", Set.of(NODE),
+                "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                        "transform.getCtx(), mutation.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
+                "response.setCustomer(mutation.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()"
+        );
+    }
+
+    @Test
     @DisplayName("Response with non-record wrapper")
     void wrappedResponse() {
         assertGeneratedContentContains(

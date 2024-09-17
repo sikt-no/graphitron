@@ -538,15 +538,14 @@ public class FormatCodeBlocks {
         var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForRecordFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
         var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, asQueryClass(typeName));
         return CodeBlock.of(
-                "$T.$L($L, $L, $L.withPrefix($L))$L$L",
+                "$T.$L($L, $L, $L.withPrefix($L))$L",
                 queryClass,
                 asQueryNodeMethod(typeName),
                 asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
                 isIterable ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,
-                isIterable ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst()),
-                atResolver && !isIterable ? CodeBlock.of(".values().stream()$L", collectToList()) : empty()
+                isIterable ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
         );
     }
 

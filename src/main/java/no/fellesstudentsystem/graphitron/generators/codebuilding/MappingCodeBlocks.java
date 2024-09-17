@@ -17,7 +17,6 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.PATH_HERE_NAME;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.COLLECTORS;
 
 public class MappingCodeBlocks {
     public static CodeBlock inputTransform(List<? extends InputField> specInputs, ProcessedSchema schema) {
@@ -127,7 +126,7 @@ public class MappingCodeBlocks {
     /**
      * @return Code for adding error types and calling transform methods.
      */
-    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, boolean serviceReturnsRecord, ProcessedSchema schema) {
+    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, boolean returnsRecord, ProcessedSchema schema) {
         if (!mapperContext.targetIsType()) {
             return empty();
         }
@@ -154,7 +153,7 @@ public class MappingCodeBlocks {
 
             if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
                 if (!innerContext.targetIsType()) {
-                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, serviceReturnsRecord, schema)));
+                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, returnsRecord, schema)));
                 } else if (innerContext.shouldUseStandardRecordFetch()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else if (innerContext.hasRecordReference()) {
@@ -168,7 +167,7 @@ public class MappingCodeBlocks {
                         innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
                     }
                 } else {
-                    innerCode.add(generateSchemaOutputs(innerContext, serviceReturnsRecord, schema));
+                    innerCode.add(generateSchemaOutputs(innerContext, returnsRecord, schema));
                 }
             }
 
@@ -195,7 +194,7 @@ public class MappingCodeBlocks {
             var extractValue = field.isIterableWrapped() && !previousField.isIterableWrapped();
             if (extractValue) {
                 var iterationName = asIterable(field.getName());
-                return CodeBlock.of("$N.stream().map($L -> $L).collect($T.toList())", resultName, iterationName, getValue(iterationName, getMapping), COLLECTORS.className);
+                return CodeBlock.of("$N.stream().map($L -> $L)$L", resultName, iterationName, getValue(iterationName, getMapping), collectToList());
             } else {
                 return getValue(resultName, getMapping);
             }

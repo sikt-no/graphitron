@@ -640,21 +640,6 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this field point to a type that contains a node field?
-     */
-    public boolean containsNodeField(ObjectField target) {
-        if (!isObject(target)) {
-            return false;
-        }
-
-        if (hasTableObject(target)) {
-            return true;
-        }
-
-        return getObject(target).getFields().stream().anyMatch(this::containsNodeField);
-    }
-
-    /**
      * @return List of all error types this type contains.
      */
     @NotNull

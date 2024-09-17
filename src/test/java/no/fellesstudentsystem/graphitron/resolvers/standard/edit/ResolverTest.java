@@ -156,7 +156,7 @@ public class ResolverTest extends GeneratorTest {
                 "responseList = new ArrayList<Response>()",
                 "for (var itInRecordList : inRecordList) {" +
                         "var response = new Response();" +
-                        "response.setId(itInRecordList.getId());" +
+                        "if (transform.getSelect().contains(\"id\")) {response.setId(itInRecordList.getId());}" +
                         "responseList.add(response);}",
                 ".completedFuture(responseList"
         );
@@ -173,10 +173,10 @@ public class ResolverTest extends GeneratorTest {
 
     @Test
     @DisplayName("Response with two fields")
-    void responseMultipleFields() {
+    void responseMultipleFields() {  // Does not know how to set multiple fields.
         assertGeneratedContentContains(
                 "responseMultipleFields",
-                "new Response();response.setId(inRecord.getId());return"  // Does not know how to set multiple fields.
+                "new Response();if (transform.getSelect().contains(\"id\")) {response.setId(inRecord.getId());}return"
         );
     }
 
@@ -191,14 +191,8 @@ public class ResolverTest extends GeneratorTest {
     void responseRecordListed() {
         assertGeneratedContentContains(
                 "responseRecordListed",
-                "inRecordCustomer = getResponseCustomer(transform, inRecordList,",
-                "customerList = new ArrayList<Customer",
-                "for (var itInRecordList : inRecordList) {customerList.add(inRecordCustomer.get(itInRecordList.getId()));}",
-                "response.setCustomer(customerList)",
-                "Map<String, Customer> getResponseCustomer",
-                "List<CustomerRecord> idContainer,",
-                "return Map.of()",
-                ", idContainer.stream().map(it -> it.getId()).collect(Collectors.toSet()),"
+                "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), inRecordList.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
+                        "response.setCustomer(inRecordList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()"
         );
     }
 
@@ -208,10 +202,8 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "responseListedRecordListed",
                 "responseList = new ArrayList<Response>()",
-                "customerList = new ArrayList<Customer>()",
-                "customerList.add(inRecordCustomer.get(itInRecordList.getId()",
-                "response.setCustomer(customerList",
-                "responseList.add(response"
+                "loadCustomerByIdsAsNode =",
+                "response.setCustomer(itInRecordList.stream()"
         );
     }
 
@@ -222,7 +214,8 @@ public class ResolverTest extends GeneratorTest {
                 "nestedResponseRecord",
                 "new Response1",
                 "new Response2()",
-                "response2.setCustomer(inRecordCustomer)",
+                "response2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(inRecord.getId()",
+                ".findFirst().orElse(null",
                 "response1.setResponse2(response2)"
         );
     }
@@ -235,7 +228,7 @@ public class ResolverTest extends GeneratorTest {
                 "new Response1",
                 "new ArrayList<Response2>",
                 "for (var itInRecordList : inRecordList)",
-                "response2.setCustomer(inRecordCustomer.get(itInRecordList.getId()",
+                "response2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(itInRecordList.getId()",
                 "response1.setResponse2(response2List)"
         );
     }
@@ -247,9 +240,8 @@ public class ResolverTest extends GeneratorTest {
                 "nestedResponseListedRecord",
                 "new Response1",
                 "new ArrayList<Response2>",  // Note, this is invalid code even though the schema should be legal. We get two loops here when we expect only one.
-                "new ArrayList<Customer>",
-                "customerList.add(inRecordCustomer.get(itInRecordList.getId()",
-                "response2.setCustomer(customerList"
+                "loadCustomerByIdsAsNode =",
+                "response2.setCustomer(itInRecordList.stream()"
         );
     }
 
@@ -258,7 +250,7 @@ public class ResolverTest extends GeneratorTest {
     void responseListedInputUnlisted() {
         assertGeneratedContentContains(
                 "responseListedInputUnlisted",
-                "response2.setCustomer(inRecordCustomer",
+                "response2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(inRecord.getId()",
                 "response1.setResponse2(List.of(response2"
         );
     }
@@ -269,7 +261,8 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "responseUnlistedInputListed",
                 "for (var itInRecordList : inRecordList)",
-                "response2.setCustomer(inRecordCustomer.get(itInRecordList.getId()",
+                "response2.setCustomer(CustomerDBQueries",
+                ".findFirst().orElse(null",
                 "response1.setResponse2(response2List.stream().findFirst().orElse(List.of()"
         );
     }
