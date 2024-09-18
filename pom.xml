@@ -87,7 +87,7 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
-            <version>1.19.0</version>
+            <version>1.20.1</version>
             <!-- denne transitive dependencyen drar inn en eldre versjon av hamcrest som potensielt gir trøbbel for testene i fsapi-rest -->
             <exclusions>
                 <exclusion>

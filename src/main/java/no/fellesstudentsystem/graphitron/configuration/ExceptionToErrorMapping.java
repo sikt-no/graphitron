@@ -1,6 +1,6 @@
 package no.fellesstudentsystem.graphitron.configuration;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.Objects;
 import java.util.Optional;
 
