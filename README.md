@@ -419,6 +419,54 @@ _Resulting code_:
 .and(some.path.CityCondition.cityMethodAllElements(CITY, countryId, cityNames))
 ```
 
+#### Example: Conditions on input type fields
+Here we have no field condition but condition on parameters, where some have the _override_ value set to _true_. We can
+see that upper-level conditions on input type fields includes all the scalar values that are contained in their
+hierarchy of inputtypes. We also see that automatically generated checks are generated for some values, due to the fact
+that these values are contained within inputtypes that have declared conditions where the _override_ value has _not_
+been set. Setting the _override_ value to _true_ on condition for parameters and fields prevents generation of
+automatically generated checks.
+
+_Schema_:
+```graphql
+type Query {
+  query(
+    staff: StaffInput! @condition(condition: {name: "STAFF_CONDITION", method: "staff"})
+  ) : [Staff]
+}
+
+input StaffInput {
+  info: ContactInfoInput!
+  active: Boolean!
+}
+
+input ContactInfoInput {
+  name: NameInput! @condition(condition: {name: "STAFF_CONDITION", method: "name"}, override: true)
+  jobEmail: EmailInput! @condition(condition: {name: "STAFF_CONDITION", method: "email"})
+
+}
+
+input NameInput {
+  firstname: String! @field(name: "FIRST_NAME") @condition(condition: {name: "STAFF_CONDITION", method: "firstname"})
+  lastname: String! @field(name: "LAST_NAME") @condition(condition: {name: "STAFF_CONDITION", method: "lastname"})
+}
+
+input EmailInput {
+  email: String!
+}
+```
+
+_Resulting code_:
+```java
+.where(some.path.StaffCondition.firstname(STAFF, staff.getInfo().getName().getFirstname()))
+.and(some.path.StaffCondition.lastname(STAFF, staff.getInfo().getName().getLastname()))
+.and(STAFF.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()))
+.and(STAFF.ACTIVE.eq(staff.getActive()))
+.and(some.path.StaffCondition.staff(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname(), staff.getInfo().getJobEmail().getEmail(), staff.getActive()))
+.and(some.path.StaffCondition.name(STAFF, staff.getInfo().getName().getFirstname(), staff.getInfo().getName().getLastname()))
+.and(some.path.StaffCondition.email(STAFF, staff.getInfo().getJobEmail().getEmail()))
+```
+
 #### Example: Condition using flat record configuration
 This is the simplest case, when we have only one layer of input types.
 In the example below, the input type will be mapped to a record that corresponds to the table.
@@ -471,6 +519,83 @@ _Resulting code_:
 ```java
 .where(some.path.CityCondition.cityMethodAllElements(CITY, cityInputRecord))
 .and(some.path.CityCondition.cityMethod(CITY, cityInputRecord.getCityNames()))
+```
+
+#### Example: Schema with listed input types and condition set _on_ listed input field
+Graphitron does not support more than one level of listed input types, so to be able to generate code for the cases
+where we initially would generate several levels of lists, we instead must declare a override condition before the
+second listed input in the hierarchy, and then ourselves write subsequent checks in the method we specify for the
+condition. In this case we specify a override condition _on_ a field holding a list of input types. The condition method
+will then be passed this list of input types and further checks on this list will be done in the method.
+
+```graphql
+type Query {
+  query(
+    inputs1: [Input1] @condition(condition: {name: "RECORD_FETCH_STAFF_CONDITION", method: "input1"}, override: true)
+  ) : [Staff]
+}
+
+input Input1 @record(record: {name: "JAVA_RECORD_STAFF_INPUT1"}) {
+  names: [NameInput]
+  active: Boolean
+}
+
+input NameInput @record(record: {name: "JAVA_RECORD_STAFF_NAME"}) {
+  firstname: String! @field(name: "FIRST_NAME")
+  lastname: String! @field(name: "LAST_NAME")
+}
+```
+
+_Resulting_code_:
+```java
+.where(some.path.RecordStaffCondition.input1(STAFF, inputs1RecordList))
+```
+
+#### Example: Schema with listed input types and condition set on input field _inside_ a list input
+Here we have a schema of several levels of type input, and several of these are contained in lists. As said in previous
+example, Graphitron does not support more than one level of listed input, so we must specify a override condition before
+the second listed input in the hiearchy. Unlike the previous example where the condition was set _on_ a field of listed
+input, we will here show that you also can set the condition on a field _inside_ a list of input type and before the
+second listed input. In this case, each item of the listed input type will be sent separately to the condition method
+for further checks.
+
+_Schema_:
+```graphql
+type Query {
+  query(
+    input3: Input3!
+  ) : [Staff]
+}
+
+input Input3 @record(record: {name: "JAVA_RECORD_STAFF_INPUT3"}) {
+  inputs2: [Input2]
+}
+
+input Input2 @record(record: {name: "JAVA_RECORD_STAFF_INPUT2"}) {
+  input1: Input1 @condition(condition: {name: "STAFF_CONDITION", method: "input1"}, override: true)
+}
+
+input Input1 @record(record: {name: "JAVA_RECORD_STAFF_INPUT1"}) {
+  names: [NameInput]
+  active: Boolean
+}
+
+input NameInput @record(record: {name: "JAVA_RECORD_STAFF_NAME"}) {
+  firstname: String! @field(name: "FIRST_NAME")
+  lastname: String! @field(name: "LAST_NAME")
+}
+```
+
+_Resulting_code_:
+```java
+.where(
+       input3Record.getInputs2() != null && input3Record.getInputs2().size() > 0 ?
+       DSL.row(DSL.trueCondition()).in(
+               input3Record.getInputs2().stream().map(internal_it_ ->
+                       DSL.row(some.path.StaffCondition.input1(STAFF, internal_it_.getInput1()))
+               ).collect(Collectors.toList())
+       ) : DSL.noCondition()
+)
 ```
 
 ### Enums
