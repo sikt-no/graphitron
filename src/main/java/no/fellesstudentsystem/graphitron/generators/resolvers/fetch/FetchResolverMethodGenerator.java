@@ -138,19 +138,11 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                     .build();
         }
 
-        var orderField = target.getOrderField()
-               .filter(orderInputField -> {
-                            processedSchema.getOrderByFieldEnum(orderInputField)
-                                    .getFields()
-                                    .forEach(it -> it.validateThatReferredIndexIsAccessibleFromNode(processedSchema, processedSchema.getObjectOrConnectionNode(target)));
-                            return true;
-                        })
-                .map(AbstractField::getName);
         var filteredInputs = parser
                 .getMethodInputsWithOrderField()
                 .keySet()
                 .stream()
-                .filter(it -> orderField.map(orderByField -> !orderByField.equals(it)).orElse(true))
+                .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
         var inputsWithId = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
         var countFunction = countFunction(objectToCall, method, inputsWithId, isService);
