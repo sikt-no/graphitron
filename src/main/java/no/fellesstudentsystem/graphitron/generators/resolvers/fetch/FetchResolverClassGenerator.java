@@ -1,13 +1,28 @@
 package no.fellesstudentsystem.graphitron.generators.resolvers.fetch;
 
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeSpec;
+import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
+import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverClassGenerator;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
+import javax.lang.model.element.Modifier;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.NODE_MAP_NAME;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.MAP;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.STRING;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 
 /**
@@ -35,13 +50,63 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
 
     @Override
     public TypeSpec generate(ObjectDefinition target) {
-        return getSpec(
+        var spec = getSpec(
                 target.getName(),
                 List.of(
                         new FetchResolverMethodGenerator(target, processedSchema),
                         new FetchInterfaceResolverMethodGenerator(target, processedSchema)
                 )
-        ).build();
+        );
+        target
+                .getFields()
+                .stream()
+                .filter(it -> it.getTypeName().equals(NODE_TYPE.getName()))
+                .findFirst()
+                .flatMap(this::buildNodeMap)
+                .ifPresent(spec::addField);
+        return spec.build();
+    }
+
+    public Optional<FieldSpec> buildNodeMap(ObjectField target) {
+        var interfaceDefinition = processedSchema.getInterface(target);
+        var interfaceName = interfaceDefinition.getName();
+        var seenTables = new HashSet<String>();
+        var nodes = processedSchema
+                .getObjects()
+                .values()
+                .stream()
+                .filter(it -> it.implementsInterface(interfaceName))
+                .sorted(Comparator.comparing(AbstractObjectDefinition::getName))
+                .map(it -> {
+                            var table = it.getTable();
+                            if (seenTables.contains(table.getMappingName())) {
+                                return empty(); // Can not handle having duplicate tables for nodes.
+                            }
+
+                            seenTables.add(table.getMappingName());
+                            return CodeBlock.of(
+                                    "$T.entry($T.$N.getName(), $S)",
+                                    MAP.className,
+                                    table.getTableClass(),
+                                    table.getMappingName(),
+                                    it.getName()
+                            );
+                        }
+                )
+                .filter(it -> !it.isEmpty())
+                .collect(CodeBlock.joining(",\n"));
+
+        if (nodes.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(
+                FieldSpec
+                        .builder(ParameterizedTypeName.get(MAP.className, STRING.className, STRING.className), NODE_MAP_NAME)
+                        .addModifiers(Modifier.PRIVATE, Modifier.FINAL, Modifier.STATIC)
+                        .initializer(CodeBlock.of("$T.ofEntries($L)", MAP.className, indentIfMultiline(nodes)))
+                        .build()
+        );
     }
 
     @Override

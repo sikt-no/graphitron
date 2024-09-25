@@ -1,5 +1,6 @@
 package no.fellesstudentsystem.graphql.naming;
 
+import static graphql.relay.Relay.NODE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -22,7 +23,7 @@ public enum GraphQLReservedName {
 
     ORDER_BY_FIELD("orderByField"),
 
-    NODE_TYPE("Node"),
+    NODE_TYPE(NODE),
     NODE_ID("id"),
     ERROR_TYPE("Error"),
     ERROR_FIELD("Errors"),

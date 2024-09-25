@@ -29,7 +29,7 @@ public class ServiceDataFetcher<A extends AbstractTransformer> extends AbstractF
 
     /**
      * Create a dataloader for a resolver.
-     * @param abstractTransformer A transformer that can transform jOOQ records to Java-records and back.
+     * @param abstractTransformer A transformer that can transform jOOQ and Java-records to GraphQL and back.
      */
     public ServiceDataFetcher(A abstractTransformer) {
         this(abstractTransformer.getEnv(), abstractTransformer);

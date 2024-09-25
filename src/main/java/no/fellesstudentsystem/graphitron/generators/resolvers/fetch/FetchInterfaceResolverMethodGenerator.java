@@ -6,11 +6,9 @@ import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
-import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.dependencies.IdHandlerDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
@@ -19,10 +17,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.newDataFetcher;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -31,6 +31,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     private final ObjectDefinition localObject;
+    private final static String VARIABLE_LOADER = "_loaderName";
 
     public FetchInterfaceResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -39,38 +40,60 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        InterfaceDefinition interfaceDefinition = processedSchema.getInterface(target);
-        dependencySet.add(IdHandlerDependency.getInstance());
-
-        var spec = getDefaultSpecBuilder(target.getName(), interfaceDefinition.getGraphClassName());
-
-        if (!localObject.isOperationRoot()) {
-            spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
-        }
-
         var inputField = target.getArguments().get(0);
-        String nodeId = inputField.getName();
-        spec
-                .addParameter(iterableWrapType(inputField), nodeId)
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addStatement("$T $L = $N.getTable($N).getName()", STRING.className, TABLE_NAME, VariableNames.NODE_ID_HANDLER_NAME, nodeId)
-                .addCode("\n");
+        var inputFieldName = inputField.getName();
 
-        processedSchema
+        var interfaceDefinition = processedSchema.getInterface(target);
+        var implementations = processedSchema
                 .getObjects()
                 .values()
                 .stream()
                 .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
                 .sorted(Comparator.comparing(AbstractObjectDefinition::getName))
-                .map(implementation -> codeForImplementation(target, implementation, nodeId))
+                .collect(Collectors.toList());
+        var anyImplementation = implementations.stream().findFirst();
+        var targetBlock = CodeBlock.builder();
+        if (anyImplementation.isPresent() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {  // Node special case.
+            dependencySet.add(IdHandlerDependency.getInstance());
+            targetBlock.add("$N.get($N.getTable($N).getName())", NODE_MAP_NAME, NODE_ID_HANDLER_NAME, inputFieldName);
+        } else {
+            targetBlock.add("$T.getTargetTypeFromEnvironment($N).orElse(null)", ENVIRONMENT_UTILS.className, VARIABLE_ENV);
+        }
+
+        var illegalBlock = CodeBlock.builder().addStatement(
+                "throw new $T(\"Could not resolve input $N with value \" + $N + \" within type \" + $N)",
+                ILLEGAL_ARGUMENT_EXCEPTION.className,
+                inputFieldName,
+                inputFieldName,
+                VARIABLE_TYPE_NAME
+        ).build();
+
+        var spec = getDefaultSpecBuilder(target.getName(), interfaceDefinition.getGraphClassName());
+        if (!localObject.isOperationRoot()) {
+            spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
+        }
+        spec
+                .addParameter(iterableWrapType(inputField), inputFieldName)
+                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
+                .addCode(declare(VARIABLE_TYPE_NAME, targetBlock.build()))
+                .beginControlFlow("if ($N == null)", VARIABLE_TYPE_NAME)
+                .addCode(illegalBlock)
+                .endControlFlow()
+                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", VARIABLE_TYPE_NAME, "_" + target.getName())))
+                .addCode(declare(VARIABLE_FETCHER_NAME, newDataFetcher()))
+                .addCode("\n")
+                .beginControlFlow("switch($N)", VARIABLE_TYPE_NAME);
+
+        implementations
+                .stream()
+                .map(implementation -> codeForImplementation(target, implementation.getName(), inputFieldName))
                 .forEach(spec::addCode);
 
-        return spec.addStatement("throw new $T(\"Could not find dataloader for $N with name \" + $N)", ILLEGAL_ARGUMENT_EXCEPTION.className, nodeId, TABLE_NAME).build();
+        return spec.addCode("default: $L", illegalBlock).endControlFlow().build();
     }
 
-    private CodeBlock codeForImplementation(ObjectField target, ObjectDefinition implementation, String inputFieldName) {
-        var queryLocation = asQueryClass(implementation.getName());
-
+    private CodeBlock codeForImplementation(ObjectField target, String implementationTypeName, String inputFieldName) {
+        var queryLocation = asQueryClass(implementationTypeName);
         var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         var dbFunction = CodeBlock.of(
                 "($L, $L, $L) -> $T.load$LBy$LsAs$L($N, $N, $N)",
@@ -78,7 +101,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                 IDS_NAME,
                 SELECTION_SET_NAME,
                 queryClass,
-                implementation.getName(),
+                implementationTypeName,
                 capitalize(inputFieldName),
                 capitalize(target.getName()),
                 CONTEXT_NAME,
@@ -88,9 +111,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
         return CodeBlock
                 .builder()
-                .beginControlFlow("if ($T.$N.getName().equals($N))", implementation.getTable().getTableClass(), implementation.getTable().getMappingName(), TABLE_NAME)
-                .addStatement("return $L.$L($N, $N, $L)", newDataFetcher(), "loadInterface", TABLE_NAME, inputFieldName, dbFunction)
-                .endControlFlow()
+                .addStatement("case $S: return $N.$L($N, $N, $L)", implementationTypeName, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction)
                 .build();
     }
 

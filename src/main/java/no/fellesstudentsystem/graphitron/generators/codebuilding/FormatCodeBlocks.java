@@ -381,14 +381,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that creates a resolver transformer.
-     */
-    @NotNull
-    public static CodeBlock newTransform() {
-        return NEW_TRANSFORM;
-    }
-
-    /**
      * @return CodeBlock that creates a data fetcher object.
      */
     @NotNull
@@ -397,10 +389,10 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that creates a transform through a data fetcher object.
+     * @return CodeBlock that creates a service data fetcher through a transform object.
      */
     @NotNull
-    public static CodeBlock newDataFetcherWithTransform() {
+    public static CodeBlock newServiceDataFetcherWithTransform() {
         return NEW_SERVICE_DATA_FETCHER_TRANSFORM;
     }
 

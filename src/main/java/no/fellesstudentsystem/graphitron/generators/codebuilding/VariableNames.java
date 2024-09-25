@@ -5,7 +5,6 @@ public class VariableNames {
             SELECTION_SET_NAME = "selectionSet",
             IDS_NAME = "ids",
             PAGE_SIZE_NAME = "pageSize",
-            TABLE_NAME = "tableName",
             CONTEXT_NAME = "ctx",
             VALIDATION_ERRORS_NAME = "validationErrors",
             TRANSFORMER_NAME = "transform",
@@ -18,7 +17,9 @@ public class VariableNames {
             VARIABLE_SELECT = "select",
             VARIABLE_VALIDATION_ERRORS = "validationErrors",
             VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties",
-            VARIABLE_TYPE_NAME = "type",
+            VARIABLE_TYPE_NAME = "_targetType",
+            VARIABLE_FETCHER_NAME = "_fetcher",
             VARIABLE_INTERNAL_ITERATION = "internal_it_", // To avoid conflicts with potential schema names.
-            NODE_ID_HANDLER_NAME = "nodeIdHandler";
+            NODE_ID_HANDLER_NAME = "nodeIdHandler",
+            NODE_MAP_NAME = "TABLE_TO_TYPE";
 }

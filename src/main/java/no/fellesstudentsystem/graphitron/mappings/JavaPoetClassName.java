@@ -6,6 +6,7 @@ import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
 import no.fellesstudentsystem.graphql.NodeIdHandler;
 import no.fellesstudentsystem.graphql.exception.*;
+import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
 import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
@@ -31,6 +32,7 @@ public enum JavaPoetClassName {
     DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING(ClassName.get(DataAccessExceptionContentToErrorMapping.class)),
     DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(ClassName.get(DataAccessExceptionMappingContent.class)),
     DATA_FETCHING_ENVIRONMENT(ClassName.get(graphql.schema.DataFetchingEnvironment.class)),
+    ENVIRONMENT_UTILS(ClassName.get(EnvironmentUtils.class)),
     DATA_FETCHER(ClassName.get(DataFetcher.class)),
     DATA_SERVICE_FETCHER(ClassName.get(ServiceDataFetcher.class)),
     DSL(ClassName.get(org.jooq.impl.DSL.class)),

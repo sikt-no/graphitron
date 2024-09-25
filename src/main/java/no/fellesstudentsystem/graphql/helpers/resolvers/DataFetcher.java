@@ -173,18 +173,18 @@ public class DataFetcher extends AbstractFetcher {
 
     /**
      * Load the data for an interface resolver.
-     * @param table The source from which the data should be loaded.
+     * @param loaderName The source from which the data should be loaded.
      * @param keyToLoad The specific key that should be loaded.
      * @param dbFunction Function to call to retrieve the query data.
      * @return A resolver result without pagination.
      * @param <U> Type that the resolver fetches.
      */
-    public <T, U extends T> CompletableFuture<T> loadInterface(String table, String keyToLoad, DBQuery<String, U> dbFunction) {
+    public <T, U extends T> CompletableFuture<T> loadInterface(String loaderName, String keyToLoad, DBQuery<String, U> dbFunction) {
         return env
                 .getDataLoaderRegistry()
-                .<String, T>computeIfAbsent(table, name ->
-                        DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, U>) (ids, loaderEnvironment) ->
-                                CompletableFuture.completedFuture(dbFunction.callDBMethod(ctx, ids, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))
+                .<String, T>computeIfAbsent(loaderName, name ->
+                        DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, U>) (keys, loaderEnvironment) ->
+                                CompletableFuture.completedFuture(dbFunction.callDBMethod(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))
                         )
                 )
                 .load(keyToLoad, env);

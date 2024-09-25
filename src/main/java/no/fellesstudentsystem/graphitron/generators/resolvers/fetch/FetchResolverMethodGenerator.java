@@ -3,7 +3,6 @@ package no.fellesstudentsystem.graphitron.generators.resolvers.fetch;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -22,7 +21,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.MappingC
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
+import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -119,7 +118,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
         var queryMethodName = asQueryMethodName(target.getName(), localObject.getName());
         var dataBlock = CodeBlock
                 .builder()
-                .add(fetcherCodeInit(target, queryMethodName, localObject, isService ? newDataFetcherWithTransform() : newDataFetcher()));
+                .add(fetcherCodeInit(target, queryMethodName, localObject, isService ? newServiceDataFetcherWithTransform() : newDataFetcher()));
 
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = isService && object != null

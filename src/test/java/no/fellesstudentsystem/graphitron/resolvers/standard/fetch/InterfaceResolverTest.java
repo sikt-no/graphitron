@@ -48,9 +48,28 @@ public class InterfaceResolverTest extends GeneratorTest {
     void manyImplementations() {
         assertGeneratedContentContains(
                 "manyImplementations",
+                "ADDRESS.getName(), \"Address\"",
+                "CUSTOMER.getName(), \"Customer\"",
+                "FILM.getName(), \"Film\"",
+                "case \"Address\":",
+                "case \"Customer\":",
+                "case \"Film\":",
                 "AddressDBQueries.loadAddressByIdsAsNode(",
                 "CustomerDBQueries.loadCustomerByIdsAsNode(",
                 "FilmDBQueries.loadFilmByIdsAsNode("
+        );
+    }
+
+    @Test
+    @DisplayName("Type implements an interface that is not Node")
+    void nonNode() {
+        assertGeneratedContentContains(
+                "nonNode",
+                "CompletableFuture<Titled> titled(String title,",
+                ".getTargetTypeFromEnvironment(env).orElse(null)",
+                "_loaderName = _targetType + \"_titled\"",
+                "case \"Film\":",
+                "FilmDBQueries.loadFilmByTitlesAsTitled("
         );
     }
 
@@ -60,8 +79,6 @@ public class InterfaceResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "doubleInterface",
                 "FilmDBQueries.loadFilmByIdsAsNode(",
-                "CompletableFuture<Titled> titled(String title, ",
-                "getTable(title).getName()",
                 "FilmDBQueries.loadFilmByTitlesAsTitled("
         );
     }
