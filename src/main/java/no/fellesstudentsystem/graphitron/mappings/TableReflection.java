@@ -288,7 +288,7 @@ public class TableReflection {
         return Optional.empty();
     }
 
-    private static Optional<Table<?>> getTable(String name) {
+    public static Optional<Table<?>> getTable(String name) {
         return Optional.ofNullable(TABLES_BY_JAVA_FIELD_NAME.get(name));
     }
 

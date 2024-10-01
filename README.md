@@ -1,4 +1,70 @@
 # Graphitron
+
+Graphitron is a code generation tool that implements GraphQL schemas by tying
+schemas to underlying database models
+
+**Requirement:**
+
+- Implement and configure NodeIdHandler
+
+## Implement and configure NodeIdHandler
+
+We are in an early phase of implementing an Id handler that aims to ensure
+global identification.
+
+As of now you are required to include an implementation of NodeIdHandler to be able
+to run Graphitron.
+
+We have provided a step by step guide below to show how you could configure and
+implement global identification. The only requirement as of now is that you implement
+the interface NodeIdHandler. How you decide to do the implementation is up to you.
+
+Step by step:
+
+1. Create a configuration that contains a map between a table name and its id.
+The sample below shows how such configuration can be created using XML:
+```xml
+<configuration>
+    <tables>
+        <table>
+            <id>1</id>
+            <name>car</name>
+        </table>
+    </tables>
+</configuration>
+```
+2. Create a singleton class that extends TableIdPrefixedNodeIdHandler, which is
+a provided default implementation of NodeIdHandler. TableIdPrefixedNodeIdHandler 
+requires a parameter of the type `Map<String, String>` which represents the map
+between `id to name` (in this order). The code below shows how our previous XML
+configuration can be read and transformed into this required type:
+
+```java 
+@Singleton
+public class MyNodeIdHandler extends TableIdPrefixedNodeIdHandler {
+    private static final String CONFIGURATION_XML_LOCATION = "/configuration.xml";
+
+    public MyNodeIdHandler() {
+        super(getIdToName(), Kjerneapi.KJERNEAPI.getTables());
+    }
+
+    private static Map<String, String> getIdToName() {
+        Map<String, String> idToName;
+        try {
+            var configuration = Configuration.loadFromClasspath(CONFIGURATION_XML_LOCATION);
+            idToName = configuration.tables.stream().collect(toMap(Table::getId, Table::getName));
+        } catch (IOException | JAXBException e) {
+            throw new RuntimeException(e);
+        }
+        return idToName;
+    }
+}
+
+```
+
+When your NodeIdHandler implementation is located in your project, it should be
+discovered and used when running Graphitron.
+
 ## A GraphQL resolver implementation generator
 Graphitron creates complete or partial resolver implementations from GraphQL-schemas using Java and jOOQ.
 This is done with the provided set of directives for making the necessary connections between types and

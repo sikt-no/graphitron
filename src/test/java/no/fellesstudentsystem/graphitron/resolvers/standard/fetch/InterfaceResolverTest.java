@@ -61,7 +61,7 @@ public class InterfaceResolverTest extends GeneratorTest {
                 "doubleInterface",
                 "FilmDBQueries.loadFilmByIdsAsNode(",
                 "CompletableFuture<Titled> titled(String title, ",
-                "getTablePartOf(title)",
+                "getTable(title).getName()",
                 "FilmDBQueries.loadFilmByTitlesAsTitled("
         );
     }

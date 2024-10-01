@@ -10,7 +10,9 @@ import no.fellesstudentsystem.graphitron.definitions.objects.InterfaceDefinition
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBClassGenerator;
 import no.fellesstudentsystem.graphitron.generators.abstractions.ResolverMethodGenerator;
+import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.fellesstudentsystem.graphitron.generators.dependencies.IdHandlerDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
 import java.util.Comparator;
@@ -38,6 +40,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
     @Override
     public MethodSpec generate(ObjectField target) {
         InterfaceDefinition interfaceDefinition = processedSchema.getInterface(target);
+        dependencySet.add(IdHandlerDependency.getInstance());
 
         var spec = getDefaultSpecBuilder(target.getName(), interfaceDefinition.getGraphClassName());
 
@@ -46,11 +49,11 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
         }
 
         var inputField = target.getArguments().get(0);
-        String inputFieldName = inputField.getName();
+        String nodeId = inputField.getName();
         spec
-                .addParameter(iterableWrapType(inputField), inputFieldName)
+                .addParameter(iterableWrapType(inputField), nodeId)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addStatement("$T $L = $T.getTablePartOf($N)", STRING.className, TABLE_OF_ID, FIELD_HELPERS.className, inputFieldName)
+                .addStatement("$T $L = $N.getTable($N).getName()", STRING.className, TABLE_NAME, VariableNames.NODE_ID_HANDLER_NAME, nodeId)
                 .addCode("\n");
 
         processedSchema
@@ -59,10 +62,10 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                 .stream()
                 .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
                 .sorted(Comparator.comparing(AbstractObjectDefinition::getName))
-                .map(implementation -> codeForImplementation(target, implementation, inputFieldName))
+                .map(implementation -> codeForImplementation(target, implementation, nodeId))
                 .forEach(spec::addCode);
 
-        return spec.addStatement("throw new $T(\"Could not find dataloader for $N with prefix \" + $N)", ILLEGAL_ARGUMENT_EXCEPTION.className, inputFieldName, TABLE_OF_ID).build();
+        return spec.addStatement("throw new $T(\"Could not find dataloader for $N with name \" + $N)", ILLEGAL_ARGUMENT_EXCEPTION.className, nodeId, TABLE_NAME).build();
     }
 
     private CodeBlock codeForImplementation(ObjectField target, ObjectDefinition implementation, String inputFieldName) {
@@ -85,8 +88,8 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
 
         return CodeBlock
                 .builder()
-                .beginControlFlow("if ($N.equals($T.$N.getViewId().toString()))", TABLE_OF_ID, implementation.getTable().getTableClass(), implementation.getTable().getMappingName())
-                .addStatement("return $L.$L($N, $N, $L)", newDataFetcher(), "loadInterface", TABLE_OF_ID, inputFieldName, dbFunction)
+                .beginControlFlow("if ($T.$N.getName().equals($N))", implementation.getTable().getTableClass(), implementation.getTable().getMappingName(), TABLE_NAME)
+                .addStatement("return $L.$L($N, $N, $L)", newDataFetcher(), "loadInterface", TABLE_NAME, inputFieldName, dbFunction)
                 .endControlFlow()
                 .build();
     }

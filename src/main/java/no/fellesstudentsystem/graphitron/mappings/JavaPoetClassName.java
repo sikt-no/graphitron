@@ -4,8 +4,8 @@ import com.squareup.javapoet.ClassName;
 import graphql.GraphQLError;
 import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
 import no.fellesstudentsystem.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.fellesstudentsystem.graphql.NodeIdHandler;
 import no.fellesstudentsystem.graphql.exception.*;
-import no.fellesstudentsystem.graphql.helpers.FieldHelperHack;
 import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
@@ -37,7 +37,7 @@ public enum JavaPoetClassName {
     DSL_CONTEXT(ClassName.get(org.jooq.DSLContext.class)),
     EXCEPTION(ClassName.get(java.lang.Exception.class)),
     EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ClassName.get(ExceptionToErrorMappingProvider.class)),
-    FIELD_HELPERS(ClassName.get(FieldHelperHack.class)),
+    NODE_ID_HANDLER(ClassName.get(NodeIdHandler.class)),
     FUNCTIONS(ClassName.get(org.jooq.Functions.class)),
     GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING(ClassName.get(GenericExceptionContentToErrorMapping.class)),
     GENERIC_EXCEPTION_MAPPING_CONTENT(ClassName.get(GenericExceptionMappingContent.class)),
