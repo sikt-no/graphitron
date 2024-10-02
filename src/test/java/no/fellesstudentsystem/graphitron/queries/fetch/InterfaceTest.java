@@ -45,8 +45,8 @@ public class InterfaceTest extends GeneratorTest {
     void manyFields() {
         assertGeneratedContentContains(
                 "manyFields",
-                "select.optional(\"first\", CUSTOMER.FIRST_NAME)",
-                "select.optional(\"last\", CUSTOMER.LAST_NAME)"
+                "select.optional(\"first\", _customer.FIRST_NAME)",
+                "select.optional(\"last\", _customer.LAST_NAME)"
         );
     }
 
@@ -57,10 +57,10 @@ public class InterfaceTest extends GeneratorTest {
                 "twoInterfaces",
                 "loadCustomerByFirstNamesAsNamed",
                 ",Set<String> firstNames,",
-                ".where(CUSTOMER.FIRST_NAME.in(firstNames))",
+                ".where(_customer.FIRST_NAME.in(firstNames))",
                 "loadCustomerByIdsAsNode",
                 ",Set<String> ids,",
-                ".where(CUSTOMER.hasIds(ids))"
+                ".where(_customer.hasIds(ids))"
         );
     }
 

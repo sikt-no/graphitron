@@ -14,16 +14,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void aliasTable() {
         assertGeneratedContentContains(
                 "field/table", Set.of(CUSTOMER_QUERY),
-                "customer_address_left = CUSTOMER.address().as(\"address_166982810\")",
-                "\"district\", customer_address_left.DISTRICT",
-                ".from(CUSTOMER"
+                "customer_2952383337_address = _customer.address().as(\"address_1214171484\")",
+                "\"district\", customer_2952383337_address.DISTRICT",
+                ".from(_customer"
         );
-    }
-
-    @Test // TODO: Produces invalid code. Should throw error.
-    @DisplayName("Ambiguous table path")
-    void tableWithMultiplePaths() {
-        assertGeneratedContentContains("alias/tableWithMultiplePaths", "\"name\", FILM.NAME");
     }
 
     @Test
@@ -31,8 +25,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void aliasKeyWithSinglePath() {
         assertGeneratedContentContains(
                 "field/keyWithSinglePath", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
-                "\"district\", customer_address_left.DISTRICT"
+                "_customer.address().as(",
+                "\"district\", customer_2952383337_address.DISTRICT"
         );
     }
 
@@ -41,9 +35,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void aliasKeyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "field/keyWithMultiplePaths",
-                "film_filmoriginallanguageidfkey_left = FILM.filmOriginalLanguageIdFkey().as(\"filmOriginalLanguageIdFkey_1523086221\")",
-                "\"name\", film_filmoriginallanguageidfkey_left.NAME",
-                ".from(FILM"
+                "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as(\"filmOriginalLanguageIdFkey_789320123\")",
+                "\"name\", film_3747728953_filmoriginallanguageidfkey.NAME",
+                ".from(_film"
         );
     }
 
@@ -52,12 +46,12 @@ public class ReferenceAliasTest extends ReferenceTest {
     void aliasKeyUsingMultiplePaths() {
         assertGeneratedContentContains(
                 "alias/keyUsingMultiplePaths",
-                "film_filmlanguageidfkey_left = FILM.filmLanguageIdFkey().as(",
-                "film_filmoriginallanguageidfkey_left = FILM.filmOriginalLanguageIdFkey().as(",
-                "film_filmlanguageidfkey_left.NAME",
-                "film_filmoriginallanguageidfkey_left.NAME",
-                ".leftJoin(film_filmlanguageidfkey_left",
-                ".leftJoin(film_filmoriginallanguageidfkey_left"
+                "film_3747728953_filmlanguageidfkey = _film.filmLanguageIdFkey().as(",
+                "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as(",
+                "film_3747728953_filmoriginallanguageidfkey.NAME",
+                "film_3747728953_filmlanguageidfkey.NAME",
+                ".from(film_3747728953_filmlanguageidfkey",
+                ".from(film_3747728953_filmoriginallanguageidfkey"
         );
     }
 
@@ -66,9 +60,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void aliasCondition() {
         assertGeneratedContentContains(
                 "field/condition", Set.of(CUSTOMER_QUERY),
-                "customer_customer_left = CUSTOMER.as(",
-                "\"district\", customer_customer_left.DISTRICT",
-                ".from(CUSTOMER"
+                "customer_district_district_customer = CUSTOMER.as(",
+                "\"district\", customer_district_district_customer.DISTRICT",
+                ".from(customer_district",
+                ".where(_customer.customer_id.eq(customer_district.customer_id"
         );
     }
 
@@ -77,12 +72,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "query/table", Set.of(CUSTOMER_NOT_GENERATED),
-                "CUSTOMER.address().as(",
-                "var orderFields = customer_address_left.fields(customer_address_left.getPrimaryKey().getFieldsArray())",
-                "DSL.row(customer_address_left.getId()",
-                ".from(CUSTOMER",
-                ".where(CUSTOMER.hasIds(customerIds",
-                ".orderBy(orderFields"
+                "_customer.address().as(",
+                "DSL.row(customer_2952383337_address.getId()",
+                ".from(_customer",
+                ".where(_customer.hasIds(customerIds"
         );
     }
 
@@ -91,8 +84,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void innerTable() {
         assertGeneratedContentContains(
                 "alias/innerTable",
-                "customer_address_left = CUSTOMER.address().as(",
-                "customer_address_left.getId()"
+                "customer_2952383337_address = _customer.address().as(",
+                "customer_2952383337_address.getId()"
         );
     }
 
@@ -101,8 +94,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void innerTableSelfReference() {
         assertGeneratedContentContains(
                 "alias/innerTableSelfReference",
-                "film_film_left = FILM.film().as(",
-                ".row(film_film_left.getId()"
+                "film_3747728953_film = _film.film().as(",
+                ".row(film_3747728953_film.getId()"
         );
     }
 
@@ -111,8 +104,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void innerTableReverse() {
         assertGeneratedContentContains(
                 "alias/innerTableReverse", Set.of(CUSTOMER_TABLE),
-                "address_customer_left = ADDRESS.customer().as(",
-                "address_customer_left.getId()"
+                "address_2030472956_customer = _address.customer().as(",
+                "address_2030472956_customer.getId()"
         );
     }
 
@@ -121,7 +114,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableAndKey() {
         assertGeneratedContentContains(
                 "alias/tableAndKey", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as("
+                "_customer.address().as("
         );
     }
 
@@ -130,8 +123,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void over22Fields() {
         assertGeneratedContentContains(
                 "alias/over22Fields",
-                "\"name\", film_filmlanguageidfkey_left.NAME",
-                "film_filmlanguageidfkey_left.NAME.getDataType().convert(r[22])"
+                "\"name\", film_3747728953_filmlanguageidfkey.NAME",
+                "film_3747728953_filmlanguageidfkey.NAME.getDataType().convert(r[22])"
         );
     }
 
@@ -140,7 +133,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     void fromTypeWithoutTable() {
         assertGeneratedContentContains(
                 "alias/fromTypeWithoutTable", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_address_left = CUSTOMER.address().as("
+                "customer_2952383337_address = _customer.address().as("
         );
     }
 
@@ -149,8 +142,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void fromTypeWithoutTableExtraStep() {
         assertGeneratedContentContains(
                 "alias/fromTypeWithoutTableExtraStep", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_address_left = CUSTOMER.address().as(",
-                "address_166982810_city_left = customer_address_left.city().as("
+                "customer_2952383337_address = _customer.address().as(",
+                "address_1214171484_city = customer_2952383337_address.city().as("
         );
     }
 
@@ -159,7 +152,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     void throughTable() {
         assertGeneratedContentContains(
                 "query/throughTable", Set.of(CUSTOMER_NOT_GENERATED),
-                "CUSTOMER.address().as(", "customer_address_left.city().as("
+                "_customer.address().as(", "customer_2952383337_address.city().as("
         );
     }
 
@@ -168,7 +161,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     void throughKey() {
         assertGeneratedContentContains(
                 "query/throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-                "CUSTOMER.address().as(", "customer_address_left.city().as("
+                "_customer.address().as(", "customer_2952383337_address.city().as("
         );
     }
 
@@ -177,7 +170,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "query/throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_citycustomer_city_left = CITY.as("
+                "customer_city_citycustomer_city = CITY.as("
         );
     }
 
@@ -186,9 +179,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableToTable() {
         assertGeneratedContentContains(
                 "alias/tableToTable", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
-                "customer_address_left.city().as(",
-                "address_166982810_city_left.CITY"
+                "_customer.address().as(",
+                "customer_2952383337_address.city().as(",
+                "address_1214171484_city.CITY"
         );
     }
 
@@ -197,9 +190,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableToKey() {
         assertGeneratedContentContains(
                 "alias/tableToKey", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
-                "customer_address_left.city().as(",
-                "address_166982810_city_left.CITY"
+                "_customer.address().as(",
+                "customer_2952383337_address.city().as(",
+                "address_1214171484_city.CITY"
         );
     }
 
@@ -208,10 +201,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableToCondition() {
         assertGeneratedContentContains(
                 "alias/tableToCondition", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
+                "_customer.address().as(",
                 "CITY.as(",
-                "customer_cityaddress_city_left.CITY",
-                ".cityAddress(customer_address_left, customer_cityaddress_city_left)"
+                "customer_2952383337_address_cityaddress_city.CITY",
+                ".cityAddress(customer_2952383337_address, customer_2952383337_address_cityaddress_city)"
         );
     }
 
@@ -220,9 +213,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableToTableReverse() {
         assertGeneratedContentContains(
                 "alias/tableToTableReverse", Set.of(CITY_QUERY),
-                "CITY.address().as(",
-                "city_address_left.customer().as(",
-                "address_2545393164_customer_left.EMAIL"
+                "_city.address().as(",
+                "city_1887334959_address.customer().as(",
+                "address_1356285680_customer.EMAIL"
         );
     }
 
@@ -231,9 +224,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableToKeyReverse() {
         assertGeneratedContentContains(
                 "alias/tableToKeyReverse", Set.of(CITY_QUERY),
-                "CITY.address().as(",
-                "city_address_left.customer().as(",
-                "address_2545393164_customer_left.EMAIL"
+                "_city.address().as(",
+                "city_1887334959_address.customer().as(",
+                "address_1356285680_customer.EMAIL"
         );
     }
 
@@ -242,10 +235,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void tableToConditionReverse() {
         assertGeneratedContentContains(
                 "alias/tableToConditionReverse", Set.of(CITY_QUERY),
-                "CITY.address().as(",
+                "_city.address().as(",
                 "CUSTOMER.as(",
-                "city_email_customer_left.EMAIL",
-                ".email(city_address_left, city_email_customer_left)"
+                "city_1887334959_address_email_customer.EMAIL",
+                ".email(city_1887334959_address, city_1887334959_address_email_customer)"
         );
     }
 
@@ -254,9 +247,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void keyToKey() {
         assertGeneratedContentContains(
                 "alias/keyToKey", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
-                "customer_address_left.city().as(",
-                "address_166982810_city_left.CITY"
+                "_customer.address().as(",
+                "customer_2952383337_address.city().as(",
+                "address_1214171484_city.CITY"
         );
     }
 
@@ -265,9 +258,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void keyToTable() {
         assertGeneratedContentContains(
                 "alias/keyToTable", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
-                "customer_address_left.city().as(",
-                "address_166982810_city_left.CITY"
+                "_customer.address().as(",
+                "customer_2952383337_address.city().as(",
+                "address_1214171484_city.CITY"
         );
     }
 
@@ -276,10 +269,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void keyToCondition() {
         assertGeneratedContentContains(
                 "alias/keyToCondition", Set.of(CUSTOMER_QUERY),
-                "CUSTOMER.address().as(",
+                "_customer.address().as(",
                 "CITY.as(",
-                "customer_cityaddress_city_left.CITY",
-                ".cityAddress(customer_address_left, customer_cityaddress_city_left)"
+                "customer_2952383337_address_cityaddress_city.CITY",
+                ".cityAddress(customer_2952383337_address, customer_2952383337_address_cityaddress_city)"
         );
     }
 
@@ -288,9 +281,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void keyToKeyReverse() {
         assertGeneratedContentContains(
                 "alias/keyToKeyReverse", Set.of(CITY_QUERY),
-                "CITY.address().as(",
-                "city_address_left.customer().as(",
-                "address_2545393164_customer_left.EMAIL"
+                "_city.address().as(",
+                "city_1887334959_address.customer().as(",
+                "address_1356285680_customer.EMAIL"
         );
     }
 
@@ -299,9 +292,9 @@ public class ReferenceAliasTest extends ReferenceTest {
     void keyToTableReverse() {
         assertGeneratedContentContains(
                 "alias/keyToTableReverse", Set.of(CITY_QUERY),
-                "CITY.address().as(",
-                "city_address_left.customer().as(",
-                "address_2545393164_customer_left.EMAIL"
+                "_city.address().as(",
+                "city_1887334959_address.customer().as(",
+                "address_1356285680_customer.EMAIL"
         );
     }
 
@@ -310,10 +303,10 @@ public class ReferenceAliasTest extends ReferenceTest {
     void keyToConditionReverse() {
         assertGeneratedContentContains(
                 "alias/keyToConditionReverse", Set.of(CITY_QUERY),
-                "CITY.address().as(",
+                "_city.address().as(",
                 "CUSTOMER.as(",
-                "city_email_customer_left.EMAIL",
-                ".email(city_address_left, city_email_customer_left)"
+                "city_1887334959_address_email_customer.EMAIL",
+                ".email(city_1887334959_address, city_1887334959_address_email_customer)"
         );
     }
 
@@ -324,9 +317,9 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "alias/conditionToCondition", Set.of(CUSTOMER_QUERY),
                 "ADDRESS.as(",
                 "CITY.as(",
-                "customer_cityaddress_city_left.CITY",
-                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)",
-                ".cityAddress(customer_addresscustomer_address_left, customer_cityaddress_city_left)"
+                "customer_city_addresscustomer_address_cityaddress_city.CITY",
+                ".addressCustomer(customer_city, customer_city_addresscustomer_address)",
+                ".cityAddress(customer_city_addresscustomer_address, customer_city_addresscustomer_address_cityaddress_city)"
         );
     }
 
@@ -336,9 +329,9 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/conditionToTable", Set.of(CUSTOMER_QUERY),
                 "ADDRESS.as(",
-                "customer_addresscustomer_address_left.city().as(",
-                "customer_2082681704_city_left.CITY",
-                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)"
+                "customer_city_addresscustomer_address.city().as(",
+                "customer_1981026222_city.CITY",
+                ".addressCustomer(customer_city, customer_city_addresscustomer_address)"
         );
     }
 
@@ -348,9 +341,9 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/conditionToKey", Set.of(CUSTOMER_QUERY),
                 "ADDRESS.as(",
-                "customer_addresscustomer_address_left.city().as(",
-                "customer_2082681704_city_left.CITY",
-                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)"
+                "customer_city_addresscustomer_address.city().as(",
+                "customer_1981026222_city.CITY",
+                ".addressCustomer(customer_city, customer_city_addresscustomer_address)"
         );
     }
 
@@ -361,9 +354,9 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "alias/conditionToConditionReverse", Set.of(CITY_QUERY),
                 "ADDRESS.as(",
                 "CUSTOMER.as(",
-                "city_email_customer_left.EMAIL",
-                ".addressCity(CITY, city_addresscity_address_left)",
-                ".email(city_addresscity_address_left, city_email_customer_left)"
+                "city_email_addresscity_address_email_customer.EMAIL",
+                ".addressCity(city_email, city_email_addresscity_address)",
+                ".email(city_email_addresscity_address, city_email_addresscity_address_email_customer)"
         );
     }
 
@@ -373,9 +366,9 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/conditionToTableReverse", Set.of(CITY_QUERY),
                 "ADDRESS.as(",
-                "city_addresscity_address_left.customer().as(",
-                "city_1715712748_customer_left.EMAIL",
-                ".addressCity(CITY, city_addresscity_address_left)"
+                "city_email_addresscity_address.customer().as(",
+                "city_3210818138_customer.EMAIL",
+                ".addressCity(city_email, city_email_addresscity_address)"
         );
     }
 
@@ -385,9 +378,9 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/conditionToKeyReverse", Set.of(CITY_QUERY),
                 "ADDRESS.as(",
-                "city_addresscity_address_left.customer().as(",
-                "city_1715712748_customer_left.EMAIL",
-                ".addressCity(CITY, city_addresscity_address_left)"
+                "city_email_addresscity_address.customer().as(",
+                "city_3210818138_customer.EMAIL",
+                ".addressCity(city_email, city_email_addresscity_address)"
         );
     }
 }

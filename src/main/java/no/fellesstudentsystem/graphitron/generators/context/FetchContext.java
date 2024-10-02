@@ -5,10 +5,12 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.mapping.TableRelation;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.jooq.Table;
 
 import java.util.*;
 
@@ -25,22 +27,24 @@ public class FetchContext {
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
-    private final List<CodeBlock> conditionList;
+    private final LinkedHashSet<Alias> aliasSet;
+    private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
     private JOOQMapping keyForMapping;
     private boolean shouldUseOptional;
-
-    private boolean requireAlias;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
-
     private final ProcessedSchema processedSchema;
+
+    /* Midlertidig hack på count for paginerte kanter, som ikke bruker subspørringer enda */
+    private final boolean addAllJoinsToJoinSet;
 
     /**
      * @param referenceObjectField The referring field that contains an object.
      * @param pastJoinSequence The current sequence of joins that must prepended.
      * @param previousObject The last object that was joined on in some previous iteration.
      * @param joinSet List of joins that must be declared outside this recursion.
+     * @param aliasSet List of alias that must be declared outside this recursion.
      * @param conditionList List of conditions that must be declared outside this recursion.
      * @param pastGraphPath The path in the GraphQL schema so far.
      * @param recCounter Counter that limits recursion depth to the max value of integers.
@@ -51,30 +55,33 @@ public class FetchContext {
             JoinListSequence pastJoinSequence,
             RecordObjectSpecification<?> previousObject,
             LinkedHashSet<SQLJoinStatement> joinSet,
-            List<CodeBlock> conditionList,
+            LinkedHashSet<Alias> aliasSet,
+            ArrayList<CodeBlock> conditionList,
             String pastGraphPath,
             int recCounter,
             FetchContext previousContext,
             boolean shouldUseOptional,
-            boolean requireAlias
+            boolean addAllJoinsToJoinSet
     ) {
         if (recCounter == Integer.MAX_VALUE - 1) {
             throw new RuntimeException("Recursion depth has reached the integer max value.");
         }
+        this.addAllJoinsToJoinSet = addAllJoinsToJoinSet;
         this.recCounter = recCounter;
         this.processedSchema = processedSchema;
         referenceObject = processedSchema.getObjectOrConnectionNode(referenceObjectField);
         this.joinSet = joinSet;
+        this.aliasSet = aliasSet;
         this.conditionList = conditionList;
 
         this.referenceObjectField = referenceObjectField;
         this.previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
-        graphPath = pastGraphPath + (pastGraphPath.isEmpty() ? "" : "/");
+        graphPath = pastGraphPath;
 
         this.previousContext = previousContext;
         this.shouldUseOptional = shouldUseOptional;
-        this.requireAlias = requireAlias;
         currentJoinSequence = iterateJoinSequence(pastJoinSequence);
+
     }
 
     /**
@@ -84,7 +91,8 @@ public class FetchContext {
     public FetchContext(
             ProcessedSchema processedSchema,
             ObjectField referenceObjectField,
-            RecordObjectSpecification<?> previousObject
+            RecordObjectSpecification<?> previousObject,
+            boolean addAllJoinsToJoinSet
     ) {
         this(
                 processedSchema,
@@ -92,20 +100,28 @@ public class FetchContext {
                 new JoinListSequence(),
                 previousObject,
                 new LinkedHashSet<>(),
+                new LinkedHashSet<>(),
                 new ArrayList<>(),
                 "",
                 0,
                 null,
                 referenceObjectField.getOrderField().isEmpty(), //do not use optional in combination with orderBy
-                true
+                addAllJoinsToJoinSet
         );
     }
 
     /**
-     * @return Set of joins created by this and any other context created from this one.
+     * @return Set of joins created by this context.
      */
     public Set<SQLJoinStatement> getJoinSet() {
         return joinSet;
+    }
+
+    /**
+     * @return Set of aliases created by this and any other context created from this one.
+     */
+    public Set<Alias> getAliasSet() {
+        return aliasSet;
     }
 
     /**
@@ -147,7 +163,18 @@ public class FetchContext {
      * @return The previously used reference table.
      */
     public JOOQMapping getPreviousTable() {
-        return previousTableObject != null ? previousTableObject.getTable() : null;
+        if (previousContext != null) {
+            return previousContext.getTargetTable();
+        } else {
+            return previousTableObject != null ? previousTableObject.getTable() : null;
+        }
+    }
+
+    /**
+     * @return The target table of this context.
+     */
+    public JOOQMapping getTargetTable() {
+        return currentJoinSequence.isEmpty() ? getPreviousTable() : currentJoinSequence.getLast().getTable();
     }
 
     /**
@@ -197,19 +224,31 @@ public class FetchContext {
      * @return The next iteration of this context based on the provided reference field.
      */
     public FetchContext nextContext(GenerationField referenceObjectField) {
+        var newJoinListSequence = new JoinListSequence();
+        var previousGraphPath = graphPath;
+
+        if (!referenceObjectField.isResolver() && processedSchema.isObject(referenceObjectField)) {
+            previousGraphPath += referenceObjectField.getName() + "/";
+            var refTable = processedSchema.getObject(referenceObjectField).getTable();
+
+            if ((refTable == null || refTable.equals(getReferenceTable())) && !currentJoinSequence.isEmpty()) {
+                newJoinListSequence.add(currentJoinSequence.getLast());
+            }
+        }
+
         return new FetchContext(
                 processedSchema,
                 referenceObjectField,
-                currentJoinSequence.clone(),
+                newJoinListSequence,
                 referenceObject,
-                joinSet,
-                conditionList,
-                graphPath + referenceObjectField.getName(),
+                new LinkedHashSet<>(),
+                aliasSet,
+                (ArrayList<CodeBlock>) conditionList.clone(),
+                previousGraphPath,
                 recCounter + 1,
                 this,
                 shouldUseOptional,
-                requireAlias
-        );
+                addAllJoinsToJoinSet);
     }
 
     /**
@@ -245,8 +284,7 @@ public class FetchContext {
         }
 
         var referencesFromField = referenceObjectField.getFieldReferences();
-        var requiresLeftJoin = !(referenceObjectField.isIterableWrapped() && referenceObjectField.isNonNullable() && referenceObjectField.isResolver());
-        var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, requiresLeftJoin, true);
+        var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, false, true);
         var updatedSequence = !newJoinSequence.isEmpty() ? newJoinSequence : previousSequence;
 
         if (refTable == null) {
@@ -255,16 +293,28 @@ public class FetchContext {
 
         var lastTable = !updatedSequence.isEmpty() ? updatedSequence.getLast().getTable() : getPreviousTable(); // Wrong if key was reverse.
         if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))) {
-            return !updatedSequence.isEmpty() ? updatedSequence : JoinListSequence.of(refTable);
+
+            if (updatedSequence.isEmpty()) {
+                var alias = new Alias("_" + refTable.getCodeName(), JoinListSequence.of(refTable), false);
+                aliasSet.add(alias);
+                return JoinListSequence.of(alias);
+            } else {
+                return updatedSequence;
+            }
         }
 
         var finalSequence = resolveNextSequence(
                 new FieldReference(refTable),
                 new TableRelation(lastTable, refTable),
                 updatedSequence,
-                requiresLeftJoin
+                false
         ); // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
-        return !finalSequence.isEmpty() ? finalSequence : JoinListSequence.of(refTable);
+        if (!finalSequence.isEmpty()) {
+            return finalSequence;
+        } else {
+            var alias = new Alias("_" + refTable.getCodeName(), JoinListSequence.of(refTable), false);
+            return JoinListSequence.of(alias);
+        }
     }
 
     /**
@@ -273,6 +323,7 @@ public class FetchContext {
      */
     private JoinListSequence processFieldReferences(JoinListSequence joinSequence, JOOQMapping refTable, List<FieldReference> references, boolean requiresLeftJoin, boolean checkLastRef) {
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
+        if (getReferenceObjectField().isResolver() && previousContext != null && checkLastRef) previousTable = previousContext.getPreviousTable();
 
         var relations = new ArrayList<TableRelation>();
         for (var fRef : references) {
@@ -290,6 +341,7 @@ public class FetchContext {
         }
 
         for (int i = 0; i < references.size(); i++) {
+            if (getReferenceObjectField().isResolver() && previousContext == null && i > 0) break;
             joinSequence = resolveNextSequence(references.get(i), relations.get(i), joinSequence, requiresLeftJoin);
         }
         return joinSequence;
@@ -298,12 +350,22 @@ public class FetchContext {
     private JoinListSequence resolveNextSequence(FieldReference fRef, TableRelation relation, JoinListSequence joinSequence, boolean requiresLeftJoin) {
         var previous = relation.getFrom();
         var target = relation.getToTable();
+
         if (previous == null) {
-            return JoinListSequence.of(target);
+            var alias = new Alias("_" + target.getCodeName(), JoinListSequence.of(target), false);
+            aliasSet.add(alias);
+            return JoinListSequence.of(alias);
         }
+        if (getReferenceObjectField().isResolver() && previousContext == null) {
+            var alias = new Alias("_" + previous.getCodeName(), JoinListSequence.of(previous), false);
+            aliasSet.add(alias);
+            return JoinListSequence.of(alias);
+        }
+
         var targetOrPrevious = target != null ? target : previous;
 
-        var newSequence = joinSequence.isEmpty() ? JoinListSequence.of(previous) : joinSequence;
+        var newSequence = joinSequence;
+
         var keyToUse = fRef.hasKey() || fRef.hasTableCondition()
                 ? fRef.getKey()
                 : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
@@ -315,37 +377,41 @@ public class FetchContext {
         }
 
         if (fRef.hasTableCondition() && keyToUse == null) {
+            if (newSequence.isEmpty()) {
+                var alias = new Alias(previous.getCodeName() + "_" + getReferenceObjectField().getName(), JoinListSequence.of(previous), false);
+                newSequence.add(alias);
+                aliasSet.add(alias);
+
+                var primaryKey = getTable(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException(String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.", referenceObjectField.getContainerTypeName(), referenceObjectField.getName(), previous.getName())));
+
+                for (var field : primaryKey.getFields()) {
+                    this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousContext.getCurrentJoinSequence().getLast().getMappingName(), field.getName(), alias.getMappingName(), field.getName()));
+                }
+            }
             var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
-            joinSet.add(join);
+            if (!newSequence.isEmpty() || addAllJoinsToJoinSet) joinSet.add(join);
+            aliasSet.add(join.getJoinAlias());
             return newSequence.cloneAdd(join.getJoinAlias());
         }
 
         if (keyToUse != null) {
             var aliasJoinSequence = newSequence.clone();
+            if (newSequence.isEmpty()) aliasJoinSequence = aliasJoinSequence.cloneAdd(previousContext == null || previousContext.getCurrentJoinSequence().isEmpty() ? previous : previousContext.getCurrentJoinSequence().getLast());
             aliasJoinSequence = aliasJoinSequence.cloneAdd(keyToUse);
 
             var join = fRef.createJoinOnExplicitPathFor(keyToUse, aliasJoinSequence, target, requiresLeftJoin);
-            joinSet.add(join);
+            if (!newSequence.isEmpty() || addAllJoinsToJoinSet)  joinSet.add(join);
+            aliasSet.add(join.getJoinAlias());
             newSequence = newSequence.cloneAdd(join.getJoinAlias());
         }
 
         if (fRef.hasTableCondition() && relation.hasRelation()) {
-            this.conditionList.add(CodeBlock.of(".and($L)\n", fRef.getTableCondition().formatToString(List.of(newSequence.render(newSequence.getSecondLast()), newSequence.render()))));
+            var previousTableWithAlias = newSequence.getSecondLast() == null && previousContext != null ? previousContext.getCurrentJoinSequence().render() : newSequence.render(newSequence.getSecondLast());
+            this.conditionList.add(CodeBlock.of("$L", fRef.getTableCondition().formatToString(List.of(previousTableWithAlias, newSequence.render()))));
         }
 
         return newSequence;
-    }
-
-    private boolean hasExplicitJoin(FieldReference fRef, TableRelation relation) {
-        var previous = relation.getFrom();
-        var target = relation.getToTable();
-
-        if (previous == null || fRef.hasTableCondition()) { // TODO: Does not account for conditions that do not result in joins.
-            return false;
-        }
-
-        var hasKey = fRef.hasKey() || findImplicitKey(previous.getMappingName(), (target != null ? target : previous).getMappingName()).isPresent();
-        return relation.isReverse() && hasKey;
     }
 
     public CodeBlock renderQuerySource(JOOQMapping localTable) {

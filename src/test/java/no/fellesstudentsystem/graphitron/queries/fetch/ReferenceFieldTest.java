@@ -18,7 +18,7 @@ public class ReferenceFieldTest extends ReferenceTest {
     @Test
     @DisplayName("Table path")
     void table() {
-        assertGeneratedContentContains("table", Set.of(CUSTOMER_QUERY), ".leftJoin(customer_address_left");
+        assertGeneratedContentContains("table", Set.of(CUSTOMER_QUERY), ".from(customer_2952383337_address");
     }
 
     @Test
@@ -26,20 +26,20 @@ public class ReferenceFieldTest extends ReferenceTest {
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(address_customer_left"
+                ".from(address_2030472956_customer"
         );
     }
 
     @Test
     @DisplayName("Key path with only one possible path between the tables")
     void keyWithSinglePath() {
-        assertGeneratedContentContains("keyWithSinglePath", Set.of(CUSTOMER_QUERY), ".leftJoin(customer_address_left");
+        assertGeneratedContentContains("keyWithSinglePath", Set.of(CUSTOMER_QUERY), ".from(customer_2952383337_address");
     }
 
     @Test
     @DisplayName("Key path with multiple possible paths between the tables")
     void keyWithMultiplePaths() {
-        assertGeneratedContentContains("keyWithMultiplePaths", ".leftJoin(film_filmoriginallanguageidfkey_left");
+        assertGeneratedContentContains("keyWithMultiplePaths", ".from(film_3747728953_filmoriginallanguageidfkey");
     }
 
     @Test
@@ -47,7 +47,7 @@ public class ReferenceFieldTest extends ReferenceTest {
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(address_customer_left"
+                ".from(address_2030472956_customer"
         );
     }
 
@@ -56,8 +56,9 @@ public class ReferenceFieldTest extends ReferenceTest {
     void condition() { // Path exists but is overridden by condition.
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_customer_left).on(",
-                ".district(CUSTOMER, customer_customer_left)"
+                ".join(customer_district_district_customer).on(",
+                ".district(customer_district, customer_district_district_customer)",
+                ".where(_customer.customer_id.eq(customer_district.customer_id"
         );
     }
 
@@ -66,8 +67,8 @@ public class ReferenceFieldTest extends ReferenceTest {
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_QUERY),
-                "customer_address_left.DISTRICT",
-                ".leftJoin(customer_address_left"
+                "customer_2952383337_address.DISTRICT",
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -76,9 +77,9 @@ public class ReferenceFieldTest extends ReferenceTest {
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_QUERY),
-                "customer_district_address_left = ADDRESS.as(", // Note, no implicit join anymore.
-                ".leftJoin(customer_district_address_left).on(",
-                ".district(CUSTOMER, customer_district_address_left)" // Note, condition overrides as it uses "on".
+                "customer_district_district_address = ADDRESS.as(", // Note, no implicit join anymore.
+                ".join(customer_district_district_address).on(",
+                ".district(customer_district, customer_district_district_address)" // Note, condition overrides as it uses "on".
         );
     }
 
@@ -87,9 +88,9 @@ public class ReferenceFieldTest extends ReferenceTest {
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_QUERY),
-                "customer_address_left = CUSTOMER.address().as(", // Note, implicit join is present when we use a key, but not table.
-                ".leftJoin(customer_address_left).and(",
-                ".district(CUSTOMER, customer_address_left)" // Note, this produces a strange result with an ".and" and no ".on" or ".where".
+                "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
+                ".from(customer_2952383337_address).where(",
+                ".district(_customer, customer_2952383337_address)" // Note, this produces a strange result with an ".and" and no ".on" or ".where".
         );
     }
 
@@ -98,9 +99,9 @@ public class ReferenceFieldTest extends ReferenceTest {
     void multipleToSameTable() {
         assertGeneratedContentContains(
                 "multipleToSameTable", Set.of(CUSTOMER_QUERY),
-                "\"district1\", customer_address_left.DISTRICT",
-                "\"district2\", customer_address_left.DISTRICT",
-                ".leftJoin(customer_address_left"
+                "\"district1\", customer_2952383337_address.DISTRICT",
+                "\"district2\", customer_2952383337_address.DISTRICT",
+                ".from(customer_2952383337_address"
         );
     }
 }

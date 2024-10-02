@@ -56,6 +56,7 @@ public enum JavaPoetClassName {
     PAIR(ClassName.get(Pair.class)),
     PAYLOAD_CREATOR(ClassName.get(MutationExceptionStrategyConfiguration.PayloadCreator.class)),
     QUERY_HELPER(ClassName.get(QueryHelper.class)),
+    RECORD1(ClassName.get(org.jooq.Record1.class)),
     RECORD2(ClassName.get(org.jooq.Record2.class)),
     RECORD3(ClassName.get(org.jooq.Record3.class)),
     RECORD_VALIDATOR(ClassName.get(RecordValidator.class)),

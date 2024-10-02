@@ -72,7 +72,6 @@ public class ProcessedDefinitionsValidator {
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
         validateSelfReferenceHasSplitQuery();
-        validateListsHaveSplitQuery();
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -578,24 +577,6 @@ public class ProcessedDefinitionsValidator {
                         .forEach(field -> {
                             if (Objects.equals(field.getTypeName(), object.getName()) && !field.isResolver()) {
                                 errorMessages.add("Self reference must have splitQuery, field \"" + field.getName() + "\" in object \"" + object.getName() + "\"");
-                            }
-                        })
-                );
-    }
-
-    private void validateListsHaveSplitQuery() {
-//        Midlertidig sjekk på at splitquery er i bruk inntil ny løsning for multiset kommer med FSP-416
-        schema.getObjects().values()
-                .forEach(object -> object.getFields()
-                        .forEach(field -> {
-                            if (field.isIterableWrapped()
-                                    && !field.isResolver()
-                                    && object.hasTable()
-                                    && schema.isObject(field)
-                                    && !field.hasServiceReference()
-                                    && !object.hasJavaRecordReference()
-                            ) {
-                                errorMessages.add("Field \"" + field.getName() + "\" in object \"" + object.getName() + "\" is a list without " + GenerationDirective.SPLIT_QUERY.getName() + " directive. This is not currently supported.");
                             }
                         })
                 );

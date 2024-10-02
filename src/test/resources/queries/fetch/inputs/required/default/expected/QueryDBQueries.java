@@ -13,9 +13,10 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static CustomerTable queryForQuery(DSLContext ctx, SelectionSet select) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
-                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
-                .from(CUSTOMER)
+                .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .from(_customer)
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

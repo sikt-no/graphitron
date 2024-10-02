@@ -17,13 +17,16 @@ import org.jooq.impl.DSL;
 
 public class CustomerDBQueries {
     public static Map<String, Customer> loadCustomerByIdsAsNode(DSLContext ctx, Set<String> ids, SelectionSet select) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(
-                        CUSTOMER.getId(),
-                        DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Customer::new))
+                        _customer.getId(),
+                        DSL.row(
+                                _customer.getId()
+                        ).mapping(Functions.nullOnAllNull(Customer::new))
                 )
-                .from(CUSTOMER)
-                .where(CUSTOMER.hasIds(ids))
+                .from(_customer)
+                .where(_customer.hasIds(ids))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

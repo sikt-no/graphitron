@@ -36,20 +36,23 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var context = new FetchContext(processedSchema, target, getLocalObject());
-        var where = formatWhereContents(context);
+        var context = new FetchContext(processedSchema, target, getLocalObject(), true);
+        var targetSource = context.renderQuerySource(getLocalTable());
+
+        var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+        if (target.isResolver()) context = context.nextContext(target);
 
         var code = CodeBlock
                 .builder()
-                .add(createSelectAliases(context.getJoinSet()))
+                .add(createAliasDeclarations(context.getAliasSet()))
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
                 .add(".select($T.count())\n", DSL.className)
-                .add(".from($L)\n", context.renderQuerySource(getLocalTable()))
+                .add(".from($L)\n", targetSource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(where)
-                .add(createSelectConditions(context.getConditionList()))
+                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
                 .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
                 .unindent()
                 .unindent();

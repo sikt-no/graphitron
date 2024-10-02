@@ -15,10 +15,11 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static CustomerTable customerForQuery(DSLContext ctx, DummyRecord inRecord,
                                                  SelectionSet select) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
-                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
-                .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .from(_customer)
+                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

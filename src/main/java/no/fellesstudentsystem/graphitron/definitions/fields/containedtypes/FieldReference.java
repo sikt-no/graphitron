@@ -84,7 +84,7 @@ public class FieldReference {
         var secondLast = joinSequence.getSecondLast();
         var adjustedReference = joinSequence.getLast().equals(targetTable)
                 ? secondLast != null ? secondLast.getCodeName() : targetTable.getCodeName()
-                : joinSequence + (joinName.isEmpty() ? "" : "_" + joinName);
+                : joinSequence.render() + (joinName.isEmpty() ? "" : "_" + joinName);
         return new SQLJoinStatement(
                 joinSequence,
                 targetTable,
@@ -140,7 +140,8 @@ public class FieldReference {
     public SQLJoinStatement createJoinOnExplicitPathFor(JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
 
         var targetTable = hasTable() ? getTable() : tableNameBackup;
-        var alias = new Alias(joinSequence.getSecondLast().getCodeName() + "_" + keyOverride.getCodeName(), joinSequence, isNullable);
+        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_") ? joinSequence.getSecondLast().getMappingName() : joinSequence.getSecondLast().getCodeName();
+        var alias = new Alias(prefix + "_" + keyOverride.getCodeName(), joinSequence, isNullable);
 
         return new SQLJoinStatement(
                 joinSequence,

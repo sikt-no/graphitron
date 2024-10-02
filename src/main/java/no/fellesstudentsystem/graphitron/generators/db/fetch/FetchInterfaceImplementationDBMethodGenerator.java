@@ -56,8 +56,8 @@ public class FetchInterfaceImplementationDBMethodGenerator extends FetchDBMethod
                 target.getTypeName()
         );
 
-        var context = new FetchContext(processedSchema, implementationReference, implementation);
-        var selectCode = generateSelectRow(context);
+        var context = new FetchContext(processedSchema, implementationReference, implementation, false);
+        var selectCode = generateSelectRow(context, false);
 
         var argument = target.getArguments().get(0);
         var argumentName = argument.getName() + "s";
@@ -68,7 +68,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends FetchDBMethod
                 : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
 
         var code = CodeBlock.builder()
-                .add(createSelectAliases(context.getJoinSet()))
+                .add(createAliasDeclarations(context.getAliasSet()))
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
@@ -77,7 +77,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends FetchDBMethod
                 .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(".where($L.$L($N))\n", querySource, where, argumentName)
-                .add(createSelectConditions(context.getConditionList()))
+                .add(createSelectConditions(context.getConditionList(), true))
                 .addStatement(".$L($T::value1, $T::value2)",
                         (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),
                         RECORD2.className,

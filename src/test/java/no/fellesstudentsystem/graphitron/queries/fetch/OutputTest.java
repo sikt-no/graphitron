@@ -49,8 +49,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<String, CustomerTable> queryForWrapper",
-                ".select(CUSTOMER.getId(),DSL.row(",
-                ".orderBy(orderFields)",
+                ".select(_customer.getId(),DSL.field(",
                 ".fetchMap(Record2::value1, Record2::value2"
         );
     }
@@ -61,9 +60,9 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<String, List<CustomerTable>> queryForWrapper",
-                ".select(CUSTOMER.getId(),DSL.row(",
+                ".select(_customer.getId(),DSL.multiset(",
                 ".orderBy(orderFields)",
-                ".fetchGroups(Record2::value1, Record2::value2"
+                ".fetchMap(Record2::value1, r -> r.value2().map(Record2::value2))"
         );
     }
 
@@ -82,19 +81,19 @@ public class OutputTest extends GeneratorTest {
     @Test
     @DisplayName("Containing field annotated with @field")
     void fieldOverride() {
-        assertGeneratedContentContains("fieldOverride", ".optional(\"name\", CUSTOMER.FIRST_NAME)");
+        assertGeneratedContentContains("fieldOverride", ".optional(\"name\", _customer.FIRST_NAME)");
     }
 
     @Test
     @DisplayName("Query fetching two fields")
     void multipleFields() {
-        assertGeneratedContentContains("multipleFields", ".row(CUSTOMER.getId(),select.optional(\"email\", CUSTOMER.EMAIL))");
+        assertGeneratedContentContains("multipleFields", ".row(_customer.getId(),select.optional(\"email\", _customer.EMAIL))");
     }
 
     @Test // TODO: Should result in an error.
     @DisplayName("Containing field annotated with incorrect @field")
     void invalidFieldOverride() {
-        assertGeneratedContentContains("invalidFieldOverride", ".optional(\"name\", CUSTOMER.WRONG)");
+        assertGeneratedContentContains("invalidFieldOverride", ".optional(\"name\", _customer.WRONG)");
     }
 
     @Test
@@ -102,7 +101,7 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRow() {
         assertGeneratedContentContains(
                 "outerNestedRow", Set.of(CUSTOMER_TABLE),
-                ".row(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).mapping(Functions.nullOnAllNull(Wrapper::new"
+                ".field(DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).from(_customer))).mapping(Functions.nullOnAllNull(Wrapper::new"
         );
     }
 
@@ -111,7 +110,7 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRowExtraField() {
         assertGeneratedContentContains(
                 "outerNestedRowExtraField", Set.of(CUSTOMER_TABLE),
-                ".row(select.optional(\"email\", .EMAIL),DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))",
+                ".row(select.optional(\"email\", .EMAIL), DSL.field(DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).from(_customer)",
                 ".from()"
         );
     }
@@ -121,8 +120,9 @@ public class OutputTest extends GeneratorTest {
     void outerDoubleNestedRow() {
         assertGeneratedContentContains(
                 "outerDoubleNestedRow", Set.of(CUSTOMER_TABLE),
-                ".row(DSL.row(DSL.row(CUSTOMER.getId())" +
+                ".row(DSL.row(DSL.field(DSL.select(DSL.row(_customer.getId())" +
                         ".mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                        ".from(_customer)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper2::new)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper1::new"
         );
@@ -133,7 +133,7 @@ public class OutputTest extends GeneratorTest {
     void innerNestedRow() {
         assertGeneratedContentContains(
                 "innerNestedRow",
-                ".row(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Wrapper::new))).mapping(Functions.nullOnAllNull(Customer::new"
+                ".row(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(Wrapper::new))).mapping(Functions.nullOnAllNull(Customer::new"
         );
     }
 
@@ -142,7 +142,7 @@ public class OutputTest extends GeneratorTest {
     void innerNestedRowExtraField() {
         assertGeneratedContentContains(
                 "innerNestedRowExtraField",
-                ".row(select.optional(\"email\", CUSTOMER.EMAIL),DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(Wrapper::new"
+                ".row(select.optional(\"email\", _customer.EMAIL),DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(Wrapper::new"
         );
     }
 
@@ -151,7 +151,7 @@ public class OutputTest extends GeneratorTest {
     void innerDoubleNestedRow() {
         assertGeneratedContentContains(
                 "innerDoubleNestedRow",
-                ".row(DSL.row(DSL.row(CUSTOMER.getId())" +
+                ".row(DSL.row(DSL.row(_customer.getId())" +
                         ".mapping(Functions.nullOnAllNull(Wrapper2::new)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper1::new)))" +
                         ".mapping(Functions.nullOnAllNull(Customer::new"
@@ -169,9 +169,9 @@ public class OutputTest extends GeneratorTest {
     void over22FieldsWithVariousTypes() {
         assertGeneratedContentContains(
                 "over22FieldsWithVariousTypes", Set.of(DUMMY_ENUM),
-                "(\"length\",FILM.LENGTH",
-                "(\"rating\",FILM.RATING.convert",
-                "FILM.LENGTH.getDataType().convert(r[21",
+                "(\"length\",_film.LENGTH",
+                "(\"rating\",_film.RATING.convert",
+                "_film.LENGTH.getDataType().convert(r[21",
                 "(DummyEnum) r[22"
         );
     }
@@ -187,7 +187,7 @@ public class OutputTest extends GeneratorTest {
     void requiredRowWithOptionalFields() {
         assertGeneratedContentContains(
                 "requiredRowWithOptionalFields",
-                ".row(DSL.row(select.optional(\"wrapper/email\", CUSTOMER.EMAIL)).mapping(Wrapper::new))" +
+                ".row(DSL.row(select.optional(\"wrapper/email\", _customer.EMAIL)).mapping(Wrapper::new))" +
                         ".mapping((a0) -> (a0 == null || new Wrapper().equals(a0)) ? null : new Customer(a0)"
         );
     }
@@ -232,8 +232,9 @@ public class OutputTest extends GeneratorTest {
     void innerTable() {
         assertGeneratedContentContains(
                 "innerTable",
-                ".row(DSL.row",
-                ".mapping(Functions.nullOnAllNull(Address::new))).mapping(Functions.nullOnAllNull(Customer::new");
+                ".row(DSL.field",
+                ".mapping(Functions.nullOnAllNull(Address::new)))",
+                "))).mapping(Functions.nullOnAllNull(Customer::new");
     }
 
     @Test
@@ -241,7 +242,7 @@ public class OutputTest extends GeneratorTest {
     void innerTableSelfReference() {
         assertGeneratedContentContains(
                 "innerTableSelfReference",
-                ".getId(),DSL.row(",
+                ".getId(),DSL.field(",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
 
@@ -252,7 +253,7 @@ public class OutputTest extends GeneratorTest {
                 Set.of(CUSTOMER_TABLE),
                 "fromSchema1ForQuery",
                 "fromSchema2ForQuery",
-                "PG_USER.getId()",
-                ".from(PG_USER)");
+                "_pguser.getId()",
+                ".from(_pguser)");
     }
 }

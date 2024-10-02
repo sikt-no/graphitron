@@ -71,7 +71,7 @@ public class UnionTest extends GeneratorTest {
     void componentWithMultipleFields() {
         assertGeneratedContentContains(
                 "componentWithMultipleFields", Set.of(CUSTOMER_UNION),
-                ".row(CUSTOMER.getId(),CUSTOMER.EMAIL).mapping(Functions.nullOnAllNull(CustomerUnion::new)"
+                ".row(_customer.getId(),_customer.EMAIL).mapping(Functions.nullOnAllNull(CustomerUnion::new)"
         );
     }
 
@@ -84,6 +84,6 @@ public class UnionTest extends GeneratorTest {
     @Test
     @DisplayName("Union component with an enum field")
     void componentWithEnumField() {
-        assertGeneratedContentContains("componentWithEnumField", Set.of(CUSTOMER_UNION, DUMMY_ENUM), ".row(DSL.row(CUSTOMER.ENUM.convert(");
+        assertGeneratedContentContains("componentWithEnumField", Set.of(CUSTOMER_UNION, DUMMY_ENUM), ".row(DSL.row(_customer.ENUM.convert(");
     }
 }

@@ -20,13 +20,14 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext ctx, Integer pageSize,
                                                                   String after, SelectionSet select) {
-        var orderFields = CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray());
+        var _customer = CUSTOMER.as("customer_2952383337");
+        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(
-                        QueryHelper.getOrderByToken(CUSTOMER, orderFields),
-                        DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        QueryHelper.getOrderByToken(_customer, orderFields),
+                        DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
-                .from(CUSTOMER)
+                .from(_customer)
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)

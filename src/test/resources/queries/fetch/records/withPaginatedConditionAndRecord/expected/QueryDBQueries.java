@@ -22,14 +22,15 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Pair<String, CustomerTable>> customerForQuery(DSLContext ctx, CustomerRecord inRecord,
                                                    Integer pageSize, String after, SelectionSet select) {
-        var orderFields = CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray());
+        var _customer = CUSTOMER.as("customer_2952383337");
+        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(
-                        QueryHelper.getOrderByToken(CUSTOMER, orderFields),
-                        DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        QueryHelper.getOrderByToken(_customer, orderFields),
+                        DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
-                .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .from(_customer)
+                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)
@@ -38,10 +39,11 @@ public class QueryDBQueries {
     }
 
     public static Integer countCustomerForQuery(DSLContext ctx, CustomerRecord inRecord) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(DSL.count())
-                .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(CUSTOMER, inRecord))
+                .from(_customer)
+                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .fetchOne(0, Integer.class);
     }
 }

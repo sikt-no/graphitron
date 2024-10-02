@@ -42,7 +42,7 @@ public class OptionalInputTest extends GeneratorTest {
     @Test
     @DisplayName("Listed field")
     void list() {
-        assertGeneratedContentContains("list", "email != null && email.size() > 0 ? CUSTOMER.EMAIL.in(email) :DSL.noCondition()");
+        assertGeneratedContentContains("list", "email != null && email.size() > 0 ? _customer.EMAIL.in(email) :DSL.noCondition()");
     }
 
     @Test
@@ -50,7 +50,7 @@ public class OptionalInputTest extends GeneratorTest {
     void input() {
         assertGeneratedContentContains(
                 "input", Set.of(DUMMY_INPUT),
-                "in != null && in.getId() != null ? CUSTOMER.hasId(in.getId()) : DSL.noCondition()"
+                "in != null && in.getId() != null ? _customer.hasId(in.getId()) : DSL.noCondition()"
         );
     }
 
@@ -59,7 +59,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedInput() {
         assertGeneratedContentContains(
                 "nestedInput", Set.of(DUMMY_INPUT),
-                "in != null && in.getIn() != null && in.getIn().getId() != null ? CUSTOMER.hasId(in.getIn().getId()) : DSL.noCondition()"
+                "in != null && in.getIn() != null && in.getIn().getId() != null ? _customer.hasId(in.getIn().getId()) : DSL.noCondition()"
         );
     }
 
@@ -81,7 +81,7 @@ public class OptionalInputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedNestedInput", Set.of(DUMMY_INPUT),
                 "in0 != null && in0.size() > 0 ?" +
-                        "        DSL.row(CUSTOMER.getId()).in(" +
+                        "        DSL.row(_customer.getId()).in(" +
                         "            in0.stream().map(internal_it_ ->" +
                         "                DSL.row(DSL.inline(internal_it_.getIn1().getId()))" +
                         "            ).collect(Collectors.toList())" +
@@ -95,7 +95,7 @@ public class OptionalInputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestedListedInput", Set.of(DUMMY_INPUT),
                 "in != null && in.getIn() != null && in.getIn().size() > 0 ?" +
-                        "        DSL.row(CUSTOMER.getId()).in(" +
+                        "        DSL.row(_customer.getId()).in(" +
                         "            in.getIn().stream().map(internal_it_ ->" +
                         "                DSL.row(DSL.inline(internal_it_.getId()))" +
                         "            ).collect(Collectors.toList())" +

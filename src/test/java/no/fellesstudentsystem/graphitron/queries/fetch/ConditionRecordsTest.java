@@ -75,10 +75,10 @@ public class ConditionRecordsTest extends GeneratorTest {
     void inputJavaRecordCondition() {
         assertGeneratedContentContains(
                 "inputJavaRecordCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                "STAFF.FIRST_NAME.eq(nameRecord.getFirstName())",
-                "STAFF.LAST_NAME.eq(nameRecord.getLastName())",
-                "STAFF.ACTIVE.eq(active)",
-                ".name(STAFF, nameRecord))"
+                "_staff.FIRST_NAME.eq(nameRecord.getFirstName())",
+                "_staff.LAST_NAME.eq(nameRecord.getLastName())",
+                "_staff.ACTIVE.eq(active)",
+                ".name(_staff, nameRecord))"
         );
     }
 
@@ -87,11 +87,11 @@ public class ConditionRecordsTest extends GeneratorTest {
     void listInputJavaRecordAndFieldCondition() {
         assertGeneratedContentContains(
                 "listInputJavaRecordAndFieldCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                "STAFF.ACTIVE.eq(active)",
-                "STAFF.FIRST_NAME,STAFF.LAST_NAME).in(namesRecordList.stream().map(internal_it_ ->" +
+                "_staff.ACTIVE.eq(active)",
+                "_staff.FIRST_NAME,_staff.LAST_NAME).in(namesRecordList.stream().map(internal_it_ ->" +
                         "DSL.row(DSL.inline(internal_it_.getFirstName()),DSL.inline(internal_it_.getLastName())",
-                ".nameList(STAFF, namesRecordList)",
-                ".fieldWithListInput(STAFF, namesRecordList, active)"
+                ".nameList(_staff, namesRecordList)",
+                ".fieldWithListInput(_staff, namesRecordList, active)"
         );
     }
 
@@ -100,8 +100,8 @@ public class ConditionRecordsTest extends GeneratorTest {
     void listInputJavaRecordAndFieldOverrideCondition() {
         assertGeneratedContentContains(
                 "listInputJavaRecordAndFieldOverrideCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.nameList(STAFF, namesRecordList))" +
-                ".and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.fieldWithListInput(STAFF, namesRecordList, active))" +
+                ".where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.nameList(_staff, namesRecordList))" +
+                ".and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.fieldWithListInput(_staff, namesRecordList, active))" +
                 ".orderBy"
         );
     }
@@ -111,7 +111,7 @@ public class ConditionRecordsTest extends GeneratorTest {
     void nestedListInputJavaRecordOverrideCondition() {
         assertGeneratedContentContains(
                 "nestedListInputJavaRecordOverrideCondition", Set.of(STAFF, NAME_INPUT_JAVA),
-                ".where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.input1(STAFF, inputs1RecordList))" +
+                ".where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.input1(_staff, inputs1RecordList))" +
                 ".orderBy"
         );
     }
@@ -125,7 +125,7 @@ public class ConditionRecordsTest extends GeneratorTest {
                         "input3Record.getInputs2() != null && input3Record.getInputs2().size() > 0 ?" +
                         "DSL.row(DSL.trueCondition()).in(" +
                                 "input3Record.getInputs2().stream().map(internal_it_ ->" +
-                                        "DSL.row(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.input1(STAFF, internal_it_.getInput1()))" +
+                                        "DSL.row(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordStaffCondition.input1(_staff, internal_it_.getInput1()))" +
                                 ").collect(Collectors.toList())" +
                         ") : DSL.noCondition()" +
                 ")" +

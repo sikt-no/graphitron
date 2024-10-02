@@ -7,27 +7,24 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
+import no.fellesstudentsystem.graphitron.definitions.mapping.Alias;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
+import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.FUNCTIONS;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -71,8 +68,79 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * @param conditionList List of conditional statements that should be appended after the where-statement.
      * @return Code block which declares all the extra conditions that will be used in a select query.
      */
-    protected CodeBlock createSelectConditions(List<CodeBlock> conditionList) {
-        return CodeBlock.join(conditionList, "\n");
+    protected CodeBlock createSelectConditions(List<CodeBlock> conditionList, boolean hasWhere) {
+        var code = CodeBlock.builder();
+        for (var condition : conditionList) {
+            code.add(".$L($L)\n", hasWhere ? "and" : "where", condition);
+            hasWhere = true;
+        }
+        return code.build();
+    }
+
+
+    /**
+     * @param aliasSet  Set of aliases to be defined.
+     * @return Code block which declares all the aliases that will be used in a select query.
+     */
+    protected CodeBlock createAliasDeclarations(Set<Alias> aliasSet) {
+        var codeBuilder = CodeBlock.builder();
+        for (var alias : aliasSet) {
+            codeBuilder.add(declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName())));
+        }
+        return codeBuilder.build();
+    }
+
+    protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
+        var isMultiset = field.isIterableWrapped() || ((ObjectField) field).hasForwardPagination();
+
+        CodeBlock select;
+
+        if (context.getReferenceObject() == null) {
+            select = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context, !processedSchema.isEnum(field));
+        } else {
+            select = generateSelectRow(context, true);
+        }
+
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var joins = createSelectJoins(context.getJoinSet());
+
+        var contents = CodeBlock.builder()
+                .add("$T.select(", DSL.className)
+                .add(isMultiset ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getCurrentJoinSequence().render().toString(), ORDER_FIELDS_NAME) : empty())
+                .add(indentIfMultiline(select))
+                .add(")\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
+                .add(joins)
+                .add(where)
+                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
+
+        if (isMultiset) {
+            contents.add("\n.orderBy($N)", ORDER_FIELDS_NAME);
+            if (((ObjectField) field).hasForwardPagination()) {
+                contents.add(createSeekAndLimitBlock());
+            }
+        }
+
+        return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build()) : wrapInField(contents.build());
+    }
+
+    private CodeBlock wrapInMultisetWithMapping(CodeBlock contents) {
+        return CodeBlock.of("DSL.row($L).mapping(a0 -> a0.map($T::value1))", indentIfMultiline(wrapInMultiset(contents)), RECORD1.className);
+    }
+
+    private CodeBlock wrapInMultiset(CodeBlock contents) {
+        return CodeBlock.builder()
+                .add("$T.multiset(", DSL.className)
+                .add(indentIfMultiline(contents))
+                .add(")")
+                .build();
+    }
+
+    private CodeBlock wrapInField(CodeBlock contents) {
+        return CodeBlock.builder()
+                .add("$T.field(", DSL.className)
+                .add(indentIfMultiline(contents))
+                .add(")")
+                .build();
     }
 
     /**
@@ -80,7 +148,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * It deduces how each layer of row call should be structured by keeping track of joins and following field references.
      * @return Code block which contains the entire recursive structure of the row statement.
      */
-    protected CodeBlock generateSelectRow(FetchContext context) {
+    protected CodeBlock generateSelectRow(FetchContext context, boolean isInSubquery) {
         var fieldsWithoutSplitting = context
                 .getReferenceObject()
                 .getFields()
@@ -91,16 +159,32 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var fieldsWithoutSplittingSize = fieldsWithoutSplitting.size();
 
         var rowElements = new ArrayList<CodeBlock>();
+
+        var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
+        boolean containsEnum = false;
+
         for (GenerationField field : fieldsWithoutSplitting) {
-            var innerRowCode = processedSchema.isObject(field)
-                    ? generateSelectRow(context.nextContext(field))
-                    : (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
+
+            CodeBlock innerRowCode;
+            containsEnum = containsEnum || processedSchema.isEnum(field);
+
+            if (processedSchema.isObject(field)) {
+                var table = processedSchema.getObject(field.getTypeName()).getTable();
+                innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field), isInSubquery);
+            }
+            else if (field.hasFieldReferences()) {
+                var fieldContext = context.nextContext(field);
+                referenceFieldSources.put(field.getName(), fieldContext.renderQuerySource(getLocalTable()).toString());
+                innerRowCode = generateCorrelatedSubquery(field, fieldContext);
+            } else {
+                innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context, isInSubquery);
+            }
             rowElements.add(innerRowCode);
         }
 
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
-        CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
+        CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck() || (isInSubquery && containsEnum)
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
@@ -108,7 +192,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .builder()
                 .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
                 .add(".mapping(")
-                .add(maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting) : regularMappingFunction)
+                .add(maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, referenceFieldSources) : regularMappingFunction)
                 .add(")")
                 .build();
     }
@@ -233,7 +317,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 codeBlockArguments.add(isLastField ? ")" : ", ");
             }
 
-            codeBlockConstructor.add(argumentName);
+            if (processedSchema.isEnum(field)) {
+                useMemberConstructor = true;
+                codeBlockConstructor.add(toGraphEnumConverter(field.getTypeName(), CodeBlock.of(argumentName), field.isIterableWrapped(), false, processedSchema));
+            } else {
+                codeBlockConstructor.add(argumentName);
+            }
             codeBlockConstructor.add(isLastField ? ")" : ", ");
 
             if (processedSchema.isObject(field))  {
@@ -261,7 +350,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable) {
+    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields) {
         var codeBlockBuilder = CodeBlock.builder();
         codeBlockBuilder.add("$T.class, r ->\n", context.getReferenceObject().getGraphClassName());
         codeBlockBuilder.indent().indent();
@@ -279,8 +368,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 var enumDefinition = processedSchema.getEnum(field);
                 codeBlockBuilder.add("($T) r[$L]", enumDefinition.getGraphClassName(), i);
             } else {
-                var fieldSource = context.iterateJoinSequenceFor(field);
-                codeBlockBuilder.add("$L.$N.getDataType().convert(r[$L])", fieldSource.render(), field.getUpperCaseName(), i);
+                codeBlockBuilder.add("$L.$N.getDataType().convert(r[$L])", field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getLocalTable()), field.getUpperCaseName(), i);
             }
             if (i < fieldsWithoutTable.size() - 1) {
                 codeBlockBuilder.add(",\n");
@@ -293,12 +381,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * Generate a single argument in the row method call.
      */
-    private CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
-        var renderedSource = context.iterateJoinSequenceFor(field).render();
+    private CodeBlock generateForScalarField(GenerationField field, FetchContext context, boolean skipEnumConvert) {
+        var renderedSource = context.renderQuerySource(getLocalTable());
         if (field.isID()) {
             return CodeBlock.of("$L$L", renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
-        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
+
+        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), skipEnumConvert ? empty() : toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
         return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
@@ -313,7 +402,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         for(var fieldObject : unionField.getFieldTypeNames()) {
             var object = processedSchema.getObject(fieldObject).getName();
             var objectField = new ObjectField(new FieldDefinition(object, new graphql.language.TypeName(object)), object);
-            codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
+            codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false), false));
             if (counter + 1 < unionField.getFieldTypeNames().size()) {
                 codeBlock.add(",\n");
             }
@@ -325,14 +414,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context) {
-        var code = CodeBlock.builder().add(".where(");
+    protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot, boolean isResolverRoot) {
+        boolean hasWhere = false;
+        var code = CodeBlock.builder();
 
-        if (!isRoot) {
-            code.add("$L.hasIds($N))\n", context.renderQuerySource(getLocalTable()), idParamName);
+        if (!isRoot && !idParamName.isEmpty()) {
+            code.add(".where($L.hasIds($N))\n", context.renderQuerySource(getLocalTable()), idParamName);
+            hasWhere = true;
         }
-        if (((ObjectField) context.getReferenceObjectField()).hasNonReservedInputFields()) {
-            code.add(createWhere(context, !isRoot));
+        if (((ObjectField) context.getReferenceObjectField()).hasNonReservedInputFields() && !isResolverRoot) {
+            code.add(createWhere(context, hasWhere));
         } else if (isRoot) {
             return empty();
         }
@@ -361,9 +452,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var renderedSequence = context.iterateJoinSequenceFor(field).render();
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
-                if (hasWhere) {
-                    codeBlockBuilder.add(".and(");
-                }
+                codeBlockBuilder.add(hasWhere ? ".and(" : ".where(");
                 if (checksNotEmpty) {
                     codeBlockBuilder.add(checks + " ? ");
                 }
@@ -545,7 +634,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         return CodeBlock
                 .builder()
-                .add((hasWhere ? ".and(" : ""))
+                .add((hasWhere ? ".and(" : ".where("))
                 .add(indentIfMultiline(condition))
                 .add(")\n")
                 .build();
@@ -677,5 +766,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return asListedRecordNameIf(field.getName(), field.isIterableWrapped());
         }
         return field.getName();
+    }
+
+    protected CodeBlock createSeekAndLimitBlock() {
+        var code = CodeBlock.builder();
+
+        code.add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, CONTEXT_NAME, ORDER_FIELDS_NAME, GraphQLReservedName.PAGINATION_AFTER.getName());
+        code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
+        return code.build();
     }
 }

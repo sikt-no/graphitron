@@ -50,15 +50,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var localObject = getLocalObject();
-        var context = new FetchContext(processedSchema, target, localObject);
-
+        var context = new FetchContext(processedSchema, target, localObject, false);
         // Note that this must happen before alias declaration.
-        var selectRowBlock = generateSelectRow(context);
-        var whereBlock = formatWhereContents(context);
+        var selectRowBlock = target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context, false);
+        var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
 
-        var actualRefTable = context.getCurrentJoinSequence().render().toString();
+        var querySource = context.renderQuerySource(getLocalTable());
+        var actualRefTable = target.isResolver() ? context.nextContext(target).getCurrentJoinSequence().render().toString() : querySource.toString();
 
-        var selectAliasesBlock = createSelectAliases(context.getJoinSet());
+        var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
         Optional<CodeBlock> maybeOrderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
                 ? Optional.of(createOrderFieldsDeclarationBlock(target, actualRefTable))
@@ -73,15 +73,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .add(".select(")
                 .add(createSelectBlock(target, context, actualRefTable, selectRowBlock))
-                .add(")\n.from($L)\n", context.renderQuerySource(getLocalTable()))
+                .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
-                .add(createSelectConditions(context.getConditionList()))
-                .add(maybeOrderFields
+                .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
+                .add(target.isResolver() ? empty() : maybeOrderFields
                         .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
                         .orElse(empty()))
-                .add(target.hasForwardPagination()
-                        ? createSeekAndLimitBlock(target)
+                .add(target.hasForwardPagination() && !target.isResolver()
+                        ? createSeekAndLimitBlock()
                         : empty())
                 .add(setFetch(target));
 
@@ -95,7 +95,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return indentIfMultiline(
                 Stream.of(
                                 getInitialID(context),
-                                target.hasForwardPagination() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
+                                target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
                                 selectRowBlock
                         ).collect(CodeBlock.joining(""))
         );
@@ -156,22 +156,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var orderByField = referenceField.getOrderField();
         var primaryKeyFieldsBlock = getPrimaryKeyFieldsBlock(actualRefTable);
         var code = CodeBlock.builder();
+        String targetTableName = processedSchema.getObjectOrConnectionNode(referenceField).getTable().getName();
         orderByField.ifPresentOrElse(
-                it -> code.add(createCustomOrderBy(it, actualRefTable, primaryKeyFieldsBlock)),
+                it -> code.add(createCustomOrderBy(it, actualRefTable, primaryKeyFieldsBlock, targetTableName)),
                 () -> code.add("$L", primaryKeyFieldsBlock));
         return declare(ORDER_FIELDS_NAME, code.build());
-    }
-
-    private CodeBlock createSeekAndLimitBlock(ObjectField referenceField) {
-        var code = CodeBlock.builder()
-                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, CONTEXT_NAME, ORDER_FIELDS_NAME, GraphQLReservedName.PAGINATION_AFTER.getName());
-
-        if (referenceField.isResolver()) {
-            code.add(".limit($N * $N.size() + 1)\n", PAGE_SIZE_NAME, idParamName);
-        } else {
-            code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
-        }
-        return code.build();
     }
 
     private static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
@@ -194,14 +183,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         if (isRoot && !lookupExists) {
             code.addStatement(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName());
         } else {
-            code
-                    .add(".")
-                    .add(
-                            referenceField.isIterableWrapped() && !lookupExists
-                                    ? "fetchGroups"
-                                    : "fetchMap"
-                    )
-                    .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
+            code.add(".fetchMap");
+            if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
+                code.addStatement("($T::value1, r -> r.value2().map($T::value2))", RECORD2.className, RECORD2.className);
+            } else {
+                code.addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
+            }
+
         }
         return code.unindent().unindent().build();
     }
@@ -214,10 +202,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             code.addStatement(".map(it -> new $T<>(it.value1(), it.value2()))", IMMUTABLE_PAIR.className);
         } else {
             code
-                    .add(".fetchGroups(\n")
+                    .add(".fetchMap(\n")
                     .indent()
-                    .add("$T::value1,\n", RECORD3.className)
-                    .add("it -> it.value3() == null ? null : new $T<>(it.value2(), it.value3())\n", IMMUTABLE_PAIR.className)
+                    .add("$T::value1,\n", RECORD2.className)
+                    .add("it ->  it.value2().map(r -> r.value2() == null ? null : new $T<>(r.value1(), r.value2()))", IMMUTABLE_PAIR.className)
                     .unindent()
                     .addStatement(")");
         }
@@ -225,15 +213,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     @NotNull
-    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock primaryKeyFieldsBlock) {
+    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock primaryKeyFieldsBlock, String targetTableName) {
         var orderByFieldEnum = processedSchema.getOrderByFieldEnum(orderInputField);
         var orderByFieldToDBIndexName = orderByFieldEnum
                 .getFields()
                 .stream()
                 .collect(Collectors.toMap(AbstractField::getName, enumField -> enumField.getIndexName().orElseThrow()));
 
-        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(actualRefTable, indexName),
-                "Table '%S' has no index '%S' necessary for sorting by '%s'", actualRefTable, indexName, orderByField));
+        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
+                "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
 
         var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()
                 .stream()

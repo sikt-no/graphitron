@@ -32,7 +32,7 @@ public class EnumTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "input/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
                 ", DummyEnumConverted e,",
-                "e != null ? FILM.RATING.convert(DummyEnumConverted.class,",
+                "e != null ? _film.RATING.convert(DummyEnumConverted.class,",
                 ".eq(e) : DSL.noCondition()"
         );
     }
@@ -43,7 +43,7 @@ public class EnumTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "input/string", Set.of(DUMMY_ENUM),
                 ", DummyEnum e,",
-                "e != null ? FILM.RATING.convert(DummyEnum.class,",
+                "e != null ? _film.RATING.convert(DummyEnum.class,",
                 ".eq(e) : DSL.noCondition()"
         );
     }
@@ -53,7 +53,7 @@ public class EnumTest extends GeneratorTest {
     void outputJOOQ() {
         assertGeneratedContentContains(
                 "output/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
-                "FILM.RATING.convert(DummyEnumConverted.class,"
+                "_film.RATING.convert(DummyEnumConverted.class,"
         );
     }
 
@@ -62,7 +62,17 @@ public class EnumTest extends GeneratorTest {
     void outputString() {
         assertGeneratedContentContains(
                 "output/string", Set.of(DUMMY_ENUM),
-                "FILM.RATING.convert(DummyEnum.class,"
+                "_film.RATING.convert(DummyEnum.class,"
+        );
+    }
+
+    @Test
+    @DisplayName("Output JOOQ enum in subquery")
+    void outputJOOQSubquery() {
+        assertGeneratedContentContains(
+                "output/jOOQSubquery", Set.of(DUMMY_ENUM_CONVERTED),
+                ", inventory_4239518507_film.RATING)",
+                ".mapping((a0, a1) -> a0 == null && a1 == null ? null : new FilmTable(a0,"
         );
     }
 }

@@ -17,13 +17,14 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static List<CustomerTable> queryForQuery(DSLContext ctx, Order orderBy, SelectionSet select) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         var orderFields = orderBy == null
-                ? CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray())
-                : QueryHelper.getSortFields(CUSTOMER.getIndexes(), Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
+                ? _customer.fields(_customer.getPrimaryKey().getFieldsArray())
+                : QueryHelper.getSortFields(_customer.getIndexes(), Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
                 .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString());
         return ctx
-                .select(DSL.row(CUSTOMER.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new)))
-                .from(CUSTOMER)
+                .select(DSL.row(_customer.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .from(_customer)
                 .orderBy(orderFields)
                 .fetch(it -> it.into(CustomerTable.class));
     }

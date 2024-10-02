@@ -11,9 +11,10 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static Integer countQueryForQuery(DSLContext ctx) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(DSL.count())
-                .from(CUSTOMER)
+                .from(_customer)
                 .fetchOne(0, Integer.class);
     }
 }

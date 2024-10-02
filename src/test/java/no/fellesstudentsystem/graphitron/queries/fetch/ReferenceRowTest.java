@@ -22,7 +22,7 @@ public class ReferenceRowTest extends ReferenceTest {
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_address_left"
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -31,7 +31,7 @@ public class ReferenceRowTest extends ReferenceTest {
     void keyWithSinglePath() {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_address_left"
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -40,7 +40,7 @@ public class ReferenceRowTest extends ReferenceTest {
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-                ".leftJoin(film_filmoriginallanguageidfkey_left"
+                ".from(film_3747728953_filmoriginallanguageidfkey"
         );
     }
 
@@ -49,8 +49,9 @@ public class ReferenceRowTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_QUERY),
-                "leftJoin(customer_addresscustomer_address_left).on(",
-                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)"
+                "join(customer_address_addresscustomer_address).on(",
+                ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
+                ".where(_customer.customer_id.eq(customer_address.customer_id"
         );
     }
 
@@ -59,8 +60,8 @@ public class ReferenceRowTest extends ReferenceTest {
     void throughTable() {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_address_left",
-                ".leftJoin(address_166982810_city_left"
+                ".from(customer_2952383337_address",
+                ".join(address_1214171484_city"
         );
     }
 
@@ -69,8 +70,8 @@ public class ReferenceRowTest extends ReferenceTest {
     void throughKey() {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_address_left",
-                ".leftJoin(address_166982810_city_left"
+                ".from(customer_2952383337_address",
+                ".join(address_1214171484_city"
         );
     }
 
@@ -79,8 +80,9 @@ public class ReferenceRowTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_QUERY),
-                ".leftJoin(customer_citycustomer_city_left).on(",
-                ".cityCustomer(CUSTOMER, customer_citycustomer_city_left)"
+                ".join(customer_city_citycustomer_city).on(",
+                ".cityCustomer(customer_city, customer_city_citycustomer_city)",
+                ".where(_customer.customer_id.eq(customer_city.customer_id"
         );
     }
 
@@ -89,8 +91,8 @@ public class ReferenceRowTest extends ReferenceTest {
     void throughTableBackwards() {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(city_address_left",
-                ".leftJoin(address_2545393164_customer_left"
+                ".from(city_1887334959_address",
+                ".join(address_1356285680_customer"
         );
     }
 

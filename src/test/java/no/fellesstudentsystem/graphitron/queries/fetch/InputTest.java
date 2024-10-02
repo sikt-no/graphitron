@@ -48,31 +48,31 @@ public class InputTest extends GeneratorTest {
     @Test
     @DisplayName("ID field")
     void id() {
-        assertGeneratedContentContains("id", ", String id,", "CUSTOMER.hasId(id)");
+        assertGeneratedContentContains("id", ", String id,", "_customer.hasId(id)");
     }
 
     @Test
     @DisplayName("ID field that is not the primary ID")
     void idOther() {
-        assertGeneratedContentContains("idOther", "CUSTOMER.hasAddressId(id)");
+        assertGeneratedContentContains("idOther", "_customer.hasAddressId(id)");
     }
 
     @Test
     @DisplayName("Boolean field")
     void booleanCase() {
-        assertGeneratedContentContains("boolean", ", Boolean bool,", "CUSTOMER.ACTIVE.eq(bool)");
+        assertGeneratedContentContains("boolean", ", Boolean bool,", "_customer.ACTIVE.eq(bool)");
     }
 
     @Test
     @DisplayName("Integer field")
     void integer() {
-        assertGeneratedContentContains("integer", ", Integer length,", "FILM.LENGTH.eq(length)");
+        assertGeneratedContentContains("integer", ", Integer length,", "_film.LENGTH.eq(length)");
     }
 
     @Test
     @DisplayName("Field with @field directive")
     void fieldOverride() {
-        assertGeneratedContentContains("fieldOverride", ", String name,", "CUSTOMER.FIRST_NAME.eq(name)");
+        assertGeneratedContentContains("fieldOverride", ", String name,", "_customer.FIRST_NAME.eq(name)");
     }
 
     @Test
@@ -81,8 +81,8 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoFields",
                 ", String firstName, String lastName,",
-                "CUSTOMER.FIRST_NAME.eq(firstName)",
-                "CUSTOMER.LAST_NAME.eq(lastName)"
+                "_customer.FIRST_NAME.eq(firstName)",
+                "_customer.LAST_NAME.eq(lastName)"
         );
     }
 
@@ -92,20 +92,20 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "list",
                 ", List<String> email,",
-                "email.size() > 0 ? CUSTOMER.EMAIL.in(email) : DSL.noCondition()"
+                "email.size() > 0 ? _customer.EMAIL.in(email) : DSL.noCondition()"
         );
     }
 
     @Test  // Special case methods for IDs.
     @DisplayName("ID list field")
     void idList() {
-        assertGeneratedContentContains("idList", ", List<String> id,", "CUSTOMER.hasIds(id.stream().collect(Collectors.toSet()))");
+        assertGeneratedContentContains("idList", ", List<String> id,", "_customer.hasIds(id.stream().collect(Collectors.toSet()))");
     }
 
     @Test
     @DisplayName("ID list field that is not the primary ID")
     void idOtherList() {
-        assertGeneratedContentContains("idOtherList", "CUSTOMER.hasAddressIds(id.stream().collect(Collectors.toSet()))");
+        assertGeneratedContentContains("idOtherList", "_customer.hasAddressIds(id.stream().collect(Collectors.toSet()))");
     }
 
     @Test
@@ -115,7 +115,7 @@ public class InputTest extends GeneratorTest {
                 "input",
                 Set.of(DUMMY_INPUT),
                 ", DummyInput in,",
-                "in.getId() != null ? CUSTOMER.hasId(in.getId()) : DSL.noCondition()"
+                "in.getId() != null ? _customer.hasId(in.getId()) : DSL.noCondition()"
         );
     }
 
@@ -126,7 +126,7 @@ public class InputTest extends GeneratorTest {
                 "nestedInput",
                 Set.of(DUMMY_INPUT),
                 ", Wrapper in,",
-                "in.getIn().getId() != null ? CUSTOMER.hasId(in.getIn().getId()) : DSL.noCondition()"
+                "in.getIn().getId() != null ? _customer.hasId(in.getIn().getId()) : DSL.noCondition()"
         );
     }
 
@@ -136,7 +136,7 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestedListedInputTwoFields",
                 "in.getIn().size() > 0 ?" +
-                        "DSL.row(CUSTOMER.FIRST_NAME, CUSTOMER.LAST_NAME).in(" +
+                        "DSL.row(_customer.FIRST_NAME, _customer.LAST_NAME).in(" +
                         "        in.getIn().stream().map(internal_it_ ->" +
                         "                DSL.row(DSL.inline(internal_it_.getFirst()), DSL.inline(internal_it_.getLast()))" +
                         "        ).collect(Collectors.toList())" +
@@ -160,10 +160,10 @@ public class InputTest extends GeneratorTest {
    void multiLevelInput() {
         assertGeneratedContentContains(
                 "multiLevelInput", Set.of(STAFF, NAME_INPUT),
-                ".where(STAFF.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
-                ".and(STAFF.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
-                ".and(staff.getInfo().getJobEmail().getEmail() != null ? STAFF.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
-                ".and(STAFF.ACTIVE.eq(staff.getActive()))" +
+                ".where(_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
+                ".and(_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
+                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
+                ".and(_staff.ACTIVE.eq(staff.getActive()))" +
                 ".orderBy"
         );
    }

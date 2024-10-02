@@ -28,7 +28,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_address_left"
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -37,7 +37,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(address_customer_left"
+                ".from(address_2030472956_customer"
         );
     }
 
@@ -46,7 +46,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void keyWithSinglePath() {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_address_left"
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -55,7 +55,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-                ".leftJoin(film_filmoriginallanguageidfkey_left"
+                ".from(film_3747728953_filmoriginallanguageidfkey"
         );
     }
 
@@ -64,7 +64,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(address_customer_left"
+                ".from(address_2030472956_customer"
         );
     }
 
@@ -73,8 +73,9 @@ public class ReferenceQueryTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
-                "leftJoin(customer_addresscustomer_address_left).on(",
-                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)"
+                "join(customer_address_addresscustomer_address).on(",
+                ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
+                ".where(_customer.customer_id.eq(customer_address.customer_id"
         );
     }
 
@@ -83,7 +84,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_address_left"
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -92,9 +93,9 @@ public class ReferenceQueryTest extends ReferenceTest {
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_addresscustomer_address_left = ADDRESS.as(", // Note, no implicit join anymore.
-                ".leftJoin(customer_addresscustomer_address_left).on(",
-                ".addressCustomer(CUSTOMER, customer_addresscustomer_address_left)" // Note, condition overrides as it uses "on".
+                "customer_address_addresscustomer_address = ADDRESS.as(", // Note, no implicit join anymore.
+                ".join(customer_address_addresscustomer_address).on(",
+                ".addressCustomer(customer_address, customer_address_addresscustomer_address)" // Note, condition overrides as it uses "on".
         );
     }
 
@@ -103,9 +104,10 @@ public class ReferenceQueryTest extends ReferenceTest {
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_address_left = CUSTOMER.address().as(", // Note, implicit join is present when we use a key, but not table.
-                ".leftJoin(customer_address_left).where(CUSTOMER.hasIds(customerIds)).and(",
-                ".addressCustomer(CUSTOMER, customer_address_left)" // Note, no condition override unlike table case.
+                "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
+                ".from(customer_2952383337_address).where(",
+                ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
+                ".where(_customer.hasIds(customerIds"
         );
     }
 
@@ -114,8 +116,8 @@ public class ReferenceQueryTest extends ReferenceTest {
     void throughTable() {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_address_left",
-                ".leftJoin(address_166982810_city_left"
+                ".from(customer_2952383337_address",
+                ".join(address_1214171484_city"
         );
     }
 
@@ -124,8 +126,8 @@ public class ReferenceQueryTest extends ReferenceTest {
     void throughKey() {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_address_left",
-                ".leftJoin(address_166982810_city_left"
+                ".from(customer_2952383337_address",
+                ".join(address_1214171484_city"
         );
     }
 
@@ -134,8 +136,8 @@ public class ReferenceQueryTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_citycustomer_city_left).on(",
-                ".cityCustomer(CUSTOMER, customer_citycustomer_city_left)"
+                ".join(customer_city_citycustomer_city).on(",
+                ".cityCustomer(customer_city, customer_city_citycustomer_city)"
         );
     }
 
@@ -144,8 +146,8 @@ public class ReferenceQueryTest extends ReferenceTest {
     void throughTableBackwards() {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(city_address_left",
-                ".leftJoin(address_2545393164_customer_left"
+                ".from(city_1887334959_address",
+                ".join(address_1356285680_customer"
         );
     }
 
@@ -154,7 +156,9 @@ public class ReferenceQueryTest extends ReferenceTest {
     void onList() {
         assertGeneratedContentContains(
                 "onList", Set.of(CUSTOMER_NOT_GENERATED),
-                ".join(customer_address"
+                ".from(customer_2952383337_address).orderBy(orderFields",
+                "DSL.multiset(",
+                "orderFields = customer_2952383337_address"
         );
     }
 
@@ -163,7 +167,7 @@ public class ReferenceQueryTest extends ReferenceTest {
     void onNullableList() {
         assertGeneratedContentContains(
                 "onNullableList", Set.of(CUSTOMER_NOT_GENERATED),
-                ".leftJoin(customer_address_left"
+                ".from(customer_2952383337_address"
         );
     }
 
@@ -172,9 +176,9 @@ public class ReferenceQueryTest extends ReferenceTest {
     void selfTableReference() {
         assertGeneratedContentContains(
                 "selfTableReference",
-                "FILM.film().as(",
-                "film_film_left.getId()",
-                ".leftJoin(film_film_left"
+                "_film.film().as(",
+                "film_3747728953_film.getId()",
+                ".from(film_3747728953_film"
         );
     }
 
@@ -183,9 +187,9 @@ public class ReferenceQueryTest extends ReferenceTest {
     void selfKeyReference() {
         assertGeneratedContentContains(
                 "selfKeyReference",
-                "FILM.film().as(",
-                "film_film_left.getId()",
-                ".leftJoin(film_film_left"
+                "_film.film().as(",
+                "film_3747728953_film.getId()",
+                ".from(film_3747728953_film"
         );
     }
 
@@ -195,9 +199,9 @@ public class ReferenceQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "selfConditionReference",
                 "FILM.as(",
-                "film_film_left.getId()",
-                ".leftJoin(film_film_left).on(",
-                ".sequel(FILM, film_film_left"
+                "film_sequel_sequel_film.getId()",
+                ".join(film_sequel_sequel_film).on(",
+                ".sequel(film_sequel, film_sequel_sequel_film"
         );
     }
 }

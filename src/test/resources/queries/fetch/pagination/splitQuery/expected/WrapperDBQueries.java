@@ -17,27 +17,32 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
-import org.jooq.Record3;
+import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class WrapperDBQueries {
     public static Map<String, List<Pair<String, CustomerTable>>> queryForWrapper(DSLContext ctx,
                                                                                  Set<String> wrapperIds, Integer pageSize, String after, SelectionSet select) {
-        var orderFields = CUSTOMER.fields(CUSTOMER.getPrimaryKey().getFieldsArray());
+        var _customer = CUSTOMER.as("customer_2952383337");
+        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(
-                        CUSTOMER.getId(),
-                        QueryHelper.getOrderByToken(CUSTOMER, orderFields),
-                        DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        _customer.getId(),
+                        DSL.multiset(
+                                DSL.select(
+                                                QueryHelper.getOrderByToken(_customer, orderFields),
+                                                DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                                        .from(_customer)
+                                        .orderBy(orderFields)
+                                        .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
+                                        .limit(pageSize + 1)
+                        )
                 )
-                .from(CUSTOMER)
-                .where(CUSTOMER.hasIds(wrapperIds))
-                .orderBy(orderFields)
-                .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
-                .limit(pageSize * wrapperIds.size() + 1)
-                .fetchGroups(
-                        Record3::value1,
-                        it -> it.value3() == null ? null : new ImmutablePair<>(it.value2(), it.value3())
+                .from(_customer)
+                .where(_customer.hasIds(wrapperIds))
+                .fetchMap(
+                        Record2::value1,
+                        it ->  it.value2().map(r -> r.value2() == null ? null : new ImmutablePair<>(r.value1(), r.value2()))
                 );
     }
 }

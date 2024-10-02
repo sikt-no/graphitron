@@ -1,0 +1,13 @@
+type Query {
+  query: Inventory
+}
+
+type Inventory @table(name: "INVENTORY") {
+  id: ID
+  film: FilmTable
+}
+
+type FilmTable @table(name: "FILM") {
+  id: ID
+  e: DummyEnumConverted @field(name: "RATING")
+}

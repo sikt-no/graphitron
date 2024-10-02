@@ -18,8 +18,8 @@ public class ReferenceInputTest extends ReferenceTest {
     @DisplayName("Table path")
     void table() {
         assertGeneratedContentContains("table", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(customer_address_left",
-                ".where(customer_address_left.DISTRICT.eq(district"
+                ".leftJoin(customer_2952383337_address_left",
+                ".where(customer_2952383337_address_left.DISTRICT.eq(district"
         );
     }
 
@@ -28,7 +28,7 @@ public class ReferenceInputTest extends ReferenceTest {
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(address_customer_left"
+                ".leftJoin(address_2030472956_customer_left"
         );
     }
 
@@ -37,8 +37,8 @@ public class ReferenceInputTest extends ReferenceTest {
     void keyWithSinglePath() {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(customer_address_left",
-                ".where(customer_address_left.DISTRICT.eq(district"
+                ".leftJoin(customer_2952383337_address_left",
+                ".where(customer_2952383337_address_left.DISTRICT.eq(district"
         );
     }
 
@@ -47,8 +47,8 @@ public class ReferenceInputTest extends ReferenceTest {
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-                ".leftJoin(film_filmoriginallanguageidfkey_left",
-                ".where(film_filmoriginallanguageidfkey_left.NAME.eq(name"
+                ".leftJoin(film_3747728953_filmoriginallanguageidfkey_left",
+                ".where(film_3747728953_filmoriginallanguageidfkey_left.NAME.eq(name"
         );
     }
 
@@ -57,7 +57,7 @@ public class ReferenceInputTest extends ReferenceTest {
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(address_customer_left"
+                ".leftJoin(address_2030472956_customer_left"
         );
     }
 
@@ -66,9 +66,9 @@ public class ReferenceInputTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(customer_customer_left",
-                ".district(CUSTOMER, customer_customer_left)",
-                ".where(customer_customer_left.DISTRICT.eq(district"
+                ".leftJoin(_customer_district_customer_left",
+                ".district(_customer, _customer_district_customer_left)",
+                ".where(_customer_district_customer_left.DISTRICT.eq(district"
         );
     }
 
@@ -77,8 +77,8 @@ public class ReferenceInputTest extends ReferenceTest {
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_TABLE),
-                "customer_address_left.DISTRICT",
-                ".leftJoin(customer_address_left"
+                "customer_2952383337_address_left.DISTRICT",
+                ".leftJoin(customer_2952383337_address_left"
         );
     }
 
@@ -87,9 +87,9 @@ public class ReferenceInputTest extends ReferenceTest {
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_TABLE),
-                "customer_district_address_left = ADDRESS.as(", // Note, no implicit join anymore.
-                ".leftJoin(customer_district_address_left).on(",
-                ".district(CUSTOMER, customer_district_address_left)" // Note, condition overrides as it uses "on".
+                "_customer_district_address_left = ADDRESS.as(", // Note, no implicit join anymore.
+                ".leftJoin(_customer_district_address_left).on(",
+                ".district(_customer, _customer_district_address_left)" // Note, condition overrides as it uses "on".
         );
     }
 
@@ -98,9 +98,9 @@ public class ReferenceInputTest extends ReferenceTest {
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_TABLE),
-                "customer_address_left = CUSTOMER.address().as(", // Note, implicit join is present when we use a key, but not table.
-                ".leftJoin(customer_address_left).where(customer_address_left.DISTRICT.eq(district)).and(",
-                ".district(CUSTOMER, customer_address_left)" // Note, no condition override unlike table case.
+                "customer_2952383337_address_left = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
+                ".leftJoin(customer_2952383337_address_left).where(customer_2952383337_address_left.DISTRICT.eq(district)).and(",
+                ".district(_customer, customer_2952383337_address_left)" // Note, no condition override unlike table case.
         );
     }
 
@@ -109,24 +109,24 @@ public class ReferenceInputTest extends ReferenceTest {
     void insideInputType() {
         assertGeneratedContentContains(
                 "insideInputType", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(customer_address_left",
-                ".where(customer_address_left.DISTRICT.eq(in.getDistrict()"
+                ".leftJoin(customer_2952383337_address_left",
+                ".where(customer_2952383337_address_left.DISTRICT.eq(in.getDistrict()"
         );
     }
 
     @Test // TODO: This behaviour is undefined and results in illegal code.
     @DisplayName("Reference used on an input type")
     void onInputType() {
-        assertGeneratedContentContains("onInputType", Set.of(CUSTOMER_TABLE), "CUSTOMER.DISTRICT.eq(in.getDistrict())");
+        assertGeneratedContentContains("onInputType", Set.of(CUSTOMER_TABLE), "_customer.DISTRICT.eq(in.getDistrict())");
     }
 
     @Test
     @DisplayName("Multiple references to the same table")
     void multipleToSameTable() {
         assertGeneratedContentContains("multipleToSameTable", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(customer_address_left",
-                ".where(customer_address_left.DISTRICT.eq(district1",
-                ".and(customer_address_left.DISTRICT.eq(district2" // Silly case, but valid.
+                ".leftJoin(customer_2952383337_address_left",
+                ".where(customer_2952383337_address_left.DISTRICT.eq(district1",
+                ".and(customer_2952383337_address_left.DISTRICT.eq(district2" // Silly case, but valid.
         );
     }
 }

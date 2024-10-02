@@ -17,35 +17,37 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static CustomerTable customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,
                                                  SelectionSet select) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
-                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
-                .from(CUSTOMER)
+                .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .from(_customer)
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
                                 DSL.row(
-                                        CUSTOMER.getId(),
+                                        _customer.getId(),
                                         DSL.trueCondition(),
                                         DSL.trueCondition()
                                 ).in(
                                         inRecordList.stream().map(internal_it_ ->
                                                 DSL.row(
                                                         DSL.inline(internal_it_.getId()),
-                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, internal_it_.getId()),
-                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(CUSTOMER, internal_it_.getFirstName())
+                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getId()),
+                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirstName())
                                                 )
                                         ).collect(Collectors.toList())
                                 ) : DSL.noCondition()
                 )
-                .and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(CUSTOMER, inRecordList))
+                .and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 
     public static CustomerTable customerOverrideForQuery(DSLContext ctx,
                                                          List<CustomerRecord> inRecordList, SelectionSet select) {
+        var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
-                .select(DSL.row(CUSTOMER.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
-                .from(CUSTOMER)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(CUSTOMER, inRecordList))
+                .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .from(_customer)
+                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }
