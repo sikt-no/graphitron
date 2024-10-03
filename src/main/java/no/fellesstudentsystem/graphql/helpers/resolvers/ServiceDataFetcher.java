@@ -171,7 +171,7 @@ public class ServiceDataFetcher<A extends AbstractTransformer> extends AbstractF
                                 .stream()
                                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue()))) : Map.of(),
                         pageSize,
-                        countFunction.apply(idSet),
+                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null,
                         maxNodes,
                         connectionFunction
                 )

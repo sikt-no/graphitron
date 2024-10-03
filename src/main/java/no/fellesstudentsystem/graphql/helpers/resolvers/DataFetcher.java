@@ -20,6 +20,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_TOTAL_COUNT;
+
 public class DataFetcher extends AbstractFetcher {
     /**
      * Create a dataloader for a resolver.
@@ -61,7 +63,7 @@ public class DataFetcher extends AbstractFetcher {
                 getPaginatedConnection(
                         dbFunction.callDBMethod(ctx, connectionSelection),
                         pageSize,
-                        countFunction.callDBMethod(ctx, Set.of()),
+                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(ctx, Set.of()) : -1,
                         maxNodes,
                         connectionFunction
                 )
@@ -207,7 +209,7 @@ public class DataFetcher extends AbstractFetcher {
                 getPaginatedConnection(
                         resultAsMap(keyToId, dbFunction.callDBMethod(ctx, idSet, selectionSet)),
                         pageSize,
-                        countFunction.callDBMethod(ctx, idSet),
+                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(ctx, idSet) : -1,
                         maxNodes,
                         connectionFunction
                 )
