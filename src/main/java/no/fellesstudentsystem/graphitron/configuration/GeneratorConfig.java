@@ -4,7 +4,7 @@ import no.fellesstudentsystem.graphitron.configuration.externalreferences.Extern
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.ExternalReferences;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.GlobalTransform;
 import no.fellesstudentsystem.graphitron.configuration.externalreferences.TransformScope;
-import no.fellesstudentsystem.graphitron.mojo.GenerateMojo;
+import no.fellesstudentsystem.graphitron.mojo.Generator;
 
 import java.io.File;
 import java.net.URL;
@@ -58,7 +58,7 @@ public class GeneratorConfig {
     /**
      * Read all the configurations set in the XML from the provided MOJO.
      */
-    public static void loadProperties(GenerateMojo mojo) {
+    public static void loadProperties(Generator mojo) {
         var files = mojo.getSchemaFiles();
         Set<String> inputFiles = Set.of();
         if (files != null) {

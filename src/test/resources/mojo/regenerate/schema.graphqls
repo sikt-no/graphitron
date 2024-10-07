@@ -1,8 +1,0 @@
-type Query {
-  film: Film
-}
-
-type Film @table {
-  id: ID!
-  length: Int
-}
