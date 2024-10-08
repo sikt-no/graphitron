@@ -15,7 +15,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "field/table", Set.of(CUSTOMER_QUERY),
                 "customer_2952383337_address = _customer.address().as(\"address_1214171484\")",
-                "\"district\", customer_2952383337_address.DISTRICT",
+                "customer_2952383337_address.DISTRICT",
                 ".from(_customer"
         );
     }
@@ -26,7 +26,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "field/keyWithSinglePath", Set.of(CUSTOMER_QUERY),
                 "_customer.address().as(",
-                "\"district\", customer_2952383337_address.DISTRICT"
+                "customer_2952383337_address.DISTRICT"
         );
     }
 
@@ -36,7 +36,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "field/keyWithMultiplePaths",
                 "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as(\"filmOriginalLanguageIdFkey_789320123\")",
-                "\"name\", film_3747728953_filmoriginallanguageidfkey.NAME",
+                "film_3747728953_filmoriginallanguageidfkey.NAME",
                 ".from(_film"
         );
     }
@@ -61,7 +61,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "field/condition", Set.of(CUSTOMER_QUERY),
                 "customer_district_district_customer = CUSTOMER.as(",
-                "\"district\", customer_district_district_customer.DISTRICT",
+                "customer_district_district_customer.DISTRICT",
                 ".from(customer_district",
                 ".where(_customer.customer_id.eq(customer_district.customer_id"
         );
@@ -123,7 +123,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     void over22Fields() {
         assertGeneratedContentContains(
                 "alias/over22Fields",
-                "\"name\", film_3747728953_filmlanguageidfkey.NAME",
+                "film_3747728953_filmlanguageidfkey.NAME",
                 "film_3747728953_filmlanguageidfkey.NAME.getDataType().convert(r[22])"
         );
     }

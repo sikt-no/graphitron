@@ -44,11 +44,7 @@ public class InterfaceTest extends GeneratorTest {
     @Test
     @DisplayName("Multiple fields")
     void manyFields() {
-        assertGeneratedContentContains(
-                "manyFields",
-                "select.optional(\"first\", _customer.FIRST_NAME)",
-                "select.optional(\"last\", _customer.LAST_NAME)"
-        );
+        assertGeneratedContentContains("manyFields", "_customer.FIRST_NAME", "_customer.LAST_NAME");
     }
 
     @Test

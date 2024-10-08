@@ -99,8 +99,8 @@ public class ReferenceFieldTest extends ReferenceTest {
     void multipleToSameTable() {
         assertGeneratedContentContains(
                 "multipleToSameTable", Set.of(CUSTOMER_QUERY),
-                "\"district1\", customer_2952383337_address.DISTRICT",
-                "\"district2\", customer_2952383337_address.DISTRICT",
+                "customer_2952383337_address.DISTRICT",
+                "customer_2952383337_address.DISTRICT",
                 ".from(customer_2952383337_address"
         );
     }

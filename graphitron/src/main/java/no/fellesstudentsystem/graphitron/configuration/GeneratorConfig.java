@@ -112,6 +112,7 @@ public class GeneratorConfig {
             generatedJooqPackage;
 
     private static int maxAllowedPageSize;
+    private final static boolean USE_OPTIONAL_SELECTS = false;
 
     private static ExternalReferences externalReferences;
     private static Set<String> externalReferenceImports;
@@ -190,5 +191,9 @@ public class GeneratorConfig {
 
     public static int getMaxAllowedPageSize() {
         return maxAllowedPageSize;
+    }
+
+    public static boolean useOptionalSelects() {
+        return USE_OPTIONAL_SELECTS;
     }
 }
