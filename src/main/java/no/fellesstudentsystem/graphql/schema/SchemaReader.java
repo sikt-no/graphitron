@@ -3,6 +3,7 @@ package no.fellesstudentsystem.graphql.schema;
 import graphql.language.Document;
 import graphql.parser.MultiSourceReader;
 import graphql.parser.Parser;
+import graphql.parser.ParserEnvironment;
 import graphql.parser.ParserOptions;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -36,7 +37,13 @@ public class SchemaReader {
         }
 
         var parseOptions = ParserOptions.getDefaultParserOptions().transform(build -> build.maxTokens(MAX_TOKENS));
-        return new Parser().parseDocument(builder.trackData(true).build(), parseOptions);
+        var multiSourceReader = builder.trackData(true).build();
+        return new Parser()
+                .parseDocument(
+                        ParserEnvironment.newParserEnvironment()
+                                .parserOptions(parseOptions)
+                                .document(multiSourceReader)
+                                .build());
     }
 
     /**
