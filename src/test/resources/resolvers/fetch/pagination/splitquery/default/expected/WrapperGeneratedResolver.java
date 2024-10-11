@@ -13,20 +13,15 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.jooq.DSLContext;
 
 public class WrapperGeneratedResolver implements WrapperResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<DummyConnection> query(Wrapper wrapper, Integer first, String after,
                                                      DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).loadPaginated(
+        return new DataFetcher(env).loadPaginated(
                 "queryForWrapper", wrapper.getId(), pageSize, 1000,
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, pageSize,after, selectionSet),
                 (ctx, ids) -> WrapperDBQueries.countQueryForWrapper(ctx, ids),

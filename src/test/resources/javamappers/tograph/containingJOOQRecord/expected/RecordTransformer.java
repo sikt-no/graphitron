@@ -8,11 +8,10 @@ import java.util.List;
 import no.fellesstudentsystem.graphitron.codereferences.records.MapperNestedJavaRecord;
 import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
-import org.jooq.DSLContext;
 
 public class RecordTransformer extends AbstractTransformer {
-    public RecordTransformer(DataFetchingEnvironment env, DSLContext ctx) {
-        super(env, ctx);
+    public RecordTransformer(DataFetchingEnvironment env) {
+        super(env);
     }
 
     public List<Address> addressToGraphType(List<MapperNestedJavaRecord> input, String path) {

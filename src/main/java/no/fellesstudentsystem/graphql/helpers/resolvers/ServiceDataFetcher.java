@@ -23,8 +23,8 @@ public class ServiceDataFetcher<A extends AbstractTransformer> extends AbstractF
      * @param env Environment for the resolver.
      * @param ctx Context from the resolver.
      */
-    public ServiceDataFetcher(DataFetchingEnvironment env, DSLContext ctx) {
-        this(env, ctx, null);
+    public ServiceDataFetcher(DataFetchingEnvironment env) {
+        this(env, null);
     }
 
     /**
@@ -32,7 +32,7 @@ public class ServiceDataFetcher<A extends AbstractTransformer> extends AbstractF
      * @param abstractTransformer A transformer that can transform jOOQ records to Java-records and back.
      */
     public ServiceDataFetcher(A abstractTransformer) {
-        this(abstractTransformer.getEnv(), abstractTransformer.getCtx(), abstractTransformer);
+        this(abstractTransformer.getEnv(), abstractTransformer);
     }
 
     /**
@@ -41,8 +41,8 @@ public class ServiceDataFetcher<A extends AbstractTransformer> extends AbstractF
      * @param ctx Context from the resolver.
      * @param abstractTransformer A transformer that can transform jOOQ records to Java-records and back.
      */
-    private ServiceDataFetcher(DataFetchingEnvironment env, DSLContext ctx, A abstractTransformer) {
-        super(env, ctx);
+    private ServiceDataFetcher(DataFetchingEnvironment env, A abstractTransformer) {
+        super(env);
         this.abstractTransformer = abstractTransformer;
     }
 

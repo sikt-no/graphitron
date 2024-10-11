@@ -37,9 +37,9 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class FormatCodeBlocks {
     private final static CodeBlock
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
-            NEW_TRANSFORM = CodeBlock.of("new $T($N, this.$N)", RECORD_TRANSFORMER.className, VARIABLE_ENV, CONTEXT_NAME),
+            NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VARIABLE_ENV),
             DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
-            NEW_DATA_FETCHER = CodeBlock.of("new $T($N, this.$N)", DATA_FETCHER.className, VARIABLE_ENV, CONTEXT_NAME),
+            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER.className, VARIABLE_ENV),
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),

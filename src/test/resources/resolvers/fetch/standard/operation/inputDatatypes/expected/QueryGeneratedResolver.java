@@ -13,19 +13,14 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<DummyType> query(String id, String str, Boolean bool, Integer i,
                                               DummyEnum e, DummyInput in, List<String> idList, List<DummyInput> inList,
                                               DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load(
+        return new DataFetcher(env).load(
                 (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
 
@@ -33,7 +28,7 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<DummyType> queryNonNullable(String id, String str, Boolean bool,
                                                          Integer i, DummyEnum e, DummyInput in, List<String> idList, List<DummyInput> inList,
                                                          DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load(
+        return new DataFetcher(env).load(
                 (ctx, selectionSet) -> QueryDBQueries.queryNonNullableForQuery(ctx, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
 }

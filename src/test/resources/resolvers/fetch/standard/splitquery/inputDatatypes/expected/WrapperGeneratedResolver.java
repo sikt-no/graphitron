@@ -14,19 +14,14 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import org.jooq.DSLContext;
 
 public class WrapperGeneratedResolver implements WrapperResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<DummyType> query(Wrapper wrapper, String id, String str, Boolean bool,
                                               Integer i, DummyEnum e, DummyInput in, List<String> idList, List<DummyInput> inList,
                                               DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load(
+        return new DataFetcher(env).load(
                 "queryForWrapper", wrapper.getId(),
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
@@ -35,7 +30,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
     public CompletableFuture<DummyType> queryNonNullable(Wrapper wrapper, String id, String str,
                                                          Boolean bool, Integer i, DummyEnum e, DummyInput in, List<String> idList,
                                                          List<DummyInput> inList, DataFetchingEnvironment env) throws Exception {
-        return new DataFetcher(env, this.ctx).load(
+        return new DataFetcher(env).load(
                 "queryNonNullableForWrapper", wrapper.getId(),
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryNonNullableForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet));
     }

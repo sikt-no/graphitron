@@ -10,18 +10,13 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import org.jooq.DSLContext;
 
 public class WrapperGeneratedResolver implements WrapperResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<DummyType> query(Wrapper wrapper, List<String> id,
                                               DataFetchingEnvironment env) throws Exception {
         var keys = List.of(id);
-        return new DataFetcher(env, this.ctx).loadLookup(keys, (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
+        return new DataFetcher(env).loadLookup(keys, (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
     }
 }

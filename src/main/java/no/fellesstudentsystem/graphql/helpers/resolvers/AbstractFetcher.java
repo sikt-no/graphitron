@@ -31,9 +31,9 @@ public abstract class AbstractFetcher {
      * @param env Environment for the resolver.
      * @param ctx Context from the resolver.
      */
-    protected AbstractFetcher(DataFetchingEnvironment env, DSLContext ctx) {
+    protected AbstractFetcher(DataFetchingEnvironment env) {
         this.env = env;
-        this.ctx = ResolverHelpers.selectContext(env, ctx);
+        this.ctx = env.getLocalContext();
 
         this.selection = ResolverHelpers.getSelectionSet(env);
         this.connectionSelection = new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(env));

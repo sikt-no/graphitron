@@ -9,17 +9,12 @@ import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
-import javax.inject.Inject;
-import org.jooq.DSLContext;
 
 public class MutationGeneratedResolver implements MutationMutationResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<String> mutation(CustomerInputTable in, DataFetchingEnvironment env)
             throws Exception {
-        var transform = new RecordTransformer(env, this.ctx);
+        var transform = new RecordTransformer(env);
         var inRecord = transform.customerInputTableToJOOQRecord(in, "in");
         var rowsUpdated = MutationDBQueries.mutation(transform.getCtx(), inRecord);
         return CompletableFuture.completedFuture(inRecord.getId());

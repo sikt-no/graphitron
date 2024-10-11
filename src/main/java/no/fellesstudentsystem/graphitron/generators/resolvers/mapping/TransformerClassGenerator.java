@@ -53,8 +53,7 @@ public class TransformerClassGenerator extends AbstractClassGenerator<ObjectDefi
                 .constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addParameter(DSL_CONTEXT.className, CONTEXT_NAME)
-                .addStatement("super($N, $N)", VARIABLE_ENV, CONTEXT_NAME)
+                .addStatement("super($N)", VARIABLE_ENV)
                 .build();
     }
 

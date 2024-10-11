@@ -8,10 +8,7 @@ import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.NodeIdHandler;
-import org.jooq.DSLContext;
 public class QueryGeneratedResolver implements QueryResolver {
-    @Inject
-    DSLContext ctx;
     @Inject
     private NodeIdHandler nodeIdHandler;
     @Override

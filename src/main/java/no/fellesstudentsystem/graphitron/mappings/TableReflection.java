@@ -261,6 +261,7 @@ public class TableReflection {
      * @deprecated Denne metoden skal ikke lenger være public.
      */
     @NotNull
+    @Deprecated
     public static Optional<Method> getMethod(String tableName, String name) {
         return getTable(tableName)
                 .flatMap(table -> {

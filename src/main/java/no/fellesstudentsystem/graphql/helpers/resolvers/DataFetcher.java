@@ -28,8 +28,8 @@ public class DataFetcher extends AbstractFetcher {
      * @param env Environment for the resolver.
      * @param ctx Context from the resolver.
      */
-    public DataFetcher(DataFetchingEnvironment env, DSLContext ctx) {
-        super(env, ctx);
+    public DataFetcher(DataFetchingEnvironment env) {
+        super(env);
     }
 
     /**

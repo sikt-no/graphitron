@@ -12,20 +12,15 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
 import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import org.jooq.DSLContext;
 
 public class QueryGeneratedResolver implements QueryResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<DummyConnection> query(Integer first, String after,
                                                      DataFetchingEnvironment env) throws Exception {
         int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
-        return new DataFetcher(env, this.ctx).loadPaginated(
+        return new DataFetcher(env).loadPaginated(
                 pageSize, 1000,
                 (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, pageSize,after, selectionSet),
                 (ctx, ids) -> QueryDBQueries.countQueryForQuery(ctx),

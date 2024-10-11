@@ -22,9 +22,9 @@ public abstract class AbstractTransformer {
 
     protected final HashSet<GraphQLError> validationErrors = new HashSet<>();
 
-    public AbstractTransformer(DataFetchingEnvironment env, DSLContext ctx) {
+    public AbstractTransformer(DataFetchingEnvironment env) {
         this.env = env;
-        this.ctx = ResolverHelpers.selectContext(env, ctx);
+        this.ctx = env.getLocalContext();
         select = new SelectionSet(env.getSelectionSet());
         arguments = Arguments.flattenArgumentKeys(env.getArguments());
     }

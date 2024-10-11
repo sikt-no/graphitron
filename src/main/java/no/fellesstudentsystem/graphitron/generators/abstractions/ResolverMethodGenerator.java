@@ -6,7 +6,6 @@ import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.ServiceWrapper;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
-import no.fellesstudentsystem.graphitron.generators.dependencies.ContextDependency;
 import no.fellesstudentsystem.graphitron.generators.dependencies.ServiceDependency;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 
@@ -22,7 +21,6 @@ import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.OVERR
 abstract public class ResolverMethodGenerator<T extends ObjectField> extends AbstractMethodGenerator<T> {
     public ResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
-        dependencySet.add(ContextDependency.getInstance());
     }
 
     @Override

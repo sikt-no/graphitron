@@ -8,17 +8,12 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
-import javax.inject.Inject;
 import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import org.jooq.DSLContext;
 
 public class WrapperGeneratedResolver implements WrapperResolver {
-    @Inject
-    DSLContext ctx;
-
     @Override
     public CompletableFuture<CustomerTable> customer(Wrapper wrapper, DataFetchingEnvironment env)
             throws Exception {
-        return new DataFetcher(env, this.ctx).load("customerForWrapper", wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, ids, selectionSet));
+        return new DataFetcher(env).load("customerForWrapper", wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, ids, selectionSet));
     }
 }

@@ -44,7 +44,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/inputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
                 "query(DummyInputRecord in,",
-                "transform = new RecordTransformer(env, this.ctx)",
+                "transform = new RecordTransformer(env)",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecord,"
         );
@@ -67,7 +67,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/inputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
                 "query(CustomerInputTable in,",
-                "transform = new RecordTransformer(env, this.ctx)",
+                "transform = new RecordTransformer(env)",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecord,"
         );
