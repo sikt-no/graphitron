@@ -1,0 +1,12 @@
+type Query {
+  film: Film
+  customer: Customer
+}
+
+type Film {
+  id: ID!
+}
+
+type Customer {
+  id: ID!
+}
