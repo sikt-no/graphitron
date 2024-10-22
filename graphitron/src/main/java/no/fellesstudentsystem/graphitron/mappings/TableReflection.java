@@ -431,4 +431,8 @@ public class TableReflection {
     public static Optional<Class<?>> getRecordClass(String name) {
         return getTable(name).map(Table::getRecordType);
     }
+
+    public static boolean tableHasPrimaryKey(String tableName) {
+        return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst().isPresent();
+    }
 }

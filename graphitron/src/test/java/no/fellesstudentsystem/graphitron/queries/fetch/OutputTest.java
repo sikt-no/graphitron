@@ -38,6 +38,7 @@ public class OutputTest extends GeneratorTest {
                 "listed", Set.of(CUSTOMER_TABLE),
                 "List<CustomerTable> queryForQuery",
                 ".select(DSL.row(",
+                "orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray())",
                 ".orderBy(orderFields)",
                 ".fetch(it -> it.into(CustomerTable.class"
         );
@@ -255,5 +256,26 @@ public class OutputTest extends GeneratorTest {
                 "fromSchema2ForQuery",
                 "_pguser.getId()",
                 ".from(_pguser)");
+    }
+
+    @Test
+    @DisplayName("Listed return type on table without primary key")
+    void listedNoPrimaryKey() {
+        assertGeneratedContentContains(
+                "listedNoPrimaryKey",
+                ".from(_pgusermapping).fetch("
+        );
+    }
+
+    @Test
+    @DisplayName("Listed return type with splitQuery on table without primary key")
+    void listedNoPrimaryKeySplitQuery() {
+        assertGeneratedContentContains(
+                "listedNoPrimaryKeySplitQuery",
+                "DSL.multiset(DSL.select(DSL.row",
+                ".from(_pgusermapping))",
+                "\"); return", // Make sure orderFields is not declared
+                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
+        );
     }
 }

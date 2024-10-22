@@ -71,6 +71,13 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Table without primary key")
+    void noPrimaryKey() {
+        assertGeneratedContentContains("noPrimaryKey",
+                "? new SortField[] {}");
+    }
+
+    @Test
     @DisplayName("Sorting on a parameter that has an invalid index")
     void wrongIndex() {
         assertThatThrownBy(() -> generateFiles("wrongIndex", Set.of(CUSTOMER_TABLE)))

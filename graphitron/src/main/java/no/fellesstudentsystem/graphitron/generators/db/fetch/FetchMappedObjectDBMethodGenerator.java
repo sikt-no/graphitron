@@ -4,20 +4,16 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
-import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationField;
 import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
 import no.fellesstudentsystem.graphitron.generators.context.InputParser;
-import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.helpers.queries.LookupHelpers;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
-import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -30,7 +26,7 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 
 /**
  * Generator that creates the default data fetching methods
@@ -56,12 +52,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
 
         var querySource = context.renderQuerySource(getLocalTable());
-        var actualRefTable = target.isResolver() ? context.nextContext(target).getCurrentJoinSequence().render().toString() : querySource.toString();
+
+        var refContext = target.isResolver() ? context.nextContext(target) : context;
+        var actualRefTable = refContext.getTargetAlias();
+        var actualRefTableName = refContext.getTargetTableName();
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
         Optional<CodeBlock> maybeOrderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
-                ? Optional.of(createOrderFieldsDeclarationBlock(target, actualRefTable))
+                ? maybeCreateOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
                 : Optional.empty();
 
         var code = CodeBlock
@@ -152,21 +151,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
     }
 
-    private CodeBlock createOrderFieldsDeclarationBlock(ObjectField referenceField, String actualRefTable) {
-        var orderByField = referenceField.getOrderField();
-        var primaryKeyFieldsBlock = getPrimaryKeyFieldsBlock(actualRefTable);
-        var code = CodeBlock.builder();
-        String targetTableName = processedSchema.getObjectOrConnectionNode(referenceField).getTable().getName();
-        orderByField.ifPresentOrElse(
-                it -> code.add(createCustomOrderBy(it, actualRefTable, primaryKeyFieldsBlock, targetTableName)),
-                () -> code.add("$L", primaryKeyFieldsBlock));
-        return declare(ORDER_FIELDS_NAME, code.build());
-    }
-
-    private static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
-        return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", actualRefTable, actualRefTable);
-    }
-
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (!refObject.hasTable()) {
@@ -185,11 +169,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         } else {
             code.add(".fetchMap");
             if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
-                code.addStatement("($T::value1, r -> r.value2().map($T::value2))", RECORD2.className, RECORD2.className);
+                if (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName())) {
+                    code.addStatement("($T::value1, r -> r.value2().map($T::value2))", RECORD2.className, RECORD2.className);
+                } else {
+                    code.addStatement("($T::value1, r -> r.value2().map($T::value1))", RECORD2.className, RECORD1.className);
+                }
             } else {
                 code.addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
             }
-
         }
         return code.unindent().unindent().build();
     }
@@ -210,39 +197,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .addStatement(")");
         }
         return code.unindent().unindent().build();
-    }
-
-    @NotNull
-    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock primaryKeyFieldsBlock, String targetTableName) {
-        var orderByFieldEnum = processedSchema.getOrderByFieldEnum(orderInputField);
-        var orderByFieldToDBIndexName = orderByFieldEnum
-                .getFields()
-                .stream()
-                .collect(Collectors.toMap(AbstractField::getName, enumField -> enumField.getIndexName().orElseThrow()));
-
-        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
-                "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
-
-        var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()
-                .stream()
-                .map(it -> CodeBlock.of("Map.entry($S, $S)", it.getKey(), it.getValue()))
-                .collect(CodeBlock.joining(",\n"));
-        var sortFieldsMapBlock = CodeBlock.builder().add("$T.ofEntries(\n", MAP.className)
-                .indent()
-                .add("$L)", sortFieldMapEntries)
-                .add("\n")
-                .unindent()
-                .build();
-
-        var orderInputFieldName = orderInputField.getName();
-        return CodeBlock.builder()
-                .add("$N == null\n", orderInputFieldName)
-                .indent().indent()
-                .add("? $L\n", primaryKeyFieldsBlock)
-                .add(": $T.getSortFields($N.getIndexes(), $L.get($N.get$L().toString()), $N.getDirection().toString())",
-                        QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
-                .unindent().unindent()
-                .build();
     }
 
     @Override

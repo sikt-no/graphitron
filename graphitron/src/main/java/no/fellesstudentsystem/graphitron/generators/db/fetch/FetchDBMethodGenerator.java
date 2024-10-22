@@ -3,6 +3,8 @@ package no.fellesstudentsystem.graphitron.generators.db.fetch;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.TypeName;
 import graphql.language.FieldDefinition;
+import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
+import no.fellesstudentsystem.graphitron.definitions.fields.InputField;
 import no.fellesstudentsystem.graphitron.definitions.fields.ObjectField;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputCondition;
 import no.fellesstudentsystem.graphitron.definitions.helpers.InputConditions;
@@ -12,8 +14,10 @@ import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLJoinStatement;
 import no.fellesstudentsystem.graphitron.generators.abstractions.DBMethodGenerator;
 import no.fellesstudentsystem.graphitron.generators.context.FetchContext;
+import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -21,12 +25,13 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.fellesstudentsystem.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.FUNCTIONS;
+import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasPrimaryKey;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -91,7 +96,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
-        var isMultiset = field.isIterableWrapped() || ((ObjectField) field).hasForwardPagination();
+        var isConnection = ((ObjectField) field).hasForwardPagination();
+        var isMultiset = field.isIterableWrapped() || isConnection;
+        var shouldBeOrdered = isMultiset && tableHasPrimaryKey(context.getTargetTableName());
 
         CodeBlock select;
 
@@ -106,19 +113,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         var contents = CodeBlock.builder()
                 .add("$T.select(", DSL.className)
-                .add(isMultiset ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getCurrentJoinSequence().render().toString(), ORDER_FIELDS_NAME) : empty())
+                .add(shouldBeOrdered ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), ORDER_FIELDS_NAME) : empty())
                 .add(indentIfMultiline(select))
                 .add(")\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
                 .add(joins)
                 .add(where)
-                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
-
-        if (isMultiset) {
-            contents.add("\n.orderBy($N)", ORDER_FIELDS_NAME);
-            if (((ObjectField) field).hasForwardPagination()) {
-                contents.add(createSeekAndLimitBlock());
-            }
-        }
+                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($N)", ORDER_FIELDS_NAME) : empty())
+                .add(isConnection ? createSeekAndLimitBlock() : empty());
 
         return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build()) : wrapInField(contents.build());
     }
@@ -774,5 +776,61 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         code.add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, CONTEXT_NAME, ORDER_FIELDS_NAME, GraphQLReservedName.PAGINATION_AFTER.getName());
         code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
         return code.build();
+    }
+
+    protected Optional<CodeBlock> maybeCreateOrderFieldsDeclarationBlock(ObjectField referenceField, String actualRefTable, String tableName) {
+        return maybeCreateOrderFieldsBlock(referenceField, actualRefTable, tableName).map(codeBlock -> declare(ORDER_FIELDS_NAME, codeBlock));
+    }
+
+    protected Optional<CodeBlock> maybeCreateOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
+        var orderByField = referenceField.getOrderField();
+        var hasPrimaryKey = tableHasPrimaryKey(tableName);
+
+        if (orderByField.isEmpty() && !hasPrimaryKey) return Optional.empty();
+
+        var defaultOrderByFields = hasPrimaryKey ? getPrimaryKeyFieldsBlock(actualRefTable) : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
+        var code = CodeBlock.builder();
+        String targetTableName = processedSchema.getObjectOrConnectionNode(referenceField).getTable().getName();
+        orderByField.ifPresentOrElse(
+                it -> code.add(createCustomOrderBy(it, actualRefTable, defaultOrderByFields, targetTableName)),
+                () -> code.add("$L", defaultOrderByFields));
+        return Optional.of(code.build());
+    }
+
+    @NotNull
+    private CodeBlock createCustomOrderBy(InputField orderInputField, String actualRefTable, CodeBlock primaryKeyFieldsBlock, String targetTableName) {
+        var orderByFieldEnum = processedSchema.getOrderByFieldEnum(orderInputField);
+        var orderByFieldToDBIndexName = orderByFieldEnum
+                .getFields()
+                .stream()
+                .collect(Collectors.toMap(AbstractField::getName, enumField -> enumField.getIndexName().orElseThrow()));
+
+        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
+                "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
+
+        var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()
+                .stream()
+                .map(it -> CodeBlock.of("Map.entry($S, $S)", it.getKey(), it.getValue()))
+                .collect(CodeBlock.joining(",\n"));
+        var sortFieldsMapBlock = CodeBlock.builder().add("$T.ofEntries(\n", MAP.className)
+                .indent()
+                .add("$L)", sortFieldMapEntries)
+                .add("\n")
+                .unindent()
+                .build();
+
+        var orderInputFieldName = orderInputField.getName();
+        return CodeBlock.builder()
+                .add("$N == null\n", orderInputFieldName)
+                .indent().indent()
+                .add("? $L\n", primaryKeyFieldsBlock)
+                .add(": $T.getSortFields($N.getIndexes(), $L.get($N.get$L().toString()), $N.getDirection().toString())",
+                        QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
+                .unindent().unindent()
+                .build();
+    }
+
+    private static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
+        return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", actualRefTable, actualRefTable);
     }
 }

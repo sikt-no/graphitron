@@ -178,6 +178,20 @@ public class FetchContext {
     }
 
     /**
+     * @return The target table name of this context.
+     */
+    public String getTargetTableName() {
+        return getTargetTable() == null ? "" : getTargetTable().getName();
+    }
+
+    /**
+     * @return The target table alias of this context.
+     */
+    public String getTargetAlias() {
+        return currentJoinSequence.render().toString();
+    }
+
+    /**
      * @return The reference table which fields on this layer are taken from.
      */
     public JOOQMapping getReferenceOrPreviousTable() {
