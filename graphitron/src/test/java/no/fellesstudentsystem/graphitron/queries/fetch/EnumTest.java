@@ -71,8 +71,7 @@ public class EnumTest extends GeneratorTest {
     void outputJOOQSubquery() {
         assertGeneratedContentContains(
                 "output/jOOQSubquery", Set.of(DUMMY_ENUM_CONVERTED),
-                ", inventory_4239518507_film.RATING)",
-                ".mapping((a0, a1) -> a0 == null && a1 == null ? null : new FilmTable(a0,"
+                "inventory_4239518507_film.RATING.convert("
         );
     }
 }

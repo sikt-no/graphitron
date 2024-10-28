@@ -29,10 +29,9 @@ import static no.fellesstudentsystem.graphitron.generators.codebuilding.FormatCo
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.fellesstudentsystem.graphitron.generators.codebuilding.VariableNames.*;
 import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.*;
-import static no.fellesstudentsystem.graphitron.mappings.JavaPoetClassName.FUNCTIONS;
 import static no.fellesstudentsystem.graphitron.mappings.TableReflection.tableHasPrimaryKey;
-import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
  * Abstract generator for various database fetching methods.
@@ -103,7 +102,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         CodeBlock select;
 
         if (context.getReferenceObject() == null) {
-            select = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context, !processedSchema.isEnum(field));
+            select = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
         } else {
             select = generateSelectRow(context, true);
         }
@@ -179,14 +178,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 referenceFieldSources.put(field.getName(), fieldContext.renderQuerySource(getLocalTable()).toString());
                 innerRowCode = generateCorrelatedSubquery(field, fieldContext);
             } else {
-                innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context, isInSubquery);
+                innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
             }
             rowElements.add(innerRowCode);
         }
 
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
-        CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck() || (isInSubquery && containsEnum)
+        CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
@@ -319,13 +318,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 codeBlockArguments.add(isLastField ? ")" : ", ");
             }
 
-            if (processedSchema.isEnum(field)) {
-                useMemberConstructor = true;
-                codeBlockConstructor.add(toGraphEnumConverter(field.getTypeName(), CodeBlock.of(argumentName), field.isIterableWrapped(), false, processedSchema));
-            } else {
-                codeBlockConstructor.add(argumentName);
-            }
-            codeBlockConstructor.add(isLastField ? ")" : ", ");
+            codeBlockConstructor
+                    .add(argumentName)
+                    .add(isLastField ? ")" : ", ");
 
             if (processedSchema.isObject(field))  {
                 codeBlockConditions.add("($L == null || new $T().equals($L))", argumentName, processedSchema.getObject(field).getGraphClassName(), argumentName);
@@ -383,13 +378,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * Generate a single argument in the row method call.
      */
-    private CodeBlock generateForScalarField(GenerationField field, FetchContext context, boolean skipEnumConvert) {
+    private CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.renderQuerySource(getLocalTable());
         if (field.isID()) {
             return CodeBlock.of("$L$L", renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
-        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), skipEnumConvert ? empty() : toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
+        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
         return context.getShouldUseOptional() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
