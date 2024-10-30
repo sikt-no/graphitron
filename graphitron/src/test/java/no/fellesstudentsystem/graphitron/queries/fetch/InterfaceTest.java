@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.NODE;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -76,5 +77,26 @@ public class InterfaceTest extends GeneratorTest {
     @DisplayName("Type implements interface without table set but no queries use the interface")
     void withoutTableAndQuery() {
         assertDoesNotThrow(() -> generateFiles("withoutTableAndQuery"));
+    }
+
+    @Test
+    @DisplayName("Interface with a reference to a type")
+    void interfaceWithType() {
+        assertGeneratedContentContains(
+                "interfaceWithType",
+                Set.of(CUSTOMER_TABLE),
+                "_payment.customer()",
+                "CustomerTable::new"
+        );
+    }
+
+    @Test
+    @DisplayName("Interface with type reference with splitQuery should not have CustomerTable in subquery")
+    void interfaceWithTypeSplitQuery() {
+        assertGeneratedContentContains(
+                "interfaceWithTypeSplitQuery",
+                Set.of(CUSTOMER_TABLE),
+                "row(_payment.getId()).mapping"
+        );
     }
 }

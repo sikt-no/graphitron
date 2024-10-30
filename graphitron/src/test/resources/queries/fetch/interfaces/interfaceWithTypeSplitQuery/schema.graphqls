@@ -1,0 +1,12 @@
+type Query {
+    query(id: ID!): SomeInterface
+}
+
+interface SomeInterface {
+    customer: CustomerTable @splitQuery
+}
+
+type Payment implements SomeInterface @table {
+    id: ID!
+    customer: CustomerTable @splitQuery
+}
