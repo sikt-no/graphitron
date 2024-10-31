@@ -97,14 +97,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
-        var shouldBeOrdered = isMultiset && tableHasPrimaryKey(context.getTargetTableName());
+        Optional<CodeBlock> maybeOrderByFields = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName()) ? Optional.of(CodeBlock.of(ORDER_FIELDS_NAME)) : maybeCreateOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
+        var shouldBeOrdered = isMultiset && maybeOrderByFields.isPresent();
+        var shouldHaveOrderByToken = isConnection && maybeOrderByFields.isPresent();
 
-        CodeBlock select;
+        CodeBlock.Builder select = CodeBlock.builder();
+        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : empty());
 
         if (context.getReferenceObject() == null) {
-            select = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
+            select.add((processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context));
         } else {
-            select = generateSelectRow(context, true);
+            select.add(generateSelectRow(context, true));
         }
 
         var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
@@ -112,19 +115,22 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         var contents = CodeBlock.builder()
                 .add("$T.select(", DSL.className)
-                .add(shouldBeOrdered ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), ORDER_FIELDS_NAME) : empty())
-                .add(indentIfMultiline(select))
+                .add(indentIfMultiline(select.build()))
                 .add(")\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($N)", ORDER_FIELDS_NAME) : empty())
+                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : empty())
                 .add(isConnection ? createSeekAndLimitBlock() : empty());
 
-        return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build()) : wrapInField(contents.build());
+
+        return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken) : wrapInField(contents.build());
     }
 
-    private CodeBlock wrapInMultisetWithMapping(CodeBlock contents) {
+    private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
+        if (hasOrderByToken) {
+            return CodeBlock.of("DSL.row($L).mapping(a0 -> a0.map($T::value2))", indentIfMultiline(wrapInMultiset(contents)), RECORD2.className);
+        }
         return CodeBlock.of("DSL.row($L).mapping(a0 -> a0.map($T::value1))", indentIfMultiline(wrapInMultiset(contents)), RECORD1.className);
     }
 
@@ -358,7 +364,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var field = fieldsWithoutTable.get(i);
 
             if (processedSchema.isObject(field)) {
-                codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i);
+                if (field.isIterableWrapped()) {
+                    codeBlockBuilder.add("($T<$T>) r[$L]", LIST.className, processedSchema.getObject(field).getGraphClassName(), i);
+                } else {
+                    codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i);
+                }
             } else if (field.isID()) {
                 codeBlockBuilder.add("($T) r[$L]", STRING.className, i);
             } else if (processedSchema.isEnum(field)) {
@@ -785,9 +795,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         var defaultOrderByFields = hasPrimaryKey ? getPrimaryKeyFieldsBlock(actualRefTable) : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
         var code = CodeBlock.builder();
-        String targetTableName = processedSchema.getObjectOrConnectionNode(referenceField).getTable().getName();
         orderByField.ifPresentOrElse(
-                it -> code.add(createCustomOrderBy(it, actualRefTable, defaultOrderByFields, targetTableName)),
+                it -> code.add(createCustomOrderBy(it, actualRefTable, defaultOrderByFields, tableName)),
                 () -> code.add("$L", defaultOrderByFields));
         return Optional.of(code.build());
     }

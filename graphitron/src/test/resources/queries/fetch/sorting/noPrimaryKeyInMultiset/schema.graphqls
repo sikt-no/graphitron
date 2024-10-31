@@ -1,4 +1,8 @@
 type Query {
+  query: [Wrapper]
+}
+
+type Wrapper {
   query: [PgUserMapping]
 }
 

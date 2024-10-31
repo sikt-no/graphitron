@@ -169,7 +169,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         } else {
             code.add(".fetchMap");
             if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
-                if (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName())) {
+                if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
                     code.addStatement("($T::value1, r -> r.value2().map($T::value2))", RECORD2.className, RECORD2.className);
                 } else {
                     code.addStatement("($T::value1, r -> r.value2().map($T::value1))", RECORD2.className, RECORD1.className);

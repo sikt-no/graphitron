@@ -61,9 +61,9 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<String, List<CustomerTable>> queryForWrapper",
-                ".select(_customer.getId(),DSL.multiset(",
+                ".select(_customer.getId(),DSL.multiset(DSL.select",
                 ".orderBy(orderFields)",
-                ".fetchMap(Record2::value1, r -> r.value2().map(Record2::value2))"
+                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
         );
     }
 
@@ -274,8 +274,13 @@ public class OutputTest extends GeneratorTest {
                 "listedNoPrimaryKeySplitQuery",
                 "DSL.multiset(DSL.select(DSL.row",
                 ".from(_pgusermapping))",
-                "\"); return", // Make sure orderFields is not declared
                 ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
         );
+    }
+
+    @Test
+    @DisplayName("Row with more than 22 fields including multiset")
+    void over22FieldsWithMultiset() {
+        assertGeneratedContentContains("over22FieldsWithMultiset", "Wrapper::new", "(List<Wrapper>) r[22]");
     }
 }

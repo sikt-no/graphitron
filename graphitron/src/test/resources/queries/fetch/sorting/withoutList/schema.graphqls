@@ -1,11 +1,3 @@
 type Query {
-  query(orderBy: Order @orderBy): CustomerTable
-}
-
-enum OrderByField {
-  NAME @index(name : "IDX_LAST_NAME")
-}
-
-type CustomerTable @table(name: "Customer") {
-  name: String @field(name: "LAST_NAME")
+  query: CustomerTable
 }

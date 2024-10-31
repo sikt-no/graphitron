@@ -6,18 +6,24 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
+import fake.graphql.example.model.Order;
 import java.util.List;
+import java.util.Map;
+import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
 import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<CustomerTable> queryForQuery(DSLContext ctx, SelectionSet select) {
+    public static List<CustomerTable> queryForQuery(DSLContext ctx, Order orderBy, SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
-        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
+        var orderFields = orderBy == null
+                ? _customer.fields(_customer.getPrimaryKey().getFieldsArray())
+                : QueryHelper.getSortFields(_customer.getIndexes(), Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
+                .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString());
         return ctx
-                .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .select(DSL.row(_customer.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(_customer)
                 .orderBy(orderFields)
                 .fetch(it -> it.into(CustomerTable.class));

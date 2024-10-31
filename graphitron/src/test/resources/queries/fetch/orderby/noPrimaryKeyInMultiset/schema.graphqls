@@ -1,0 +1,15 @@
+type Query {
+  query: [Wrapper]
+}
+
+type Wrapper {
+  query(orderBy: Order @orderBy): [PgUserMapping]
+}
+
+enum OrderByField {
+  USER_SERVER @index(name : "PG_USER_MAPPING_USER_SERVER_INDEX")
+}
+
+type PgUserMapping @table(name: "PG_USER_MAPPING") {
+  umid: String @field(name: "UMID")
+}

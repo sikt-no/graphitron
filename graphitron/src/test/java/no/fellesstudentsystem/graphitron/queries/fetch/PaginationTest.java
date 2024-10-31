@@ -12,8 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
-import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.SPLIT_QUERY_WRAPPER;
+import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Query pagination - Pagination parameters applied inside queries")
 public class PaginationTest extends GeneratorTest {
@@ -51,5 +50,14 @@ public class PaginationTest extends GeneratorTest {
     @DisplayName("Connection not on the root level")
     void splitQuery() {
         assertGeneratedContentMatches("splitQuery", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("No pagination on non-connection multiset")
+    void multiset() {
+        resultDoesNotContain("multiset", Set.of(CUSTOMER_TABLE),
+                ".getOrderByValues(",
+                ".seek("
+        );
     }
 }

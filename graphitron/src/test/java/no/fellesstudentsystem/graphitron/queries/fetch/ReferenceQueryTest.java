@@ -8,8 +8,7 @@ import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron.common.configuration.ReferencedEntry.REFERENCE_CUSTOMER_CONDITION;
 import static no.fellesstudentsystem.graphitron.common.configuration.ReferencedEntry.REFERENCE_FILM_CONDITION;
-import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.CUSTOMER_NOT_GENERATED;
-import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch queries - Fetching through referenced tables")
 public class ReferenceQueryTest extends ReferenceTest {
@@ -152,22 +151,43 @@ public class ReferenceQueryTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Table path on a list")
-    void onList() {
+    @DisplayName("Table path on a list with split query")
+    void onListWithSplitQuery() {
         assertGeneratedContentContains(
-                "onList", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address).orderBy(orderFields",
-                "DSL.multiset(",
-                "orderFields = customer_2952383337_address"
+                "onListWithSplitQuery", Set.of(CUSTOMER_NOT_GENERATED),
+                ".from(customer_2952383337_address)",
+                "DSL.multiset(DSL.select(",
+                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
         );
     }
 
     @Test
-    @DisplayName("Table path on a nullable list")
-    void onNullableList() {
+    @DisplayName("Table path on a nullable list with split query")
+    void onNullableListWithSplitQuery() {
         assertGeneratedContentContains(
-                "onNullableList", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address"
+                "onNullableListWithSplitQuery", Set.of(CUSTOMER_NOT_GENERATED),
+                ".from(customer_2952383337_address)"
+        );
+    }
+
+    @Test
+    @DisplayName("Table path on a list without split query")
+    void onList() {
+        assertGeneratedContentContains(
+                "onList", Set.of(CUSTOMER_QUERY),
+                "orderFields = customer_",
+                "DSL.multiset(",
+                ".from(customer_2952383337_address)"
+                );
+    }
+
+    @Test
+    @DisplayName("Table path on nested lists")
+    void nestedLists() {
+        assertGeneratedContentContains(
+                "onNestedLists", Set.of(CUSTOMER_QUERY),
+                ".from(address_1214171484_store)",
+                ".from(customer_2952383337_address)"
         );
     }
 

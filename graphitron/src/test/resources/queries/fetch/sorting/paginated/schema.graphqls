@@ -1,9 +1,5 @@
 type Query {
-  query(orderBy: Order @orderBy, first: Int = 100, after: String): CustomerConnection
-}
-
-enum OrderByField {
-  NAME @index(name : "IDX_LAST_NAME")
+  query(first: Int = 100, after: String): CustomerConnection
 }
 
 type CustomerTable @table(name: "Customer") {
