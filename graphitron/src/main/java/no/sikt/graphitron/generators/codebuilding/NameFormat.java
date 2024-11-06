@@ -57,6 +57,14 @@ public class NameFormat {
     }
 
     /**
+     * @return This field and containing type formatted as an entity fetch query method name.
+     */
+    @NotNull
+    public static String asEntityQueryMethodName(String prefix) {
+        return uncapitalize(prefix) + "AsEntity";
+    }
+
+    /**
      * @return Inputs formatted as a get call.
      */
     @NotNull

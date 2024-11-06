@@ -31,7 +31,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class ProcessedSchema {
     private final Map<String, EnumDefinition> enums;
-    private final Map<String, ObjectDefinition> objects;
+    private final Map<String, ObjectDefinition> objects, entities;
     private final Map<String, ExceptionDefinition> exceptions;
     private final Map<String, InputDefinition> inputs;
     private final Map<String, RecordObjectSpecification<? extends GenerationField>> recordTypes;
@@ -54,6 +54,12 @@ public class ProcessedSchema {
         objects = ObjectDefinition
                 .processObjectDefinitions(objectTypes)
                 .stream()
+                .collect(Collectors.toMap(ObjectDefinition::getName, Function.identity()));
+
+        entities = objects
+                .values()
+                .stream()
+                .filter(RecordObjectDefinition::isEntity)
                 .collect(Collectors.toMap(ObjectDefinition::getName, Function.identity()));
 
         var exceptionTypes = objectTypes
@@ -267,6 +273,13 @@ public class ProcessedSchema {
      */
     public Map<String, ObjectDefinition> getObjects() {
         return objects;
+    }
+
+    /**
+     * @return Map of all the types by name that have the federation directive @key set.
+     */
+    public Map<String, ObjectDefinition> getEntities() {
+        return entities;
     }
 
     /**

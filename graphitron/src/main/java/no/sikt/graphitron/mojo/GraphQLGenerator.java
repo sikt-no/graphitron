@@ -3,6 +3,7 @@ package no.sikt.graphitron.mojo;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.generators.datafetcherresolvers.fetch.EntityFetcherResolverClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
@@ -56,7 +57,8 @@ public class GraphQLGenerator {
                 new JavaRecordMapperClassGenerator(processedSchema, true),
                 new JavaRecordMapperClassGenerator(processedSchema, false),
                 new MutationExceptionStrategyConfigurationGenerator(processedSchema),
-                new ExceptionToErrorMappingProviderGenerator(processedSchema)
+                new ExceptionToErrorMappingProviderGenerator(processedSchema),
+                new EntityFetcherResolverClassGenerator(processedSchema)
         );
     }
 

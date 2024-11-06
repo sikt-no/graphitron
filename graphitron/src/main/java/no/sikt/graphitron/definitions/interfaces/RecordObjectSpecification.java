@@ -1,6 +1,7 @@
 package no.sikt.graphitron.definitions.interfaces;
 
 import com.squareup.javapoet.ClassName;
+import no.sikt.graphitron.definitions.keys.EntityKeySet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
@@ -58,4 +59,14 @@ public interface RecordObjectSpecification<T extends GenerationField> extends Ob
      * @return The name of this object once it is transformed into a record.
      */
     String asRecordName();
+
+    /**
+     * @return Is this type an entity according to the Apollo Federation specification?
+     */
+    boolean isEntity();
+
+    /**
+     * @return Apollo federation entity keys for this type.
+     */
+    EntityKeySet getEntityKeys();
 }

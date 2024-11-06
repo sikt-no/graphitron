@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.resolvers.mapping;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
 import no.sikt.graphitron.generators.context.MapperContext;
@@ -13,8 +14,8 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordValidateMethod;
@@ -41,7 +42,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
         return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), wrapList(input.getRecordClassName()), wrapSet(GRAPHQL_ERROR.className))
                 .addCode(declare(VARIABLE_ARGUMENTS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME)))
                 .addCode(declare(VARIABLE_ENV, asMethodCall(TRANSFORMER_NAME, METHOD_ENV_NAME)))
-                .addCode(declare(VARIABLE_VALIDATION_ERRORS, CodeBlock.of("new $T<$T>()", HASH_SET.className, GRAPHQL_ERROR.className)))
+                .addCode(declare(VARIABLE_VALIDATION_ERRORS, ParameterizedTypeName.get(HASH_SET.className, GRAPHQL_ERROR.className)))
                 .addCode("\n")
                 .addCode("$L\n", iterateRecords(MapperContext.createValidationContext(target, processedSchema)))
                 .addCode(returnWrap(VARIABLE_VALIDATION_ERRORS))

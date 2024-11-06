@@ -8,6 +8,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * These should always be used rather than specifying them as Strings in various places throughout the code.
  */
 public enum GraphQLReservedName {
+    TYPE_NAME("__typename"),
     PAGINATION_FIRST("first"),
     PAGINATION_AFTER("after"),
     PAGINATION_LAST("last"),
@@ -32,7 +33,12 @@ public enum GraphQLReservedName {
     SCHEMA_MUTATION("Mutation"),
     SCHEMA("schema"),
     OPERATION_QUERY(uncapitalize(SCHEMA_QUERY.getName())),
-    OPERATION_MUTATION(uncapitalize(SCHEMA_MUTATION.getName()));
+    OPERATION_MUTATION(uncapitalize(SCHEMA_MUTATION.getName())),
+
+    FEDERATION_KEY("key"),
+    FEDERATION_KEY_ARGUMENT("fields"),
+    FEDERATION_ENTITIES_FIELD("_entities"),
+    FEDERATION_REPRESENTATIONS_ARGUMENT("representations");
 
     private final String name;
 

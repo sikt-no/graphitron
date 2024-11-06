@@ -98,7 +98,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         var code = CodeBlock
                 .builder()
                 .add("\n")
-                .add(declareVariable(targetTypeName, object.getGraphClassName()));
+                .add(declare(targetTypeName, object.getGraphClassName()));
         var filteredFields = object
                 .getFields()
                 .stream()
@@ -159,7 +159,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
 
         return CodeBlock
                 .builder()
-                .add(declareArrayList(targetTypeName, object.getGraphClassName()))
+                .add(declare(targetTypeName, object.getGraphClassName(), true))
                 .add(wrapFor(asListedRecordName(record.getName()), code.add(addToList(targetTypeName)).build()))
                 .build();
     }

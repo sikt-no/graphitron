@@ -14,7 +14,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 
 /**
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.

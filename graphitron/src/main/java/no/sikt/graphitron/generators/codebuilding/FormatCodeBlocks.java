@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.codebuilding;
 
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
@@ -22,6 +23,7 @@ import org.jetbrains.annotations.NotNull;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -39,7 +41,7 @@ public class FormatCodeBlocks {
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
             NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VARIABLE_ENV),
             DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
-            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER.className, VARIABLE_ENV),
+            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_GRAPHITRON.className, VARIABLE_ENV),
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),
@@ -49,16 +51,6 @@ public class FormatCodeBlocks {
             EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className),
             EMPTY_BLOCK = CodeBlock.builder().build();
     private final static String CONNECTION_NAME = "connection", PAGE_NAME = "page", EDGES_NAME = "edges", GRAPH_PAGE_NAME = "graphPage";
-
-    /**
-     * @param variableName The name of the ArrayList variable.
-     * @param typeName The parameter type of the ArrayList to declare.
-     * @return CodeBlock that declares a new ArrayList variable.
-     */
-    @NotNull
-    public static CodeBlock declareArrayList(String variableName, TypeName typeName) {
-        return declareVariable(variableName, typeName, true);
-    }
 
     /**
      * @param name Name of a field that should be declared as a record. This will be the name of the variable.
@@ -82,7 +74,7 @@ public class FormatCodeBlocks {
             return empty();
         }
 
-        var code = CodeBlock.builder().add(declareVariable(name, input.getRecordClassName(), isIterable));
+        var code = CodeBlock.builder().add(declare(name, input.getRecordClassName(), isIterable));
         if (!input.hasJavaRecordReference() && !isIterable) {
             code.addStatement("$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH);
         }
@@ -140,23 +132,14 @@ public class FormatCodeBlocks {
     /**
      * @param name Name of the variable.
      * @param typeName The type of the variable to declare.
-     * @return CodeBlock that declares a simple variable.
-     */
-    public static CodeBlock declareVariable(String name, TypeName typeName) {
-        return declareVariable(name, typeName, false);
-    }
-
-    /**
-     * @param name Name of the variable.
-     * @param typeName The type of the variable to declare.
      * @param asList Declare this type as an ArrayList?
      * @return CodeBlock that declares a simple variable.
      */
-    public static CodeBlock declareVariable(String name, TypeName typeName, boolean asList) {
+    public static CodeBlock declare(String name, TypeName typeName, boolean asList) {
         if (asList) {
-            return declare(asListedName(name), CodeBlock.of("new $T<$T>()", ARRAY_LIST.className, typeName));
+            return declare(asListedName(name), ParameterizedTypeName.get(ARRAY_LIST.className, typeName));
         }
-        return declare(uncapitalize(name), CodeBlock.of("new $T()", typeName));
+        return declare(name, typeName);
     }
 
     /**
@@ -166,6 +149,15 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock declare(String name, CodeBlock block) {
         return CodeBlock.builder().addStatement("var $L = $L", uncapitalize(name), block).build();
+    }
+
+    /**
+     * @param name Name of the variable.
+     * @param type The type to declare.
+     * @return CodeBlock that declares a simple variable.
+     */
+    public static CodeBlock declare(String name, TypeName type) {
+        return CodeBlock.builder().addStatement("var $L = new $T()", uncapitalize(name), type).build();
     }
 
     /**
@@ -336,6 +328,14 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock nullIfNullElseThis(CodeBlock code) {
         return CodeBlock.of("$L$L", nullIfNullElse(code), code);
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock name in a mapping null check.
+     */
+    @NotNull
+    public static CodeBlock listedNullCheck(String variable, CodeBlock code) {
+        return CodeBlock.of("$T.stream($N).allMatch($T::isNull) ? null : $L", ARRAYS.className, variable, OBJECTS.className, code);
     }
 
     /**
@@ -642,6 +642,14 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return Wrap content as an object list.
+     */
+    @NotNull
+    public static CodeBlock wrapAsObjectList(List<CodeBlock> code) {
+        return CodeBlock.of("new $T[]{$L}", TypeName.OBJECT, indentIfMultiline(code.stream().collect(CodeBlock.joining(",\n"))));
+    }
+
+    /**
      * @return Code block containing the enum conversion method call with an anonymous function declaration.
      */
     public static CodeBlock toJOOQEnumConverter(String enumType, boolean isIterable, ProcessedSchema schema) {
@@ -780,15 +788,32 @@ public class FormatCodeBlocks {
     public static CodeBlock applyTransform(String recordName, TypeName recordTypeName, Method transform) {
         var declaringClass = transform.getDeclaringClass();
         return CodeBlock.builder().addStatement(
-                "$N = ($T<$T>) $T.$L($N, $N)",
+                "$N = ($T) $T.$L($N, $N)",
                 asListedName(recordName),
-                ARRAY_LIST.className,
-                recordTypeName,
+                ParameterizedTypeName.get(ARRAY_LIST.className, recordTypeName),
                 ClassName.get(declaringClass),
                 transform.getName(),
                 CONTEXT_NAME,
                 asListedName(recordName)
         ).build();
+    }
+
+    /**
+     * @return CodeBlock containing a switch case for the provided variables.
+     */
+    public static CodeBlock breakCaseWrap(CodeBlock condition, CodeBlock code) {
+        return CodeBlock.of("case $L: $L", condition, breakCaseBody(code));
+    }
+
+    /**
+     * @return CodeBlock containing a switch case for the provided variables.
+     */
+    public static CodeBlock breakCaseWrap(String condition, CodeBlock code) {
+        return CodeBlock.of("case $S: $L", condition, breakCaseBody(code));
+    }
+
+    private static CodeBlock breakCaseBody(CodeBlock code) {
+        return CodeBlock.builder().add("\n").indent().indent().add("$L;", code).addStatement("break").unindent().unindent().build();
     }
 
     /**

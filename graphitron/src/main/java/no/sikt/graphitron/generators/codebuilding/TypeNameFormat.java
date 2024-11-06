@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.codebuilding;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 
@@ -8,8 +9,10 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 /**
  * Helper methods for handling javapoet TypeNames.
  */
-public class ClassNameFormat {
-    private static final ParameterizedTypeName stringSetClassName = ParameterizedTypeName.get(SET.className, STRING.className);
+public class TypeNameFormat {
+    private static final ParameterizedTypeName
+            STRING_SET = ParameterizedTypeName.get(SET.className, STRING.className),
+            STRING_OBJECT_MAP = ParameterizedTypeName.get(MAP.className, STRING.className, ClassName.OBJECT);
 
     /**
      * @return The type wrapped in a List ParameterizedTypeName, if the boolean condition is true.
@@ -71,6 +74,13 @@ public class ClassNameFormat {
      * @return The ParameterizedTypeName for a Set of Strings.
      */
     public static ParameterizedTypeName getStringSetTypeName() {
-        return stringSetClassName;
+        return STRING_SET;
+    }
+
+    /**
+     * @return The ParameterizedTypeName for a Map of Objects by Strings.
+     */
+    public static ParameterizedTypeName getObjectMapTypeName() {
+        return STRING_OBJECT_MAP;
     }
 }

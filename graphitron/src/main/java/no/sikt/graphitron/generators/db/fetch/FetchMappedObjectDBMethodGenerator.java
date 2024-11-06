@@ -2,8 +2,6 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -12,19 +10,16 @@ import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.helpers.queries.LookupHelpers;
-import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.*;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 
@@ -48,7 +43,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var localObject = getLocalObject();
         var context = new FetchContext(processedSchema, target, localObject, false);
         // Note that this must happen before alias declaration.
-        var selectRowBlock = target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context, false);
+        var selectRowBlock = target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context);
         var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
 
         var querySource = context.renderQuerySource(getLocalTable());
@@ -93,10 +88,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock createSelectBlock(ObjectField target, FetchContext context, String actualRefTable, CodeBlock selectRowBlock) {
         return indentIfMultiline(
                 Stream.of(
-                                getInitialID(context),
-                                target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
-                                selectRowBlock
-                        ).collect(CodeBlock.joining(""))
+                        getInitialID(context),
+                        target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
+                        selectRowBlock
+                ).collect(CodeBlock.joining(""))
         );
     }
 

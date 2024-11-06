@@ -379,6 +379,10 @@ public class TableReflection {
         return childKeyField.get(path);
     }
 
+    public static Optional<Class<?>> getFieldType(String table, String name) {
+        return getTable(table).map(it -> it.field(name.toLowerCase())).map(Typed::getType);
+    }
+
     private static Function<Schema, Stream<java.lang.reflect.Field>> getFieldsFromSchemaClass(String className) {
         return getClassFromSchemaPackage(className)
                 .andThen(it -> Arrays.stream(it.getFields()));

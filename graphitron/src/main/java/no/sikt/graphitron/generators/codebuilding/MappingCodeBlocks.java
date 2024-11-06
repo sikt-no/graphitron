@@ -135,7 +135,7 @@ public class MappingCodeBlocks {
         if (mapperContext.hasRecordReference() && mapperContext.isTopLevelContext()) {
             code.add(declare(asListedNameIf(mapperContext.getTargetName(), mapperContext.isIterable()), mapperContext.getRecordTransform(mapperContext.getTarget().getName())));
         } else if (!mapperContext.hasRecordReference()) {
-            code.add(declareVariable(mapperContext.getTargetName(), mapperContext.getTargetType().getGraphClassName()));
+            code.add(declare(mapperContext.getTargetName(), mapperContext.getTargetType().getGraphClassName()));
         }
 
         code.add("\n");

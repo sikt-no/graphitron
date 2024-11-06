@@ -9,8 +9,8 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapFuture;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.EXCEPTION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.OVERRIDE;
 

@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.context;
 
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -318,15 +319,15 @@ public class MapperContext {
                 code.add(continueCheck(asIterable(sourceName)));
 
                 if (!isResolver && !mapsJavaRecord && !targetEqualsPrevious) {
-                    code.add(select(declareRecord(targetName, targetType, false), declareVariable(targetName, targetType.getGraphClassName())));
+                    code.add(select(declareRecord(targetName, targetType, false), declare(targetName, targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
-                code.add(declare(VARIABLE_PATHS_FOR_PROPERTIES, CodeBlock.of("new $T<$T, $T>()", HASH_MAP.className, STRING.className, STRING.className)));
+                code.add(declare(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className)));
             }
         }
 
         if (!isValidation && mapsJavaRecord && !targetEqualsPrevious) {
-            code.add(declareVariable(targetName, targetType.asTargetClassName(toRecord)));
+            code.add(declare(targetName, targetType.asTargetClassName(toRecord)));
         }
 
         code.add(fieldCode);

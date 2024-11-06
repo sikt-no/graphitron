@@ -7,7 +7,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapList;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asRecordMapperClass;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;

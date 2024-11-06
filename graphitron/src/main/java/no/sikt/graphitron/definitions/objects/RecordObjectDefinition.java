@@ -4,6 +4,7 @@ import com.squareup.javapoet.ClassName;
 import graphql.language.TypeDefinition;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.helpers.ClassReference;
+import no.sikt.graphitron.definitions.keys.EntityKeySet;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
@@ -21,20 +22,23 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.mappings.TableReflection.getRequiredFields;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
+import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
 import static no.sikt.graphql.directives.GenerationDirective.RECORD;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_ARGUMENT;
 
 /**
  * A generalized implementation of {@link ObjectSpecification} for types that can be linked to tables or records.
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
+    private final EntityKeySet keys;
 
     public RecordObjectDefinition(T objectDefinition) {
         super(objectDefinition);
@@ -56,6 +60,8 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         }
         requiredInputs = hasTable() ? getRequiredFields(getTable().getMappingName()).stream().map(String::toUpperCase).collect(Collectors.toCollection(LinkedHashSet::new)) : new LinkedHashSet<>();
         inputsSortedByNullability = sortInputsByNullability();
+        hasKeys = objectDefinition.hasDirective(FEDERATION_KEY.getName());
+        keys = hasKeys ? new EntityKeySet(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
     }
 
     @NotNull
@@ -155,5 +161,15 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
 
     protected LinkedHashSet<String> getRequiredInputs() {
         return requiredInputs;
+    }
+
+    @Override
+    public boolean isEntity() {
+        return hasKeys;
+    }
+
+    @Override
+    public EntityKeySet getEntityKeys() {
+        return keys;
     }
 }

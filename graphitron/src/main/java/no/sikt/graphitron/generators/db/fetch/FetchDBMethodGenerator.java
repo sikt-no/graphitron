@@ -4,10 +4,10 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
-import graphql.language.FieldDefinition;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -30,22 +30,22 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Abstract generator for various database fetching methods.
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    final String idParamName = uncapitalize(getLocalObject().getName()) + "Ids";
-    final boolean isRoot = getLocalObject().isOperationRoot();
+    protected final String idParamName = uncapitalize(getLocalObject().getName()) + "Ids";
+    protected final boolean isRoot = getLocalObject().isOperationRoot();
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -114,7 +114,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (context.getReferenceObject() == null) {
             select.add((processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context));
         } else {
-            select.add(generateSelectRow(context, true));
+            select.add(generateSelectRow(context));
         }
 
         var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
@@ -162,7 +162,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * It deduces how each layer of row call should be structured by keeping track of joins and following field references.
      * @return Code block which contains the entire recursive structure of the row statement.
      */
-    protected CodeBlock generateSelectRow(FetchContext context, boolean isInSubquery) {
+    protected CodeBlock generateSelectRow(FetchContext context) {
         var fieldsWithoutSplitting = context
                 .getReferenceObject()
                 .getFields()
@@ -170,21 +170,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
                 .collect(Collectors.toList());
 
-        var fieldsWithoutSplittingSize = fieldsWithoutSplitting.size();
-
         var rowElements = new ArrayList<CodeBlock>();
 
         var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
         boolean containsEnum = false;
 
         for (GenerationField field : fieldsWithoutSplitting) {
-
             CodeBlock innerRowCode;
             containsEnum = containsEnum || processedSchema.isEnum(field);
 
             if (processedSchema.isObject(field)) {
                 var table = processedSchema.getObject(field.getTypeName()).getTable();
-                innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field), isInSubquery);
+                innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field));
             }
             else if (field.hasFieldReferences()) {
                 var fieldContext = context.nextContext(field);
@@ -196,18 +193,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             rowElements.add(innerRowCode);
         }
 
-        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplittingSize > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
+        return createMapping(context, fieldsWithoutSplitting, referenceFieldSources, rowElements);
+    }
+
+    protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements) {
+        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
+        var mappingContent = maxTypeSafeFieldSizeIsExceeded
+                ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, referenceFieldSources)
+                : regularMappingFunction;
+
         return CodeBlock
                 .builder()
                 .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
-                .add(".mapping(")
-                .add(maxTypeSafeFieldSizeIsExceeded ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, referenceFieldSources) : regularMappingFunction)
-                .add(")")
+                .add(mappingContent.isEmpty() ? empty() : CodeBlock.of(".mapping($L)", mappingContent))
                 .build();
     }
 
@@ -225,7 +228,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return createMappingWithUnion(context, fieldsWithoutTable);
         } else {
             return maxTypeSafeFieldSizeIsExeeded
-                    ? CodeBlock.of("$T.stream(r).allMatch($T::isNull) ? null : $L", ARRAYS.className, OBJECTS.className, mappedObjectCodeBlock)
+                    ? listedNullCheck("r", mappedObjectCodeBlock)
                     : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
         }
         return mappedObjectCodeBlock;
@@ -372,7 +375,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             if (processedSchema.isObject(field)) {
                 if (field.isIterableWrapped()) {
-                    codeBlockBuilder.add("($T<$T>) r[$L]", LIST.className, processedSchema.getObject(field).getGraphClassName(), i);
+                    codeBlockBuilder.add("($T) r[$L]", ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName()), i);
                 } else {
                     codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i);
                 }
@@ -414,9 +417,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         var counter = 0;
         for(var fieldObject : unionField.getFieldTypeNames()) {
-            var object = processedSchema.getObject(fieldObject).getName();
-            var objectField = new ObjectField(new FieldDefinition(object, new graphql.language.TypeName(object)), object);
-            codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false), false));
+            var object = processedSchema.getObject(fieldObject);
+            var objectField = new VirtualSourceField(object, object.getName());
+            codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
             if (counter + 1 < unionField.getFieldTypeNames().size()) {
                 codeBlock.add(",\n");
             }

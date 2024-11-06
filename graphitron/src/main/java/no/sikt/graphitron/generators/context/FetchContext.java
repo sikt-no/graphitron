@@ -422,7 +422,7 @@ public class FetchContext {
 
         if (fRef.hasTableCondition() && relation.hasRelation()) {
             var previousTableWithAlias = newSequence.getSecondLast() == null && previousContext != null ? previousContext.getCurrentJoinSequence().render() : newSequence.render(newSequence.getSecondLast());
-            this.conditionList.add(CodeBlock.of("$L", fRef.getTableCondition().formatToString(List.of(previousTableWithAlias, newSequence.render()))));
+            this.conditionList.add(fRef.getTableCondition().formatToString(List.of(previousTableWithAlias, newSequence.render())));
         }
 
         return newSequence;

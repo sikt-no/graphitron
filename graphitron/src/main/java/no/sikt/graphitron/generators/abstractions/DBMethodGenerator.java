@@ -10,7 +10,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapListIf;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**

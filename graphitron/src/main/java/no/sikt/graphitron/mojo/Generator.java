@@ -9,16 +9,16 @@ import java.util.List;
 import java.util.Set;
 
 public interface Generator {
-    public String getOutputPath();
+    String getOutputPath();
 
-    public String getOutputPackage();
-    public Set<String> getSchemaFiles();
-    public String getGeneratedSchemaCodePackage();
-    public String getJooqGeneratedPackage();
+    String getOutputPackage();
+    Set<String> getSchemaFiles();
+    String getGeneratedSchemaCodePackage();
+    String getJooqGeneratedPackage();
 
-    public RecordValidation getRecordValidation();
+    RecordValidation getRecordValidation();
 
-    public int getMaxAllowedPageSize();
+    int getMaxAllowedPageSize();
 
     List<? extends ExternalReference> getExternalReferences();
 

@@ -4,7 +4,7 @@ import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
 import org.jetbrains.annotations.NotNull;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declareVariable;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
@@ -14,7 +14,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
  */
 public class ContextDependency implements Dependency, Comparable<Dependency> {
     private static final ContextDependency instance = new ContextDependency();
-    private final static CodeBlock declaration = declareVariable(CONTEXT_NAME, DSL_CONTEXT.className);
+    private final static CodeBlock declaration = declare(CONTEXT_NAME, DSL_CONTEXT.className);
 
     private ContextDependency() {}
 

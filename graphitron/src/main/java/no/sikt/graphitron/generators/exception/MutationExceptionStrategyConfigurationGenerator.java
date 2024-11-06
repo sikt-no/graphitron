@@ -15,8 +15,8 @@ import java.util.*;
 import static no.sikt.graphitron.configuration.ErrorHandlerType.DATABASE;
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapSet;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -120,7 +120,7 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractCla
                 .builder()
                 .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
                 .beginControlFlow("$L ->", ERRORS_NAME)
-                .add(declareVariable(PAYLOAD_NAME, processedSchema.getObject(mutation.getTypeName()).getGraphClassName()));
+                .add(declare(PAYLOAD_NAME, processedSchema.getObject(mutation.getTypeName()).getGraphClassName()));
 
         ctx.getAllErrors().forEach(errorField ->
                 codeBuilder.add(
@@ -128,9 +128,8 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractCla
                                 PAYLOAD_NAME,
                                 errorField.getMappingFromSchemaName(),
                                 CodeBlock.of(
-                                        "($T<$T>) $N",
-                                        LIST.className,
-                                        processedSchema.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName(),
+                                        "($T) $N",
+                                        ParameterizedTypeName.get(LIST.className, processedSchema.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName()),
                                         ERRORS_NAME
                                 )
                         )

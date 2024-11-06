@@ -15,6 +15,7 @@ public enum SchemaComponent {
     ORDER_DIRECTION("special/OrderDirection"),
     ORDER("special/Order", ORDER_DIRECTION),
     DATE("Date"),
+    FEDERATION("special/Federation"),
 
     DUMMY_ENUM("enums/DummyEnum"),
     DUMMY_ENUM_CONVERTED("enums/DummyEnumConverted", Set.of(ReferencedEntry.DUMMY_JOOQ_ENUM)),

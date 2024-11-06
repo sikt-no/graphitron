@@ -3,6 +3,7 @@ package no.sikt.graphql.directives;
 import graphql.language.*;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -14,6 +15,11 @@ public class DirectiveHelpers {
     private static Value<?> getArgument(DirectivesContainer<?> container, GenerationDirective directive, String arg) {
         var dir = container.getDirectives(directive.getName());
         return dir != null && !dir.isEmpty() ? extractArgumentValueFrom(dir.get(0), arg) : null;
+    }
+
+    private static List<Value<?>> getRepeatableArguments(DirectivesContainer<?> container, String directive, String arg) {
+        var dir = container.getDirectives(directive);
+        return dir != null && !dir.isEmpty() ? dir.stream().map(it -> extractArgumentValueFrom(it, arg)).filter(Objects::nonNull).collect(Collectors.toList()) : null;
     }
 
     private static Value<?> extractArgumentValueFrom(Directive directive, String arg) {
@@ -32,6 +38,23 @@ public class DirectiveHelpers {
         return Optional.ofNullable((StringValue) getArgument(container, directive, param.getName()))
                 .map(StringValue::getValue)
                 .map(String::strip);
+    }
+
+    /**
+     * @param container The graph element to be inspected.
+     * @param directive The directive this argument should be set on.
+     * @param param Name of the argument.
+     * @return The String values of the directive arguments, if they exist.
+     */
+    public static List<String> getRepeatableDirectiveArgumentString(DirectivesContainer<?> container, String directive, String param) {
+        return Optional
+                .ofNullable(getRepeatableArguments(container, directive, param))
+                .orElse(List.of())
+                .stream()
+                .map(arg -> (StringValue) arg)
+                .map(StringValue::getValue)
+                .map(String::strip)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -112,7 +135,6 @@ public class DirectiveHelpers {
      * @return The String value of the directive argument. An exception is thrown if this does not exist.
      */
     public static String getDirectiveArgumentString(DirectivesContainer<?> container, GenerationDirective directive, GenerationDirectiveParam param) {
-        directive.checkParamIsValid(param);
         return getOptionalDirectiveArgumentString(container, directive, param)
                 .map(String::strip)
                 .orElseThrow(getIllegalArgumentExceptionSupplier(param.getName(), directive.getName()));

@@ -29,7 +29,6 @@ public abstract class AbstractFetcher {
     /**
      * Create a dataloader for a resolver.
      * @param env Environment for the resolver.
-     * @param ctx Context from the resolver.
      */
     protected AbstractFetcher(DataFetchingEnvironment env) {
         this.env = env;

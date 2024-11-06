@@ -22,7 +22,7 @@ public class QueryDependency extends NamedDependency {
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return declare(uncapitalize(getName()), CodeBlock.of("new $T()", getTypeName()));
+        return declare(uncapitalize(getName()), getTypeName());
     }
 
     @Override

@@ -2,9 +2,8 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
-import graphql.language.FieldDefinition;
-import graphql.language.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -18,8 +17,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
-import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.wrapStringMap;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
@@ -49,13 +48,9 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
             throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName()));
         }
 
-        var implementationReference = new ObjectField(
-                new FieldDefinition(target.getName(), new TypeName(getLocalObject().getName())),
-                target.getTypeName()
-        );
-
-        var context = new FetchContext(processedSchema, implementationReference, implementation, false);
-        var selectCode = generateSelectRow(context, false);
+        var virtualReference = new VirtualSourceField(getLocalObject(), target.getTypeName());
+        var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+        var selectCode = generateSelectRow(context);
 
         var argument = target.getArguments().get(0);
         var argumentName = argument.getName() + "s";

@@ -4,6 +4,7 @@ import com.squareup.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
+import no.sikt.graphitron.generators.datafetcherresolvers.fetch.EntityFetcherResolverMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -45,7 +46,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 .values()
                 .stream()
                 .filter(it -> !it.getName().equals(SCHEMA_MUTATION.getName()))
-                .filter(it -> it.isGeneratedWithResolver() || (!objectFieldsReturningNode.isEmpty()))
+                .filter(it -> it.isGeneratedWithResolver() || it.isEntity() || (!objectFieldsReturningNode.isEmpty()))
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs.isEmpty())
                 .collect(Collectors.toList());
@@ -59,7 +60,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                         new FetchMappedObjectDBMethodGenerator(target, processedSchema),
                         new FetchCountDBMethodGenerator(target, processedSchema),
                         new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
-                        new FetchMappedInterfaceDBMethodGenerator(target, processedSchema)
+                        new FetchMappedInterfaceDBMethodGenerator(target, processedSchema),
+                        new EntityFetcherResolverMethodGenerator(target, processedSchema)
                 )
         ).build();
     }
