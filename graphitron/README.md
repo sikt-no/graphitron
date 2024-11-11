@@ -152,6 +152,7 @@ Example of extending/customizing certain classes:
 ```
 
 ## Directives
+> Note that several of the code examples below use unaliased JOOQ tables for readability, while the code Graphitron generates only uses aliased tables.
 ### Common directives
 #### splitQuery directive
 Applying this to a type reference denotes a split in the generated query/resolver.
@@ -249,11 +250,12 @@ this type will use this table as the source for the field mapping. This targets 
 the _name_ parameter must match the table name in jOOQ if it differs from the database. The _name_ parameter is optional,
 and does not need to be specified if the type name already equals the table name.
 
-In the example below the generator would apply a jOOQ implicit join between the two tables when building the query.
+In the example below the generator would apply an implicit path join on the key between the two tables when building the subquery for the reference.
 Note that this can only work if there is only one foreign key between the tables. For example, given tables from the
 schema example below, the result will be `TABLE_A.table_b()`. If more than one key exists, a more complex configuration
 is required, see [reference](#reference-directive).
 
+_Schema_:
 ```graphql
 type TABLE_A @table { # Table name matches the type name, name is unnecessary.
   someOtherType: OtherType
@@ -262,6 +264,16 @@ type TABLE_A @table { # Table name matches the type name, name is unnecessary.
 type OtherType @table(name: "TABLE_B") {
   name: String
 }
+```
+
+_Generated result (excluding row mapping and aliases)_:
+```java
+select(
+        field(
+            select(TABLE_A.table_b().NAME)
+            .from(TABLE_A.table_b())
+        )
+        .from(TABLE_A)
 ```
 
 If a table type contains other types that do not set their own tables, the previous table type is used instead.
@@ -282,11 +294,8 @@ key that should be used. This must match a key name from jOOQs _Keys_ class.
   * _condition_ - This parameter is used to place an additional constraint on the two tables, by referring to the correct [entry](#code-references)
 in the POM XML. In the cases where there is no way to deduce the key between the tables and the _key_ parameter is not set,
 this condition will be assumed to be an _on_ condition to be used in a join operation between the tables.
-The result will be a left join if the field is optional, otherwise a standard join.
 
-Note that joins only apply to the field they are set on. Graphitron either sets separate aliases or uses implicit joins to
-manage several simultaneous joins from one table to another. If the field is a scalar type,
-it can be linked to a jOOQ column in another table using this directive. If the field points to a type, all fields within this
+Note that joins only apply to the field they are set on, as it is only applied to the field's subquery. If the field is a scalar type, it can be linked to a jOOQ column in another table using this directive. If the field points to a type, all fields within this
 referred type will have access to the join operation.
 
 The following examples will assume that this configuration is set so that Graphitron can find the referenced classes: 
@@ -303,7 +312,7 @@ class CustomerCondition {
 }
 ```
 
-The method returns a jOOQ condition, which will be appended after the where-statement for the query.
+The method returns a jOOQ condition, which will be added to the where conditions for the subquery.
 
 _Schema_:
 ```graphql
@@ -314,15 +323,16 @@ type Customer @table {
 
 _Generated result_:
 ```java
-.and(some.path.CustomerCondition.addressJoin(CUSTOMER, ADDRESS))
+.where(some.path.CustomerCondition.addressJoin(CUSTOMER, CUSTOMER.address()))
 ```
 
 The condition is thus an additional constraint applied on both tables.
 In a slightly different case where the tables are not directly connected, the join will behave differently.
 If the two tables did not have any foreign keys between them (or there are multiple, which one to use was not specified)
-the generated result would follow a pattern like the code below.
+the generated result would follow a pattern like the code below for the subquery.
 
 ```java
+.from(CUSTOMER)
 .join(ADDRESS)
 .on(some.path.CustomerCondition.addressJoin(CUSTOMER, ADDRESS))
 ```
@@ -339,8 +349,7 @@ type Customer @table {
 
 _Generated result_:
 ```java
-.join(ADDRESS)
-.onKey(CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY)
+.from(CUSTOMER.address())
 ```
 
 Providing both a key and a condition will result in a sum of both the first and previous examples,
@@ -363,15 +372,19 @@ type Payment @table {
 First, Graphitron defines a few aliases for these joins. Currently, this creates one alias per step.
 
 ```java
-var payment_rental = PAYMENT.rental();
+var payment = PAYMENT;
+var payment_rental = payment.rental();
 var payment_rental_inventory = payment_rental.inventory();
 var payment_rental_inventory_film = payment_rental_inventory.film();
 ```
 
-Then, the alias is applied where necessary. This line is taken from the generated query.
+Then, the alias is applied where necessary. This is the generated subquery for the reference
 
 ```java
-select.optional("title", payment_rental_inventory_film.TITLE)
+select(select.optional("title", payment_rental_inventory_film.TITLE))
+.from(payment_rental)
+.join(payment_rental_inventory)
+.join(payment_rental_inventory_film)
 ```
 
 ### Query conditions
