@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.NODE;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @DisplayName("Interface validation - Checks run when building the schema for interfaces")
 public class InterfaceTest extends ValidationTest {
@@ -42,5 +43,20 @@ public class InterfaceTest extends ValidationTest {
     @DisplayName("Interface query returning a list")
     void listed() {
         assertErrorsContain("listed", "Generating fields returning collections/lists of interfaces is not supported. 'nodes' must return only one Node");
+    }
+
+    @Test
+    @DisplayName("Multiple types implementing Node interface and referring to the same table will throw an exception")
+    void allTypesUsingNodeInterface() {
+        assertErrorsContain("allTypesUsingNodeInterface",
+                            "Problems have been found that prevent code generation:\n" +
+                            "Multiple types (FilmB, FilmA) implement the Node interface and refer to the same table FILM. This is not supported."
+                            );
+    }
+
+    @Test
+    @DisplayName("Multiple types referring to the same table where only one of these are implementing Node interface are supported")
+    void notAllTypesUsingNodeInterface() {
+        assertDoesNotThrow(() -> generateFiles("notAllTypesUsingNodeInterface"));
     }
 }

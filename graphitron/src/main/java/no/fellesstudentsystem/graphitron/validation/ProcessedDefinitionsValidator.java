@@ -12,12 +12,12 @@ import no.fellesstudentsystem.graphitron.definitions.interfaces.RecordObjectSpec
 import no.fellesstudentsystem.graphitron.definitions.mapping.JOOQMapping;
 import no.fellesstudentsystem.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.EnumDefinition;
+import no.fellesstudentsystem.graphitron.definitions.objects.ObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.objects.RecordObjectDefinition;
 import no.fellesstudentsystem.graphitron.definitions.sql.SQLCondition;
 import no.fellesstudentsystem.graphitron.generators.context.InputParser;
 import no.fellesstudentsystem.graphitron.mappings.TableReflection;
 import no.fellesstudentsystem.graphitron.mojo.GraphQLGenerator;
-import no.fellesstudentsystem.graphql.directives.GenerationDirective;
 import no.fellesstudentsystem.graphql.naming.GraphQLReservedName;
 import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
@@ -32,6 +32,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.fellesstudentsystem.graphitron.configuration.Recursion.recursionCheck;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.CONNECTION_NODE_FIELD;
+import static no.fellesstudentsystem.graphql.naming.GraphQLReservedName.NODE_TYPE;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * Class for producing warnings related to potential issues in the defined schema.
@@ -67,6 +70,7 @@ public class ProcessedDefinitionsValidator {
         validateTablesAndKeys();
         validateRequiredMethodCalls();
         validateInterfaces();
+        validateTypesUsingNodeInterface();
         validateInputFields();
         validateExternalMappingReferences();
         validateMutationRequiredFields();
@@ -312,6 +316,31 @@ public class ProcessedDefinitionsValidator {
                 }
             }
         }
+    }
+
+    private void validateTypesUsingNodeInterface() {
+        if (schema.getInterface(NODE_TYPE.getName()) == null ||
+            schema.getQueryType() == null ||
+            schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
+            schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())).isExplicitlyNotGenerated()) {
+            return;
+        }
+
+        var records = schema
+                .getObjects()
+                .values()
+                .stream()
+                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable())
+                .collect(Collectors.groupingBy(
+                        it -> it.getTable().getName(), Collectors.mapping(ObjectDefinition::getName, Collectors.toSet())));
+
+        records.forEach((tablename, schematypes) -> {
+            if (schematypes.size() > 1) {
+                errorMessages.add(String.format(
+                        "Multiple types (%s) implement the %s interface and refer to the same table %s. This is not supported.",
+                        String.join(", ", schematypes), NODE_TYPE.getName(), tablename));
+            }
+        });
     }
 
     // TODO: It seems we are now handling/validating lists that are directly below parent lists. But what about
