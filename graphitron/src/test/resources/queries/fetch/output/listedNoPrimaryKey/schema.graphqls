@@ -1,7 +1,0 @@
-type Query {
-  query: [PgUserMapping]
-}
-
-type PgUserMapping @table(name: "PG_USER_MAPPING") {
-  umid: String @field(name: "UMID")
-}

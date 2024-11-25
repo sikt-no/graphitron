@@ -1,7 +1,0 @@
-type Customer @table {
-  address: [Address]! @splitQuery @reference(references: [{table: "ADDRESS"}])
-}
-
-type Address @table {
-  id: ID!
-}

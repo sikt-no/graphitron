@@ -38,8 +38,6 @@ public class OutputTest extends GeneratorTest {
                 "listed", Set.of(CUSTOMER_TABLE),
                 "List<CustomerTable> queryForQuery",
                 ".select(DSL.row(",
-                "orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray())",
-                ".orderBy(orderFields)",
                 ".fetch(it -> it.into(CustomerTable.class"
         );
     }
@@ -62,7 +60,6 @@ public class OutputTest extends GeneratorTest {
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<String, List<CustomerTable>> queryForWrapper",
                 ".select(_customer.getId(),DSL.multiset(DSL.select",
-                ".orderBy(orderFields)",
                 ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
         );
     }
@@ -183,6 +180,12 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains("over22FieldsWithInnerRow", "Wrapper::new", "(Wrapper) r[22");
     }
 
+    @Test
+    @DisplayName("Row with more than 22 fields including multiset")
+    void over22FieldsWithMultiset() {
+        assertGeneratedContentContains("over22FieldsWithMultiset", "Wrapper::new", "(List<Wrapper>) r[22]");
+    }
+
     @Test // Enhanced null check treats empty objects as null.
     @DisplayName("Required row with optional fields")
     void requiredRowWithOptionalFields() {
@@ -229,11 +232,21 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Type containing a table type")
+    @DisplayName("Type containing a table type (field subquery)")
     void innerTable() {
         assertGeneratedContentContains(
                 "innerTable",
-                ".row(DSL.field",
+                ".row(DSL.field(DSL.select(DSL.row(customer_",
+                ".mapping(Functions.nullOnAllNull(Address::new)))",
+                "))).mapping(Functions.nullOnAllNull(Customer::new");
+    }
+
+    @Test
+    @DisplayName("Type containing a listed table type (multiset subquery)")
+    void innerTableListed() {
+        assertGeneratedContentContains(
+                "innerTableListed",
+                ".row(DSL.multiset(DSL.select(DSL.row(customer_",
                 ".mapping(Functions.nullOnAllNull(Address::new)))",
                 "))).mapping(Functions.nullOnAllNull(Customer::new");
     }
@@ -259,28 +272,11 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Listed return type on table without primary key")
-    void listedNoPrimaryKey() {
+    @DisplayName("Type implementing a table with a subtype collecting some of the table's fields.")
+    void subtype() {
         assertGeneratedContentContains(
-                "listedNoPrimaryKey",
-                ".from(_pgusermapping).fetch("
-        );
-    }
-
-    @Test
-    @DisplayName("Listed return type with splitQuery on table without primary key")
-    void listedNoPrimaryKeySplitQuery() {
-        assertGeneratedContentContains(
-                "listedNoPrimaryKeySplitQuery",
-                "DSL.multiset(DSL.select(DSL.row",
-                ".from(_pgusermapping))",
-                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
-        );
-    }
-
-    @Test
-    @DisplayName("Row with more than 22 fields including multiset")
-    void over22FieldsWithMultiset() {
-        assertGeneratedContentContains("over22FieldsWithMultiset", "Wrapper::new", "(List<Wrapper>) r[22]");
+                "subtype",
+                ".getId(),DSL.row(_customer.FIRST_NAME,",
+                ").mapping(Functions.nullOnAllNull(CustomerName::new))).mapping(Functions.nullOnAllNull(Customer::new))");
     }
 }

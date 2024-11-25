@@ -51,7 +51,7 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Default sorting on field with splitQuery")
+    @DisplayName("Default sorting on list with splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
                 "orderFields = address_2030472956_customer",
@@ -60,16 +60,16 @@ public class SortingTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("No sorting on field with splitQuery when table has no primary key")
-    void listedNoPrimaryKeySplitQuery() {
-        resultDoesNotContain("listedNoPrimaryKeySplitQuery",
+    @DisplayName("No sorting on list with splitQuery when table has no primary key")
+    void splitQueryNoPrimaryKey() {
+        resultDoesNotContain("splitQueryNoPrimaryKey",
                 "orderFields",
                 ".orderBy("
         );
     }
 
     @Test
-    @DisplayName("List in subquery (multiset)")
+    @DisplayName("Default sorting on list without splitQuery (multiset)")
     void multiset() {
         var generatedFiles = generateFiles("multiset", Set.of());
         contains(generatedFiles,
@@ -81,14 +81,14 @@ public class SortingTest extends GeneratorTest {
 
     @Test
     @DisplayName("No sorting on table in multiset when it has no primary key")
-    void noPrimaryKeyInMultiset() {
-        resultDoesNotContain("noPrimaryKeyInMultiset",
+    void multisetNoPrimaryKey() {
+        resultDoesNotContain("multisetNoPrimaryKey",
                 "orderFields",
                 "orderBy");
     }
 
     @Test
-    @DisplayName("Sorting on nested lists")
+    @DisplayName("Sorting on nested lists (nested multisets)")
     void nestedLists() {
         assertGeneratedContentContains("nestedLists",
                 "orderFields = _city.",

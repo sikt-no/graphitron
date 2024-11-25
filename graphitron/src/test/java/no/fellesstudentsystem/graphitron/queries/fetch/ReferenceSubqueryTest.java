@@ -1,6 +1,5 @@
 package no.fellesstudentsystem.graphitron.queries.fetch;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -10,11 +9,11 @@ import static no.fellesstudentsystem.graphitron.common.configuration.SchemaCompo
 import static no.fellesstudentsystem.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 // Note that these are mostly copies from ReferenceQueryTest. Many cases from there are omitted here.
-@DisplayName("Fetch queries - Fetching rows through referenced tables")
-public class ReferenceRowTest extends ReferenceTest {
+@DisplayName("Fetch queries - Fetching rows through referenced tables in correlated subqueries")
+public class ReferenceSubqueryTest extends ReferenceTest {
     @Override
     protected String getSubpath() {
-        return super.getSubpath() + "/row";
+        return super.getSubpath() + "/subquery";
     }
 
     @Test
@@ -97,22 +96,22 @@ public class ReferenceRowTest extends ReferenceTest {
     }
 
     @Test
-    @Disabled("Need multiset or subqueries to make queries on listed fields without @splitQuery")
     @DisplayName("Table path on a list")
-    void onList() {
+    void list() {
         assertGeneratedContentContains(
-                "onList", Set.of(CUSTOMER_TABLE),
-                ".join(customer_address"
+                "list", Set.of(CUSTOMER_TABLE, CUSTOMER_QUERY),
+                ".from(customer_2952383337_address)"
         );
     }
 
     @Test
-    @Disabled("Need multiset or subqueries to make queries on listed fields without @splitQuery")
-    @DisplayName("Table path on a nullable list")
-    void onNullableList() {
+    @DisplayName("Table path on nested lists")
+    void nestedLists() {
         assertGeneratedContentContains(
-                "onNullableList", Set.of(CUSTOMER_TABLE),
-                ".leftJoin(customer_address_left"
+                "nestedLists", Set.of(CUSTOMER_QUERY),
+                ".from(address_1214171484_store)",
+                ".from(customer_2952383337_address)"
         );
     }
+
 }

@@ -37,7 +37,7 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "field/keyWithMultiplePaths",
                 "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as(\"filmOriginalLanguageIdFkey_789320123\")",
                 "film_3747728953_filmoriginallanguageidfkey.NAME",
-                ".from(_film"
+                ".from(film_3747728953_filmoriginallanguageidfkey))"
         );
     }
 
@@ -71,7 +71,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     @DisplayName("Table path on a split query")
     void splitQuery() {
         assertGeneratedContentContains(
-                "query/table", Set.of(CUSTOMER_NOT_GENERATED),
+                "splitQuery/table", Set.of(CUSTOMER_NOT_GENERATED),
                 "_customer.address().as(",
                 "DSL.row(customer_2952383337_address.getId()",
                 ".from(_customer",
@@ -151,7 +151,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     @DisplayName("Indirect table path")
     void throughTable() {
         assertGeneratedContentContains(
-                "query/throughTable", Set.of(CUSTOMER_NOT_GENERATED),
+                "splitQuery/throughTable", Set.of(CUSTOMER_NOT_GENERATED),
                 "_customer.address().as(", "customer_2952383337_address.city().as("
         );
     }
@@ -160,7 +160,7 @@ public class ReferenceAliasTest extends ReferenceTest {
     @DisplayName("Indirect key path")
     void throughKey() {
         assertGeneratedContentContains(
-                "query/throughKey", Set.of(CUSTOMER_NOT_GENERATED),
+                "splitQuery/throughKey", Set.of(CUSTOMER_NOT_GENERATED),
                 "_customer.address().as(", "customer_2952383337_address.city().as("
         );
     }
@@ -169,7 +169,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     @DisplayName("Indirect condition path")
     void throughCondition() {
         assertGeneratedContentContains(
-                "query/throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
+                "splitQuery/throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
+                "customer_city = CUSTOMER.as(\"",
                 "customer_city_citycustomer_city = CITY.as("
         );
     }

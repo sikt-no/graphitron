@@ -104,4 +104,15 @@ public class ReferenceFieldTest extends ReferenceTest {
                 ".from(customer_2952383337_address"
         );
     }
+
+    @Test
+    @DisplayName("Table path on a list of fields without split query")
+    void list() {
+        assertGeneratedContentContains(
+                "list", Set.of(CUSTOMER_QUERY),
+                "DSL.multiset(",
+                "customer_2952383337_address.ADDRESS_ID",
+                ".from(customer_2952383337_address)"
+        );
+    }
 }

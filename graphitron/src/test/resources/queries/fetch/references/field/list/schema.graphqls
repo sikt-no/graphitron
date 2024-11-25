@@ -1,0 +1,3 @@
+type Customer @table {
+  address: [String]! @field(name: "ADDRESS_ID") @reference(references: [{table: "ADDRESS"}])
+}

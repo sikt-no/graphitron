@@ -1,7 +1,0 @@
-type Customer @table {
-  address: [Address] @reference(references: [{table: "ADDRESS"}])
-}
-
-type Address @table {
-  id: ID!
-}
