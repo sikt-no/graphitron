@@ -5,7 +5,7 @@ import fake.graphql.example.model.DummyTypeRecord;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
-import no.fellesstudentsystem.graphitron.codereferences.records.IDJavaRecord;
+import no.sikt.graphitron.codereferences.records.IDJavaRecord;
 
 public class DummyTypeRecordTypeMapper {
     public static List<DummyTypeRecord> toGraphType(List<IDJavaRecord> iDJavaRecord, String path,

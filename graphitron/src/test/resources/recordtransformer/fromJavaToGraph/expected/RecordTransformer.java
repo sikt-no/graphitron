@@ -5,8 +5,8 @@ import fake.graphql.example.model.Customer;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
 import java.util.List;
-import no.fellesstudentsystem.graphitron.codereferences.dummyreferences.DummyRecord;
-import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
+import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
+import no.sikt.graphql.helpers.transform.AbstractTransformer;
 
 public class RecordTransformer extends AbstractTransformer {
     public RecordTransformer(DataFetchingEnvironment env) {

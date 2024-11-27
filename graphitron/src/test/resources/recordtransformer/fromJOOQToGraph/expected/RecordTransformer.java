@@ -5,7 +5,7 @@ import fake.graphql.example.model.CustomerTable;
 import graphql.schema.DataFetchingEnvironment;
 import java.lang.String;
 import java.util.List;
-import no.fellesstudentsystem.graphql.helpers.transform.AbstractTransformer;
+import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 
 public class RecordTransformer extends AbstractTransformer {

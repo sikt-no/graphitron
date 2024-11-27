@@ -7,10 +7,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.inject.Singleton;
-import no.fellesstudentsystem.graphql.exception.DataAccessExceptionContentToErrorMapping;
-import no.fellesstudentsystem.graphql.exception.ExceptionToErrorMappingProvider;
-import no.fellesstudentsystem.graphql.exception.GenericExceptionContentToErrorMapping;
-import no.fellesstudentsystem.graphql.exception.GenericExceptionMappingContent;
+import no.sikt.graphql.exception.DataAccessExceptionContentToErrorMapping;
+import no.sikt.graphql.exception.ExceptionToErrorMappingProvider;
+import no.sikt.graphql.exception.GenericExceptionContentToErrorMapping;
+import no.sikt.graphql.exception.GenericExceptionMappingContent;
 
 @Singleton
 public class GeneratedExceptionToErrorMappingProvider implements ExceptionToErrorMappingProvider {

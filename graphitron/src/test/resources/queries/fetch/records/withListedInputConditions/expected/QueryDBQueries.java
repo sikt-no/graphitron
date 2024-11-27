@@ -8,7 +8,7 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import fake.graphql.example.model.CustomerTable;
 import java.util.List;
 import java.util.stream.Collectors;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
@@ -31,13 +31,13 @@ public class QueryDBQueries {
                                         inRecordList.stream().map(internal_it_ ->
                                                 DSL.row(
                                                         DSL.inline(internal_it_.getId()),
-                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getId()),
-                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirstName())
+                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getId()),
+                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirstName())
                                                 )
                                         ).collect(Collectors.toList())
                                 ) : DSL.noCondition()
                 )
-                .and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))
+                .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 
@@ -47,7 +47,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(_customer)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

@@ -12,8 +12,8 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
+import no.sikt.graphql.helpers.resolvers.DataFetcher;
+import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Override

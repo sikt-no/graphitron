@@ -7,8 +7,8 @@ import graphql.schema.DataFetchingEnvironment;
 import java.lang.Exception;
 import java.lang.Override;
 import java.util.concurrent.CompletableFuture;
-import no.fellesstudentsystem.graphitron.codereferences.services.ResolverFetchService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
+import no.sikt.graphitron.codereferences.services.ResolverFetchService;
+import no.sikt.graphql.helpers.resolvers.ServiceDataFetcher;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Override

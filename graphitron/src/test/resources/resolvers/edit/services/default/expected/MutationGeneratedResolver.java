@@ -7,7 +7,7 @@ import java.lang.Exception;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
-import no.fellesstudentsystem.graphitron.codereferences.services.ResolverMutationService;
+import no.sikt.graphitron.codereferences.services.ResolverMutationService;
 
 public class MutationGeneratedResolver implements MutationMutationResolver {
     @Override

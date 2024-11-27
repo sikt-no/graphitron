@@ -5,7 +5,7 @@ import fake.graphql.example.model.Address;
 import java.lang.String;
 import java.util.ArrayList;
 import java.util.List;
-import no.fellesstudentsystem.graphitron.codereferences.records.MapperNestedJavaRecord;
+import no.sikt.graphitron.codereferences.records.MapperNestedJavaRecord;
 
 public class AddressJavaMapper {
     public static List<MapperNestedJavaRecord> toJavaRecord(List<Address> address, String path,

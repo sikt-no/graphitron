@@ -12,8 +12,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import no.fellesstudentsystem.graphql.exception.MutationExceptionStrategyConfiguration;
-import no.fellesstudentsystem.graphql.exception.ValidationViolationGraphQLException;
+import no.sikt.graphql.exception.MutationExceptionStrategyConfiguration;
+import no.sikt.graphql.exception.ValidationViolationGraphQLException;
 import javax.inject.Singleton;
 
 @Singleton

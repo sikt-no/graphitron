@@ -8,8 +8,8 @@ import java.lang.IllegalArgumentException;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
-import no.fellesstudentsystem.graphql.helpers.EnvironmentUtils;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
+import no.sikt.graphql.helpers.EnvironmentUtils;
+import no.sikt.graphql.helpers.resolvers.DataFetcher;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Override

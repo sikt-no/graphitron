@@ -1,6 +1,6 @@
-package no.fellesstudentsystem.graphitron.maven;
+package no.sikt.graphitron.maven;
 
-import no.fellesstudentsystem.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.function.Executable;
 
@@ -17,8 +17,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-import static no.fellesstudentsystem.graphitron.maven.TestConfiguration.EXPECTED_OUTPUT_NAME;
-import static no.fellesstudentsystem.graphitron.maven.TestConfiguration.SRC_ROOT;
+import static no.sikt.graphitron.maven.TestConfiguration.EXPECTED_OUTPUT_NAME;
+import static no.sikt.graphitron.maven.TestConfiguration.SRC_ROOT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 

@@ -9,7 +9,7 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
+import no.sikt.graphql.helpers.resolvers.DataFetcher;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Override

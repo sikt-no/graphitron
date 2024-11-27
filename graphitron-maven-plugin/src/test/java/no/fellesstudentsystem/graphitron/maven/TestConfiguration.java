@@ -1,4 +1,4 @@
-package no.fellesstudentsystem.graphitron.maven;
+package no.sikt.graphitron.maven;
 
 public class TestConfiguration {
     public static final String

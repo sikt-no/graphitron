@@ -8,8 +8,8 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import fake.graphql.example.model.CustomerTable;
 import java.util.List;
 import java.util.stream.Collectors;
-import no.fellesstudentsystem.graphitron.codereferences.dummyreferences.DummyRecord;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
@@ -23,8 +23,8 @@ public class QueryDBQueries {
                 .from(_customer)
                 .where(inRecord != null ? _customer.hasId(inRecord.getId()) : DSL.noCondition())
                 .and(inRecord != null ? _customer.FIRST.eq(inRecord.getFirst()) : DSL.noCondition())
-                .and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, inRecord != null ? inRecord.getFirst() : null))
-                .and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
+                .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, inRecord != null ? inRecord.getFirst() : null))
+                .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 
@@ -45,12 +45,12 @@ public class QueryDBQueries {
                                                 DSL.row(
                                                         DSL.inline(internal_it_.getId()),
                                                         DSL.inline(internal_it_.getFirst()),
-                                                        no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirst())
+                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirst())
                                                 )
                                         ).collect(Collectors.toList())
                                 ) : DSL.noCondition()
                 )
-                .and(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecordList(_customer, inRecordList))
+                .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecordList(_customer, inRecordList))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

@@ -12,9 +12,9 @@ import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import no.fellesstudentsystem.graphitron.codereferences.services.ResolverFetchService;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ResolverHelpers;
-import no.fellesstudentsystem.graphql.helpers.resolvers.ServiceDataFetcher;
+import no.sikt.graphitron.codereferences.services.ResolverFetchService;
+import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
+import no.sikt.graphql.helpers.resolvers.ServiceDataFetcher;
 
 public class QueryGeneratedResolver implements QueryResolver {
     @Override

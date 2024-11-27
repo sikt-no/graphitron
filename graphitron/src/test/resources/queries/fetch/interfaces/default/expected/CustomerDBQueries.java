@@ -9,7 +9,7 @@ import fake.graphql.example.model.Customer;
 import java.lang.String;
 import java.util.Map;
 import java.util.Set;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;

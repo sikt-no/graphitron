@@ -1,0 +1,91 @@
+package no.sikt.graphitron.resolvers.standard.fetch;
+
+import no.sikt.graphitron.common.GeneratorTest;
+import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Set;
+
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+
+@DisplayName("Interface resolvers - Resolvers for the interface")
+public class InterfaceResolverTest extends GeneratorTest {
+    @Override
+    protected String getSubpath() {
+        return "resolvers/fetch/interfaces";
+    }
+
+    @Override
+    protected Set<SchemaComponent> getComponents() {
+        return makeComponents(NODE); // Node is used for these tests since resolver code should be the same for all interfaces.
+    }
+
+    @Override
+    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+        return List.of(new FetchResolverClassGenerator(schema));
+    }
+
+    @Test
+    @DisplayName("No types implement interface")
+    void noImplementations() {
+        assertGeneratedContentMatches("noImplementations");
+    }
+
+    @Test
+    @DisplayName("One type implement interface")
+    void oneImplementation() {
+        assertGeneratedContentMatches("oneImplementation");
+    }
+
+    @Test
+    @DisplayName("Many types implement interface")
+    void manyImplementations() {
+        assertGeneratedContentContains(
+                "manyImplementations",
+                "ADDRESS.getName(), \"Address\"",
+                "CUSTOMER.getName(), \"Customer\"",
+                "FILM.getName(), \"Film\"",
+                "case \"Address\":",
+                "case \"Customer\":",
+                "case \"Film\":",
+                "AddressDBQueries.loadAddressByIdsAsNode(",
+                "CustomerDBQueries.loadCustomerByIdsAsNode(",
+                "FilmDBQueries.loadFilmByIdsAsNode("
+        );
+    }
+
+    @Test
+    @DisplayName("Type implements an interface that is not Node")
+    void nonNode() {
+        assertGeneratedContentContains(
+                "nonNode",
+                "CompletableFuture<Titled> titled(String title,",
+                ".getTargetTypeFromEnvironment(env).orElse(null)",
+                "_loaderName = _targetType + \"_titled\"",
+                "case \"Film\":",
+                "FilmDBQueries.loadFilmByTitlesAsTitled("
+        );
+    }
+
+    @Test
+    @DisplayName("Type implements two interfaces")
+    void doubleInterface() {
+        assertGeneratedContentContains(
+                "doubleInterface",
+                "FilmDBQueries.loadFilmByIdsAsNode(",
+                "FilmDBQueries.loadFilmByTitlesAsTitled("
+        );
+    }
+
+    @Test
+    @DisplayName("Implementing type has no path from Query")
+    void withoutPathFromQuery() {
+        assertGeneratedContentContains("withoutPathFromQuery", "CustomerDBQueries.loadCustomerByIdsAsNode(");
+    }
+}

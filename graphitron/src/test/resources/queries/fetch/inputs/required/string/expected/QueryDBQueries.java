@@ -7,7 +7,7 @@ import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.lang.String;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;

@@ -9,8 +9,8 @@ import fake.graphql.example.model.CustomerTable;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import no.fellesstudentsystem.graphql.helpers.query.QueryHelper;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphql.helpers.query.QueryHelper;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -30,7 +30,7 @@ public class QueryDBQueries {
                         DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_customer)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)
@@ -43,7 +43,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.count())
                 .from(_customer)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .fetchOne(0, Integer.class);
     }
 }

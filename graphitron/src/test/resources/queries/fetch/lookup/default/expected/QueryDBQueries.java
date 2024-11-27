@@ -10,7 +10,7 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Record2;

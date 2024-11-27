@@ -6,8 +6,8 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
-import no.fellesstudentsystem.graphitron.codereferences.dummyreferences.DummyRecord;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.impl.DSL;
@@ -19,7 +19,7 @@ public class QueryDBQueries {
         return ctx
                 .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
                 .from(_customer)
-                .where(no.fellesstudentsystem.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 }

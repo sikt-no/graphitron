@@ -11,8 +11,8 @@ import java.lang.String;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
-import no.fellesstudentsystem.graphql.NodeIdHandler;
-import no.fellesstudentsystem.graphql.helpers.resolvers.DataFetcher;
+import no.sikt.graphql.NodeIdHandler;
+import no.sikt.graphql.helpers.resolvers.DataFetcher;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
 
 public abstract class QueryGeneratedResolver implements QueryResolver {

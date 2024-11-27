@@ -8,7 +8,7 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import fake.graphql.example.model.Film;
 import java.util.Arrays;
 import java.util.Objects;
-import no.fellesstudentsystem.graphql.helpers.selection.SelectionSet;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 

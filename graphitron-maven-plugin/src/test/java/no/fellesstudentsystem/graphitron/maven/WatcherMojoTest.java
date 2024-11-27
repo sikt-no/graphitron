@@ -1,6 +1,6 @@
-package no.fellesstudentsystem.graphitron.maven;
+package no.sikt.graphitron.maven;
 
-import no.fellesstudentsystem.graphitron.mojo.WatcherMojo;
+import no.sikt.graphitron.mojo.WatcherMojo;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -20,9 +20,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.fellesstudentsystem.graphitron.maven.TestConfiguration.COMMON_TEST_SCHEMA_NAME;
-import static no.fellesstudentsystem.graphitron.maven.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
-import static no.fellesstudentsystem.graphitron.maven.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
+import static no.sikt.graphitron.maven.TestConfiguration.COMMON_TEST_SCHEMA_NAME;
+import static no.sikt.graphitron.maven.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.maven.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

@@ -1,11 +1,11 @@
-package no.fellesstudentsystem.graphitron.maven;
+package no.sikt.graphitron.maven;
 
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeSpec;
-import no.fellesstudentsystem.graphitron.definitions.fields.AbstractField;
-import no.fellesstudentsystem.graphitron.definitions.interfaces.GenerationTarget;
-import no.fellesstudentsystem.graphitron.generators.abstractions.AbstractClassGenerator;
-import no.fellesstudentsystem.graphql.schema.ProcessedSchema;
+import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 import java.util.stream.Collectors;
