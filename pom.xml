@@ -91,30 +91,24 @@
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>graphql-java</artifactId>
-                <version>21.3</version>
+                <version>22.3</version>
             </dependency>
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>graphql-java-extended-scalars</artifactId>
-                <!-- 19.2 er ikke ute ennå -->
-                <version>19.1</version>
+                <version>22.0</version>
             </dependency>
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>java-dataloader</artifactId>
-                <version>3.2.0</version>
+                <version>3.3.0</version>
             </dependency>
 
             <!-- GraphQL Java Kickstart -->
             <dependency>
                 <groupId>com.graphql-java-kickstart</groupId>
-                <artifactId>graphql-java-servlet</artifactId>
-                <version>16.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.graphql-java-kickstart</groupId>
                 <artifactId>graphql-java-tools</artifactId>
-                <version>13.1.1</version>
+                <version>14.0.0</version>
             </dependency>
 
             <dependency>
