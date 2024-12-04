@@ -29,11 +29,11 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 /**
  * Generates resolvers for queries returning an interface. E.g. the node resolver.
  */
-public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
+public class FetchNodeResolverMethodGenerator extends ResolverMethodGenerator<ObjectField> {
     private final ObjectDefinition localObject;
     private final static String VARIABLE_LOADER = "_loaderName";
 
-    public FetchInterfaceResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+    public FetchNodeResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
         this.localObject = localObject;
     }
@@ -121,7 +121,7 @@ public class FetchInterfaceResolverMethodGenerator extends ResolverMethodGenerat
                 .getFields()
                 .stream()
                 .filter(ObjectField::isGeneratedWithResolver)
-                .filter(it -> processedSchema.isInterface(it.getTypeName()))
+                .filter(it -> processedSchema.isInterface(it.getTypeName()) && it.getTypeName().equals(NODE_TYPE.getName()))
                 .map(this::generate)
                 .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());

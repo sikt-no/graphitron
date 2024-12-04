@@ -1,7 +1,5 @@
 type Query {
-  titled(title: String!): Titled
-
-  film: Film @notGenerated
+  titled: [Titled]
 }
 
 type Film implements Titled @table {

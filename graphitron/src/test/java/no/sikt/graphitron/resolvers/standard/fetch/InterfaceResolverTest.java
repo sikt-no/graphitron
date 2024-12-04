@@ -1,11 +1,11 @@
 package no.sikt.graphitron.resolvers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,17 +13,13 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("Interface resolvers - Resolvers for the interface")
+@DisplayName("Interface resolvers - Resolvers for interfaces other than Node")
 public class InterfaceResolverTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "resolvers/fetch/interfaces";
-    }
-
-    @Override
-    protected Set<SchemaComponent> getComponents() {
-        return makeComponents(NODE); // Node is used for these tests since resolver code should be the same for all interfaces.
+        return "resolvers/fetch/interfaces/standard";
     }
 
     @Override
@@ -32,60 +28,47 @@ public class InterfaceResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("No types implement interface")
+    @Disabled("Disablet inntil A51-371 er på plass")
+    @DisplayName("No implementations")
     void noImplementations() {
-        assertGeneratedContentMatches("noImplementations");
+        assertThatThrownBy(() -> generateFiles("noImplementations")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Field 'titled' returns interface 'Titled' which is not implemented by any types.");
     }
 
     @Test
-    @DisplayName("One type implement interface")
+    @Disabled("Disablet siden validering foreløpig stopper denne")
+    @DisplayName("Returning list")
+    void returningList() {
+        assertGeneratedContentContains("returningList",
+                "...");
+    }
+
+    @Test
+    @Disabled("Disablet inntil A51-371 er på plass")
+    @DisplayName("One implementation")
     void oneImplementation() {
-        assertGeneratedContentMatches("oneImplementation");
+        assertGeneratedContentMatches(
+                "oneImplementation"
+        );
     }
 
     @Test
-    @DisplayName("Many types implement interface")
+    @Disabled("Disablet inntil A51-371 er på plass")
+    @DisplayName("Many implementations")
     void manyImplementations() {
         assertGeneratedContentContains(
                 "manyImplementations",
-                "ADDRESS.getName(), \"Address\"",
-                "CUSTOMER.getName(), \"Customer\"",
-                "FILM.getName(), \"Film\"",
-                "case \"Address\":",
-                "case \"Customer\":",
-                "case \"Film\":",
-                "AddressDBQueries.loadAddressByIdsAsNode(",
-                "CustomerDBQueries.loadCustomerByIdsAsNode(",
-                "FilmDBQueries.loadFilmByIdsAsNode("
+                "QueryDBQueries.titledForQuery("
         );
     }
 
     @Test
-    @DisplayName("Type implements an interface that is not Node")
-    void nonNode() {
-        assertGeneratedContentContains(
-                "nonNode",
-                "CompletableFuture<Titled> titled(String title,",
-                ".getTargetTypeFromEnvironment(env).orElse(null)",
-                "_loaderName = _targetType + \"_titled\"",
-                "case \"Film\":",
-                "FilmDBQueries.loadFilmByTitlesAsTitled("
-        );
-    }
-
-    @Test
-    @DisplayName("Type implements two interfaces")
+    @DisplayName("Type implements interface and Node")
     void doubleInterface() {
         assertGeneratedContentContains(
-                "doubleInterface",
+                "doubleInterface", Set.of(NODE),
                 "FilmDBQueries.loadFilmByIdsAsNode(",
-                "FilmDBQueries.loadFilmByTitlesAsTitled("
+                "QueryDBQueries.titledForQuery("
         );
-    }
-
-    @Test
-    @DisplayName("Implementing type has no path from Query")
-    void withoutPathFromQuery() {
-        assertGeneratedContentContains("withoutPathFromQuery", "CustomerDBQueries.loadCustomerByIdsAsNode(");
     }
 }

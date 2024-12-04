@@ -23,6 +23,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMetho
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
+import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -52,7 +53,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
     }
 
     protected boolean generationCondition(GenerationField target) {
-        if (processedSchema.isInterface(target)) {
+        if (processedSchema.isInterface(target) && target.getTypeName().equals(NODE_TYPE.getName())) {
             return false;
         }
 

@@ -33,7 +33,12 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
 
     protected TypeName getReturnTypeName(ObjectField referenceField) {
         if (!referenceField.hasForwardPagination()) { // TODO: This is actually wrong for cases where a single class is returned!
-            return wrapListIf(processedSchema.getObject(referenceField).getGraphClassName(), referenceField.isIterableWrapped()); // Throws nullpointer if return type is not a schema type.
+            return wrapListIf(
+                    processedSchema.isObject(referenceField)
+                            ? processedSchema.getObject(referenceField).getGraphClassName()
+                            : processedSchema.getInterface(referenceField).getGraphClassName(),
+                    referenceField.isIterableWrapped()
+            ); // Throws nullpointer if return type is not a schema type.
         }
         return processedSchema.getConnectionObject(referenceField).getGraphClassName();
     }

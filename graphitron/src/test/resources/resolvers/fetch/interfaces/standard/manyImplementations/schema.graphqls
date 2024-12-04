@@ -1,0 +1,17 @@
+type Query {
+  titled: Titled
+}
+
+type Film implements Titled @table {
+  id: ID!
+  title: String!
+}
+
+type FilmList implements Titled @table(name: "FILM_LIST") {
+  id: ID!
+  title: String!
+}
+
+interface Titled {
+  title: String!
+}
