@@ -118,39 +118,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return code.build();
     }
 
-    @NotNull
-    private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName, InputParser parser) {
-        var spec = getDefaultSpecBuilder(
-                asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
-                getReturnType(referenceField, refTypeName)
-        );
-        if (!isRoot) {
-            spec.addParameter(getStringSetTypeName(), idParamName);
-        }
-
-        parser.getMethodInputsWithOrderField().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
-
-        if (referenceField.hasForwardPagination()) {
-            spec
-                    .addParameter(INTEGER.className, PAGE_SIZE_NAME)
-                    .addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
-        }
-        return spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
-    }
-
-    @NotNull
-    private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
-        TypeName type = referenceField.hasForwardPagination() ? ParameterizedTypeName.get(PAIR.className, STRING.className, refClassName) : refClassName;
-
-        var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
-
-        if (isRoot && !lookupExists) {
-            return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
-        } else {
-            return wrapMap(STRING.className, wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
-        }
-    }
-
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (!refObject.hasTable()) {

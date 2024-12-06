@@ -6,7 +6,6 @@ import graphql.language.FieldDefinition;
 import graphql.language.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -16,7 +15,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.getStringSetTypeName;
@@ -25,20 +24,21 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indent
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
+import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
  * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
  */
-public class FetchInterfaceImplementationDBMethodGenerator extends FetchDBMethodGenerator {
-    private final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
+public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGenerator {
+    private final Set<ObjectField> objectFieldsReturningNode;
 
-    public FetchInterfaceImplementationDBMethodGenerator(
+    public FetchNodeImplementationDBMethodGenerator(
             ObjectDefinition localObject,
             ProcessedSchema processedSchema,
-            Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField
+            Set<ObjectField> objectFieldsReturningNode
     ) {
         super(localObject, processedSchema);
-        this.interfacesReturnedByObjectField = interfacesReturnedByObjectField;
+        this.objectFieldsReturningNode = objectFieldsReturningNode;
     }
 
     @Override
@@ -46,8 +46,7 @@ public class FetchInterfaceImplementationDBMethodGenerator extends FetchDBMethod
         var implementation = getLocalObject();
         var implementationTableObject = implementation.getTable();
         if (implementationTableObject == null) {
-            var interfaceName = interfacesReturnedByObjectField.containsKey(target) ? interfacesReturnedByObjectField.get(target).getName() : "";
-            throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), interfaceName));
+            throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName()));
         }
 
         var implementationReference = new ObjectField(
@@ -97,12 +96,11 @@ public class FetchInterfaceImplementationDBMethodGenerator extends FetchDBMethod
 
     @Override
     public List<MethodSpec> generateAll() {
-        return interfacesReturnedByObjectField
-                .entrySet()
+        return objectFieldsReturningNode
                 .stream()
-                .filter(entry -> ((ObjectDefinition) getLocalObject()).implementsInterface(entry.getValue().getName()))
-                .sorted(Comparator.comparing(it -> it.getKey().getName()))
-                .map(entry -> generate(entry.getKey()))
+                .filter(entry -> ((ObjectDefinition) getLocalObject()).implementsInterface(NODE_TYPE.getName()))
+                .sorted(Comparator.comparing(it -> it.getName()))
+                .map(this::generate)
                 .collect(Collectors.toList());
     }
 

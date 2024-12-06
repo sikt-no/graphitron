@@ -2,16 +2,15 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import com.squareup.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 
 /**
@@ -20,11 +19,12 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
     public static final String SAVE_DIRECTORY_NAME = "query";
 
-    protected final Map<ObjectField, InterfaceDefinition> interfacesReturnedByObjectField;
+    protected final Set<ObjectField> objectFieldsReturningNode;
 
     public FetchDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
-        interfacesReturnedByObjectField = processedSchema
+
+        objectFieldsReturningNode = processedSchema
                 .getObjects()
                 .values()
                 .stream()
@@ -34,7 +34,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 .flatMap(List::stream)
                 .filter(ObjectField::isGenerated)
                 .filter(processedSchema::isInterface)
-                .collect(Collectors.toMap(Function.identity(), processedSchema::getInterface));
+                .filter(it -> processedSchema.getInterface(it).getName().equals(NODE_TYPE.getName()))
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -44,11 +45,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 .values()
                 .stream()
                 .filter(it -> !it.getName().equals(SCHEMA_MUTATION.getName()))
-                .filter(it -> it.isGeneratedWithResolver() ||
-                                interfacesReturnedByObjectField
-                                        .values()
-                                        .stream()
-                                        .anyMatch(interfaceDefinition -> it.implementsInterface(interfaceDefinition.getName())))
+                .filter(it -> it.isGeneratedWithResolver() || (!objectFieldsReturningNode.isEmpty()))
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs.isEmpty())
                 .collect(Collectors.toList());
@@ -61,7 +58,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 List.of(
                         new FetchMappedObjectDBMethodGenerator(target, processedSchema),
                         new FetchCountDBMethodGenerator(target, processedSchema),
-                        new FetchInterfaceImplementationDBMethodGenerator(target, processedSchema, interfacesReturnedByObjectField)
+                        new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
+                        new FetchMappedInterfaceDBMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

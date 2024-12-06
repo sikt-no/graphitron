@@ -1,6 +1,5 @@
 type Query {
   node(id: ID!): Node
-  named(firstName: String!): Named
 }
 
 interface Named {

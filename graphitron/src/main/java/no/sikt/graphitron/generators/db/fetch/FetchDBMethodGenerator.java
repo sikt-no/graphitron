@@ -1,6 +1,8 @@
 package no.sikt.graphitron.generators.db.fetch;
 
 import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import graphql.language.FieldDefinition;
 import no.sikt.graphitron.definitions.fields.AbstractField;
@@ -14,7 +16,9 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.context.FetchContext;
+import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphql.helpers.queries.LookupHelpers;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
@@ -26,8 +30,10 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
+import static no.sikt.graphitron.generators.codebuilding.ClassNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -837,5 +843,38 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
         return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", actualRefTable, actualRefTable);
+    }
+
+    @NotNull
+    protected MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName, InputParser parser) {
+        var spec = getDefaultSpecBuilder(
+                asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
+                getReturnType(referenceField, refTypeName)
+        );
+        if (!isRoot) {
+            spec.addParameter(getStringSetTypeName(), idParamName);
+        }
+
+        parser.getMethodInputsWithOrderField().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
+
+        if (referenceField.hasForwardPagination()) {
+            spec
+                    .addParameter(INTEGER.className, PAGE_SIZE_NAME)
+                    .addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
+        }
+        return spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
+    }
+
+    @NotNull
+    private TypeName getReturnType(ObjectField referenceField, TypeName refClassName) {
+        TypeName type = referenceField.hasForwardPagination() ? ParameterizedTypeName.get(PAIR.className, STRING.className, refClassName) : refClassName;
+
+        var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
+
+        if (isRoot && !lookupExists) {
+            return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
+        } else {
+            return wrapMap(STRING.className, wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
+        }
     }
 }
