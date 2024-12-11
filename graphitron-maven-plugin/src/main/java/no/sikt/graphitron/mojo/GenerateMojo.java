@@ -42,7 +42,7 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     /**
      * The package where the code should be exported to.
      */
-    @Parameter(property = "generate.outputPackage", defaultValue = "no.fellesstudentsystem.graphql")
+    @Parameter(property = "generate.outputPackage", defaultValue = "no.sikt.graphql")
     private String outputPackage;
 
     /**
