@@ -28,23 +28,6 @@ public class InterfaceResolverTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled("Disablet inntil A51-371 er på plass")
-    @DisplayName("No implementations")
-    void noImplementations() {
-        assertThatThrownBy(() -> generateFiles("noImplementations")).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Field 'titled' returns interface 'Titled' which is not implemented by any types.");
-    }
-
-    @Test
-    @Disabled("Disablet siden validering foreløpig stopper denne")
-    @DisplayName("Returning list")
-    void returningList() {
-        assertGeneratedContentContains("returningList",
-                "...");
-    }
-
-    @Test
-    @Disabled("Disablet inntil A51-371 er på plass")
     @DisplayName("One implementation")
     void oneImplementation() {
         assertGeneratedContentMatches(
@@ -53,11 +36,26 @@ public class InterfaceResolverTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled("Disablet inntil A51-371 er på plass")
+    @DisplayName("No implementations")
+    void noImplementations() {
+        assertGeneratedContentContains("noImplementations",
+                "QueryDBQueries.titledForQuery(");
+    }
+
+    @Test
     @DisplayName("Many implementations")
     void manyImplementations() {
         assertGeneratedContentContains(
                 "manyImplementations",
+                "QueryDBQueries.titledForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("Returning list")
+    void returningList() {
+        assertGeneratedContentContains("returningList",
+                "CompletableFuture<List<Titled>>",
                 "QueryDBQueries.titledForQuery("
         );
     }

@@ -16,7 +16,9 @@ import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphitron.validation.RecordValidator;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import org.jooq.JSON;
 import org.jooq.exception.DataAccessException;
+import org.jooq.tools.json.JSONArray;
 
 /**
  * Enum of all the classnames in use in the generator, which helps keep track of dependencies.
@@ -73,7 +75,8 @@ public enum JavaPoetClassName {
     THROWABLE(ClassName.get(Throwable.class)),
     VALIDATION_VIOLATION_EXCEPTION(ClassName.get(ValidationViolationGraphQLException.class)),
     RECORD_TRANSFORMER(ClassName.get(GeneratorConfig.outputPackage() + "." + TransformerClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, TransformerClassGenerator.FILE_NAME_SUFFIX)),
-    ABSTRACT_TRANSFORMER(ClassName.get(AbstractTransformer.class));
+    ABSTRACT_TRANSFORMER(ClassName.get(AbstractTransformer.class)),
+    JSON_JOOQ(ClassName.get(JSON.class));
 
     public final ClassName className;
 

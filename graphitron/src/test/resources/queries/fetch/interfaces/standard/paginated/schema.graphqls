@@ -1,0 +1,21 @@
+type Query {
+  someInterface(first: Int = 100, after: String): SomeInterfaceConnection
+}
+
+interface SomeInterface {
+  id: ID
+}
+
+type Customer implements SomeInterface @table {
+  id: ID
+}
+
+type SomeInterfaceConnection {
+  edges: [SomeInterfaceConnectionEdge]
+  nodes: [SomeInterface!]!
+}
+
+type SomeInterfaceConnectionEdge {
+  cursor: String
+  node: SomeInterface
+}

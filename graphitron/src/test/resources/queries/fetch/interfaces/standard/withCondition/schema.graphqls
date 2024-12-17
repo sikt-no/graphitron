@@ -1,5 +1,5 @@
 type Query {
-  someInterface: SomeInterface
+  someInterface: [SomeInterface] @condition(condition: {name: "DUMMY_CONDITION"})
 }
 
 interface SomeInterface {

@@ -7,9 +7,9 @@ type Film implements Titled @table {
   title: String!
 }
 
-type FilmList implements Titled @table(name: "FILM_LIST") {
+type Category implements Titled @table {
   id: ID!
-  title: String!
+  title: String! @field(name: "NAME")
 }
 
 interface Titled {

@@ -41,8 +41,8 @@ public class InterfaceTest extends ValidationTest {
 
     @Test
     @DisplayName("Interface query returning a list")
-    void listed() {
-        assertErrorsContain("listed", "Generating fields returning collections/lists of interfaces is not supported. 'nodes' must return only one Node");
+    void listedNode() {
+        assertErrorsContain("listedNode", "Generating fields returning a list of 'Node' is not supported. 'nodes' must return only one Node");
     }
 
     @Test

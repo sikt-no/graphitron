@@ -1,5 +1,5 @@
 type Query {
-  someInterface: SomeInterface
+  someInterface: [SomeInterface]
 }
 
 interface SomeInterface {
@@ -8,4 +8,5 @@ interface SomeInterface {
 
 type Customer implements SomeInterface @table {
   id: ID
+  lastName: String @field(name: "LAST_NAME")
 }

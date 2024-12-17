@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -299,19 +300,54 @@ public class ProcessedDefinitionsValidator {
                     .orElse(typeName);
 
             if (schema.isInterface(name)) {
-                Validate.isTrue(
-                        field.getArguments().size() == 1,
-                        "Only exactly one input field is currently supported for fields returning interfaces. " +
-                                "'%s' has %s input fields", field.getName(), field.getArguments().size()
-                );
-                Validate.isTrue(
-                        !field.isIterableWrapped(),
-                        "Generating fields returning collections/lists of interfaces is not supported. " +
-                                "'%s' must return only one %s", field.getName(), field.getTypeName()
-                );
                 if (!(field.isRootField())) {
                     errorMessages.add(String.format("interface (%s) returned in non root object. This is not fully " +
                             "supported. Use with care", name));
+                }
+
+                if (name.equalsIgnoreCase(NODE_TYPE.getName())) {
+                    Validate.isTrue(
+                            field.getArguments().size() == 1,
+                            "Only exactly one input field is currently supported for fields returning interfaces. " +
+                                    "'%s' has %s input fields", field.getName(), field.getArguments().size()
+                    );
+                    Validate.isTrue(
+                            !field.isIterableWrapped(),
+                            "Generating fields returning a list of '%s' is not supported. " +
+                                    "'%s' must return only one %s", name, field.getName(), field.getTypeName()
+                    );
+                } else {
+                    if (field.hasForwardPagination()) {
+                        errorMessages.add(String.format("Fields returning interfaces is currently only supported for " +
+                                "lists without pagination. Field '%s' returns a connection type.", field.getName()));
+                    }
+
+                    if (field.hasNonReservedInputFields()) {
+                        errorMessages.add(String.format("Input fields on fields returning interfaces is not " +
+                                "currently supported. Field '%s' has one or more input field(s).", field.getName()));
+                    }
+
+                    if (field.hasCondition()) {
+                        errorMessages.add(String.format("Conditions on fields returning interfaces is not " +
+                                "currently supported. Field '%s' has condition.", field.getName()));
+                    }
+
+                    var implementations = schema
+                            .getObjects()
+                            .values()
+                            .stream()
+                            .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
+                            .collect(Collectors.toList());
+
+                    implementations.forEach(it -> {
+                        if (!it.hasTable()) {
+                            errorMessages.add(String.format("Interface '%s' is returned in field '%s', but type '%s' " +
+                                    "implementing '%s' does not have table set. This is not supported.", name, field.getName(), it.getName(), name));
+                        } else if (!tableHasPrimaryKey(it.getTable().getName())) {
+                            errorMessages.add(String.format("Interface '%s' is returned in field '%s', but implementing type '%s' " +
+                                    "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), it.getName(), it.getTable().getName()));
+                        }
+                    });
                 }
             }
         }

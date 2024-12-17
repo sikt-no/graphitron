@@ -93,7 +93,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * @param aliasSet  Set of aliases to be defined.
      * @return Code block which declares all the aliases that will be used in a select query.
      */
-    protected CodeBlock createAliasDeclarations(Set<Alias> aliasSet) {
+    protected static CodeBlock createAliasDeclarations(Set<Alias> aliasSet) {
         var codeBuilder = CodeBlock.builder();
         for (var alias : aliasSet) {
             codeBuilder.add(declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName())));
@@ -149,7 +149,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .build();
     }
 
-    private CodeBlock wrapInField(CodeBlock contents) {
+    protected CodeBlock wrapInField(CodeBlock contents) {
         return CodeBlock.builder()
                 .add("$T.field(", DSL.className)
                 .add(indentIfMultiline(contents))
@@ -844,7 +844,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .build();
     }
 
-    private static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
+    protected static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
         return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", actualRefTable, actualRefTable);
     }
 

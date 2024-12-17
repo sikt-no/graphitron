@@ -1,6 +1,6 @@
 type Query {
   node(id: ID!): Node # Node interface
-  titled(title: String!): Titled
+  titled: Titled
 
   film: Film @notGenerated
 }

@@ -437,6 +437,10 @@ public class TableReflection {
     }
 
     public static boolean tableHasPrimaryKey(String tableName) {
-        return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst().isPresent();
+        return getPrimaryKeyForTable(tableName).isPresent();
+    }
+
+    public static Optional<? extends UniqueKey<?>> getPrimaryKeyForTable(String tableName) {
+        return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst();
     }
 }

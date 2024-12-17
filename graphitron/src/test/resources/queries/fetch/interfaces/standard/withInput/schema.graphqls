@@ -1,5 +1,5 @@
 type Query {
-  someInterface: SomeInterface
+  someInterface(id: ID!): [SomeInterface]
 }
 
 interface SomeInterface {

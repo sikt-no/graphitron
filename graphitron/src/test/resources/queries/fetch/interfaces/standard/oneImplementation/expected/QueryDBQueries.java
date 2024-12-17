@@ -10,6 +10,7 @@ import fake.graphql.example.model.SomeInterface;
 
 import java.lang.RuntimeException;
 import java.lang.String;
+import java.util.List;
 
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
@@ -22,30 +23,33 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
 
-    public static SomeInterface someInterfaceForQuery(DSLContext ctx, SelectionSet select) {
+    public static List<SomeInterface> someInterfaceForQuery(DSLContext ctx, SelectionSet select) {
         var unionKeysQuery = customerSortFieldsForSomeInterface();
+
         var mappedCustomer = customerForSomeInterface();
-        var result = ctx
+
+        return ctx
                 .select(
                         unionKeysQuery.field("$type"),
                         unionKeysQuery.field("$sortFields"),
-                        mappedCustomer.field("$data").as("$dataForCustomer"))
+                        mappedCustomer.field("$data").as("$dataForCustomer")
+                )
                 .from(unionKeysQuery)
                 .leftJoin(mappedCustomer)
                 .on(unionKeysQuery.field("$sortFields", JSON.class).eq(mappedCustomer.field("$sortFields", JSON.class)))
-                .orderBy(unionKeysQuery.field("$sortFields"))
-                .fetchOne();
+                        .orderBy(unionKeysQuery.field("$sortFields"))
+                        .fetch()
+                        .map(
+                                internal_it_ -> {
+                                    switch ((String) internal_it_.get(0)) {
+                                        case "Customer":
+                                            return (SomeInterface) internal_it_.get("$dataForCustomer");
+                                        default:
+                                            throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "SomeInterface", (String) internal_it_.get(0)));
+                                    }
+                                }
 
-        return result == null ? null : result.map(
-                internal_it_ -> {
-                    switch ((String) internal_it_.get(0)) {
-                        case "Customer":
-                            return (SomeInterface) internal_it_.get("$dataForCustomer");
-                        default:
-                            throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "SomeInterface", (String) internal_it_.get(0)));
-                    }
-                }
-        );
+                        );
     }
 
     private static SelectSeekStepN<Record2<String, JSON>> customerSortFieldsForSomeInterface() {
@@ -60,10 +64,15 @@ public class QueryDBQueries {
     private static SelectJoinStep<Record2<JSON, Customer>> customerForSomeInterface() {
         var _customer = CUSTOMER.as("customer_2952383337");
         return DSL.select(
-                        DSL.jsonArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$sortFields"),
-                        DSL.field(
-                                DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
-                        ).as("$data"))
-                .from(_customer);
+                DSL.jsonArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$sortFields"),
+                DSL.field(
+                        DSL.select(
+                                DSL.row(
+                                        _customer.getId(),
+                                        _customer.LAST_NAME
+                                ).mapping(Functions.nullOnAllNull(Customer::new))
+                        )
+                ).as("$data")
+        ).from(_customer);
     }
 }

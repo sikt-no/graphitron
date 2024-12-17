@@ -1,0 +1,19 @@
+type Query {
+  someInterface: [SomeInterface]
+}
+
+interface SomeInterface {
+  id: ID
+}
+
+type Customer implements SomeInterface @table {
+  id: ID
+}
+
+type Address implements SomeInterface @table {
+  id: ID
+}
+
+type City implements SomeInterface @table {
+  id: ID
+}
