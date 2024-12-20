@@ -22,6 +22,7 @@ import no.sikt.graphql.helpers.queries.LookupHelpers;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
+import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -173,27 +174,32 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var rowElements = new ArrayList<CodeBlock>();
 
         var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
-        boolean containsEnum = false;
 
         for (GenerationField field : fieldsWithoutSplitting) {
-            CodeBlock innerRowCode;
-            containsEnum = containsEnum || processedSchema.isEnum(field);
-
-            if (processedSchema.isObject(field)) {
-                var table = processedSchema.getObject(field.getTypeName()).getTable();
-                innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field));
-            }
-            else if (field.hasFieldReferences()) {
-                var fieldContext = context.nextContext(field);
-                referenceFieldSources.put(field.getName(), fieldContext.renderQuerySource(getLocalTable()).toString());
-                innerRowCode = generateCorrelatedSubquery(field, fieldContext);
-            } else {
-                innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
-            }
-            rowElements.add(innerRowCode);
+            var innerRowCodeAndFieldSource = getSelectCodeAndFieldSource(field, context);
+            rowElements.add(innerRowCodeAndFieldSource.getLeft());
+            referenceFieldSources.put(field.getName(), innerRowCodeAndFieldSource.getRight());
         }
 
         return createMapping(context, fieldsWithoutSplitting, referenceFieldSources, rowElements);
+    }
+
+    protected Pair<CodeBlock, String> getSelectCodeAndFieldSource(GenerationField field, FetchContext context) {
+        CodeBlock innerRowCode;
+        String fieldSource = null;
+
+        if (processedSchema.isObject(field)) {
+            var table = processedSchema.getObject(field.getTypeName()).getTable();
+            innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field));
+        }
+        else if (field.hasFieldReferences()) {
+            var fieldContext = context.nextContext(field);
+            fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
+            innerRowCode = generateCorrelatedSubquery(field, fieldContext);
+        } else {
+            innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
+        }
+        return Pair.of(innerRowCode, fieldSource);
     }
 
     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements) {

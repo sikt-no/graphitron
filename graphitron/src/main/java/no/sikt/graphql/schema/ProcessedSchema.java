@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphql.directives.GenerationDirective.DISCRIMINATE;
+import static no.sikt.graphql.directives.GenerationDirective.TABLE;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -90,7 +92,8 @@ public class ProcessedSchema {
 
         interfaces = typeRegistry.getTypes(InterfaceTypeDefinition.class)
                 .stream()
-                .map(InterfaceDefinition::new)
+                .map(it -> it.hasDirective(DISCRIMINATE.getName()) || it.hasDirective(TABLE.getName()) ?
+                         new InterfaceObjectDefinition(it) : new InterfaceDefinition(it))
                 .collect(Collectors.toMap(ObjectSpecification::getName, Function.identity()));
 
         connectionObjects = objectTypes

@@ -25,7 +25,7 @@ public class QueryDBQueries {
     public static SomeInterface someInterfaceForQuery(DSLContext ctx, SelectionSet select) {
         var unionKeysQuery = customerSortFieldsForSomeInterface();
         var mappedCustomer = customerForSomeInterface();
-        var result = ctx
+        var _result = ctx
                 .select(
                         unionKeysQuery.field("$type"),
                         unionKeysQuery.field("$sortFields"),
@@ -36,7 +36,7 @@ public class QueryDBQueries {
                 .orderBy(unionKeysQuery.field("$sortFields"))
                 .fetchOne();
 
-        return result == null ? null : result.map(
+        return _result == null ? null : _result.map(
                 internal_it_ -> {
                     switch ((String) internal_it_.get(0)) {
                         case "Customer":

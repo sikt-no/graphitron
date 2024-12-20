@@ -8,7 +8,7 @@ Can be set on an input field to prevent generation of record mappers.
 directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
-directive @table(name: String) on OBJECT | INPUT_OBJECT
+directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 
 """
 The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ table record field
@@ -136,3 +136,12 @@ input ReferenceElement {
   condition: ExternalCodeReference
 }
 
+directive @discriminate(
+  """Column that should be used to decide which subtype an object belongs to"""
+  on: String!
+) on INTERFACE | UNION
+
+directive @discriminator(
+  """The descriminator value that means an object belongs to this subtype"""
+  value: String!
+) on OBJECT

@@ -5,11 +5,14 @@ import graphql.language.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.TopLevelObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphql.directives.GenerationDirective;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.VALUE;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
@@ -19,9 +22,10 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This is typically the only object type used in table referencing and joining operations.
  */
 public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinition, ObjectField> {
-    private final boolean isRoot, hasResolvers;
+    private final boolean isRoot, hasResolvers, hasDiscriminator;
     private final LinkedHashSet<String> implementsInterfaces;
     private final ObjectTypeDefinition objectTypeDefinition;
+    private final String discriminator;
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
@@ -32,6 +36,8 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
                 .map(it -> ((TypeName) it).getName())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         objectTypeDefinition = objectDefinition;
+        hasDiscriminator = objectDefinition.hasDirective(GenerationDirective.DISCRIMINATOR.getName());
+        discriminator = hasDiscriminator ? getDirectiveArgumentString(objectDefinition, GenerationDirective.DISCRIMINATOR, VALUE) : null;
     }
 
     @Override
@@ -81,5 +87,17 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
      */
     public boolean implementsInterface(String interfaceName) {
         return implementsInterfaces.contains(interfaceName);
+    }
+
+    public LinkedHashSet<String> getImplementedInterfaces() {
+        return implementsInterfaces;
+    }
+
+    public String getDiscriminator() {
+        return discriminator;
+    }
+
+    public boolean hasDiscriminator() {
+        return hasDiscriminator;
     }
 }

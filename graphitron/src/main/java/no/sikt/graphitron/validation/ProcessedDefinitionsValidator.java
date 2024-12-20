@@ -10,10 +10,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
-import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.sikt.graphitron.definitions.objects.EnumDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
+import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.TableReflection;
@@ -32,7 +29,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
+import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -69,7 +67,8 @@ public class ProcessedDefinitionsValidator {
 
         validateTablesAndKeys();
         validateRequiredMethodCalls();
-        validateInterfaces();
+        validateInterfaceDefinitions();
+        validateInterfacesReturnedInFields();
         validateTypesUsingNodeInterface();
         validateInputFields();
         validateExternalMappingReferences();
@@ -127,7 +126,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> TableReflection.tableOrKeyExists(it.getKey()))
                 .forEach(entry -> {
                     var tableName = entry.getKey();
-                    var allFieldNames = TableReflection.getJavaFieldNamesForTable(tableName);
+                    var allFieldNames = getJavaFieldNamesForTable(tableName);
                     var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).collect(Collectors.toList());
                     var missingElements = nonFieldElements
                             .stream()
@@ -291,7 +290,73 @@ public class ProcessedDefinitionsValidator {
                 .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e.getSchemaClassReference())));
     }
 
-    private void validateInterfaces() {
+    private void validateInterfaceDefinitions() {
+        schema.getInterfaces().forEach((name, interfaceDefinition) -> {
+                    var implementations = schema.getObjects()
+                            .values()
+                            .stream()
+                            .filter(it -> it.implementsInterface(schema.getInterface(name).getName())).collect(Collectors.toList());
+                    
+                    if (interfaceDefinition instanceof InterfaceObjectDefinition) {
+                        if (!(interfaceDefinition.hasDiscrimatingField() && interfaceDefinition.hasTable())) {
+                            errorMessages.add(
+                                    String.format("'%s' and '%s' directives on interfaces must be used together. " +
+                                            "Interface '%s' is missing '%s' directive.",
+                                    DISCRIMINATE.getName(), TABLE.getName(), name,
+                                    interfaceDefinition.hasTable() ? DISCRIMINATE.getName() : TABLE.getName()));
+                        } else if (!getJavaFieldNamesForTable(interfaceDefinition.getTable().getName()).contains(interfaceDefinition.getDiscriminatingFieldName())){
+                            errorMessages.add(
+                                    String.format("Interface '%s' has discriminating field set as '%s', but the field " +
+                                                    "does not exist in table '%s'.",
+                                            name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
+                        }
+
+                        implementations.forEach(impl -> {
+                            if (!impl.hasDiscriminator()){
+                                errorMessages.add(
+                                        String.format("Type '%s' is missing '%s' directive in order to implement interface '%s'.",
+                                        impl.getName(), DISCRIMINATOR.getName(), name));
+                            }
+                            if (impl.hasTable() && interfaceDefinition.hasTable() && !impl.getTable().equals(interfaceDefinition.getTable())){
+                                errorMessages.add(
+                                        String.format("Interface '%s' requires implementing types to have table '%s', " +
+                                                        "but type '%s' has table '%s'.",
+                                        name, interfaceDefinition.getTable().getName(), impl.getName(), impl.getTable().getName()));
+                            }
+                        });
+                    };
+                }
+        );
+
+        schema.getObjects().values().stream()
+                .filter(objectDefinition -> !objectDefinition.getImplementedInterfaces().isEmpty() || objectDefinition.hasDiscriminator())
+                .forEach(objectDefinition -> {
+                    var implementedInterfaces = objectDefinition.getImplementedInterfaces();
+
+                    var discriminatingInterfaces = implementedInterfaces.stream()
+                            .filter(it -> !it.equals(NODE_TYPE.getName()))
+                            .filter(it -> schema.getInterface(it).hasDiscrimatingField())
+                            .collect(Collectors.toList());
+
+                    if (discriminatingInterfaces.size() > 1) {
+                        errorMessages.add(
+                                String.format("Type '%s' implements multiple interfaces with a discriminator which is not allowed.", objectDefinition.getName())
+                        );
+                    }
+
+                    if (discriminatingInterfaces.isEmpty() && objectDefinition.hasDiscriminator()) {
+                        errorMessages.add(
+                                String.format("Type '%s' has discriminator, but doesn't implement any interfaces requiring it.", objectDefinition.getName())
+                        );
+                    }
+
+                    for (String anInterface : implementedInterfaces) {
+                        var interfaceDef = schema.getInterface(anInterface);
+                    }
+                });
+    }
+
+    private void validateInterfacesReturnedInFields() {
         for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).collect(Collectors.toList())) {
             var typeName = field.getTypeName();
             var name = Optional
@@ -332,22 +397,19 @@ public class ProcessedDefinitionsValidator {
                                 "currently supported. Field '%s' has condition.", field.getName()));
                     }
 
-                    var implementations = schema
-                            .getObjects()
+                    schema.getObjects()
                             .values()
                             .stream()
                             .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
-                            .collect(Collectors.toList());
-
-                    implementations.forEach(it -> {
-                        if (!it.hasTable()) {
-                            errorMessages.add(String.format("Interface '%s' is returned in field '%s', but type '%s' " +
-                                    "implementing '%s' does not have table set. This is not supported.", name, field.getName(), it.getName(), name));
-                        } else if (!tableHasPrimaryKey(it.getTable().getName())) {
-                            errorMessages.add(String.format("Interface '%s' is returned in field '%s', but implementing type '%s' " +
-                                    "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), it.getName(), it.getTable().getName()));
-                        }
-                    });
+                            .forEach(implementation -> {
+                                if (!implementation.hasTable()) {
+                                    errorMessages.add(String.format("Interface '%s' is returned in field '%s', but type '%s' " +
+                                            "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name));
+                                } else if (!tableHasPrimaryKey(implementation.getTable().getName())) {
+                                    errorMessages.add(String.format("Interface '%s' is returned in field '%s', but implementing type '%s' " +
+                                            "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName()));
+                                }
+                            });
                 }
             }
         }

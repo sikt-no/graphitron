@@ -21,7 +21,9 @@ public enum GenerationDirective {
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.REFERENCES)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE)),
-    ORDER_BY("orderBy");
+    ORDER_BY("orderBy"),
+    DISCRIMINATE("discriminate", EnumSet.of(GenerationDirectiveParam.ON)),
+    DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE));
 
     private final String name;
 

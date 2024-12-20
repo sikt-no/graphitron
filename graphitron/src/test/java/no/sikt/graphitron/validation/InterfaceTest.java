@@ -59,4 +59,62 @@ public class InterfaceTest extends ValidationTest {
     void notAllTypesUsingNodeInterface() {
         assertDoesNotThrow(() -> generateFiles("notAllTypesUsingNodeInterface"));
     }
+
+    @Test
+    @DisplayName("Discriminate directive on interface but not table")
+    void discriminateOnInterfaceButNotTable() {
+        assertErrorsContain("discriminatingInterfaceWithoutTable",
+                "'discriminate' and 'table' directives on interfaces must be used together. " +
+                        "Interface 'Address' is missing 'table' directive.");
+    }
+
+    @Test
+    @DisplayName("Table directive on interface but not discriminate")
+    void tableOnInterfaceButNotDiscriminate() {
+        assertErrorsContain("discriminatingInterfaceWithoutDiscriminate",
+                "'discriminate' and 'table' directives on interfaces must be used together. " +
+                        "Interface 'Address' is missing 'discriminate' directive.");
+    }
+
+    @Test
+    @DisplayName("Column in discriminate directive does not exists in table")
+    void discriminateFieldOnInterfaceDoesNotExist() {
+        assertErrorsContain("discriminateFieldOnInterfaceDoesNotExist",
+                "Interface 'AddressByDistrict' has discriminating field set as 'COLUMN_DOES_NOT_EXIST', but the field does not exist in table 'ADDRESS'.");
+    }
+
+    @Test
+    @DisplayName("Discriminator directive on type, but does not implement any interfaces")
+    void typeWithDiscriminatorDoesNotImplementAnyInterface() {
+        assertErrorsContain("typeWithDiscriminatorDoesNotImplementAnyInterface",
+                "Type 'Address' has discriminator, but doesn't implement any interfaces requiring it.");
+    }
+
+    @Test
+    @DisplayName("Discriminator directive on type, but does not implement any interfaces with discriminate directive")
+    void typeWithDiscriminatorDoesNotImplementDiscriminatingInterface() {
+        assertErrorsContain("typeWithDiscriminatorDoesNotImplementDiscriminatingInterface",
+                "Type 'AddressInDistrictOne' has discriminator, but doesn't implement any interfaces requiring it.");
+    }
+
+    @Test
+    @DisplayName("Discriminator directive on type, but implements multiple discriminating interfaces")
+    void typeWithDiscriminatorImplementsMultipleDiscriminatingInterfaces() {
+        assertErrorsContain("typeWithDiscriminatorImplementsMultipleDiscriminatingInterfaces",
+                "Type 'Address' implements multiple interfaces with a discriminator which is not allowed.");
+    }
+
+    @Test
+    @DisplayName("Type implements discriminating interface but is missing discriminator directive")
+    void typeWithoutDiscriminatorImplementsDiscriminatingInterface() {
+        assertErrorsContain("typeWithoutDiscriminatorImplementsDiscriminatingInterface",
+                "Type 'Address' is missing 'discriminator' directive in order to implement interface 'AddressByDistrict'.");
+    }
+
+    @Test
+    @DisplayName("Discriminating interface has implementing type with different table")
+    void discriminatingInterfaceHasTypeWithDifferentTable() {
+        assertErrorsContain("discriminatingInterfaceHasTypeWithDifferentTable",
+                "Interface 'AddressByDistrict' requires implementing types to have table 'ADDRESS', but type 'Address' has table 'SOME_OTHER_TABLE'.");
+    }
 }

@@ -3,8 +3,10 @@ package no.sikt.graphitron.generators.db.fetch;
 import com.squareup.javapoet.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
+import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.objects.InterfaceObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -28,7 +30,9 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerator {
 
     public static final String UNION_KEYS_QUERY = "unionKeysQuery";
-    public static final String RESULT = "result";
+    public static final String RESULT = "_result";
+    public static final String DISCRIMINATOR = "_discriminator";
+    public static final String DISCRIMINATOR_VALUE = "_discriminatorValue";
     public static final String SORT_FIELDS = "$sortFields";
     public static final String TYPE_FIELD = "$type";
     public static final String DATA_FIELD = "$data";
@@ -44,62 +48,128 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
 
+        var interfaceDefinition = processedSchema.getInterface(target);
+
         var implementations = processedSchema
                 .getObjects()
                 .values()
                 .stream()
-                .filter(it -> it.implementsInterface(processedSchema.getInterface(target).getName()))
+                .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
                 .collect(Collectors.toList());
 
-        var code = CodeBlock.builder();
+        CodeBlock code;
         if (implementations.isEmpty()) {
-            code.add("return null;");
+            code = CodeBlock.of("return null;");
         } else {
-            List<String> sortFieldQueryMethodCalls = new ArrayList<String>();
-            Map<String, String> mappedQueryVariables = new HashMap<>();
-            var joins = CodeBlock.builder();
-            var mappedDeclarationBlock = CodeBlock.builder();
-
-            for (var implementation : implementations) {
-                if (!implementation.hasTable()) {
-                    throw new IllegalArgumentException(String.format("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName()));
-                }
-                String typeName = implementation.getName();
-                sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
-                String mappedVariableName = "mapped" + typeName;
-                mappedQueryVariables.put(typeName, mappedVariableName);
-                mappedDeclarationBlock.add(declare(mappedVariableName, CodeBlock.of("$N()", getMappedMethodName(target, implementation))));
-
-                joins.add("\n.leftJoin($N)\n.on($N.field($S, $T.class).eq($N.field($S, $T.class)))",
-                        mappedVariableName,
-                        UNION_KEYS_QUERY, SORT_FIELDS, JSON_JOOQ.className,
-                        mappedVariableName, SORT_FIELDS, JSON_JOOQ.className);
-
-            }
-
-            var unionQuery = getUnionQuery(sortFieldQueryMethodCalls);
-            var mapping = createMappingForTarget(target, implementations);
-
-            code
-                    .add(declare(UNION_KEYS_QUERY, unionQuery))
-                    .add("\n")
-                    .add(mappedDeclarationBlock.build())
-                    .add("\n")
-                    .add("$L ", target.isIterableWrapped() ? "return" : String.format("var %s =", RESULT))
-                    .indent()
-                    .add("$N.select($L)", VariableNames.CONTEXT_NAME, createSelectBlock(mappedQueryVariables))
-                    .add("\n.from($L)", UNION_KEYS_QUERY)
-                    .add(joins.build())
-                    .add("\n.orderBy($N.field($S))", UNION_KEYS_QUERY, SORT_FIELDS)
-                    .add(target.isIterableWrapped() ? "\n.fetch()\n" : "\n.fetchOne();")
-                    .add(target.isIterableWrapped() ? mapping : empty())
-                    .unindent()
-                    .add(target.isIterableWrapped() ? empty() : mapping);
+            code = interfaceDefinition instanceof InterfaceObjectDefinition ?
+                    getCodeForSingleTableHierarchy(target, implementations)
+                    : getCodeForMultipleTableHierarchy(target, implementations);
         }
 
+        return getSpecBuilder(target, interfaceDefinition.getGraphClassName(), parser)
+                .addCode(code)
+                .build();
+    }
 
-        return getSpecBuilder(target, processedSchema.getInterface(target).getGraphClassName(), parser)
-                .addCode(code.build())
+    private CodeBlock getCodeForSingleTableHierarchy(ObjectField target, List<ObjectDefinition> implementations) {
+        var selectCode = CodeBlock.builder();
+        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var querySource = context.getTargetAlias();
+        var fetchAndMap = fetchAndMapUsingDiscriminator(target, implementations, querySource);
+        selectCode.add(generateSelectRowForSingleTableInterface(context, target, implementations));
+
+        return CodeBlock.builder()
+                .add(createAliasDeclarations(context.getAliasSet()))
+                .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode.build()))
+                .add("\n.from($L)", querySource)
+                .add(getDiscriminatorCondition(target, querySource, implementations))
+                // TODO: input and conditions
+                .add(")\n.orderBy($L)", getPrimaryKeyFieldsBlock(querySource))
+                .add(fetchAndMap)
+                .build();
+    }
+
+    private @NotNull CodeBlock getDiscriminatorCondition(ObjectField target, String querySource, List<ObjectDefinition> implementations) {
+        var condition = CodeBlock.builder()
+                .add("\n.where($L.$L.in(", querySource, processedSchema.getInterface(target).getDiscriminatingFieldName());
+
+        condition.add(
+                CodeBlock.join(
+                        implementations.stream()
+                                .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
+                                .collect(Collectors.toList()),
+                        ", ")
+        );
+
+        return condition.add(")").build();
+    }
+
+    protected CodeBlock generateSelectRowForSingleTableInterface(FetchContext context, ObjectField target, List<ObjectDefinition> implementations) {
+        List<GenerationField> allFields = context
+                .getReferenceObject()
+                .getFields()
+                .stream()
+                .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
+                .collect(Collectors.toList());
+
+        implementations.forEach( impl ->
+                        impl.getFields().stream()
+                                .filter(f -> allFields.stream().map(FieldSpecification::getName).noneMatch(it -> it.equals(f.getName())))
+                                .filter(f -> !(f.isResolver() && (processedSchema.isObject(f))))
+                                .forEach(allFields::add));
+
+        var rowElements = new ArrayList<CodeBlock>();
+        rowElements.add(CodeBlock.builder()
+                        .add(CodeBlock.of("$L.$N", context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatingFieldName()))
+                        .add(".as($S)", DISCRIMINATOR).build());
+
+        for (var field : allFields) {
+            rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, context).getLeft(), field.getName()));
+        }
+        return CodeBlock.join(rowElements, ",\n");
+    }
+
+    private CodeBlock getCodeForMultipleTableHierarchy(ObjectField target, List<ObjectDefinition> implementations) {
+        List<String> sortFieldQueryMethodCalls = new ArrayList<String>();
+        Map<String, String> mappedQueryVariables = new HashMap<>();
+        var joins = CodeBlock.builder();
+        var mappedDeclarationBlock = CodeBlock.builder();
+
+        for (var implementation : implementations) {
+            if (!implementation.hasTable()) {
+                throw new IllegalArgumentException(String.format("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName()));
+            }
+            String typeName = implementation.getName();
+            sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
+            String mappedVariableName = "mapped" + typeName;
+            mappedQueryVariables.put(typeName, mappedVariableName);
+            mappedDeclarationBlock.add(declare(mappedVariableName, CodeBlock.of("$N()", getMappedMethodName(target, implementation))));
+
+            joins.add("\n.leftJoin($N)\n.on($N.field($S, $T.class).eq($N.field($S, $T.class)))",
+                    mappedVariableName,
+                    UNION_KEYS_QUERY, SORT_FIELDS, JSON_JOOQ.className,
+                    mappedVariableName, SORT_FIELDS, JSON_JOOQ.className);
+
+        }
+
+        var unionQuery = getUnionQuery(sortFieldQueryMethodCalls);
+        var mapping = createMappingForTarget(target, implementations);
+
+        return CodeBlock.builder()
+                .add(declare(UNION_KEYS_QUERY, unionQuery))
+                .add("\n")
+                .add(mappedDeclarationBlock.build())
+                .add("\n")
+                .add("$L ", target.isIterableWrapped() ? "return" : String.format("var %s =", RESULT))
+                .indent()
+                .add("$N.select($L)", VariableNames.CONTEXT_NAME, createSelectBlock(mappedQueryVariables))
+                .add("\n.from($L)", UNION_KEYS_QUERY)
+                .add(joins.build())
+                .add("\n.orderBy($N.field($S))", UNION_KEYS_QUERY, SORT_FIELDS)
+                .add(target.isIterableWrapped() ? "\n.fetch()\n" : "\n.fetchOne();")
+                .add(target.isIterableWrapped() ? mapping : empty())
+                .unindent()
+                .add(target.isIterableWrapped() ? empty() : mapping)
                 .build();
     }
 
@@ -121,6 +191,40 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
         );
 
         return code.unindent().build();
+    }
+
+    private CodeBlock fetchAndMapUsingDiscriminator(ObjectField target, List<ObjectDefinition> implementations, String querySource) {
+        var interfaceDefinition = processedSchema.getInterface(target);
+
+        var mapping = CodeBlock.builder()
+                .indent()
+                .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
+                .add(declare(DISCRIMINATOR_VALUE, CodeBlock.of("$N.get($S, $L.$L.getConverter())", VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatingFieldName())))
+                .beginControlFlow("switch ($N)", DISCRIMINATOR_VALUE
+                        );
+
+        for (var implementation : implementations) {
+            mapping.add("case $S:\n", implementation.getDiscriminator())
+                    .indent()
+                    .add("return $N.into($T.class);\n", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName())
+                    .unindent();
+        }
+        mapping.add("default:\n")
+                .indent()
+                .add("throw new $T($T.format($S, \"$T\", $N));\n",
+                        RuntimeException.class,
+                        String.class,
+                        "Querying interface '%s' returned row with unexpected discriminator value '%s'",
+                        interfaceDefinition.getGraphClassName(),
+                        DISCRIMINATOR_VALUE)
+                .unindent();
+
+        var code = CodeBlock.builder();
+        code.add("\n.$L(\n$L\n);", target.isIterableWrapped() ? "fetch" : "fetchOne", mapping.endControlFlow()
+                .endControlFlow()
+                .unindent()
+                .build());
+        return code.build();
     }
 
     private CodeBlock createMappingForTarget(ObjectField target, List<ObjectDefinition> implementations) {
@@ -163,7 +267,7 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
                 .build();
     }
 
-    public List<MethodSpec> generateWithSubSelectMethods(ObjectField target) {
+    public List<MethodSpec> generateWithSubselectMethods(ObjectField target) {
         var methods = new ArrayList<MethodSpec>();
         methods.add(generate(target));
 
@@ -172,6 +276,7 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
                 .values()
                 .stream()
                 .filter(it -> it.implementsInterface(processedSchema.getInterface(target).getName()))
+                .filter(it -> !processedSchema.getInterface(target).hasTable())
                 .forEach(implementation -> {
                     methods.add(
                             MethodSpec
@@ -287,7 +392,7 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
-                .flatMap(it -> generateWithSubSelectMethods(it).stream())
+                .flatMap(it -> generateWithSubselectMethods(it).stream())
                 .filter(it -> !it.code.isEmpty())
                 .collect(Collectors.toList());
     }

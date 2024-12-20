@@ -25,7 +25,9 @@ public enum GenerationDirectiveParam {
     CLASS_NAME("className"),
     CODE("code"),
     MATCHES("matches"),
-    DESCRIPTION("description");
+    DESCRIPTION("description"),
+    ON("on"),
+    VALUE("value");
 
     private final String name;
 
