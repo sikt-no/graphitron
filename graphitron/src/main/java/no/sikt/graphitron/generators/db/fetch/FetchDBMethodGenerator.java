@@ -12,6 +12,7 @@ import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.objects.InterfaceObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
@@ -441,14 +442,31 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         boolean hasWhere = false;
         var code = CodeBlock.builder();
 
+        if (context.getReferenceObject() instanceof InterfaceObjectDefinition) {
+            code.add(".where($L.$L.in(", context.renderQuerySource(getLocalTable()), processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatingFieldName());
+
+            code.add(
+                        CodeBlock.join(
+                                processedSchema
+                                        .getObjects()
+                                        .values()
+                                        .stream()
+                                        .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
+                                        .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
+                                        .collect(Collectors.toList()),
+                                ", ")
+                );
+
+            code.add("))\n");
+            hasWhere = true;
+        }
+
         if (!isRoot && !idParamName.isEmpty()) {
             code.add(".where($L.hasIds($N))\n", context.renderQuerySource(getLocalTable()), idParamName);
             hasWhere = true;
         }
         if (((ObjectField) context.getReferenceObjectField()).hasNonReservedInputFields() && !isResolverRoot) {
             code.add(createWhere(context, hasWhere));
-        } else if (isRoot) {
-            return empty();
         }
         return code.build();
     }

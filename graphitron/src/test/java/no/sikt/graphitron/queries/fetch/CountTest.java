@@ -42,4 +42,10 @@ public class CountTest extends GeneratorTest {
     void withOtherField() {
         assertGeneratedContentContains("withOtherField", ", String email)", ".where(_customer.EMAIL.eq(email)");
     }
+
+    @Test
+    @DisplayName("Connection on interface with discriminator (in same table)")
+    void discriminatingInterface() {
+        assertGeneratedContentMatches("discriminatingInterface");
+    }
 }

@@ -83,7 +83,6 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         return ((ObjectDefinition) getLocalObject())
                 .getFields()
                 .stream()
-                .filter(it -> !processedSchema.isInterface(it))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(ObjectField::hasRequiredPaginationFields)
                 .filter(it -> !it.hasServiceReference())

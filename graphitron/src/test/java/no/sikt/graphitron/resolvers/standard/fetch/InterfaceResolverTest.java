@@ -69,4 +69,12 @@ public class InterfaceResolverTest extends GeneratorTest {
                 "QueryDBQueries.titledForQuery("
         );
     }
+
+    @Test
+    @DisplayName("Paginated")
+    void paginated() {
+        assertGeneratedContentMatches(
+                "paginated"
+        );
+    }
 }

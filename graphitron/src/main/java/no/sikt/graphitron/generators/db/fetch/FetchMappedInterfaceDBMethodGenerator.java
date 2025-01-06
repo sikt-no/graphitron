@@ -21,9 +21,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.JSON_JOOQ;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
@@ -33,6 +33,7 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
     public static final String RESULT = "_result";
     public static final String DISCRIMINATOR = "_discriminator";
     public static final String DISCRIMINATOR_VALUE = "_discriminatorValue";
+    public static final String TOKEN = "_token";
     public static final String SORT_FIELDS = "$sortFields";
     public static final String TYPE_FIELD = "$type";
     public static final String DATA_FIELD = "$data";
@@ -72,36 +73,27 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
     }
 
     private CodeBlock getCodeForSingleTableHierarchy(ObjectField target, List<ObjectDefinition> implementations) {
-        var selectCode = CodeBlock.builder();
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var selectCode = generateSelectRowForSingleTableInterface(context, target, implementations);
         var querySource = context.getTargetAlias();
+        var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
         var fetchAndMap = fetchAndMapUsingDiscriminator(target, implementations, querySource);
-        selectCode.add(generateSelectRowForSingleTableInterface(context, target, implementations));
+
+        Optional<CodeBlock> maybeOrderFields = maybeCreateOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());
 
         return CodeBlock.builder()
                 .add(createAliasDeclarations(context.getAliasSet()))
-                .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode.build()))
+                .add(maybeOrderFields.orElse(empty()))
+                .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode))
                 .add("\n.from($L)", querySource)
-                .add(getDiscriminatorCondition(target, querySource, implementations))
+                .add(whereBlock)
                 // TODO: input and conditions
-                .add(")\n.orderBy($L)", getPrimaryKeyFieldsBlock(querySource))
+                .add(maybeOrderFields
+                        .map(it -> CodeBlock.of("\n.orderBy($L)", ORDER_FIELDS_NAME))
+                        .orElse(empty()))
+                .add(target.hasForwardPagination() ? createSeekAndLimitBlock() : empty())
                 .add(fetchAndMap)
                 .build();
-    }
-
-    private @NotNull CodeBlock getDiscriminatorCondition(ObjectField target, String querySource, List<ObjectDefinition> implementations) {
-        var condition = CodeBlock.builder()
-                .add("\n.where($L.$L.in(", querySource, processedSchema.getInterface(target).getDiscriminatingFieldName());
-
-        condition.add(
-                CodeBlock.join(
-                        implementations.stream()
-                                .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
-                                .collect(Collectors.toList()),
-                        ", ")
-        );
-
-        return condition.add(")").build();
     }
 
     protected CodeBlock generateSelectRowForSingleTableInterface(FetchContext context, ObjectField target, List<ObjectDefinition> implementations) {
@@ -122,6 +114,11 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
         rowElements.add(CodeBlock.builder()
                         .add(CodeBlock.of("$L.$N", context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatingFieldName()))
                         .add(".as($S)", DISCRIMINATOR).build());
+
+        if (target.hasForwardPagination()) {
+            rowElements.add(CodeBlock.of("$T.getOrderByToken($L, $L).as($S)",
+                    QUERY_HELPER.className, context.getTargetAlias(), ORDER_FIELDS_NAME, TOKEN));
+        }
 
         for (var field : allFields) {
             rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, context).getLeft(), field.getName()));
@@ -199,14 +196,18 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
         var mapping = CodeBlock.builder()
                 .indent()
                 .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
-                .add(declare(DISCRIMINATOR_VALUE, CodeBlock.of("$N.get($S, $L.$L.getConverter())", VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatingFieldName())))
+                .add(declare(DISCRIMINATOR_VALUE,
+                        CodeBlock.of("$N.get($S, $L.$L.getConverter())",
+                                VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatingFieldName())))
                 .beginControlFlow("switch ($N)", DISCRIMINATOR_VALUE
                         );
 
         for (var implementation : implementations) {
             mapping.add("case $S:\n", implementation.getDiscriminator())
                     .indent()
-                    .add("return $N.into($T.class);\n", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName())
+                    .add("return ")
+                    .add(target.hasForwardPagination() ? CodeBlock.of("$T.of($N.get($S, $T.class), ", PAIR.className, VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className) : empty())
+                    .add("$N.into($T.class)$L;\n", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName(), target.hasForwardPagination() ? ")" : "")
                     .unindent();
         }
         mapping.add("default:\n")
@@ -217,14 +218,14 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
                         "Querying interface '%s' returned row with unexpected discriminator value '%s'",
                         interfaceDefinition.getGraphClassName(),
                         DISCRIMINATOR_VALUE)
+                .unindent()
+                .endControlFlow()
+                .endControlFlow()
                 .unindent();
 
-        var code = CodeBlock.builder();
-        code.add("\n.$L(\n$L\n);", target.isIterableWrapped() ? "fetch" : "fetchOne", mapping.endControlFlow()
-                .endControlFlow()
-                .unindent()
-                .build());
-        return code.build();
+        return CodeBlock.of("\n.$L(\n$L\n);",
+                target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
+                mapping.build());
     }
 
     private CodeBlock createMappingForTarget(ObjectField target, List<ObjectDefinition> implementations) {

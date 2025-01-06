@@ -3,8 +3,6 @@ package no.sikt.graphitron.queries.fetch;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 public class InterfaceSingleTableTest extends InterfaceTest {
     @Override
     protected String getSubpath() {
@@ -28,5 +26,11 @@ public class InterfaceSingleTableTest extends InterfaceTest {
     @DisplayName("Nested")
     void nested() {
         assertGeneratedContentMatches("nested");
+    }
+
+    @Test
+    @DisplayName("Paginated")
+    void paginated() {
+        assertGeneratedContentMatches("paginated");
     }
 }

@@ -16,6 +16,7 @@ public class QueryDBQueries {
 
     public static Address addressForQuery(DSLContext ctx, SelectionSet select) {
         var _address = ADDRESS.as("address_2030472956");
+        var orderFields = _address.fields(_address.getPrimaryKey().getFieldsArray());
         return ctx.select(
                         _address.DISTRICT.as("_discriminator"),
                         _address.POSTAL_CODE.as("postalCode"),
@@ -24,7 +25,7 @@ public class QueryDBQueries {
                 )
                 .from(_address)
                 .where(_address.DISTRICT.in("ONE", "TWO"))
-                .orderBy(_address.fields(_address.getPrimaryKey().getFieldsArray()))
+                .orderBy(orderFields)
                 .fetchOne(
                         internal_it_ -> {
                             var _discriminatorValue = internal_it_.get("_discriminator", _address.DISTRICT.getConverter());

@@ -117,8 +117,9 @@ public class InterfaceMultipleTablesTest extends InterfaceTest {
     void paginated() {
         assertThatThrownBy(() -> generateFiles("paginated"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Fields returning interfaces is currently only supported for " +
-                        "lists without pagination. Field 'someInterface' returns a connection type.");
+                .hasMessageContaining("Fields returning paginated list of interfaces is currently only " +
+                        "supported for interfaces with discriminator. Field 'someInterface' returns a connection type " +
+                        "for interface 'SomeInterfaceConnection', which does not have a discriminator.");
     }
 
     @Test
