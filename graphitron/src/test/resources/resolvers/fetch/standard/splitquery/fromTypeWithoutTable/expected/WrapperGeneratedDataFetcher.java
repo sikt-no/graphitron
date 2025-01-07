@@ -1,0 +1,17 @@
+package fake.code.generated.resolvers.query;
+
+import fake.code.generated.queries.query.WrapperDBQueries;
+import fake.graphql.example.model.CustomerTable;
+import fake.graphql.example.model.Wrapper;
+import graphql.schema.DataFetcher;
+import java.util.concurrent.CompletableFuture;
+import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
+
+public class WrapperGeneratedDataFetcher {
+    public static DataFetcher<CompletableFuture<CustomerTable>> customer() {
+        return env -> {
+            var wrapper = ((Wrapper) env.getSource());
+            return new DataFetcherHelper(env).load("customerForWrapper", wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, ids, selectionSet));
+        };
+    }
+}

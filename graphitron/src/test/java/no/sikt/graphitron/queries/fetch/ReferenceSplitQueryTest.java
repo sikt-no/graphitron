@@ -8,7 +8,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_CUSTOMER_CONDITION;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_FILM_CONDITION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NOT_GENERATED;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Fetch queries - Fetching through referenced tables with splitQuery-directive")
 public class ReferenceSplitQueryTest extends ReferenceTest {

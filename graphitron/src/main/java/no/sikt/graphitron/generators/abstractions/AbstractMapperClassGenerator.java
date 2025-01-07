@@ -21,7 +21,7 @@ public abstract class AbstractMapperClassGenerator<T extends GenerationField> ex
         return processedSchema
                 .getTransformableFields()
                 .stream()
-                .filter(this::filterHasTableAndRecordProperties)
+                .filter(this::filterProperties)
                 .map(it -> (T) it)
                 .map(this::generate)
                 .filter(this::typeSpecFilter)
@@ -32,7 +32,7 @@ public abstract class AbstractMapperClassGenerator<T extends GenerationField> ex
         return !spec.methodSpecs().isEmpty();
     }
 
-    protected abstract boolean filterHasTableAndRecordProperties(GenerationField field);
+    protected abstract boolean filterProperties(GenerationField field);
 
     @Override
     public String getDefaultSaveDirectoryName() {

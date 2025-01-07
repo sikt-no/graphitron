@@ -13,7 +13,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 public class TypeNameFormat {
     private static final ParameterizedTypeName
             STRING_SET = ParameterizedTypeName.get(SET.className, STRING.className),
-            STRING_OBJECT_MAP = ParameterizedTypeName.get(MAP.className, STRING.className, ClassName.get("java.lang", "Object"));
+            STRING_OBJECT_MAP = ParameterizedTypeName.get(MAP.className, STRING.className, OBJECT.className);
 
     /**
      * @return The type wrapped in a List ParameterizedTypeName, if the boolean condition is true.
@@ -55,6 +55,13 @@ public class TypeNameFormat {
      */
     public static ParameterizedTypeName wrapFuture(TypeName type) {
         return ParameterizedTypeName.get(COMPLETABLE_FUTURE.className, type);
+    }
+
+    /**
+     * @return The type wrapped in a DataFetcher ParameterizedTypeName.
+     */
+    public static ParameterizedTypeName wrapFetcher(TypeName type) {
+        return ParameterizedTypeName.get(DATA_FETCHER.className, type);
     }
 
     /**

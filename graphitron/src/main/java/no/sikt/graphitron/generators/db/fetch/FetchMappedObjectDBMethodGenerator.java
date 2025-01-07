@@ -5,11 +5,11 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.directives.GenerationDirective;
-import no.sikt.graphql.helpers.queries.LookupHelpers;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -22,6 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indent
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
 /**
  * Generator that creates the default data fetching methods
@@ -77,7 +78,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(target.hasForwardPagination() && !target.isResolver()
                         ? createSeekAndLimitBlock()
                         : empty())
-                .add(setFetch(target));
+                .add(setFetch(target))
+                .unindent()
+                .unindent();
 
         var parser = new InputParser(target, processedSchema);
         return getSpecBuilder(target, context.getReferenceObject().getGraphClassName(), parser)
@@ -140,7 +143,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 code.addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
             }
         }
-        return code.unindent().unindent().build();
+        return code.build();
     }
 
     private CodeBlock getPaginationFetchBlock() {
@@ -158,7 +161,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .unindent()
                     .addStatement(")");
         }
-        return code.unindent().unindent().build();
+        return code.build();
     }
 
     @Override
@@ -167,6 +170,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isInterface(it))
+                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)

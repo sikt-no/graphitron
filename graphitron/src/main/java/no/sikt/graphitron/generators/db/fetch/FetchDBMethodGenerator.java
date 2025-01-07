@@ -16,10 +16,10 @@ import no.sikt.graphitron.definitions.objects.InterfaceObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
+import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.TableReflection;
-import no.sikt.graphql.helpers.queries.LookupHelpers;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
@@ -52,19 +52,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
-    }
-
-    /**
-     * @param joinList  List of join statements that should have their aliases defined.
-     * @return Code block which declares all the aliases that will be used in a select query.
-     */
-    protected CodeBlock createSelectAliases(Set<SQLJoinStatement> joinList) {
-        var codeBuilder = CodeBlock.builder();
-        for (var join : joinList) {
-            var alias = join.getJoinAlias();
-            codeBuilder.add(declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName())));
-        }
-        return codeBuilder.build();
     }
 
     /**
@@ -114,7 +101,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : empty());
 
         if (context.getReferenceObject() == null) {
-            select.add((processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context));
+            select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
         } else {
             select.add(generateSelectRow(context));
         }
@@ -123,9 +110,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
-                .add("$T.select(", DSL.className)
-                .add(indentIfMultiline(select.build()))
-                .add(")\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
+                .add("$T.select($L)", DSL.className, indentIfMultiline(select.build()))
+                .add("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
@@ -138,9 +124,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
         if (hasOrderByToken) {
-            return CodeBlock.of("DSL.row($L).mapping(a0 -> a0.map($T::value2))", indentIfMultiline(wrapInMultiset(contents)), RECORD2.className);
+            return CodeBlock.of("$T.row($L).mapping(a0 -> a0.map($T::value2))", DSL.className, indentIfMultiline(wrapInMultiset(contents)), RECORD2.className);
         }
-        return CodeBlock.of("DSL.row($L).mapping(a0 -> a0.map($T::value1))", indentIfMultiline(wrapInMultiset(contents)), RECORD1.className);
+        return CodeBlock.of("$T.row($L).mapping(a0 -> a0.map($T::value1))", DSL.className, indentIfMultiline(wrapInMultiset(contents)), RECORD1.className);
     }
 
     private CodeBlock wrapInMultiset(CodeBlock contents) {
@@ -405,34 +391,27 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * Generate a single argument in the row method call.
      */
-    private CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
+    protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.renderQuerySource(getLocalTable());
         if (field.isID()) {
             return CodeBlock.of("$L$L", renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
-        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), false, processedSchema));
+        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), processedSchema));
         return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
     /**
      * Generate select row for each object within the union field
      */
-    private CodeBlock generateForUnionField(GenerationField field, FetchContext context) {
-        var codeBlock = CodeBlock.builder();
-        var unionField = processedSchema.getUnion(field.getTypeName());
-
-        var counter = 0;
-        for(var fieldObject : unionField.getFieldTypeNames()) {
-            var object = processedSchema.getObject(fieldObject);
-            var objectField = new VirtualSourceField(object, object.getName());
-            codeBlock.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
-            if (counter + 1 < unionField.getFieldTypeNames().size()) {
-                codeBlock.add(",\n");
-            }
-            counter++;
+    protected CodeBlock generateForUnionField(GenerationField field, FetchContext context) {
+        var union = processedSchema.getUnion(field).getFieldTypeNames();
+        var code = new ArrayList<CodeBlock>();
+        for (var fieldObject : union) {
+            var objectField = new VirtualSourceField(processedSchema.getObject(fieldObject), fieldObject);
+            code.add(generateSelectRow(context.nextContext(objectField).withShouldUseOptional(false)));
         }
-        return codeBlock.build();
+        return CodeBlock.join(code, ",\n");
     }
 
     /**
@@ -479,11 +458,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var inputsWithRecord = flatInputs
                 .stream()
                 .filter(it -> processedSchema.hasRecord(it.getInput()))
-                .collect(Collectors.toList());
+                .toList();
         var inputsWithoutRecord = flatInputs
                 .stream()
                 .filter(it -> !processedSchema.hasRecord(it.getInput()))
-                .collect(Collectors.toList());
+                .toList();
 
         for (var inputCondition : inputsWithoutRecord) {
             var field = inputCondition.getInput();
@@ -506,7 +485,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 } else {
                     codeBlockBuilder
                             .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(
-                                    field.getTypeName(), field.isIterableWrapped(), processedSchema))
+                                    field.getTypeName(), processedSchema))
                             .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
                 }
 
@@ -533,9 +512,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         for (var conditionTuple : inputConditions.getConditionTuples()) {
             if (inputConditions.getConditionTuples()
-                               .stream()
-                               .anyMatch(it -> conditionTuple.getPath().startsWith(it.getPath())
-                                               && conditionTuple.getPath().length() > it.getPath().length())) {
+                    .stream()
+                    .anyMatch(it -> conditionTuple.getPath().startsWith(it.getPath())
+                            && conditionTuple.getPath().length() > it.getPath().length())) {
                 continue;
             }
 
@@ -581,9 +560,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var enumConverter = toGraphEnumConverter(
                 condition.getInput().getTypeName(),
                 nameWithPath,
-                condition.getInput().isIterableWrapped(),
                 true,
-                processedSchema);
+                processedSchema
+        );
 
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
@@ -609,7 +588,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                             .getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
 
             if (!field.hasOverridingCondition() && !condition.isOverriddenByAncestors()) {
-                var enumHandling = toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), processedSchema);
+                var enumHandling = toJOOQEnumConverter(field.getTypeName(), processedSchema);
                 var tupleBlock = CodeBlock.builder().add(fieldSequence);
 
                 if (field.isID()) {
@@ -728,7 +707,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                                 .getFields()
                                 .stream()
                                 .map(inputCondition::iterate)
-                                .collect(Collectors.toList())
+                                .toList()
                 );
             }
 
@@ -775,8 +754,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var recordConditions = entry
                     .getValue()
                     .stream()
-                    .filter(c -> c.hasRecord())
-                    .collect(Collectors.toList());
+                    .filter(InputCondition::hasRecord)
+                    .toList();
             var conditions = entry
                     .getValue()
                     .stream()
@@ -789,7 +768,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                             .stream()
                             .noneMatch(c2 -> !c1.getNamePath().equals(c2.getNamePath()) &&
                                              c1.getNamePath().startsWith(c2.getNamePath())))
-                    .collect(Collectors.toList());
+                    .toList();
 
             conditionTuples
                     .stream()

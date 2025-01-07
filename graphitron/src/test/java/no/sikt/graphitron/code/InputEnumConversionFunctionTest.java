@@ -13,26 +13,20 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.toJOOQ
 
 @DisplayName("Query input enums - Enum conversion for queries")
 public class InputEnumConversionFunctionTest extends CodeBlockTest {
-    public static final String EXPECTED_JOOQ = ".convert(fake.graphql.example.model.DummyEnumConverted.class," +
-            " s -> s == null ? null : java.util.Map.ofEntries(" +
-            "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A), " +
-            "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B), " +
-            "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C)" +
-            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.ofEntries(" +
-            "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A), " +
-            "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B), " +
-            "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.C, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C)" +
-            ").getOrDefault(s, null))";
+    public static final String EXPECTED_JOOQ = ".convert(fake.graphql.example.model.DummyEnumConverted.class, " +
+            "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
+            "java.util.List.of(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C), " +
+            "java.util.List.of(fake.graphql.example.model.DummyEnumConverted.A, fake.graphql.example.model.DummyEnumConverted.B, fake.graphql.example.model.DummyEnumConverted.C))," +
+            "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
+            "java.util.List.of(fake.graphql.example.model.DummyEnumConverted.A, fake.graphql.example.model.DummyEnumConverted.B, fake.graphql.example.model.DummyEnumConverted.C), " +
+            "java.util.List.of(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C)))";
     public static final String EXPECTED_STRING = ".convert(fake.graphql.example.model.DummyEnum.class," +
-            " s -> s == null ? null : java.util.Map.ofEntries(" +
-            "java.util.Map.entry(\"A\", fake.graphql.example.model.DummyEnum.A), " +
-            "java.util.Map.entry(\"B\", fake.graphql.example.model.DummyEnum.B), " +
-            "java.util.Map.entry(\"C\", fake.graphql.example.model.DummyEnum.C)" +
-            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.ofEntries(" +
-            "java.util.Map.entry(fake.graphql.example.model.DummyEnum.A, \"A\"), " +
-            "java.util.Map.entry(fake.graphql.example.model.DummyEnum.B, \"B\"), " +
-            "java.util.Map.entry(fake.graphql.example.model.DummyEnum.C, \"C\")" +
-            ").getOrDefault(s, null))";
+            "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
+            "java.util.List.of(\"A\", \"B\", \"C\"), " +
+            "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C))," +
+            "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
+            "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C), " +
+            "java.util.List.of(\"A\", \"B\", \"C\")))";
 
     @Override
     protected String getSubpath() {
@@ -53,7 +47,7 @@ public class InputEnumConversionFunctionTest extends CodeBlockTest {
             return empty();
         }
 
-        return toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), schema);
+        return toJOOQEnumConverter(field.getTypeName(), schema);
     }
 
     @Test

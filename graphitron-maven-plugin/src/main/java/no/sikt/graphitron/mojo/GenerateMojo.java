@@ -6,6 +6,8 @@ import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
+import no.sikt.graphitron.generate.Generator;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;

@@ -6,10 +6,10 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM_CONVERTED;
 import static no.sikt.graphitron.code.InputEnumConversionFunctionTest.EXPECTED_JOOQ;
 import static no.sikt.graphitron.code.InputEnumConversionFunctionTest.EXPECTED_STRING;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM_CONVERTED;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.toJOOQEnumConverter;
 
@@ -34,7 +34,7 @@ public class OutputEnumConversionFunctionTest extends CodeBlockTest {
             return empty();
         }
 
-        return toJOOQEnumConverter(field.getTypeName(), field.isIterableWrapped(), schema);
+        return toJOOQEnumConverter(field.getTypeName(), schema);
     }
 
     @Test

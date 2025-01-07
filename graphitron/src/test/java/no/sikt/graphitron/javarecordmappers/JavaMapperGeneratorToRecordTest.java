@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -64,8 +64,8 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
                 "inner = itAddress.getInner();" +
-                        "if (inner != null && arguments.contains(pathHere + \"inner\")) {" +
-                        "    if (arguments.contains(pathHere + \"inner/postalCode\")) {" +
+                        "if (inner != null && _args.contains(pathHere + \"inner\")) {" +
+                        "    if (_args.contains(pathHere + \"inner/postalCode\")) {" +
                         "        mapperAddressJavaRecord.setPostalCode(inner.getPostalCode());"
         );
     }
@@ -75,10 +75,10 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     void containingDoubleNonRecordWrapper() {
         assertGeneratedContentContains(
                 "containingDoubleNonRecordWrapper",
-                        "if (inner0 != null && arguments.contains(pathHere + \"inner0\")) {" +
+                        "if (inner0 != null && _args.contains(pathHere + \"inner0\")) {" +
                         "    var inner1 = inner0.getInner1();" +
-                        "    if (inner1 != null && arguments.contains(pathHere + \"inner0/inner1\")) {" +
-                        "        if (arguments.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "    if (inner1 != null && _args.contains(pathHere + \"inner0/inner1\")) {" +
+                        "        if (_args.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
                         "            mapperAddressJavaRecord.setPostalCode(inner1.getPostalCode());"
         );
     }
@@ -90,10 +90,10 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "nestingWithDuplicateFieldName",
                 "inner = itAddress.getInner();" +
-                        "if (inner != null && arguments.contains(pathHere + \"inner\")) {" +
+                        "if (inner != null && _args.contains(pathHere + \"inner\")) {" +
                         "    var inner = inner.getInner();" +
-                        "    if (inner != null && arguments.contains(pathHere + \"inner/inner\")) {" +
-                        "        if (arguments.contains(pathHere + \"inner/inner/postalCode\")) {" +
+                        "    if (inner != null && _args.contains(pathHere + \"inner/inner\")) {" +
+                        "        if (_args.contains(pathHere + \"inner/inner/postalCode\")) {" +
                         "            mapperAddressJavaRecord.setPostalCode(inner.getPostalCode()"
         );
     }
@@ -142,7 +142,7 @@ public class JavaMapperGeneratorToRecordTest extends GeneratorTest {
     @Test
     @DisplayName("Enum fields")
     void withEnum() {
-        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setEnum1(itDummy.getE() == null ?");
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setEnum1(QueryHelper.makeEnumMap(itDummy.getE(),");
     }
 
     @Test

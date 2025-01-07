@@ -5,11 +5,10 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.context.MapperContext;
-import no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
@@ -26,7 +25,7 @@ public class MappingCodeBlocks {
                 .add("\n");
         var recordCode = CodeBlock.builder();
 
-        var inputObjects = specInputs.stream().filter(schema::isInputType).collect(Collectors.toList());
+        var inputObjects = specInputs.stream().filter(schema::isInputType).toList();
         for (var in : inputObjects) {
             code.add(declareRecords(in, schema, 0));
             recordCode.add(unwrapRecords(MapperContext.createResolverContext(in, true, schema)));
@@ -90,7 +89,7 @@ public class MappingCodeBlocks {
                 .stream()
                 .filter(schema::isInputType)
                 .filter(it -> schema.hasRecord(it) || schema.getInputType(it).getFields().stream().anyMatch(schema::isInputType))
-                .collect(Collectors.toList());
+                .toList();
 
         var fieldCode = CodeBlock.builder();
         for (var in : containedInputTypes) {
@@ -157,15 +156,7 @@ public class MappingCodeBlocks {
                 } else if (innerContext.shouldUseStandardRecordFetch()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else if (innerContext.hasRecordReference()) {
-                    var fetchCode = createIdFetch(innerField, previousTarget.getName(), innerContext.getPath(), true);
-                    if (innerContext.isIterable()) {
-                        var tempName = asQueryNodeMethod(innerField.getTypeName());
-                        innerCode
-                                .add(declare(tempName, fetchCode))
-                                .add(innerContext.getSetMappingBlock(CodeBlock.of("$N.stream().map(it -> $N.get(it.getId()))$L", previousTarget.getName(), tempName, collectToList())));
-                    } else {
-                        innerCode.add(innerContext.getSetMappingBlock(fetchCode)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
-                    }
+                    innerCode.add(idFetchAllowingDuplicates(innerContext, innerField, previousTarget.getName(), true));
                 } else {
                     innerCode.add(generateSchemaOutputs(innerContext, returnsRecord, schema));
                 }
@@ -183,8 +174,18 @@ public class MappingCodeBlocks {
         return code.add("\n").build();
     }
 
-    public static CodeBlock createIdFetch(GenerationField field, String varName, String path, boolean atResolver) {
-        return getNodeQueryCallBlock(field, varName, !atResolver ? CodeBlock.of("$N + $S", PATH_HERE_NAME, path) : CodeBlock.of("$S", path), false, field.isIterableWrapped(), atResolver);
+    public static CodeBlock idFetchAllowingDuplicates(MapperContext context, GenerationField field, String varName, boolean atResolver) {
+        var get = getNodeQueryCallBlock(field, varName, !atResolver ? CodeBlock.of("$N + $S", PATH_HERE_NAME, context.getPath()) : CodeBlock.of("$S", context.getPath()), atResolver);
+        var code = CodeBlock.builder();
+        if (context.isIterable()) {
+            var tempName = asNodeQueryName(field.getTypeName());
+            code
+                    .add(declare(tempName, get))
+                    .add(context.getSetMappingBlock(CodeBlock.of("$N.stream().map(it -> $N.get(it.getId()))$L", varName, tempName, collectToList())));
+        } else {
+            code.add(context.getSetMappingBlock(get)); // TODO: Should be done outside for? Preferably devise some general dataloader-like solution applying to query classes.
+        }
+        return code.build();
     }
 
     private static CodeBlock getFieldSetContent(ObjectField field, ObjectField previousField, boolean serviceReturnsRecord, ProcessedSchema schema) {

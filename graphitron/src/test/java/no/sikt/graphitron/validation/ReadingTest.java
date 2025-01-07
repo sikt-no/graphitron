@@ -3,7 +3,7 @@ package no.sikt.graphitron.validation;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.mojo.GraphQLGenerator;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

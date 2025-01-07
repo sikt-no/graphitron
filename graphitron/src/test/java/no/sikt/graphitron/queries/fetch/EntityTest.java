@@ -3,7 +3,6 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.reducedgenerators.EntityFetchOnlyDBClassGenerator;
@@ -62,8 +61,7 @@ public class EntityTest extends GeneratorTest {
     void twoKeys() {
         assertGeneratedContentContains(
                 "twoKeys",
-                "{_customer.getId(),_customer.FIRST_NAME}",
-                "makeMap(_r, new String[] {\"id\", \"first\"}))",
+                "objectRow(List.of(\"id\",\"first\"), List.of(_customer.getId(),_customer.FIRST_NAME))",
                 "where(_customer.hasId((String) _inputMap.get(\"id\"))).or(_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))"
         );
     }
@@ -73,8 +71,7 @@ public class EntityTest extends GeneratorTest {
     void compoundKey() {
         assertGeneratedContentContains(
                 "compoundKey",
-                "{_customer.getId(),_customer.FIRST_NAME}",
-                "makeMap(_r, new String[] {\"id\", \"first\"}))",
+                "objectRow(List.of(\"id\",\"first\"), List.of(_customer.getId(),_customer.FIRST_NAME))",
                 "where(DSL.and(List.of(_customer.hasId((String) _inputMap.get(\"id\")),_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))))"
         );
     }
@@ -84,11 +81,9 @@ public class EntityTest extends GeneratorTest {
     void nested() {
         assertGeneratedContentContains(
                 "nested",
-                "_customer.getId()," +
-                        "DSL.field(" +
-                        "DSL.select(DSL.row(new Object[]{customer_2952383337_address.getId()}).mapping(Map.class, _r -> QueryHelper.makeMap(_r, new String[] {\"id\"})))" +
-                        ".from(customer_2952383337_address)",
-                "mapping(Map.class, _r -> QueryHelper.makeMap(_r, new String[] {\"id\", \"address\"}))"
+                ".of(\"id\",\"address\"), List.of(_customer.getId(),DSL.field(" +
+                        "DSL.select(QueryHelper.objectRow(\"id\", customer_2952383337_address.getId()))" +
+                        ".from(customer_2952383337_address)))"
         );
     }
 

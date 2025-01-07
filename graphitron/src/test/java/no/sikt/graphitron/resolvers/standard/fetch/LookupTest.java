@@ -4,7 +4,7 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +29,7 @@ public class LookupTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Test

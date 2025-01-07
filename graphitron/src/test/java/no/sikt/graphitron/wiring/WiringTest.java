@@ -1,21 +1,19 @@
 package no.sikt.graphitron.wiring;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.common.configuration.SchemaComponent;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.wiring.WiringClassGenerator;
-import no.sikt.graphitron.reducedgenerators.dummygenerators.DummyEntityFetcherResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
+import no.sikt.graphitron.generators.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.FEDERATION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
 
 @DisplayName("Wiring - Generation of the method returning a runtime wiring")
 public class WiringTest extends GeneratorTest {
@@ -25,24 +23,58 @@ public class WiringTest extends GeneratorTest {
     }
 
     @Override
-    protected Set<SchemaComponent> getComponents() {
-        return makeComponents(FEDERATION);
-    }
-
-    @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        var entityGenerator = new DummyEntityFetcherResolverClassGenerator(schema);
-        return List.of(entityGenerator, new WiringClassGenerator(List.of(entityGenerator), schema));
-    }
-
-    @BeforeEach
-    void before() {
-        GeneratorConfig.setIncludeApolloFederation(true);
+        var generator = new FetchClassGenerator(schema);
+        return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
     }
 
     @Test
     @DisplayName("One data fetcher generator exists")
     void defaultCase() {
         assertGeneratedContentMatches("default");
+    }
+
+    @Test
+    @DisplayName("Node data fetcher generator exists")
+    void node() {
+        assertGeneratedContentContains(
+                "node", Set.of(NODE),
+                "getRuntimeWiring(NodeIdHandler nodeIdHandler)",
+                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdHandler)"
+        );
+    }
+
+    @Test
+    @DisplayName("No fetchers are generated")
+    void noFetchers() {
+        assertGeneratedContentContains("noFetchers", ".newRuntimeWiring();return wiring.build();");
+    }
+
+    @Test
+    @DisplayName("Two data fetcher generators exist for the same type")
+    void twoFetchers() {
+        assertGeneratedContentContains(
+                "twoFetchers",
+                "TypeRuntimeWiring.newTypeWiring(\"Query\")" +
+                        ".dataFetcher(\"customer\", QueryGeneratedDataFetcher.customer())" +
+                        ".dataFetcher(\"payment\", QueryGeneratedDataFetcher.payment())"
+        );
+    }
+
+    @Test
+    @DisplayName("Two types have one data fetcher each")
+    void twoTypes() {
+        assertGeneratedContentContains(
+                "twoTypes",
+                        ".newTypeWiring(\"Query\").dataFetcher(\"customer\",",
+                        ".newTypeWiring(\"Customer\").dataFetcher(\"address\","
+        );
+    }
+
+    @Test
+    @Disabled("Not supported yet.")
+    @DisplayName("Unreferenced types exist")
+    void unreferencedTypes() {
+        assertGeneratedContentContains("unreferencedTypes", ".newTypeWiring(\"SomeType\")");
     }
 }

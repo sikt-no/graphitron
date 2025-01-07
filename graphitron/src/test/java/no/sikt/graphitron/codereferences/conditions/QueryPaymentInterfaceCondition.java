@@ -1,6 +1,5 @@
 package no.sikt.graphitron.codereferences.conditions;
 
-import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Address;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.PaymentP2007_01;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.PaymentP2007_02;
 import org.jooq.Condition;

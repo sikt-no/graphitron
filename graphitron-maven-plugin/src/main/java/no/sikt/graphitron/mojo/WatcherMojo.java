@@ -1,6 +1,7 @@
 package no.sikt.graphitron.mojo;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -21,7 +22,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.nio.file.StandardWatchEventKinds.*;
-import static no.sikt.graphitron.mojo.GraphQLGenerator.getProcessedSchema;
+import static no.sikt.graphitron.generate.GraphQLGenerator.getProcessedSchema;
 
 /**
  * Mojo for watching the schema files for changes, and regenerating upon updates.

@@ -41,7 +41,7 @@ public class InputParser {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         var inputsJoined = String.join(", ", methodInputsWithOrderField.keySet());
         if (target.hasForwardPagination()) {
-            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + "," + PAGINATION_AFTER.getName();
+            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + ", " + PAGINATION_AFTER.getName();
         } else {
             serviceInputString = inputsJoined;
         }

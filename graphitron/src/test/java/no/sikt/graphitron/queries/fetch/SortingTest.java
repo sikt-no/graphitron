@@ -12,8 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Sorting - Queries with default ordering")
 public class SortingTest extends GeneratorTest {

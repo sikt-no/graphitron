@@ -47,6 +47,10 @@ public class ProcessedSchema {
     private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootObject;
     private final List<GenerationField> transformableFields;
     private final List<ObjectDefinition> unreferencedObjects;
+    private final boolean nodeExists;
+
+    // Graphitron-provided special inputs. Should be excluded from certain operations.
+    private final Set<String> specialInputs = Set.of("ExternalCodeReference", "ReferenceElement", "ErrorHandler");
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
         typeNames = typeRegistry.getTypes(TypeDefinition.class).stream().map(TypeDefinition::getName).collect(Collectors.toSet());
@@ -103,6 +107,7 @@ public class ProcessedSchema {
 
         inputs = InputDefinition.processInputDefinitions(typeRegistry.getTypes(InputObjectTypeDefinition.class))
                 .stream()
+                .filter(it -> !specialInputs.contains(it.getName()))
                 .collect(Collectors.toMap(InputDefinition::getName, Function.identity()));
 
         interfaces = typeRegistry.getTypes(InterfaceTypeDefinition.class)
@@ -110,6 +115,8 @@ public class ProcessedSchema {
                 .map(it -> it.hasDirective(DISCRIMINATE.getName()) || it.hasDirective(TABLE.getName()) ?
                          new InterfaceObjectDefinition(it) : new InterfaceDefinition(it))
                 .collect(Collectors.toMap(ObjectSpecification::getName, Function.identity()));
+
+        nodeExists = interfaces.containsKey(NODE_TYPE.getName());
 
         connectionObjects = objectTypes
                 .stream()
@@ -166,6 +173,10 @@ public class ProcessedSchema {
             );
         }
         return definitionBuilder.build();
+    }
+
+    public boolean nodeExists() {
+        return nodeExists;
     }
 
     /**
@@ -393,6 +404,19 @@ public class ProcessedSchema {
      */
     public boolean implementsNode(FieldSpecification field) {
         return implementsNode(field.getTypeName());
+    }
+    /**
+     * @return Does this name point to an object type in the schema which implements the interface?
+     */
+    public boolean implementsInterface(String name, String interfaceName) {
+        return isObject(name) && getObject(name).implementsInterface(interfaceName);
+    }
+
+    /**
+     * @return Does this field point to an object type in the schema which implements the interface?
+     */
+    public boolean implementsInterface(FieldSpecification field, String interfaceName) {
+        return implementsInterface(field.getTypeName(), interfaceName);
     }
 
     /**

@@ -41,7 +41,7 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
             return empty();
         }
 
-        return toGraphEnumConverter(field.getTypeName(), CodeBlock.of(field.getName()), field.isIterableWrapped(), field.isInput(), schema);
+        return toGraphEnumConverter(field.getTypeName(), CodeBlock.of(field.getName()), field.isInput(), schema);
     }
 
     @Test
@@ -49,11 +49,15 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toGraphJOOQ() {
         compareCodeBlockResult(
                 "tograph/jOOQ",
-                "e == null ? null : java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A)," +
-                        "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B)," +
-                        "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C)" +
-                        ").getOrDefault(e, null)",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(" +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C), " +
+                        "java.util.List.of(" +
+                        "fake.graphql.example.model.DummyEnumConverted.A, " +
+                        "fake.graphql.example.model.DummyEnumConverted.B, " +
+                        "fake.graphql.example.model.DummyEnumConverted.C))",
                 DUMMY_ENUM_CONVERTED
         );
     }
@@ -63,11 +67,15 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toGraphJOOQListed() {
         compareCodeBlockResult(
                 "tograph/jOOQListed",
-                "e == null ? null : e.stream().map(itDummyEnumConverted -> java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A)," +
-                        "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B)," +
-                        "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C)" +
-                        ").getOrDefault(itDummyEnumConverted, null)).collect(java.util.stream.Collectors.toList())",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(" +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C), " +
+                        "java.util.List.of(" +
+                        "fake.graphql.example.model.DummyEnumConverted.A, " +
+                        "fake.graphql.example.model.DummyEnumConverted.B, " +
+                        "fake.graphql.example.model.DummyEnumConverted.C))",
                 DUMMY_ENUM_CONVERTED
         );
     }
@@ -77,11 +85,9 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toGraphString() {
         compareCodeBlockResult(
                 "tograph/string",
-                "e == null ? null : java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(\"A\", fake.graphql.example.model.DummyEnum.A)," +
-                        "java.util.Map.entry(\"B\", fake.graphql.example.model.DummyEnum.B)," +
-                        "java.util.Map.entry(\"C\", fake.graphql.example.model.DummyEnum.C)" +
-                        ").getOrDefault(e, null)",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(\"A\", \"B\", \"C\"), " +
+                        "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C))",
                 DUMMY_ENUM
         );
     }
@@ -91,11 +97,9 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toGraphStringListed() {
         compareCodeBlockResult(
                 "tograph/stringListed",
-                "e == null ? null : e.stream().map(itDummyEnum -> java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(\"A\", fake.graphql.example.model.DummyEnum.A)," +
-                        "java.util.Map.entry(\"B\", fake.graphql.example.model.DummyEnum.B)," +
-                        "java.util.Map.entry(\"C\", fake.graphql.example.model.DummyEnum.C)" +
-                        ").getOrDefault(itDummyEnum, null)).collect(java.util.stream.Collectors.toList())",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(\"A\", \"B\", \"C\"), " +
+                        "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C))",
                 DUMMY_ENUM
         );
     }
@@ -105,11 +109,15 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toRecordJOOQ() {
         compareCodeBlockResult(
                 "torecord/jOOQ",
-                "e == null ? null : java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A)," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B)," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.C, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C)" +
-                        ").getOrDefault(e, null)",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(" +
+                        "fake.graphql.example.model.DummyEnumConverted.A, " +
+                        "fake.graphql.example.model.DummyEnumConverted.B, " +
+                        "fake.graphql.example.model.DummyEnumConverted.C), " +
+                        "java.util.List.of(" +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C))",
                 DUMMY_ENUM_CONVERTED
         );
     }
@@ -119,11 +127,15 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toRecordJOOQListed() {
         compareCodeBlockResult(
                 "torecord/jOOQListed",
-                "e == null ? null : e.stream().map(itDummyEnumConverted -> java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A)," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B)," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.C, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C)" +
-                        ").getOrDefault(itDummyEnumConverted, null)).collect(java.util.stream.Collectors.toList())",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(" +
+                        "fake.graphql.example.model.DummyEnumConverted.A, " +
+                        "fake.graphql.example.model.DummyEnumConverted.B, " +
+                        "fake.graphql.example.model.DummyEnumConverted.C), " +
+                        "java.util.List.of(" +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, " +
+                        "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C))",
                 DUMMY_ENUM_CONVERTED
         );
     }
@@ -133,11 +145,9 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toRecordString() {
         compareCodeBlockResult(
                 "torecord/string",
-                "e == null ? null : java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnum.A, \"A\")," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnum.B, \"B\")," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnum.C, \"C\")" +
-                        ").getOrDefault(e, null)",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C), " +
+                        "java.util.List.of(\"A\", \"B\", \"C\"))",
                 DUMMY_ENUM
         );
     }
@@ -147,11 +157,9 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
     public void toRecordStringListed() {
         compareCodeBlockResult(
                 "torecord/stringListed",
-                "e == null ? null : e.stream().map(itDummyEnum -> java.util.Map.ofEntries(" +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnum.A, \"A\")," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnum.B, \"B\")," +
-                        "java.util.Map.entry(fake.graphql.example.model.DummyEnum.C, \"C\")" +
-                        ").getOrDefault(itDummyEnum, null)).collect(java.util.stream.Collectors.toList())",
+                "no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(e, " +
+                        "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C), " +
+                        "java.util.List.of(\"A\", \"B\", \"C\"))",
                 DUMMY_ENUM
         );
     }

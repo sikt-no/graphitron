@@ -11,7 +11,7 @@ public class AddressJavaMapper {
     public static List<MapperNestedJavaRecord> toJavaRecord(List<Address> address, String path,
                                                             RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var _args = transform.getArguments();
         var mapperNestedJavaRecordList = new ArrayList<MapperNestedJavaRecord>();
 
         if (address != null) {
@@ -19,7 +19,7 @@ public class AddressJavaMapper {
                 if (itAddress == null) continue;
                 var mapperNestedJavaRecord = new MapperNestedJavaRecord();
                 var dummyRecord = itAddress.getDummyRecord();
-                if (dummyRecord != null && arguments.contains(pathHere + "dummyRecord")) {
+                if (dummyRecord != null && _args.contains(pathHere + "dummyRecord")) {
                     mapperNestedJavaRecord.setDummyRecord(transform.dummyInputRecordToJavaRecord(dummyRecord, pathHere + "dummyRecord"));
                 }
 

@@ -4,8 +4,6 @@ import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
-import no.sikt.graphitron.generators.datafetchers.queries.fetch.EntityDBFetcherMethodGenerator;
-import no.sikt.graphitron.generators.datafetchers.resolvers.fetch.EntityFetcherResolverMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;

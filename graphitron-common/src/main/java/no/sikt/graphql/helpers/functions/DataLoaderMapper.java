@@ -7,6 +7,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 @FunctionalInterface
-public interface DataLoaderMapper<T> {
-    CompletableFuture<Map<String, T>> map(Set<String> keys, SelectionSet set);
+public interface DataLoaderMapper<K, V> {
+    CompletableFuture<Map<K, V>> map(Set<K> keys, SelectionSet set);
 }

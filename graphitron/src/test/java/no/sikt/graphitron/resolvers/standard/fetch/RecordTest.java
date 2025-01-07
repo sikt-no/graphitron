@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ public class RecordTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Test
@@ -43,7 +43,7 @@ public class RecordTest extends GeneratorTest {
     void inputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/inputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "query(DummyInputRecord in,",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), DummyInputRecord.class)",
                 "transform = new RecordTransformer(env)",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecord,"
@@ -55,7 +55,7 @@ public class RecordTest extends GeneratorTest {
     void listedInputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/listedInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "query(List<DummyInputRecord> in,",
+                "in = ResolverHelpers.transformDTOList(_args.get(\"in\"), DummyInputRecord.class)",
                 "inRecordList = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecordList,"
         );
@@ -66,7 +66,7 @@ public class RecordTest extends GeneratorTest {
     void inputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/inputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "query(CustomerInputTable in,",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), CustomerInputTable.class)",
                 "transform = new RecordTransformer(env)",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecord,"
@@ -78,7 +78,7 @@ public class RecordTest extends GeneratorTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/listedInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "query(List<CustomerInputTable> in,",
+                "in = ResolverHelpers.transformDTOList(_args.get(\"in\"), CustomerInputTable.class)",
                 "inRecordList = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecordList,"
         );

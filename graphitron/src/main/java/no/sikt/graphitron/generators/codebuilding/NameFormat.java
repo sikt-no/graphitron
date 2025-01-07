@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 
@@ -109,11 +109,18 @@ public class NameFormat {
     }
 
     /**
+     * @return Interface method naming for this interface implementation.
+     */
+    public static String interfaceQueryName(String implementationName, String interfaceName) {
+        return String.format("%sFor%s", uncapitalize(implementationName), capitalize(interfaceName));
+    }
+
+    /**
      * @return Field type formatted as a node interface method call.
      */
     @NotNull
-    public static String asQueryNodeMethod(String s) {
-        return "load" + capitalize(s) + "ByIdsAs" + NODE_TYPE.getName();
+    public static String asNodeQueryName(String s) {
+        return interfaceQueryName(s, NODE_TYPE.getName());
     }
 
     /**

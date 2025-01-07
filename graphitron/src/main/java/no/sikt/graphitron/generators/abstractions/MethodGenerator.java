@@ -4,6 +4,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.directives.GenerationDirective;
 
 import java.util.List;
@@ -43,4 +44,14 @@ public interface MethodGenerator<T extends GenerationTarget> {
      * @return A set containing all dependencies necessary for these generated methods.
      */
     Set<Dependency> getDependencySet();
+
+    /**
+     * @return Any DataFetcher wiring this generator produces.
+     */
+    List<WiringContainer> getDataFetcherWiring();
+
+    /**
+     * @return Any TypeRespolver wiring this generator produces.
+     */
+    List<WiringContainer> getTypeResolverWiring();
 }

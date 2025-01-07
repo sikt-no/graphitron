@@ -14,14 +14,14 @@ public class CustomerInputTableJOOQMapper {
     public static Set<GraphQLError> validate(List<CustomerRecord> customerRecordList, String path,
                                              RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var _args = transform.getArguments();
         var env = transform.getEnv();
         var validationErrors = new HashSet<GraphQLError>();
 
         for (int itCustomerRecordListIndex = 0; itCustomerRecordListIndex < customerRecordList.size(); itCustomerRecordListIndex++) {
             var itCustomerRecord = customerRecordList.get(itCustomerRecordListIndex);
             var pathsForProperties = new HashMap<String, String>();
-            if (arguments.contains(pathHere + "id")) {
+            if (_args.contains(pathHere + "id")) {
                 pathsForProperties.put("id", pathHere + itCustomerRecordListIndex + "/id");
             }
             validationErrors.addAll(RecordValidator.validatePropertiesAndGenerateGraphQLErrors(itCustomerRecord, pathsForProperties, env));

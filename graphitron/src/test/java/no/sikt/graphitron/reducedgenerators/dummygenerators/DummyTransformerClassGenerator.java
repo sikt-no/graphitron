@@ -4,7 +4,7 @@ import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;

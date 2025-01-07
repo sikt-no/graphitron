@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -68,7 +68,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "containingNonRecordWrapper",
                 "if (address_inner != null) {" +
-                        "    if (arguments.contains(pathHere + \"inner/postalCode\")) {" +
+                        "    if (_args.contains(pathHere + \"inner/postalCode\")) {" +
                         "        addressRecord.setPostalCode(address_inner.getPostalCode());" +
                         "    }" +
                         "}" +
@@ -85,7 +85,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
                         "if (address_inner0 != null) {" +
                         "    var wrapper_inner1 = address_inner0.getInner1();" +
                         "    if (wrapper_inner1 != null) {" +
-                        "        if (arguments.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
+                        "        if (_args.contains(pathHere + \"inner0/inner1/postalCode\")) {" +
                         "            addressRecord.setPostalCode(wrapper_inner1.getPostalCode());"
         );
     }
@@ -99,7 +99,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
                         "if (address_inner != null) {" +
                         "    var wrapper_inner = address_inner.getInner();" +
                         "    if (wrapper_inner != null) {" +
-                        "        if (arguments.contains(pathHere + \"inner/inner/postalCode\")) {" +
+                        "        if (_args.contains(pathHere + \"inner/inner/postalCode\")) {" +
                         "            addressRecord.setPostalCode(wrapper_inner.getPostalCode()"
         );
     }
@@ -136,7 +136,7 @@ public class MapperGeneratorToRecordTest extends GeneratorTest {
     @Test
     @DisplayName("Records with enum fields")
     void withEnum() {
-        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setRating(itFilmInput.getE() == null ?");
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM), ".setRating(QueryHelper.makeEnumMap(itFilmInput.getE(),");
     }
 
     @Test

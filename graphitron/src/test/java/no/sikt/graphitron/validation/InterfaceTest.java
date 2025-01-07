@@ -1,7 +1,6 @@
 package no.sikt.graphitron.validation;
 
 import no.sikt.graphitron.common.configuration.SchemaComponent;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -337,8 +337,7 @@ public class ConditionTest extends GeneratorTest {
     void onEnum() {
         assertGeneratedContentContains(
                 "onEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".enumInput(_customer, enumInput == null ? null : Map.ofEntries(Map.entry(", // Note, the null check is not necessary here.
-                ").getOrDefault(enumInput, null)"
+                ".enumInput(_customer, QueryHelper.makeEnumMap(enumInput,"
         );
     }
 
@@ -347,8 +346,7 @@ public class ConditionTest extends GeneratorTest {
     void onStringEnum() {
         assertGeneratedContentContains(
                 "onStringEnum", Set.of(DUMMY_ENUM),
-                ".email(_customer, enumInput == null ? null : Map.ofEntries(Map.entry(", // Note, the null check is not necessary here.
-                ").getOrDefault(enumInput, null)"
+                ".email(_customer, QueryHelper.makeEnumMap(enumInput,"
         );
     }
 
@@ -357,8 +355,7 @@ public class ConditionTest extends GeneratorTest {
     void onListedEnum() {
         assertGeneratedContentContains(
                 "onListedEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".enumInputList(_customer, enumInputList == null ? null : enumInputList.stream().map(itDummyEnumConverted -> Map.ofEntries(Map.entry(", // Note, the null check is not necessary here.
-                        ").getOrDefault(itDummyEnumConverted, null)).collect(Collectors.toList()))"
+                ".enumInputList(_customer, QueryHelper.makeEnumMap(enumInputList,"
         );
     }
 
@@ -367,8 +364,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithEnum() {
         assertGeneratedContentContains(
                 "onParamWithEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".queryEnum(_customer, enumInput == null ? null : Map.ofEntries(Map.entry(", // Note, the null check is not necessary here.
-                ").getOrDefault(enumInput, null))"
+                ".queryEnum(_customer, QueryHelper.makeEnumMap(enumInput,"
         );
     }
 
@@ -377,8 +373,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithListedEnum() {
         assertGeneratedContentContains(
                 "onParamWithListedEnum", Set.of(DUMMY_ENUM_CONVERTED),
-                ".queryEnumList(_customer, enumInputList == null ? null : enumInputList.stream().map(itDummyEnumConverted -> Map.ofEntries(Map.entry(", // Note, the null check is not necessary here.
-                        ").getOrDefault(itDummyEnumConverted, null)).collect(Collectors.toList())"
+                "queryEnumList(_customer, QueryHelper.makeEnumMap(enumInputList,"
         );
     }
 
@@ -387,8 +382,7 @@ public class ConditionTest extends GeneratorTest {
     void onParamWithEnumInInput() {
         assertGeneratedContentContains(
                 "onParamWithEnumInInput", Set.of(DUMMY_ENUM_CONVERTED),
-                ".queryEnum(_customer, in.getE() == null ? null : Map.ofEntries(Map.entry(", // Note, the null check is not necessary here.
-                ").getOrDefault(in.getE(), null))"
+                ".queryEnum(_customer, QueryHelper.makeEnumMap(in.getE(),"
         );
     }
 

@@ -2,10 +2,9 @@ package no.sikt.graphitron.resolvers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +28,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Test
@@ -47,25 +46,19 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Root resolver that returns a list")
     void returningList() {
-        assertGeneratedContentContains("operation/returningList", "public CompletableFuture<List<DummyType>> query(");
+        assertGeneratedContentContains("operation/returningList", "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");
     }
 
     @Test
     @DisplayName("Root resolver that returns an optional list")
     void returningOptionalList() {
-        assertGeneratedContentContains("operation/returningOptionalList", "public CompletableFuture<List<DummyType>> query(");
+        assertGeneratedContentContains("operation/returningOptionalList", "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");
     }
 
     @Test
     @DisplayName("Root resolver that is not generated")
     void notGenerated() {
         assertGeneratedContentMatches("operation/notGenerated");
-    }
-
-    @Test
-    @DisplayName("Root resolver that is generated as abstract")
-    void notGeneratedAbstractResolver() {
-        assertGeneratedContentContains("operation/notGeneratedAbstractResolver", "abstract class");
     }
 
     @Test
@@ -83,13 +76,13 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Resolver that returns a list")
     void splitQueryReturningList() {
-        assertGeneratedContentContains("splitquery/returningList", Set.of(SPLIT_QUERY_WRAPPER), "public CompletableFuture<List<DummyType>> query(");
+        assertGeneratedContentContains("splitquery/returningList", Set.of(SPLIT_QUERY_WRAPPER), "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");
     }
 
     @Test
     @DisplayName("Resolver that returns an optional list")
     void splitQueryReturningOptionalList() {
-        assertGeneratedContentContains("splitquery/returningOptionalList", Set.of(SPLIT_QUERY_WRAPPER), "public CompletableFuture<List<DummyType>> query(");
+        assertGeneratedContentContains("splitquery/returningOptionalList", Set.of(SPLIT_QUERY_WRAPPER), "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");
     }
 
     @Test
@@ -102,12 +95,6 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Resolver that is not generated")
     void splitQueryNotGenerated() {
         assertGeneratedContentMatches("splitquery/notGenerated", SPLIT_QUERY_WRAPPER);
-    }
-
-    @Test
-    @DisplayName("Resolver that is generated as abstract")
-    void splitQueryNotGeneratedAbstractResolver() {
-        assertGeneratedContentContains("splitquery/notGeneratedAbstractResolver", Set.of(SPLIT_QUERY_WRAPPER), "abstract class");
     }
 
     @Test
@@ -127,14 +114,4 @@ public class ResolverTest extends GeneratorTest {
                 "QueryDBQueries.addressForQuery("
         );
     }
-
-    @Test
-    @DisplayName("Resolver with annotation configured")
-    void resolverAnnotaion() {
-        GeneratorConfig.setResolverAnnotation("example.org.cdi.Bean");
-        assertGeneratedContentContains("operation/default", "@Bean" +
-                "public class QueryGeneratedResolver implements QueryResolver ");
-
-    }
-
 }

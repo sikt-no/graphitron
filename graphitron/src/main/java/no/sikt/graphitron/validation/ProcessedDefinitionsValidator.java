@@ -14,7 +14,7 @@ import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.mappings.TableReflection;
-import no.sikt.graphitron.mojo.GraphQLGenerator;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
@@ -411,7 +411,7 @@ public class ProcessedDefinitionsValidator {
                                         }
                                     });
                                 });
-                    };
+                    }
                 }
         );
 
@@ -478,7 +478,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateTypesUsingNodeInterface() {
-        if (schema.getInterface(NODE_TYPE.getName()) == null ||
+        if (!schema.nodeExists() ||
             schema.getQueryType() == null ||
             schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
             schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())).isExplicitlyNotGenerated()) {

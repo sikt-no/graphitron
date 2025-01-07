@@ -1,12 +1,11 @@
-import fake.code.generated.datafetchers.query.QueryEntityGeneratedDataFetcher;
+import fake.code.generated.resolvers.query.QueryGeneratedDataFetcher;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.TypeRuntimeWiring;
 
 public class Wiring {
     public static RuntimeWiring getRuntimeWiring() {
         var wiring = RuntimeWiring.newRuntimeWiring();
-        wiring.type(TypeRuntimeWiring.newTypeWiring("Query").dataFetcher("_entities", QueryEntityGeneratedDataFetcher.entityFetcher()));
-        wiring.type(TypeRuntimeWiring.newTypeWiring("_Entity").typeResolver(QueryEntityGeneratedDataFetcher.entityTypeResolver()));
+        wiring.type(TypeRuntimeWiring.newTypeWiring("Query").dataFetcher("customer", QueryGeneratedDataFetcher.customer()));
         return wiring.build();
     }
 }

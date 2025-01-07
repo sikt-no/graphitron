@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.EntityFetcherResolverOnlyUnionClassGenerator;
+import no.sikt.graphitron.reducedgenerators.EntityFetcherOnlyUnionClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +30,7 @@ public class EntityTypeResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new EntityFetcherResolverOnlyUnionClassGenerator(schema));
+        return List.of(new EntityFetcherOnlyUnionClassGenerator(schema));
     }
 
     @BeforeEach

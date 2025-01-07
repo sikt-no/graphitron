@@ -4,7 +4,7 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +25,7 @@ public class ResolverPaginationTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Override
@@ -44,7 +44,9 @@ public class ResolverPaginationTest extends GeneratorTest {
     void withOtherInput() {
         assertGeneratedContentContains(
                 "operation/withOtherInput",
-                "query(Integer first, String after, String other,",
+                "Integer) _args.get(\"first\"",
+                "String) _args.get(\"after\"",
+                "String) _args.get(\"other\"",
                 "queryForQuery(ctx, other, pageSize, after,"
         );
     }
@@ -60,7 +62,9 @@ public class ResolverPaginationTest extends GeneratorTest {
     void splitQueryWithOtherInput() {
         assertGeneratedContentContains(
                 "splitquery/withOtherInput", Set.of(SPLIT_QUERY_WRAPPER),
-                "query(Wrapper wrapper, Integer first, String after, String other,",
+                "Integer) _args.get(\"first\"",
+                "String) _args.get(\"after\"",
+                "String) _args.get(\"other\"",
                 "queryForWrapper(ctx, ids, other, pageSize, after,"
         );
     }

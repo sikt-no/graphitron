@@ -50,27 +50,31 @@ public abstract class AbstractFetcher {
         return ctx;
     }
 
-    protected String asKeyPath(String id) {
-        return executionPath + "||" + id;
+    protected <K> KeyWithPath<K> asKeyPath(K key) {
+        return new KeyWithPath<>(key, executionPath);
     }
 
-    protected <T> DataLoader<String, T> getLoader(String resolveName, DataLoaderMapper<T> mapFunction) {
+    protected <K> Set<KeyWithPath<K>> asKeyPaths(Set<K> keys) {
+        return keys.stream().map(this::asKeyPath).collect(Collectors.toSet());
+    }
+
+    protected <K, V> DataLoader<KeyWithPath<K>, V> getLoader(String resolveName, DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
         return env.getDataLoaderRegistry().computeIfAbsent(resolveName, name ->
-                DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, T>) (keys, batchEnvLoader) ->
+                DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<KeyWithPath<K>, V>) (keys, batchEnvLoader) ->
                         mapFunction.map(keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)))
                 )
         );
     }
 
-    protected <T> DataLoader<String, T> getConnectionLoader(String resolveName, DataLoaderMapper<T> mapFunction) {
+    protected <K, V> DataLoader<KeyWithPath<K>, V> getConnectionLoader(String resolveName, DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
         return env.getDataLoaderRegistry().computeIfAbsent(resolveName, name ->
-                DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<String, T>) (keys, batchEnvLoader) ->
+                DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<KeyWithPath<K>, V>) (keys, batchEnvLoader) ->
                         mapFunction.map(keys, new ConnectionSelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(batchEnvLoader)))
                 )
         );
     }
 
-    protected <T> Map<String, T> resultAsMap(Map<String, String> keyToId, Map<String, T> dbResult) {
+    protected <K, V> Map<KeyWithPath<K>, V> resultAsMap(Map<KeyWithPath<K>, String> keyToId, Map<String, V> dbResult) {
         return keyToId
                 .entrySet()
                 .stream()
@@ -81,21 +85,21 @@ public abstract class AbstractFetcher {
                                 Map.Entry::getKey,
                                 it -> {
                                     var dbValue = dbResult.get(it.getValue());
-                                    return dbValue instanceof List<?> ? (T)((List<?>)dbValue).stream().filter(Objects::nonNull).collect(Collectors.toList()) : dbValue;
+                                    return dbValue instanceof List<?> ? (V)((List<?>)dbValue).stream().filter(Objects::nonNull).toList() : dbValue;
                                 }
                         )
                 );
     }
 
-    protected Map<String, String> getKeyToId(Set<String> keys) {
-        return keys.stream().collect(Collectors.toMap(s -> s, s -> s.substring(s.lastIndexOf("||") + 2)));
+    protected <K> Map<KeyWithPath<K>, String> getKeyToId(Set<KeyWithPath<K>> keys) {
+        return keys.stream().collect(Collectors.toMap(s -> s, s -> s.toString().substring(s.toString().lastIndexOf("||") + 2)));
     }
 
-    protected <T, U> U getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, U> connectionFunction) {
+    protected <T, C> C getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, C> connectionFunction) {
         return connectionFunction.apply(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null));
     }
 
-    protected <T, U> Map<String, U> getPaginatedConnection(Map<String, List<Pair<String, T>>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, U> connectionFunction) {
+    protected <K, V, C> Map<KeyWithPath<K>, C> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<V>, C> connectionFunction) {
         return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null))));
     }
 
@@ -117,7 +121,7 @@ public abstract class AbstractFetcher {
 
         List<Edge<T>> edges = items
                 .stream()
-                .map(item -> new DefaultEdge<>(item.getRight(), new DefaultConnectionCursor(item != null ? item.getLeft() : null)))
+                .map(item -> new DefaultEdge<>(item != null ? item.getRight() : null, new DefaultConnectionCursor(item != null ? item.getLeft() : null)))
                 .collect(Collectors.toList());
 
         return ConnectionImpl

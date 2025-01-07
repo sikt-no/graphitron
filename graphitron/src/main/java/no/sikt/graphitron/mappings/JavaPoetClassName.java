@@ -2,20 +2,18 @@ package no.sikt.graphitron.mappings;
 
 import com.palantir.javapoet.ClassName;
 import graphql.GraphQLError;
-import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.TypeResolver;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.TypeRuntimeWiring;
-import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphql.NodeIdHandler;
 import no.sikt.graphql.exception.*;
 import no.sikt.graphql.helpers.EnvironmentUtils;
 import no.sikt.graphql.helpers.query.QueryHelper;
-import no.sikt.graphql.helpers.resolvers.DataFetcher;
+import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
-import no.sikt.graphql.helpers.resolvers.ServiceDataFetcher;
+import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -40,9 +38,9 @@ public enum JavaPoetClassName {
     DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(DataAccessExceptionMappingContent.class),
     DATA_FETCHING_ENVIRONMENT(graphql.schema.DataFetchingEnvironment.class),
     ENVIRONMENT_UTILS(EnvironmentUtils.class),
-    DATA_FETCHER_GRAPHITRON(DataFetcher.class),
+    DATA_FETCHER_GRAPHITRON(DataFetcherHelper.class),
     DATA_FETCHER(graphql.schema.DataFetcher.class),
-    DATA_SERVICE_FETCHER(ServiceDataFetcher.class),
+    DATA_SERVICE_FETCHER(ServiceDataFetcherHelper.class),
     DSL(org.jooq.impl.DSL.class),
     SORT_FIELD(org.jooq.SortField.class),
     DSL_CONTEXT(org.jooq.DSLContext.class),
@@ -62,6 +60,7 @@ public enum JavaPoetClassName {
     LIST(java.util.List.class),
     STREAM(java.util.stream.Stream.class),
     MAP(java.util.Map.class),
+    OBJECT(java.lang.Object.class),
     SIMPLE_ENTRY(java.util.AbstractMap.SimpleEntry.class),
     MUTATION_EXCEPTION_STRATEGY_CONFIGURATION(MutationExceptionStrategyConfiguration.class),
     OBJECTS(java.util.Objects.class),

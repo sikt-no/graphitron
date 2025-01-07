@@ -2,7 +2,7 @@ package no.sikt.graphitron.reducedgenerators.dummygenerators;
 
 import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.generators.resolvers.mapping.TransformerMethodGenerator;
+import no.sikt.graphitron.generators.mapping.TransformerMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;

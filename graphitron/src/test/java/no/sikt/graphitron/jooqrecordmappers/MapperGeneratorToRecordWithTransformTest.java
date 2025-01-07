@@ -1,12 +1,12 @@
 package no.sikt.graphitron.jooqrecordmappers;
 
-import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.codereferences.transforms.SomeTransform;
+import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

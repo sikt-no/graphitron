@@ -4,7 +4,7 @@ import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReferences;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.mojo.Generator;
+import no.sikt.graphitron.generate.Generator;
 
 import java.io.File;
 import java.net.URL;

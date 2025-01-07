@@ -1,5 +1,12 @@
-union _Entity = Customer
+type Query {
+  customer: Customer
+  payment: Payment
+}
 
-type Customer @table @key(fields: "id") {
+type Customer @table {
+  id: ID
+}
+
+type Payment @table {
   id: ID
 }

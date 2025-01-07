@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -18,6 +19,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
@@ -79,10 +81,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .unindent()
                 .unindent();
 
-        return getDefaultSpecBuilder(
-                "load" + implementation.getName() + "By" + StringUtils.capitalize(argumentName) + "As" + StringUtils.capitalize(target.getName()),
-                wrapStringMap(implementation.getGraphClassName())
-        )
+        return getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
                 .addParameter(getStringSetTypeName(), argumentName)
                 .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
                 .addCode(code.build())
@@ -94,7 +93,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         return objectFieldsReturningNode
                 .stream()
                 .filter(entry -> ((ObjectDefinition) getLocalObject()).implementsInterface(NODE_TYPE.getName()))
-                .sorted(Comparator.comparing(it -> it.getName()))
+                .sorted(Comparator.comparing(AbstractField::getName))
                 .map(this::generate)
                 .collect(Collectors.toList());
     }

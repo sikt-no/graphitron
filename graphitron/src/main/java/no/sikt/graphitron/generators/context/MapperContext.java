@@ -369,7 +369,7 @@ public class MapperContext {
     }
 
     public CodeBlock getFieldSetMappingBlock() {
-        return getSetMappingBlock(applyEnumConversion(target.getTypeName(), getSourceGetCallBlock(), target.isIterableWrapped()));
+        return getSetMappingBlock(applyEnumConversion(target.getTypeName(), getSourceGetCallBlock()));
     }
 
     public CodeBlock getRecordSetMappingBlock() {
@@ -392,8 +392,8 @@ public class MapperContext {
         return transformRecord(variableName, targetName, path, hasJavaRecordReference);
     }
 
-    public CodeBlock applyEnumConversion(String typeName, CodeBlock getCall, boolean isIterable) {
-        return schema.isEnum(typeName) ? toGraphEnumConverter(typeName, getCall, isIterable, toRecord, schema) : getCall;
+    public CodeBlock applyEnumConversion(String typeName, CodeBlock getCall) {
+        return schema.isEnum(typeName) ? toGraphEnumConverter(typeName, getCall, toRecord, schema) : getCall;
     }
 
     public CodeBlock getReturnBlock() {

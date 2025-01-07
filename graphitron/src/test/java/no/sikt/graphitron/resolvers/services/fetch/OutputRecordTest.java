@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,7 +37,7 @@ public class OutputRecordTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Test
@@ -45,7 +45,7 @@ public class OutputRecordTest extends GeneratorTest {
     void returningJavaRecord() {
         assertGeneratedContentContains(
                 "operation/returningJavaRecord",
-                "public CompletableFuture<DummyTypeRecord>",
+                "DataFetcher<CompletableFuture<DummyTypeRecord>>",
                 "resolverFetchService.queryJavaRecord(),",
                 "transform.dummyTypeRecordToGraphType(response, \"\")"
         );
@@ -56,7 +56,7 @@ public class OutputRecordTest extends GeneratorTest {
     void returningWrappedJavaRecord() {
         assertGeneratedContentContains(
                 "operation/returningWrappedJavaRecord",
-                "public CompletableFuture<Wrapper>",
+                "DataFetcher<CompletableFuture<Wrapper>>",
                 "resolverFetchService.queryJavaRecord(),",
                 "transform.wrapperRecordToGraphType(response, \"\")"
         );
@@ -67,7 +67,7 @@ public class OutputRecordTest extends GeneratorTest {
     void returningJavaRecordOnSplitQuery() {
         assertGeneratedContentContains(
                 "splitquery/returningJavaRecord", Set.of(SPLIT_QUERY_WRAPPER),
-                "public CompletableFuture<DummyTypeRecord>",
+                "DataFetcher<CompletableFuture<DummyTypeRecord>>",
                 "resolverFetchService.queryJavaRecord(ids)",
                 "transform.dummyTypeRecordToGraphType(response, \"\")"
         );

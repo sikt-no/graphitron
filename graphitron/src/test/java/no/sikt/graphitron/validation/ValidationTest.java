@@ -5,7 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.mojo.GraphQLGenerator;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.slf4j.LoggerFactory;

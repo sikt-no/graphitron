@@ -9,7 +9,7 @@ import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.mojo.GraphQLGenerator;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.ComparisonFailure;
 import org.junit.jupiter.api.AfterEach;

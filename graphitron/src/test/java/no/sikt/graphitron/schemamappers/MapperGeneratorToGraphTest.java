@@ -4,7 +4,7 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,7 +14,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.MAPPER_ID_SERVICE;
 
-@DisplayName("JOOQ Mappers - Mapper content for mapping fields to graph types without records")
+@DisplayName("Schema Mappers - Mapper content for mapping fields to graph types")
 public class MapperGeneratorToGraphTest extends GeneratorTest {
     @Override
     protected String getSubpath() {

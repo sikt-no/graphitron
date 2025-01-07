@@ -6,7 +6,7 @@ import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new UpdateResolverClassGenerator(schema));
+        return List.of(new UpdateClassGenerator(schema));
     }
 
     @Test
@@ -44,19 +44,24 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Single input")
     void oneInput() {
-        assertGeneratedContentContains("oneInput", "(String in,", ".mutation(in)");
+        assertGeneratedContentContains("oneInput", "in = ((String) _args.get(\"in\"))", ".mutation(in)");
     }
 
     @Test
     @DisplayName("Listed input")
     void listedInput() {
-        assertGeneratedContentContains("listedInput", "(List<String> in,", ".mutation(in)");
+        assertGeneratedContentContains("listedInput", "in = ((List<String>) _args.get(\"in\"))", ".mutation(in)");
     }
 
     @Test
     @DisplayName("Two inputs")
     void multipleInputs() {
-        assertGeneratedContentContains("multipleInputs", "(String in0, String in1,", ".mutation(in0, in1)");
+        assertGeneratedContentContains(
+                "multipleInputs",
+                "in0 = ((String) _args.get(\"in0\"))",
+                "in1 = ((String) _args.get(\"in1\"))",
+                ".mutation(in0, in1)"
+        );
     }
 
     @Test
@@ -64,7 +69,7 @@ public class ResolverTest extends GeneratorTest {
     void recordInput() {
         assertGeneratedContentContains(
                 "recordInput", Set.of(CUSTOMER_INPUT_TABLE),
-                "(CustomerInputTable in,",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), CustomerInputTable.class)",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 ".mutation(inRecord)"
         );
@@ -75,7 +80,7 @@ public class ResolverTest extends GeneratorTest {
     void javaRecordInput() {
         assertGeneratedContentContains(
                 "javaRecordInput", Set.of(DUMMY_INPUT_RECORD),
-                "(DummyInputRecord in,",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), DummyInputRecord.class)",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 ".mutation(inRecord)"
         );
@@ -105,7 +110,7 @@ public class ResolverTest extends GeneratorTest {
     @Test  // Not sure if this is the intended behaviour for such cases. The service will not be able to handle this type.
     @DisplayName("Input with non-record wrapper")
     void wrappedInput() {
-        assertGeneratedContentContains("wrappedInput", "(Input in,", ".mutation(in)");
+        assertGeneratedContentContains("wrappedInput", "in = ResolverHelpers.transformDTO(_args.get(\"in\"), Input.class)", ".mutation(in)");
     }
 
     @Test
@@ -192,7 +197,7 @@ public class ResolverTest extends GeneratorTest {
     void responseID() {
         assertGeneratedContentContains(
                 "responseID",
-                "CompletableFuture<Response> mutation(",
+                "DataFetcher<CompletableFuture<Response>>",
                 "response = new Response()",
                 "if (mutation != null && transform.getSelect().contains(\"id\")) {response.setId(mutation);}",
                 ".completedFuture(response)"
@@ -204,7 +209,7 @@ public class ResolverTest extends GeneratorTest {
     void listedResponse() {
         assertGeneratedContentContains(
                 "listedResponse",
-                "CompletableFuture<List<Response>> mutation(",
+                "DataFetcher<CompletableFuture<List<Response>>>",
                 "response = new Response()", // TODO: Does not actually declare and fill a list.
                 ".contains(\"id\")",
                 "response.setId(itMutation)",
@@ -227,7 +232,7 @@ public class ResolverTest extends GeneratorTest {
     void responseFetchByID() {
         assertGeneratedContentContains(
                 "responseFetchByID", Set.of(NODE),
-                "response.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                "response.setCustomer(CustomerDBQueries.customerForNode(" +
                         "transform.getCtx(), Set.of(mutation.getId()), transform.getSelect().withPrefix(\"customer\")).values().stream().findFirst().orElse(null));"
         );
     }
@@ -237,9 +242,9 @@ public class ResolverTest extends GeneratorTest {
     void responseFetchByIDList() {
         assertGeneratedContentContains(
                 "responseFetchByIDList", Set.of(NODE),
-                "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                "customerForNode = CustomerDBQueries.customerForNode(" +
                         "transform.getCtx(), mutation.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
-                "response.setCustomer(mutation.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()"
+                "response.setCustomer(mutation.stream().map(it -> customerForNode.get(it.getId())).collect(Collectors.toList()"
         );
     }
 

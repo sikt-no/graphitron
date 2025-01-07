@@ -7,10 +7,12 @@ import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -92,5 +94,13 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
         }
 
         return typeClass;
+    }
+
+    public List<WiringContainer> getDataFetcherWiring() {
+        return List.of();
+    }
+
+    public List<WiringContainer> getTypeResolverWiring() {
+        return List.of();
     }
 }

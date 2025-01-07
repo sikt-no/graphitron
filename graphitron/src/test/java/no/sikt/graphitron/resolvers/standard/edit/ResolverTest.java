@@ -6,7 +6,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.update.UpdateResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +31,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new UpdateResolverClassGenerator(schema));
+        return List.of(new UpdateClassGenerator(schema));
     }
 
     @Test // Chose update for these tests, but there is no specific reason for this choice. Mutation type does not affect the resolver.
@@ -57,7 +57,8 @@ public class ResolverTest extends GeneratorTest {
     void withNonRecordInput() {
         assertGeneratedContentContains(
                 "withNonRecordInput",
-                ", String email,",
+                "in = ",
+                "email = ((String) _args.get(\"email\"))",
                 ".mutation(transform.getCtx(), inRecord, email)"
         );
     }
@@ -67,7 +68,7 @@ public class ResolverTest extends GeneratorTest {
     void listedInput() {
         assertGeneratedContentContains(
                 "listedInput",
-                "List<CustomerInputTable> in,",
+                "in = ResolverHelpers.transformDTOList(_args.get(\"in\"), CustomerInputTable.class)",
                 "inRecordList =",
                 "in, \"in\"",
                 ".getCtx(), inRecordList",
@@ -80,7 +81,8 @@ public class ResolverTest extends GeneratorTest {
     void multipleInputs() {
         assertGeneratedContentContains(
                 "multipleInputs",
-                "CustomerInputTable in0, CustomerInputTable in1,",
+                "in0 =",
+                "in1 =",
                 "in0Record =",
                 "in0, \"in0\"",
                 "in1Record =",
@@ -95,7 +97,6 @@ public class ResolverTest extends GeneratorTest {
     void multipleListedInputs() {
         assertGeneratedContentContains(
                 "multipleListedInputs",
-                "List<CustomerInputTable> in0, List<CustomerInputTable> in1,",
                 "in0RecordList =",
                 "in0, \"in0\"",
                 "in1RecordList =",
@@ -110,7 +111,8 @@ public class ResolverTest extends GeneratorTest {
     void multipleMixedInputs() {
         assertGeneratedContentContains(
                 "multipleMixedInputs",
-                "List<CustomerInputTable> in0, CustomerInputTable in1,",
+                "in0 = ResolverHelpers.transformDTOList(_args.get(\"in0\"), CustomerInputTable.class)",
+                "in1 = ResolverHelpers.transformDTO(_args.get(\"in1\"), CustomerInputTable.class)",
                 "in0RecordList =",
                 "in0, \"in0\"",
                 "in1Record =",
@@ -140,7 +142,7 @@ public class ResolverTest extends GeneratorTest {
     void responseType() {
         assertGeneratedContentContains(
                 "responseType",
-                "CompletableFuture<Response> mutation(",
+                "DataFetcher<CompletableFuture<Response>>",
                 "response = new Response()",
                 "response.setId(inRecord.getId()",
                 ".completedFuture(response"
@@ -152,7 +154,7 @@ public class ResolverTest extends GeneratorTest {
     void responseTypeListed() {
         assertGeneratedContentContains(
                 "responseTypeListed",
-                "CompletableFuture<List<Response>> mutation(",
+                "DataFetcher<CompletableFuture<List<Response>>>",
                 "responseList = new ArrayList<Response>()",
                 "for (var itInRecordList : inRecordList) {" +
                         "var response = new Response();" +
@@ -191,8 +193,8 @@ public class ResolverTest extends GeneratorTest {
     void responseRecordListed() {
         assertGeneratedContentContains(
                 "responseRecordListed",
-                "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), inRecordList.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
-                        "response.setCustomer(inRecordList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList()"
+                "customerForNode = CustomerDBQueries.customerForNode(transform.getCtx(), inRecordList.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
+                        "response.setCustomer(inRecordList.stream().map(it -> customerForNode.get(it.getId())).collect(Collectors.toList()"
         );
     }
 
@@ -202,7 +204,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "responseListedRecordListed",
                 "responseList = new ArrayList<Response>()",
-                "loadCustomerByIdsAsNode =",
+                "customerForNode =",
                 "response.setCustomer(itInRecordList.stream()"
         );
     }
@@ -214,7 +216,7 @@ public class ResolverTest extends GeneratorTest {
                 "nestedResponseRecord",
                 "new Response1",
                 "new Response2()",
-                "response2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(inRecord.getId()",
+                "response2.setCustomer(CustomerDBQueries.customerForNode(transform.getCtx(), Set.of(inRecord.getId()",
                 ".findFirst().orElse(null",
                 "response1.setResponse2(response2)"
         );
@@ -228,7 +230,7 @@ public class ResolverTest extends GeneratorTest {
                 "new Response1",
                 "new ArrayList<Response2>",
                 "for (var itInRecordList : inRecordList)",
-                "response2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(itInRecordList.getId()",
+                "response2.setCustomer(CustomerDBQueries.customerForNode(transform.getCtx(), Set.of(itInRecordList.getId()",
                 "response1.setResponse2(response2List)"
         );
     }
@@ -240,7 +242,7 @@ public class ResolverTest extends GeneratorTest {
                 "nestedResponseListedRecord",
                 "new Response1",
                 "new ArrayList<Response2>",  // Note, this is invalid code even though the schema should be legal. We get two loops here when we expect only one.
-                "loadCustomerByIdsAsNode =",
+                "customerForNode =",
                 "response2.setCustomer(itInRecordList.stream()"
         );
     }
@@ -250,7 +252,7 @@ public class ResolverTest extends GeneratorTest {
     void responseListedInputUnlisted() {
         assertGeneratedContentContains(
                 "responseListedInputUnlisted",
-                "response2.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(transform.getCtx(), Set.of(inRecord.getId()",
+                "response2.setCustomer(CustomerDBQueries.customerForNode(transform.getCtx(), Set.of(inRecord.getId()",
                 "response1.setResponse2(List.of(response2"
         );
     }

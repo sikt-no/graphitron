@@ -1,13 +1,10 @@
 package no.sikt.graphitron.common.configuration;
 
 import no.sikt.graphitron.codereferences.conditions.*;
-import no.sikt.graphitron.codereferences.conditions.*;
 import no.sikt.graphitron.codereferences.dummyreferences.DummyCondition;
 import no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum;
 import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphitron.codereferences.dummyreferences.DummyService;
-import no.sikt.graphitron.codereferences.records.*;
-import no.sikt.graphitron.codereferences.services.*;
 import no.sikt.graphitron.codereferences.records.*;
 import no.sikt.graphitron.codereferences.services.*;
 import no.sikt.graphitron.configuration.externalreferences.ExternalClassReference;

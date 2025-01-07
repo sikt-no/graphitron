@@ -4,7 +4,7 @@ import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
-import no.sikt.graphitron.mojo.GraphQLGenerator;
+import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 

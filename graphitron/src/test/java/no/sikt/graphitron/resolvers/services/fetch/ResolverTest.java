@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Test
@@ -47,7 +47,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Basic root service with a parameter")
     void withInput() {
-        assertGeneratedContentContains("operation/withInput", "query(String id,", "resolverFetchService.query(id)");
+        assertGeneratedContentContains("operation/withInput", "id = ((String) _args.get(\"id\"))", "resolverFetchService.query(id)");
     }
 
     @Test
@@ -61,7 +61,7 @@ public class ResolverTest extends GeneratorTest {
     void withPaginationAndRecord() {
         assertGeneratedContentContains(
                 "operation/withPaginationAndRecord", Set.of(CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
-                "query(Integer first, String after, CustomerInputTable in,",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), CustomerInputTable.class)",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "resolverFetchService.queryList(inRecord, pageSize, after",
                 "resolverFetchService.countQueryList(inRecord"
@@ -79,7 +79,7 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryWithInput() {
         assertGeneratedContentContains(
                 "splitquery/withInput", Set.of(SPLIT_QUERY_WRAPPER),
-                "query(Wrapper wrapper, String id,",
+                "id = ((String) _args.get(\"id\"))",
                 "resolverFetchService.query(ids, id)"
         );
     }
@@ -95,7 +95,6 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryWithPaginationAndRecord() {
         assertGeneratedContentContains(
                 "splitquery/withPaginationAndRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
-                "query(Wrapper wrapper, Integer first, String after, CustomerInputTable in,",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "resolverFetchService.queryMap(ids, inRecord, pageSize, after",
                 "resolverFetchService.countQueryMap(ids, inRecord"

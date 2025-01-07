@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
 

@@ -16,7 +16,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.*;
+import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
+import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_SELECT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -54,7 +55,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
         var source = wrapListIf(getSource(type.asSourceClassName(toRecord), target), context.hasSourceName());
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
-                .addCode(declare(toRecord ? VARIABLE_ARGUMENTS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME)))
+                .addCode(declare(toRecord ? VARIABLE_ARGS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME)))
                 .addCode(toRecord && context.hasTable() && !context.hasJavaRecordReference() ? declare(CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)) : empty())
                 .addCode(declare(context.getOutputName(), context.getReturnType(), context.hasSourceName() || noRecordIterability))
                 .addCode("\n")

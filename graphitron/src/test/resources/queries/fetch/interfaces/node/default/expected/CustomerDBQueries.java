@@ -16,7 +16,7 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class CustomerDBQueries {
-    public static Map<String, Customer> loadCustomerByIdsAsNode(DSLContext ctx, Set<String> ids, SelectionSet select) {
+    public static Map<String, Customer> customerForNode(DSLContext ctx, Set<String> ids, SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(

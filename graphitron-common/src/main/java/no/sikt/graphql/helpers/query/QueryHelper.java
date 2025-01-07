@@ -1,12 +1,14 @@
 package no.sikt.graphql.helpers.query;
 
-import org.jooq.*;
 import org.jooq.Record;
+import org.jooq.*;
+import org.jooq.impl.DSL;
 import org.jooq.impl.TableImpl;
 
 import javax.json.Json;
 import javax.json.JsonString;
 import java.io.StringReader;
+import java.lang.constant.Constable;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Stream;
@@ -109,11 +111,7 @@ public class QueryHelper {
         }
     }
 
-    public static Map<String, Object> makeMap(Object[] row, String[] labels) {
-        if (Arrays.stream(row).allMatch(Objects::isNull)) {
-            return null;
-        }
-
+    public static Map<String, Object> makeObjectMap(String[] labels, Object[] row) {
         var resultMap = new HashMap<String, Object>();
         for (int i = 0; i < row.length; i++) {
             var rowValue = row[i];
@@ -123,5 +121,46 @@ public class QueryHelper {
             resultMap.put(labels[i], rowValue);
         }
         return resultMap;
+    }
+
+    public static SelectField<Map> objectRow(String label, Object row) {
+        if (row == null) {
+            return null;
+        }
+        return DSL.row(row).mapping(Map.class, r -> Map.of(label, row));
+    }
+
+    public static SelectField<Map> objectRow(List<String> labels, List<Object> row) {
+        if (row.stream().allMatch(Objects::isNull)) {
+            return null;
+        }
+        return DSL.row(row).mapping(Map.class, r -> makeObjectMap(labels.toArray(new String[0]), r));
+    }
+
+    private static <T, U> HashMap<T, U> buildEnumMap(List<T> from, List<U> to) {
+        var i1 = from.iterator();
+        var i2 = to.iterator();
+        var map = new HashMap<T, U>();
+        while (i1.hasNext()) {
+            map.put(i1.next(), i2.next());
+        }
+        return map;
+    }
+
+    // Extend Constable to remove potential ambiguity with the generics being Object.
+    public static <T extends Constable, U extends Constable> U makeEnumMap(T value, List<T> from, List<U> to) {
+        if (value == null) {
+            return null;
+        }
+        var map = buildEnumMap(from, to);
+        return map.getOrDefault(value, null);
+    }
+
+    public static <T extends Constable, U extends Constable> List<U> makeEnumMap(List<T> values, List<T> from, List<U> to) {
+        var map = buildEnumMap(from, to);
+        return values
+                .stream()
+                .map(it -> it == null ? null : map.getOrDefault(it, null))
+                .toList();
     }
 }

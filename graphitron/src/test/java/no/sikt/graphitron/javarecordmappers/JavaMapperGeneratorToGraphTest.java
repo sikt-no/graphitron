@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.JavaRecordMapperClassGenerator;
+import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -148,7 +148,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     @Test
     @DisplayName("Enum field")
     void withEnum() {
-        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(itMapperEnumRecord.getEnum1() == null ?");
+        assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(QueryHelper.makeEnumMap(itMapperEnumRecord.getEnum1(),");
     }
 
     @Test
@@ -162,7 +162,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void recordFetchedByID() {
         assertGeneratedContentContains(
                 "containingRecordFetchedByID", Set.of(ADDRESS_SERVICE),
-                "address.setCustomer(CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                "address.setCustomer(CustomerDBQueries.customerForNode(" +
                         "transform.getCtx(), Set.of(customer.getId()), select.withPrefix(pathHere + \"customer\"" +
                         ")).values().stream().findFirst().orElse(null)"
         );
@@ -173,9 +173,9 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     void listedRecordFetchedByID() {
         assertGeneratedContentContains(
                 "containingListedRecordFetchedByID", Set.of(ADDRESS_SERVICE),
-                "loadCustomerByIdsAsNode = CustomerDBQueries.loadCustomerByIdsAsNode(" +
+                "customerForNode = CustomerDBQueries.customerForNode(" +
                         "transform.getCtx(), customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + \"customerList\"));" +
-                        "address.setCustomerList(customerList.stream().map(it -> loadCustomerByIdsAsNode.get(it.getId())).collect(Collectors.toList())"
+                        "address.setCustomerList(customerList.stream().map(it -> customerForNode.get(it.getId())).collect(Collectors.toList())"
         );
     }
 

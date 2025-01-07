@@ -5,8 +5,9 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
+import no.sikt.graphitron.definitions.fields.InputField;
+import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
@@ -14,8 +15,10 @@ import no.sikt.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
+import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
-import no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator;
+import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -23,14 +26,15 @@ import org.jetbrains.annotations.NotNull;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
+import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -218,6 +222,9 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock listOf(CodeBlock code) {
+        if (code.isEmpty()) {
+            return empty();
+        }
         return CodeBlock.of("$T.of($L)", LIST.className, code);
     }
 
@@ -227,6 +234,17 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock listOf(String variable) {
         return CodeBlock.of("$T.of($N)", LIST.className, variable);
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock in a Java list provided the condition is true.
+     */
+    @NotNull
+    public static CodeBlock listOfIf(CodeBlock code, boolean condition) {
+        if (!condition) {
+            return code;
+        }
+        return listOf(indentIfMultiline(code));
     }
 
     /**
@@ -283,11 +301,17 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that wraps the supplied CodeBlock in a Map.
+     * @return CodeBlock that wraps this variable in a Java cast.
      */
-    @NotNull
-    public static CodeBlock mapOf(CodeBlock code) {
-        return CodeBlock.of("$T.ofEntries($L)", MAP.className, code);
+    public static CodeBlock asCast(TypeName type, String variable) {
+        return CodeBlock.of("(($T) $N)", type, variable);
+    }
+
+    /**
+     * @return CodeBlock that wraps this code in a Java cast.
+     */
+    public static CodeBlock asCast(TypeName type, CodeBlock code) {
+        return CodeBlock.of("(($T) $L)", type, code);
     }
 
     /**
@@ -360,9 +384,9 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock selectionSetLookup(String path, boolean atResolver, boolean useArguments) {
         if (!atResolver) {
-            return CodeBlock.of("$N.contains($N + $S)", useArguments ? VARIABLE_ARGUMENTS : VARIABLE_SELECT, PATH_HERE_NAME, path);
+            return CodeBlock.of("$N.contains($N + $S)", useArguments ? VARIABLE_ARGS : VARIABLE_SELECT, PATH_HERE_NAME, path);
         }
-        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, useArguments ? TransformerClassGenerator.METHOD_ARGS_NAME : TransformerClassGenerator.METHOD_SELECT_NAME), path);
+        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, useArguments ? METHOD_ARGS_NAME : TransformerClassGenerator.METHOD_SELECT_NAME), path);
     }
 
     /**
@@ -535,18 +559,18 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for an ID fetch DB call.
      */
     @NotNull
-    public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean useExtraGetLayer, boolean isIterable, boolean atResolver) {
+    public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean atResolver) {
         var typeName = field.getTypeName();
-        var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForRecordFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
+        var idCall = CodeBlock.of(".getId()");
         return CodeBlock.of(
                 "$T.$L($L, $L, $L.withPrefix($L))$L",
                 getQueryClassName(asQueryClass(typeName)),
-                asQueryNodeMethod(typeName),
+                asNodeQueryName(typeName),
                 asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                isIterable ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
+                field.isIterableWrapped() ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,
-                isIterable ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
+                field.isIterableWrapped() ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
         );
     }
 
@@ -613,8 +637,29 @@ public class FormatCodeBlocks {
         if (code.isEmpty()) {
             return empty();
         }
-
         return CodeBlock.of("$T.row($L)", DSL.className, indentIfMultiline(code));
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock in a jOOQ row.
+     */
+    @NotNull
+    public static CodeBlock wrapObjectRow(CodeBlock code) {
+        if (code.isEmpty()) {
+            return empty();
+        }
+        return CodeBlock.of("$T.objectRow($L)", QUERY_HELPER.className, indentIfMultiline(code));
+    }
+
+    /**
+     * @return CodeBlock that wraps the provided CodeBlock in a jOOQ coalesce.
+     */
+    @NotNull
+    public static CodeBlock wrapCoalesce(CodeBlock code) {
+        if (code.isEmpty()) {
+            return empty();
+        }
+        return CodeBlock.of("$T.coalesce($L)", DSL.className, indentIfMultiline(code));
     }
 
     /**
@@ -651,125 +696,75 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return Wrap content as an object list.
+     * @return CodeBlock that sends this variable through an enum mapping.
      */
-    @NotNull
-    public static CodeBlock wrapAsObjectList(List<CodeBlock> code) {
-        return CodeBlock.of(
-                "new $T[]{$L}",
-                ClassName.get("java.lang", "Object"),
-                indentIfMultiline(code.stream().collect(CodeBlock.joining(",\n"))));
+    public static CodeBlock makeEnumMapBlock(CodeBlock inputVariable, CodeBlock valueLists) {
+        return CodeBlock.of("$T.makeEnumMap($L, $L)", QUERY_HELPER.className, inputVariable, valueLists);
     }
 
     /**
-     * @return Code block containing the enum conversion method call with an anonymous function declaration.
+     * @return CodeBlock that sends this variable through an enum mapping.
      */
-    public static CodeBlock toJOOQEnumConverter(String enumType, boolean isIterable, ProcessedSchema schema) {
+    public static CodeBlock makeEnumMapBlock(String inputVariable, CodeBlock valueLists) {
+        return CodeBlock.of("$T.makeEnumMap($N, $L)", QUERY_HELPER.className, inputVariable, valueLists);
+    }
+
+    /**
+     * @return Code block containing the enum conversion method call with anonymous function declarations.
+     */
+    public static CodeBlock toJOOQEnumConverter(String enumType, ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
             return empty();
         }
 
         var enumEntry = schema.getEnum(enumType);
         var tempVariableName = "s";
-        return CodeBlock
-                .builder()
-                .add(".convert($T.class, $L -> $L, $L -> $L)",
-                     enumEntry.getGraphClassName(),
-                     tempVariableName,
-                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, false, true),
-                     tempVariableName,
-                     toNullSafeMapCall(CodeBlock.of(tempVariableName), enumEntry, isIterable, false, false)
-                )
-                .build();
+        var code = CodeBlock.of(
+                "$T.class,\n$L -> $L,\n$L -> $L",
+                enumEntry.getGraphClassName(),
+                tempVariableName,
+                makeEnumMapBlock(tempVariableName, renderEnumMapElements(enumEntry, true)),
+                tempVariableName,
+                makeEnumMapBlock(tempVariableName, renderEnumMapElements(enumEntry, false))
+        );
+        return CodeBlock.of(".convert($L)", indentIfMultiline(code));
     }
 
     /**
      * @return Code block containing the enum conversion method call.
      */
-    public static CodeBlock toGraphEnumConverter(
-            String enumType,
-            CodeBlock field,
-            boolean isIterable,
-            boolean toRecord,
-            ProcessedSchema schema) {
+    public static CodeBlock toGraphEnumConverter(String enumType, CodeBlock field, boolean toRecord, ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
             return empty();
         }
-
-        var enumEntry = schema.getEnum(enumType);
-        return toNullSafeMapCall(field, enumEntry, isIterable, true, !toRecord);
-    }
-
-    private  static CodeBlock toNullSafeMapCall(
-            CodeBlock variable,
-            EnumDefinition enumEntry,
-            boolean isIterable,
-            boolean isGraphConverter,
-            boolean flipDirection) {
-        if (isIterable && isGraphConverter) {
-            var itName = asIterable(enumEntry.getName());
-            return CodeBlock.of(
-                    "$L.stream().map($L -> $L.getOrDefault($L, null))$L",
-                    nullIfNullElseThis(variable),
-                    itName,
-                    mapOf(renderEnumMapElements(enumEntry, flipDirection)),
-                    itName,
-                    collectToList()
-            );
-        }
-
-        return CodeBlock.of(
-                "$L$L.getOrDefault($L, null)",
-                nullIfNullElse(variable),
-                mapOf(renderEnumMapElements(enumEntry, flipDirection)),
-                variable
-        );
+        return makeEnumMapBlock(field, renderEnumMapElements(schema.getEnum(enumType), !toRecord));
     }
 
     private static CodeBlock renderEnumMapElements(EnumDefinition enumEntry, boolean flipDirection) {
-        var code = CodeBlock.builder();
         var hasEnumReference = enumEntry.hasJavaEnumMapping();
         var enumReference = enumEntry.getEnumReference();
         var entryClassName = enumEntry.getGraphClassName();
-        var entrySet = new ArrayList<>(enumEntry.getFields());
-        var entrySetSize = entrySet.size();
+        var referenceClassName = enumReference != null
+                ? ClassName.get(GeneratorConfig.getExternalReferences().getClassFrom(enumReference))
+                : null;
 
-        for (int i = 0; i < entrySetSize; i++) {
-            var enumValue = entrySet.get(i);
-
-            code.add("$T.entry(", MAP.className);
-
-            if (flipDirection) {
-                code
-                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getUpperCaseName()))
-                        .add(", $L", renderEnumKeySide(entryClassName, enumValue.getName()));
-            } else {
-                code
-                        .add("$L, ", renderEnumKeySide(entryClassName, enumValue.getName()))
-                        .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getUpperCaseName()));
-            }
-
-            if (i < entrySetSize - 1) {
-                code.add(")");
-                code.add(", ");
-            }
+        var fromBlocks = new ArrayList<CodeBlock>();
+        var toBlocks = new ArrayList<CodeBlock>();
+        for (var enumValue : enumEntry.getFields()) {
+            var upperName = enumValue.getUpperCaseName();
+            var key = CodeBlock.of("$T.$L", entryClassName, enumValue.getName());
+            var value = hasEnumReference ? CodeBlock.of("$T.$L", referenceClassName, upperName) : CodeBlock.of("$S", upperName);
+            fromBlocks.add(flipDirection ? value : key);
+            toBlocks.add(flipDirection ? key : value);
         }
-        code.add(")");
 
-        return code.build();
+        return CodeBlock.of(
+                "$L, $L",
+                listOf(CodeBlock.join(fromBlocks, ", ")),
+                listOf(CodeBlock.join(toBlocks, ", "))
+        );
     }
 
-    private static CodeBlock renderEnumKeySide(TypeName entryClassName, String keyName) {
-        return CodeBlock.of("$T.$L", entryClassName, keyName);
-    }
-
-    private static CodeBlock renderEnumValueSide(boolean hasEnumReference, CodeReference reference, String valueName) {
-        if (hasEnumReference) {
-            return CodeBlock.of("$T.$L", ClassName.get(GeneratorConfig.getExternalReferences().getClassFrom(reference)), valueName);
-        } else {
-            return CodeBlock.of("$S", valueName);
-        }
-    }
     /**
      * @param recordName Name of the record to transform.
      * @param scope      The scope of transforms that should be applied. Currently only {@link TransformScope#ALL_MUTATIONS} is supported.
@@ -817,6 +812,139 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return Code for constructing any structure of response types.
+     */
+    public static CodeBlock makeResponses(MapperContext context, ObjectField field, ProcessedSchema schema, InputParser parser) {
+        var target = context.getTarget();
+        if (!context.targetIsType() || schema.isExceptionOrExceptionUnion(target)) {
+            return empty();
+        }
+
+        var targetTypeName = target.getTypeName();
+        var object = context.getTargetType();
+        var record = findUsableRecord(target, schema, parser);
+        var wrapInFor = (!context.isTopLevelContext() || target.isIterableWrapped()) && record.isIterableWrapped();
+        var code = CodeBlock
+                .builder()
+                .add("\n")
+                .add(declare(targetTypeName, object.getGraphClassName()));
+        var filteredFields = object
+                .getFields()
+                .stream()
+                .filter(it -> !it.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName()))
+                .toList(); //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
+        for (var innerField : filteredFields) {
+            var innerContext = context.iterateContext(innerField);
+            if (!innerContext.targetIsType()) {
+                if (innerField.isID()) {
+                    code
+                            .beginControlFlow("if ($L)", selectionSetLookup(innerContext.getPath(), true, false))
+                            .add(innerContext.getSetMappingBlock(getIDMappingCode(innerContext, field, schema, parser)))
+                            .endControlFlow()
+                            .add("\n");
+                }
+                continue;
+            }
+
+            var innerCode = CodeBlock.builder();
+            var recordField = findUsableRecord(innerField, schema, parser); // In practice this supports only one record type at once. Can't map to types that are not records.
+            var recordName = asIterableIf(asListedRecordNameIf(recordField.getName(), recordField.isIterableWrapped()), wrapInFor);
+            if (schema.implementsNode(innerField)) {
+                innerCode.add(idFetchAllowingDuplicates(innerContext, innerField, recordName, true));
+            } else {
+                innerCode.add(makeResponses(innerContext, field, schema, parser));
+                var inputSource = !innerContext.getTargetType().hasTable()
+                        ? innerField.getTypeName()
+                        : asGetMethodVariableName(asRecordName(recordField.getName()), innerField.getName());
+
+                var recordIterable = recordField.isIterableWrapped();
+                if (recordIterable == innerContext.isIterable()) {
+                    innerCode.add(innerContext.getSetMappingBlock(asListedNameIf(inputSource, innerContext.isIterable())));
+                } else if (!recordIterable && innerContext.isIterable()) {
+                    innerCode.add(innerContext.getSetMappingBlock(listOf(uncapitalize(inputSource))));
+                } else {
+                    innerCode.add(innerContext.getSetMappingBlock(CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf())));
+                }
+            }
+
+            code
+                    .beginControlFlow("if ($N != null && $L)", recordName, selectionSetLookup(innerContext.getPath(), true, false))
+                    .add(innerCode.build())
+                    .endControlFlow()
+                    .add("\n");
+        }
+
+        if (!wrapInFor) {
+            return code.build();
+        }
+
+        return CodeBlock
+                .builder()
+                .add(declare(targetTypeName, object.getGraphClassName(), true))
+                .add(wrapFor(asListedRecordName(record.getName()), code.add(addToList(targetTypeName)).build()))
+                .build();
+    }
+
+    public static CodeBlock getIDMappingCode(MapperContext context, ObjectField field, ProcessedSchema schema, InputParser parser) {
+        var inputSource = field
+                .getArguments()
+                .stream()
+                .filter(InputField::isID)
+                .findFirst();
+
+        boolean isIterable = context.isIterable(), shouldMap = true;
+        String idSource;
+        if (inputSource.isPresent()) {
+            var source = inputSource.get();
+            isIterable = source.isIterableWrapped();
+            shouldMap = isIterable || schema.isInputType(source);
+            idSource = source.getName();
+        } else {
+            var previousField = context.isTopLevelContext() ? context.getTarget() : context.getPreviousContext().getTarget();
+            var recordSource = parser
+                    .getJOOQRecords()
+                    .entrySet()
+                    .stream()
+                    .filter(it -> schema.getInputType(it.getValue()).getFields().stream().anyMatch(InputField::isID))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Could not find a suitable ID to return for '" + previousField.getName() + "'."));
+            idSource = asIterableIf(recordSource.getKey(), previousField.isIterableWrapped() && schema.isObject(previousField));
+        }
+
+        var code = CodeBlock.builder().add("$N", idSource);
+        if (shouldMap) {
+            if (isIterable) {
+                code.add(".stream().map(it -> it.getId())$L", collectToList());
+            } else {
+                code.add(".getId()");
+            }
+        }
+
+        return code.build();
+    }
+
+    private static InputField findUsableRecord(GenerationField target, ProcessedSchema schema, InputParser parser) {
+        var responseObject = schema.getObject(target);
+        if (responseObject.hasTable()) {
+            var responseFieldTableName = responseObject.getTable().getMappingName();
+            return parser
+                    .getJOOQRecords()
+                    .values()
+                    .stream()
+                    .filter(it -> schema.getInputType(it).getTable().getMappingName().equals(responseFieldTableName))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table reference '" + responseFieldTableName + "' to."));
+        }
+        return parser
+                .getJOOQRecords()
+                .entrySet()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
+                .getValue(); // In practice this supports only one record type at once.
+    }
+
+    /**
      * @return CodeBlock containing a switch case for the provided variables.
      */
     public static CodeBlock breakCaseWrap(CodeBlock condition, CodeBlock code) {
@@ -832,6 +960,16 @@ public class FormatCodeBlocks {
 
     private static CodeBlock breakCaseBody(CodeBlock code) {
         return CodeBlock.builder().add("\n").indent().indent().add("$L;", code).addStatement("break").unindent().unindent().build();
+    }
+
+    public static CodeBlock fetchMapping(boolean iterable) {
+        return iterable
+                ? CodeBlock.of("$1L -> $1N.value1().intoMap(), $1L -> $1N.value2().intoMap()", VARIABLE_INTERNAL_ITERATION)
+                : CodeBlock.of(".fetchOneMap()");
+    }
+
+    public static CodeBlock declareArgs(ObjectField target) {
+        return target.getArguments().isEmpty() ? empty() : declare(VARIABLE_ARGS, asMethodCall(VARIABLE_ENV, METHOD_ARGS_NAME));
     }
 
     /**

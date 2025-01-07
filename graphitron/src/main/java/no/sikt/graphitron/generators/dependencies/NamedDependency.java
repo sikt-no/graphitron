@@ -11,7 +11,7 @@ import java.util.Objects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
-import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
+import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 
 /**
  * An abstract dependency on a class somewhere in the codebase.

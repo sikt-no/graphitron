@@ -5,7 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ public class InputRecordTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchResolverClassGenerator(schema));
+        return List.of(new FetchClassGenerator(schema));
     }
 
     @Test
@@ -43,7 +43,6 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/withInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "query(DummyInputRecord in,",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "resolverFetchService.query(inRecord)"
         );
@@ -54,7 +53,6 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/withInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "query(CustomerInputTable in,",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "resolverFetchService.query(inRecord)"
         );
@@ -65,7 +63,6 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJavaRecordOnSplitQuery() {
         assertGeneratedContentContains(
                 "splitquery/withInputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
-                "query(Wrapper wrapper, DummyInputRecord in,",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "resolverFetchService.query(ids, inRecord)"
         );
@@ -76,7 +73,6 @@ public class InputRecordTest extends GeneratorTest {
     void withInputJOOQRecordOnSplitQuery() {
         assertGeneratedContentContains(
                 "splitquery/withInputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
-                "query(Wrapper wrapper, CustomerInputTable in,",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "resolverFetchService.query(ids, inRecord)"
         );

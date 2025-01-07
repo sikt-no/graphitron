@@ -11,7 +11,7 @@ public class CustomerInputTableJOOQMapper {
     public static List<CustomerRecord> toJOOQRecord(List<CustomerInputTable> customerInputTable,
                                                     String path, RecordTransformer transform) {
         var pathHere = path.isEmpty() ? path : path + "/";
-        var arguments = transform.getArguments();
+        var _args = transform.getArguments();
         var ctx = transform.getCtx();
         var customerRecordList = new ArrayList<CustomerRecord>();
 
@@ -20,7 +20,7 @@ public class CustomerInputTableJOOQMapper {
                 if (itCustomerInputTable == null) continue;
                 var customerRecord = new CustomerRecord();
                 customerRecord.attach(ctx.configuration());
-                if (arguments.contains(pathHere + "id")) {
+                if (_args.contains(pathHere + "id")) {
                     customerRecord.setId(itCustomerInputTable.getId());
                 }
 
