@@ -1,0 +1,10 @@
+union _Entity = Customer
+
+type Query {
+  _entities(representations: [_Any!]!): [_Entity]!
+  customer: Customer
+}
+
+type Customer @table @key(fields: "id") {
+  id: ID
+}

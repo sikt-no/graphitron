@@ -6,8 +6,6 @@ import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
-import no.sikt.graphitron.mojo.Generator;
-import no.sikt.graphitron.mojo.GraphQLGenerator;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -101,6 +99,9 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Parameter(property = "generate.maxAllowedPageSize", defaultValue = "1000")
     private int maxAllowedPageSize;
 
+    @Parameter(property = "generate.includeApolloFederation", defaultValue = "false")
+    private boolean includeApolloFederation;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -138,6 +139,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
 
     public int getMaxAllowedPageSize() {
         return maxAllowedPageSize;
+    }
+
+    public boolean federationEnabled() {
+        return includeApolloFederation;
     }
 
     public void setOutputPath(String outputPath) {

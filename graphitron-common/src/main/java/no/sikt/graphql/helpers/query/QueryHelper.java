@@ -8,9 +8,7 @@ import javax.json.Json;
 import javax.json.JsonString;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Stream;
 
 import static org.jooq.impl.DSL.*;
@@ -109,5 +107,21 @@ public class QueryHelper {
         } catch (Exception e) {
             throw new IllegalArgumentException("Ugyldig verdi/format på token brukt til paginering (after): '" + token + "'", e);
         }
+    }
+
+    public static Map<String, Object> makeMap(Object[] row, String[] labels) {
+        if (Arrays.stream(row).allMatch(Objects::isNull)) {
+            return null;
+        }
+
+        var resultMap = new HashMap<String, Object>();
+        for (int i = 0; i < row.length; i++) {
+            var rowValue = row[i];
+            if (rowValue == null) {
+                continue;
+            }
+            resultMap.put(labels[i], rowValue);
+        }
+        return resultMap;
     }
 }

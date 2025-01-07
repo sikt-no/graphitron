@@ -38,10 +38,7 @@ public class UpdateDBClassGenerator extends DBClassGenerator<ObjectField> {
 
     @Override
     public TypeSpec generate(ObjectField target) {
-        return getSpec(
-                capitalize(target.getName()),
-                List.of(new UpdateDBMethodGenerator(target, processedSchema))
-        ).build();
+        return getSpec(capitalize(target.getName()), new UpdateDBMethodGenerator(target, processedSchema)).build();
     }
 
     @Override

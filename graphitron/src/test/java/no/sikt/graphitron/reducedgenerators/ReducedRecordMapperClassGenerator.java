@@ -6,8 +6,6 @@ import no.sikt.graphitron.generators.resolvers.mapping.RecordMapperClassGenerato
 import no.sikt.graphitron.generators.resolvers.mapping.RecordValidatorMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.List;
-
 public class ReducedRecordMapperClassGenerator extends RecordMapperClassGenerator {
     public ReducedRecordMapperClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema, true);
@@ -15,6 +13,6 @@ public class ReducedRecordMapperClassGenerator extends RecordMapperClassGenerato
 
     @Override
     public TypeSpec generate(GenerationField target) {
-        return getSpec(processedSchema.getRecordType(target).getName(), List.of(new RecordValidatorMethodGenerator(target, processedSchema))).build();
+        return getSpec(processedSchema.getRecordType(target).getName(), new RecordValidatorMethodGenerator(target, processedSchema)).build();
     }
 }

@@ -5,7 +5,7 @@ directive @splitQuery on FIELD_DEFINITION
 Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented.
 Can be set on an input field to prevent generation of record mappers.
 """
-directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INTERFACE | UNION
 
 """Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE

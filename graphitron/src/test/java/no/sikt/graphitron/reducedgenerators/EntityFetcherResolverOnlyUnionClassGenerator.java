@@ -1,0 +1,17 @@
+package no.sikt.graphitron.reducedgenerators;
+
+import com.squareup.javapoet.TypeSpec;
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.generators.datafetchers.resolvers.fetch.EntityFetcherResolverClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.resolvers.fetch.EntityTypeResolverMethodGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
+
+public class EntityFetcherResolverOnlyUnionClassGenerator extends EntityFetcherResolverClassGenerator {
+    public EntityFetcherResolverOnlyUnionClassGenerator(ProcessedSchema processedSchema) {
+        super(processedSchema);
+    }
+    @Override
+    public TypeSpec generate(ObjectDefinition dummy) {
+        return getSpec(processedSchema.getQueryType().getName() + CLASS_NAME, new EntityTypeResolverMethodGenerator(processedSchema)).build();
+    }
+}

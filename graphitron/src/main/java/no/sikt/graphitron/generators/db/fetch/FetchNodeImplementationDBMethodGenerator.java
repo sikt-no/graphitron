@@ -17,9 +17,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;

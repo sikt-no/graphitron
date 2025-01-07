@@ -23,6 +23,8 @@ public interface Generator {
 
     List<? extends ExternalReference> getExternalReferences();
 
+    boolean federationEnabled();
+
     Set<String> getExternalReferenceImports();
 
     List<GlobalTransform> getGlobalTransforms();

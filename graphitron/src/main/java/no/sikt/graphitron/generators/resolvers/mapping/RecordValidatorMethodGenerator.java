@@ -14,11 +14,11 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordValidateMethod;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_ARGS_NAME;
 import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_ENV_NAME;

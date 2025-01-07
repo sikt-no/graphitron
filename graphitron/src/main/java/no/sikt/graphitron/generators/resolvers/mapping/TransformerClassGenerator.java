@@ -14,7 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.ABSTRACT_TRANSFORMER;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class TransformerClassGenerator extends AbstractClassGenerator<ObjectDefinition> {

@@ -27,6 +27,28 @@ public class GeneratorConfig {
 
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
 
+    private static Set<String> schemaFiles;
+
+    private static String
+            outputDirectory,
+            outputPackage,
+            generatedSchemaResolversPackage,
+            generatedSchemaModelsPackage,
+            generatedJooqPackage,
+            resolverAnnotation;
+
+    private static int maxAllowedPageSize;
+    private final static boolean USE_OPTIONAL_SELECTS = false;
+    private static boolean includeApolloFederation = false;
+
+    private static ExternalReferences externalReferences;
+    private static Set<String> externalReferenceImports;
+    private static List<GlobalTransform> globalTransforms;
+
+    private static ExtendedFunctionality extendedFunctionality;
+
+    private static RecordValidation recordValidation;
+
     /**
      * Set the generator properties from code. Intended for tests.
      */
@@ -86,6 +108,7 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
+        includeApolloFederation = mojo.federationEnabled();
     }
 
     /**
@@ -103,28 +126,8 @@ public class GeneratorConfig {
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
         resolverAnnotation = null;
+        includeApolloFederation = false;
     }
-
-    private static Set<String> schemaFiles;
-
-    private static String
-            outputDirectory,
-            outputPackage,
-            generatedSchemaResolversPackage,
-            generatedSchemaModelsPackage,
-            generatedJooqPackage,
-            resolverAnnotation;
-
-    private static int maxAllowedPageSize;
-    private final static boolean USE_OPTIONAL_SELECTS = false;
-
-    private static ExternalReferences externalReferences;
-    private static Set<String> externalReferenceImports;
-    private static List<GlobalTransform> globalTransforms;
-
-    private static ExtendedFunctionality extendedFunctionality;
-
-    private static RecordValidation recordValidation;
 
     public static Set<String> schemaFiles() {
         return schemaFiles;
@@ -177,6 +180,10 @@ public class GeneratorConfig {
         return recordValidation != null && recordValidation.isEnabled();
     }
 
+    public static boolean federationEnabled() {
+        return includeApolloFederation;
+    }
+
     public static void setRecordValidation(RecordValidation recordValidation) {
         GeneratorConfig.recordValidation = recordValidation;
     }
@@ -203,6 +210,10 @@ public class GeneratorConfig {
 
     public static boolean useOptionalSelects() {
         return USE_OPTIONAL_SELECTS;
+    }
+
+    public static void setIncludeApolloFederation(boolean value) {
+        includeApolloFederation = value;
     }
 
     public static void setResolverAnnotation(String resolverAnnotation) {

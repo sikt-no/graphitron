@@ -12,9 +12,9 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;

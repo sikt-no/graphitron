@@ -4,6 +4,7 @@ import graphql.language.SchemaDefinition;
 import graphql.language.*;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
@@ -45,6 +46,7 @@ public class ProcessedSchema {
     private final Map<String, RecordObjectSpecification<?>> objectWithPreviousTable;
     private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootObject;
     private final List<GenerationField> transformableFields;
+    private final List<ObjectDefinition> unreferencedObjects;
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
         typeNames = typeRegistry.getTypes(TypeDefinition.class).stream().map(TypeDefinition::getName).collect(Collectors.toSet());
@@ -57,6 +59,19 @@ public class ProcessedSchema {
                 .processObjectDefinitions(objectTypes)
                 .stream()
                 .collect(Collectors.toMap(ObjectDefinition::getName, Function.identity()));
+
+        var allReferencedTypes = objects
+                .values()
+                .stream()
+                .flatMap(it -> it.getFields().stream())
+                .map(AbstractField::getTypeName)
+                .collect(Collectors.toSet());
+        unreferencedObjects = objects
+                .values()
+                .stream()
+                .filter(it -> !allReferencedTypes.contains(it.getName()))
+                .filter(it -> !it.getName().equals(SCHEMA_QUERY.getName()) && !it.getName().equals(SCHEMA_MUTATION.getName()))
+                .collect(Collectors.toList());
 
         entities = objects
                 .values()
@@ -276,6 +291,13 @@ public class ProcessedSchema {
      */
     public Map<String, ObjectDefinition> getObjects() {
         return objects;
+    }
+
+    /**
+     * @return List of all the objects in the schema that are not referenced by an object field.
+     */
+    public List<ObjectDefinition> getUnreferencedObjects() {
+        return unreferencedObjects;
     }
 
     /**
@@ -581,6 +603,20 @@ public class ProcessedSchema {
      */
     public RecordObjectSpecification<?> getRecordType(GenerationField field) {
         return getRecordType(field.getTypeName());
+    }
+
+    /**
+     * @return Does this schema use the _entities field?
+     */
+    public boolean hasEntitiesField() {
+        return GeneratorConfig.federationEnabled() && queryType != null; //  && queryType.hasField(FEDERATION_ENTITIES_FIELD.getName());
+    }
+
+    /**
+     * @return The _entities field in the Query type, if it exists.
+     */
+    public ObjectField getEntitiesField() {
+        return queryType.getFieldByName(FEDERATION_ENTITIES_FIELD.getName());
     }
 
     /**

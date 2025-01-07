@@ -8,11 +8,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import graphql.schema.DataFetcher;
+import org.jooq.DSLContext;
 
 public class QueryEntityGeneratedDataFetcher {
-    public DataFetcher<List<Map<String, Object>>> entityFetcher() {
+    public static DataFetcher<List<Map<String, Object>>> entityFetcher() {
         return env -> ((List<Map<String, Object>>) env.getArgument("representations")).stream().map(internal_it_ -> {
-            var ctx = env.getLocalContext();
+            var ctx = (DSLContext) env.getLocalContext();
             var _typeName = (String) internal_it_.get("__typename");
             var _obj = new HashMap<String, Object>();
             _obj.put("__typename", _typeName);

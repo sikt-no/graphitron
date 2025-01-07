@@ -3,7 +3,8 @@ package no.sikt.graphitron.mojo;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.datafetcherresolvers.fetch.EntityFetcherResolverClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.wiring.WiringClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.resolvers.fetch.EntityFetcherResolverClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphql.schema.SchemaReader.getTypeDefinitionRegistry;
 
@@ -46,7 +48,7 @@ public class GraphQLGenerator {
     }
 
     public static List<ClassGenerator<?>> getGenerators(ProcessedSchema processedSchema) {
-        return List.of(
+        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema),
@@ -60,6 +62,10 @@ public class GraphQLGenerator {
                 new ExceptionToErrorMappingProviderGenerator(processedSchema),
                 new EntityFetcherResolverClassGenerator(processedSchema)
         );
+        return Stream.concat(
+                generators.stream(),
+                Stream.of(new WiringClassGenerator(generators, processedSchema))  // This one must be the last generator.
+        ).collect(Collectors.toList());
     }
 
     /**

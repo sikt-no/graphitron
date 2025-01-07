@@ -1,14 +1,22 @@
 package no.sikt.graphitron.generators.abstractions;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.generators.datafetchers.wiring.ClassWiringContainer;
+import no.sikt.graphitron.generators.datafetchers.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 abstract public class DataFetcherClassGenerator<T extends GenerationTarget> extends AbstractClassGenerator<T> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "datafetchers", FILE_NAME_SUFFIX = "GeneratedDataFetcher";
+    protected final List<ClassWiringContainer>
+            fetcherWiringContainer = new ArrayList<>(),
+            typeWiringContainer = new ArrayList<>();
 
     public DataFetcherClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
@@ -32,5 +40,28 @@ abstract public class DataFetcherClassGenerator<T extends GenerationTarget> exte
     @Override
     public String getFileNameSuffix() {
         return FILE_NAME_SUFFIX;
+    }
+
+    public List<ClassWiringContainer> getGeneratedDataFetchers() {
+        return fetcherWiringContainer;
+    }
+
+    public List<ClassWiringContainer> getGeneratedTypeResolvers() {
+        return typeWiringContainer;
+    }
+
+    protected void addFetchers(List<WiringContainer> containers, ClassName className) {
+        fetcherWiringContainer.addAll(asClassWiring(containers, className));
+    }
+
+    protected void addTypeResolvers(List<WiringContainer> containers, ClassName className) {
+        typeWiringContainer.addAll(asClassWiring(containers, className));
+    }
+
+    private static List<ClassWiringContainer> asClassWiring(List<WiringContainer> containers, ClassName className) {
+        return containers
+                .stream()
+                .map(it -> new ClassWiringContainer(it, className))
+                .collect(Collectors.toList());
     }
 }

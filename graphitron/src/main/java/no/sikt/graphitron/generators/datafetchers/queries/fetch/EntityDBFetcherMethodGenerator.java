@@ -1,4 +1,4 @@
-package no.sikt.graphitron.generators.datafetcherqueries.fetch;
+package no.sikt.graphitron.generators.datafetchers.queries.fetch;
 
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
@@ -20,16 +20,14 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INPUT_MAP;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
 /**
  * This class generates the queries needed to resolve entities.
  */
 public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
-    private static final String VARIABLE_RESULT = "_result", NESTED_NAME = "nested";
+    private static final String VARIABLE_RESULT = "_result", NESTED_NAME = "nested", VARIABLE_MAPPING = "_r";
 
     public EntityDBFetcherMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -39,7 +37,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField target) {
         var targetType = processedSchema.getObject(target);
         var mapType = getObjectMapTypeName();
-        if (!getLocalObject().isEntity() || !processedSchema.getQueryType().hasField(FEDERATION_ENTITIES_FIELD.getName())) {
+        if (!getLocalObject().isEntity() || !processedSchema.hasEntitiesField()) {
             return getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType).build();
         }
 
@@ -94,9 +92,10 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
                 for (var key : containedKeys) {
                     conditions.add(getConditionCode(context, key, type.getFieldByName(key)));
                 }
-                var conditionCode = CodeBlock.of("$T.of($L)", STREAM.className, indentIfMultiline(conditions.stream().collect(CodeBlock.joining(",\n"))));
-                var streamCode = CodeBlock.of("$N.stream().flatMap($L ->$L)$L", VARIABLE_INPUT_MAP, VARIABLE_INTERNAL_ITERATION, indentIfMultiline(conditionCode), collectToList());
-                innerCode.add("$T.and($L)", DSL.className, indentIfMultiline(streamCode));
+                var conditionCode = CodeBlock.of("$T.of($L)", LIST.className, indentIfMultiline(conditions.stream().collect(CodeBlock.joining(",\n"))));
+                // If using a listed version, we need this instead:
+                // var streamCode = CodeBlock.of("$N.stream().flatMap($L ->$L)$L", VARIABLE_INPUT_MAP, VARIABLE_INTERNAL_ITERATION, indentIfMultiline(conditionCode), collectToList());
+                innerCode.add("$T.and($L)", DSL.className, indentIfMultiline(conditionCode));
             }
             code.add("$L($L)", hasWhere ? "\n.or" : ".where", indentIfMultiline(innerCode.build()));
             hasWhere = true;
@@ -125,22 +124,32 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements) {
-        var mappingVariable = "_r";
         var mappingElements = new ArrayList<CodeBlock>();
-        for (int i = 0; i < fieldsWithoutSplitting.size(); i++) {
-            mappingElements.add(CodeBlock.of("$T.entry($S, $N[$L])", MAP.className, fieldsWithoutSplitting.get(i).getName(), mappingVariable, i));
-        }
-        var entries = listedNullCheck(mappingVariable, CodeBlock.of("$T.ofEntries($L)", MAP.className, indentIfMultiline(mappingElements.stream().collect(CodeBlock.joining(",\n")))));
-        return CodeBlock.of("$L.mapping($T.class, $L -> $L)", wrapRow(wrapAsObjectList(rowElements)), MAP.className, mappingVariable, entries);
+        fieldsWithoutSplitting.forEach(it -> mappingElements.add(CodeBlock.of("$S", it.getName())));
+
+        var mapping = CodeBlock.of(
+                "$N,\nnew $T[] {$L}",
+                VARIABLE_MAPPING,
+                STRING.className,
+                indentIfMultiline(mappingElements.stream().collect(CodeBlock.joining(",\n")))
+        );
+        return CodeBlock.of(
+                "$L.mapping($T.class, $L -> $T.makeMap($L))",
+                wrapRow(wrapAsObjectList(rowElements)),
+                MAP.className,
+                VARIABLE_MAPPING,
+                QUERY_HELPER.className,
+                indentIfMultiline(mapping)
+        );
     }
 
     @Override
     public List<MethodSpec> generateAll() {
         var query = processedSchema.getQueryType();
-        if (query == null || !query.hasField(FEDERATION_ENTITIES_FIELD.getName())) {
+        if (!processedSchema.hasEntitiesField()) {
             return List.of();
         }
-        if (!getLocalObject().isEntity() || query.getFieldByName(FEDERATION_ENTITIES_FIELD.getName()).isExplicitlyNotGenerated()) {
+        if (!getLocalObject().isEntity()) { // Note: No entity field here yet: || processedSchema.getEntitiesField().isExplicitlyNotGenerated()) {
             return List.of();
         }
         return List.of(generate(new VirtualSourceField(getLocalObject(), query.getName())));

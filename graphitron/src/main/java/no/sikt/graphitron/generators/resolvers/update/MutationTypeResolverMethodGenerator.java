@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.createIdFetch;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
 import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
@@ -50,7 +51,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     protected CodeBlock generateUpdateMethodCall(ObjectField target) {
         var objectToCall = asQueryClass(target.getName());
 
-        var updateClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + UpdateDBClassGenerator.SAVE_DIRECTORY_NAME, objectToCall);
+        var updateClass = getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + UpdateDBClassGenerator.SAVE_DIRECTORY_NAME, objectToCall);
         return declare(
                 !localField.hasServiceReference() ? VARIABLE_ROWS : asResultName(target.getUnprocessedFieldOverrideInput()),
                 CodeBlock.of("$T.$L($L, $L)",

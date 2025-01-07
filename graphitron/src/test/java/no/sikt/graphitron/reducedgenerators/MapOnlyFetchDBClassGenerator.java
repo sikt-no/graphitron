@@ -6,8 +6,6 @@ import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchMappedObjectDBMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.List;
-
 public class MapOnlyFetchDBClassGenerator extends FetchDBClassGenerator {
     public MapOnlyFetchDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
@@ -15,6 +13,6 @@ public class MapOnlyFetchDBClassGenerator extends FetchDBClassGenerator {
 
     @Override
     public TypeSpec generate(ObjectDefinition target) {
-        return getSpec(target.getName(), List.of(new FetchMappedObjectDBMethodGenerator(target, processedSchema))).build();
+        return getSpec(target.getName(), new FetchMappedObjectDBMethodGenerator(target, processedSchema)).build();
     }
 }

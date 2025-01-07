@@ -11,7 +11,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
 
 /**
  * Generic select query generation functionality is contained within this class.

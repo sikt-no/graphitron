@@ -4,7 +4,8 @@ import com.squareup.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
-import no.sikt.graphitron.generators.datafetcherresolvers.fetch.EntityFetcherResolverMethodGenerator;
+import no.sikt.graphitron.generators.datafetchers.queries.fetch.EntityDBFetcherMethodGenerator;
+import no.sikt.graphitron.generators.datafetchers.resolvers.fetch.EntityFetcherResolverMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -62,7 +63,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                         new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
                         new FetchMultiTableInterfaceDBMethodGenerator(target, processedSchema),
                         new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema),
-                        new EntityFetcherResolverMethodGenerator(target, processedSchema)
+                        new EntityDBFetcherMethodGenerator(target, processedSchema)
                 )
         ).build();
     }

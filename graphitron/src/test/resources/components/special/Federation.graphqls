@@ -2,8 +2,3 @@ scalar _Any
 scalar FieldSet
 
 directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
-
-
-type Query {
-    _entities(representations: [_Any!]!): [_Entity]!
-}

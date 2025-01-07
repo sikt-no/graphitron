@@ -27,6 +27,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.resolvers.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -275,6 +276,13 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps this method name in a static method call format after the specified source.
+     */
+    public static CodeBlock asMethodCall(TypeName source, String method) {
+        return CodeBlock.of("$T$L", source, asMethodCall(method));
+    }
+
+    /**
      * @return CodeBlock that wraps the supplied CodeBlock in a Map.
      */
     @NotNull
@@ -427,15 +435,18 @@ public class FormatCodeBlocks {
             params.add(inputList);
         }
 
-        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
                 includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : empty(),
                 IDS_NAME,
-                isService ? uncapitalize(queryLocation) : queryClass,
+                isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
                 String.join(", ", params)
         );
+    }
+
+    private static ClassName getQueryClassName(String queryLocation) {
+        return getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
     }
 
     /**
@@ -463,11 +474,10 @@ public class FormatCodeBlocks {
             params.add(SELECTION_SET_NAME);
         }
 
-        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         return CodeBlock.of(
                 isService ? "($L) -> $N.$L($L)" : "($L) -> $T.$L($L)",
                 String.join(", ", inputs),
-                isService ? uncapitalize(queryLocation) : queryClass,
+                isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 queryMethodName,
                 String.join(", ", params));
     }
@@ -528,10 +538,9 @@ public class FormatCodeBlocks {
     public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean useExtraGetLayer, boolean isIterable, boolean atResolver) {
         var typeName = field.getTypeName();
         var idCall = useExtraGetLayer ? CodeBlock.of("$L.getId()", field.getMappingForRecordFieldOverride().asGetCall()) : CodeBlock.of(".getId()");
-        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, asQueryClass(typeName));
         return CodeBlock.of(
                 "$T.$L($L, $L, $L.withPrefix($L))$L",
-                queryClass,
+                getQueryClassName(asQueryClass(typeName)),
                 asQueryNodeMethod(typeName),
                 asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
                 isIterable ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),

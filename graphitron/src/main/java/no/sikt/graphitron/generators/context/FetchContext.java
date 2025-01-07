@@ -331,6 +331,7 @@ public class FetchContext {
             return finalSequence;
         } else {
             var alias = new Alias("_" + refTable.getCodeName(), JoinListSequence.of(refTable), false);
+            aliasSet.add(alias);
             return JoinListSequence.of(alias);
         }
     }

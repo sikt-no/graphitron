@@ -1,14 +1,13 @@
 package no.sikt.graphitron.generators.dependencies;
 
-import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.FieldSpec;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 
 import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -17,7 +16,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class QueryDependency extends NamedDependency {
     public QueryDependency(String name, String subPath) {
-        super(ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + subPath, name));
+        super(getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + subPath, name));
     }
 
     @Override

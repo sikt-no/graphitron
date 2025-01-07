@@ -1,8 +1,10 @@
 package no.sikt.graphitron.generators.abstractions;
 
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -33,6 +35,10 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
                                 .flatMap(List::stream)
                                 .collect(Collectors.toList())
                 );
+    }
+
+    public TypeSpec.Builder getSpec(String className, MethodGenerator<? extends GenerationTarget> generator) {
+        return getSpec(className, List.of(generator));
     }
 
     /**
@@ -80,6 +86,14 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
     @Override
     public String writeToString(TypeSpec generatedClass) {
         return JavaFile.builder("", generatedClass).indent("    ").build().toString();
+    }
+
+    /**
+     * @param name Name of the class.
+     * @return ClassName based on the default output package and save directory.
+     */
+    public ClassName getGeneratedClassName(String name) {
+        return TypeNameFormat.getGeneratedClassName(getDefaultSaveDirectoryName(), name);
     }
 
     abstract public List<TypeSpec> generateTypeSpecs();

@@ -2,17 +2,22 @@ package no.sikt.graphitron.definitions.objects;
 
 import graphql.language.InterfaceTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 
 import java.util.List;
 
+import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
+
 /**
  * Represents a GraphQL interface.
  */
-public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeDefinition, ObjectField> {
+public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeDefinition, ObjectField> implements TypeResolverTarget {
+    private final boolean isGenerated;
 
     public InterfaceDefinition(InterfaceTypeDefinition typeDefinition) {
         super(typeDefinition);
+        isGenerated = !typeDefinition.hasDirective(NOT_GENERATED.getName());
     }
 
     @Override
@@ -34,5 +39,20 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
 
     public String getDiscriminatingFieldName() {
         return null;
+    }
+
+    @Override
+    public boolean isGenerated() {
+        return isGenerated;
+    }
+
+    @Override
+    public boolean isGeneratedWithResolver() {
+        return isGenerated;
+    }
+
+    @Override
+    public boolean isExplicitlyNotGenerated() {
+        return !isGenerated;
     }
 }

@@ -2,10 +2,12 @@ package no.sikt.graphitron.resolvers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.datafetcherresolvers.fetch.EntityFetcherResolverClassGenerator;
+import no.sikt.graphitron.reducedgenerators.EntityFetcherResolverOnlyFieldClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -23,12 +25,17 @@ public class EntityResolverTest extends GeneratorTest {
 
     @Override
     protected Set<SchemaComponent> getComponents() {
-        return makeComponents(FEDERATION);
+        return makeComponents(FEDERATION_QUERY);
     }
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new EntityFetcherResolverClassGenerator(schema));
+        return List.of(new EntityFetcherResolverOnlyFieldClassGenerator(schema));
+    }
+
+    @BeforeEach
+    void before() {
+        GeneratorConfig.setIncludeApolloFederation(true);
     }
 
     @Test

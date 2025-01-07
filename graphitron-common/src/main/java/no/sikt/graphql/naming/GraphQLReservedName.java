@@ -38,6 +38,7 @@ public enum GraphQLReservedName {
     FEDERATION_KEY("key"),
     FEDERATION_KEY_ARGUMENT("fields"),
     FEDERATION_ENTITIES_FIELD("_entities"),
+    FEDERATION_ENTITY_UNION("_Entity"),
     FEDERATION_REPRESENTATIONS_ARGUMENT("representations");
 
     private final String name;

@@ -20,6 +20,7 @@ public class VariableNames {
             VARIABLE_TYPE_NAME = "_targetType",
             VARIABLE_FETCHER_NAME = "_fetcher",
             VARIABLE_INPUT_MAP = "_inputMap",
+            VARIABLE_OBJECT = "_obj",
             VARIABLE_INTERNAL_ITERATION = "internal_it_", // To avoid conflicts with potential schema names.
             NODE_ID_HANDLER_NAME = "nodeIdHandler",
             NODE_MAP_NAME = "TABLE_TO_TYPE";

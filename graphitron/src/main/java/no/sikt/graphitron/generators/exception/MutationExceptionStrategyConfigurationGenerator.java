@@ -15,10 +15,10 @@ import java.util.*;
 import static no.sikt.graphitron.configuration.ErrorHandlerType.DATABASE;
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 public class MutationExceptionStrategyConfigurationGenerator extends AbstractClassGenerator<ObjectDefinition> {

@@ -30,7 +30,8 @@ public class NameFormat {
             RESPONSE_TRANSFORM_SUFFIX = "ToGraphType",
             RESPONSE_TRANSFORM_JOOQ_SUFFIX = RECORD_NAME_SUFFIX + RESPONSE_TRANSFORM_SUFFIX,
             RESPONSE_TRANSFORM_JAVA_SUFFIX = RESPONSE_TRANSFORM_SUFFIX,
-            VALIDATE_PREFIX = "validate";
+            VALIDATE_PREFIX = "validate",
+            TYPE_RESOLVER_SUFFIX = "TypeResolver";
 
     /**
      * @return Inputs formatted as a get call, but without the get element of the string.
@@ -62,6 +63,14 @@ public class NameFormat {
     @NotNull
     public static String asEntityQueryMethodName(String prefix) {
         return uncapitalize(prefix) + "AsEntity";
+    }
+
+    /**
+     * @return Format this name as a method name for a type resolver.
+     */
+    @NotNull
+    public static String asTypeResolverMethodName(String target) {
+        return uncapitalize(target.replace("_", "")) + TYPE_RESOLVER_SUFFIX;
     }
 
     /**

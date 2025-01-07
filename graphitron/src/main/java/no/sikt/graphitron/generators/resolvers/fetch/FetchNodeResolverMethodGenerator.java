@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.newDataFetcher;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
@@ -94,7 +95,7 @@ public class FetchNodeResolverMethodGenerator extends ResolverMethodGenerator<Ob
 
     private CodeBlock codeForImplementation(ObjectField target, String implementationTypeName, String inputFieldName) {
         var queryLocation = asQueryClass(implementationTypeName);
-        var queryClass = ClassName.get(GeneratorConfig.outputPackage() + "." + DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
+        var queryClass = getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         var dbFunction = CodeBlock.of(
                 "($L, $L, $L) -> $T.load$LBy$LsAs$L($N, $N, $N)",
                 CONTEXT_NAME,

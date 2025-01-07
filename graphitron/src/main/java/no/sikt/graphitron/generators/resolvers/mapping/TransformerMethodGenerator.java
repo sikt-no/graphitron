@@ -15,10 +15,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
@@ -56,7 +57,7 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
         var useValidation = toRecord && useValidation(type);
         if (type.asSourceClassName(toRecord) == null) {
             var hasReference = type.hasJavaRecordReference();
-            var mapperClass = ClassName.get(GeneratorConfig.outputPackage() + "." + RecordMapperClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, asRecordMapperClass(type.getName(), hasReference, toRecord));
+            var mapperClass = getGeneratedClassName(RecordMapperClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, asRecordMapperClass(type.getName(), hasReference, toRecord));
             code.addStatement(transformCallCode(useValidation, mapperClass, hasReference, toRecord));
 
             if (!useValidation) {
