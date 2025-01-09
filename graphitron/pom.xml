@@ -90,6 +90,11 @@
       <version>4.13.2</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>graphitron-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -168,11 +173,6 @@
     </plugins>
 
 
-    <resources>
-      <resource>
-        <directory>src/main/resources/schema</directory>
-      </resource>
-    </resources>
   </build>
   <properties>
     <db.url>jdbc:tc:postgresql:13:///sakila?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${basedir}/src/test/resources/database/postgres-sakila-schema.sql</db.url>

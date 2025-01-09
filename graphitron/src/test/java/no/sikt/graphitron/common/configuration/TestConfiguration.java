@@ -21,7 +21,7 @@ public class TestConfiguration {
             DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.jooq.generated.testdata",
             SRC_ROOT = "src/test/resources",
             COMPONENT_PATH = SRC_ROOT + "/components",
-            SRC_DIRECTIVES = "target/classes/directives" + SCHEMA_EXTENSION,
+            SRC_DIRECTIVES = "target/graphitron-common/schema/directives" + SCHEMA_EXTENSION,
             EXPECTED_OUTPUT_NAME = "expected";
 
     @NotNull
