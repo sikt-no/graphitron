@@ -170,8 +170,25 @@
           </dependency>
         </dependencies>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>unpack-graphitron-directives-schema</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>unpack-dependencies</goal>
+            </goals>
+            <configuration>
+              <includeArtifactIds>graphitron-common</includeArtifactIds>
+              <outputDirectory>${graphitronDirectivesSchemaDirectory}</outputDirectory>
+              <includes>directives.graphqls</includes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
-
 
   </build>
   <properties>
@@ -180,5 +197,6 @@
     <db.password>postgres</db.password>
     <!-- Change this version number if the generated jooq classes needs to be regenerated -->
     <testdata.schema.version>1.05</testdata.schema.version>
+    <graphitronDirectivesSchemaDirectory>${project.build.directory}/graphitron-common/schema</graphitronDirectivesSchemaDirectory>
   </properties>
 </project>
