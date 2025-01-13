@@ -304,11 +304,18 @@ public class ProcessedDefinitionsValidator {
                                             "Interface '%s' is missing '%s' directive.",
                                     DISCRIMINATE.getName(), TABLE.getName(), name,
                                     interfaceDefinition.hasTable() ? DISCRIMINATE.getName() : TABLE.getName()));
-                        } else if (!getJavaFieldNamesForTable(interfaceDefinition.getTable().getName()).contains(interfaceDefinition.getDiscriminatingFieldName())){
-                            errorMessages.add(
-                                    String.format("Interface '%s' has discriminating field set as '%s', but the field " +
-                                                    "does not exist in table '%s'.",
-                                            name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
+                        } else {
+                            if (!getJavaFieldNamesForTable(interfaceDefinition.getTable().getName()).contains(interfaceDefinition.getDiscriminatingFieldName())) {
+                                errorMessages.add(
+                                        String.format("Interface '%s' has discriminating field set as '%s', but the field " +
+                                                        "does not exist in table '%s'.",
+                                                name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
+                            } else if (!getFieldType(interfaceDefinition.getTable().getName(), interfaceDefinition.getDiscriminatingFieldName()).get().equals(String.class)) {
+                                errorMessages.add(
+                                        String.format("Interface '%s' has discriminating field set as '%s', but the field " +
+                                                        "does not return a string type, which is not supported.",
+                                                name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
+                            }
                         }
 
                         implementations.forEach(impl -> {
