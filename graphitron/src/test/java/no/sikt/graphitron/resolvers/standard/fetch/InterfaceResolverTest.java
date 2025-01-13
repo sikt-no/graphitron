@@ -5,7 +5,6 @@ import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Interface resolvers - Resolvers for interfaces other than Node")
 public class InterfaceResolverTest extends GeneratorTest {
@@ -75,6 +73,15 @@ public class InterfaceResolverTest extends GeneratorTest {
     void paginated() {
         assertGeneratedContentMatches(
                 "paginated"
+        );
+    }
+
+    @Test
+    @DisplayName("On field returning discriminating interface")
+    void withInput() {
+        assertGeneratedContentContains("withInput",
+                "address(AddressInput filter,",
+                "addressForQuery(ctx, filter, selectionSet)"
         );
     }
 }

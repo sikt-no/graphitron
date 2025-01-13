@@ -150,4 +150,13 @@ public class ReferenceInputTest extends ReferenceTest {
                 ".where(_customer_citycustomer_customer_left.COUNTRY_ID.eq(countryId)))"
         );
     }
+
+    @Test
+    @DisplayName("On field returning discriminating interface")
+    void onDiscriminatingInterface() {
+        assertGeneratedContentContains("onDiscriminatingInterface",
+                "= _address.city()",
+                ".and(address_2030472956_city_left.CITY_.eq(filter.getCity()))",
+                ".leftJoin(address_2030472956_city_left)");
+    }
 }

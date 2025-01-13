@@ -11,7 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_CONDITION;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_CUSTOMER_CONDITION;
 
 @DisplayName("Query interfaces - Interface handling for types implementing interfaces")
 public class InterfaceTest extends GeneratorTest {
@@ -22,7 +22,7 @@ public class InterfaceTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_CONDITION);
+        return makeReferences(REFERENCE_CUSTOMER_CONDITION);
     }
 
     @Override

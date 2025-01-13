@@ -66,4 +66,14 @@ public class SQLCondition {
     public CodeReference getConditionReference() {
         return conditionReference;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj instanceof SQLCondition) {
+            return ((SQLCondition) obj).getConditionReference().equals(this.conditionReference) && ((SQLCondition) obj).isOverride() == this.isOverride();
+        } else {
+            return false;
+        }
+    }
 }

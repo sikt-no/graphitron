@@ -1,18 +1,15 @@
 type Query {
-  address: Address
+    address: Address
 }
 
 interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
-  postalCode: String @field(name: "POSTAL_CODE")
+    customer: CustomerTable @condition(condition: {name: "DUMMY_CONDITION"})
 }
 
 type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
-  id: ID
-  postalCode: String @field(name: "POSTAL_CODE")
-  postalCodeDuplicate: String @field(name: "POSTAL_CODE")
+    customer: CustomerTable
 }
 
 type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {
-  id: ID
-  postalCode: String @field(name: "POSTAL_CODE")
+    customer: CustomerTable
 }

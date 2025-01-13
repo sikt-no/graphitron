@@ -28,6 +28,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.stream.Collectors.groupingBy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
@@ -310,7 +311,6 @@ public class ProcessedDefinitionsValidator {
                                                     "does not exist in table '%s'.",
                                             name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
                         }
-
                         implementations.forEach(impl -> {
                             if (!impl.hasDiscriminator()){
                                 errorMessages.add(
@@ -323,7 +323,77 @@ public class ProcessedDefinitionsValidator {
                                                         "but type '%s' has table '%s'.",
                                         name, interfaceDefinition.getTable().getName(), impl.getName(), impl.getTable().getName()));
                             }
+
+                            impl.getFields()
+                                    .stream()
+                                    .filter(it -> interfaceDefinition.hasField(it.getName()))
+                                    .forEach(it -> {
+                                        var fieldInInterface = interfaceDefinition.getFieldByName(it.getName());
+                                        String sharedErrorMessage = "Overriding '%s' configuration in types implementing a discriminating interface is not " +
+                                                "currently supported, and must be identical with interface. Type '%s' has a " +
+                                                "configuration mismatch on field '%s' from the interface '%s'.";
+
+                                        if (!fieldInInterface.getUpperCaseName().equals(it.getUpperCaseName())){
+                                            errorMessages.add(String.format(
+                                                    sharedErrorMessage,
+                                                    FIELD.getName(), impl.getName(), it.getName(), name
+                                            ));
+                                        }
+
+                                        if (it.hasCondition() != fieldInInterface.hasCondition()
+                                                || (it.hasCondition() && !it.getCondition().equals(fieldInInterface.getCondition()))) {
+                                            errorMessages.add(String.format(
+                                                    sharedErrorMessage,
+                                                    CONDITION.getName(), impl.getName(), it.getName(), name
+                                            ));
+                                        }
+
+                                        if (!it.getFieldReferences().equals(fieldInInterface.getFieldReferences())) {
+                                            errorMessages.add(String.format(
+                                                    sharedErrorMessage,
+                                                    REFERENCE.getName(), impl.getName(), it.getName(), name
+                                            ));
+                                        }
+                                    });
                         });
+
+                        // Check for conflicts in "shared" fields which are not in the interface definition
+                        implementations.stream()
+                                .map(AbstractObjectDefinition::getFields)
+                                .flatMap(Collection::stream)
+                                .filter(it -> !interfaceDefinition.hasField(it.getName()))
+                                .collect(groupingBy(ObjectField::getName))
+                                .entrySet()
+                                .stream()
+                                .filter(it -> it.getValue().size() > 1)
+                                .forEach(entry -> {
+                                    var fields = entry.getValue();
+                                    var first = fields.get(0);
+
+                                    fields.stream().skip(1).forEach(field -> {
+                                        String sharedErrorMessage = "Different configuration on fields in types implementing the same discriminating interface is currently not supported. " +
+                                                "Field '%s' occurs in two or more types implementing interface '%s', but there is a mismatch between the configuration of the '%s' directive.";
+                                        if (!field.getUpperCaseName().equals(first.getUpperCaseName())) {
+                                            errorMessages.add(String.format(
+                                                    sharedErrorMessage,
+                                                    entry.getKey(), interfaceDefinition.getName(), FIELD.getName()
+                                            ));
+                                        }
+
+                                        if (!field.getFieldReferences().equals(first.getFieldReferences())) {
+                                            errorMessages.add(String.format(
+                                                    sharedErrorMessage,
+                                                    entry.getKey(), interfaceDefinition.getName(), REFERENCE.getName()));
+                                        }
+
+                                        if (!(field.hasCondition() == first.hasCondition()
+                                                && (!field.hasCondition() || field.getCondition().equals(first.getCondition())))) {
+                                            errorMessages.add(String.format(
+                                                    sharedErrorMessage,
+                                                    entry.getKey(), interfaceDefinition.getName(), CONDITION.getName()));
+                                        }
+                                    });
+                                });
                     };
                 }
         );
@@ -348,10 +418,6 @@ public class ProcessedDefinitionsValidator {
                         errorMessages.add(
                                 String.format("Type '%s' has discriminator, but doesn't implement any interfaces requiring it.", objectDefinition.getName())
                         );
-                    }
-
-                    for (String anInterface : implementedInterfaces) {
-                        var interfaceDef = schema.getInterface(anInterface);
                     }
                 });
     }
@@ -388,9 +454,10 @@ public class ProcessedDefinitionsValidator {
                                 "interface '%s', which does not have a discriminator.", field.getName(), name));
                     }
 
-                    if (field.hasNonReservedInputFields()) {
-                        errorMessages.add(String.format("Input fields on fields returning interfaces is not " +
-                                "currently supported. Field '%s' has one or more input field(s).", field.getName()));
+                    if (field.hasNonReservedInputFields() && !schema.getInterface(name).hasDiscrimatingField()) {
+                        errorMessages.add(String.format("Input fields on fields returning interfaces is currently only " +
+                                "supported for discriminating interfaces. Field '%s' returning interface '%s' has one or " +
+                                "more input field(s).", field.getName(), name));
                     }
 
                     if (field.hasCondition()) {
@@ -429,7 +496,7 @@ public class ProcessedDefinitionsValidator {
                 .values()
                 .stream()
                 .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable())
-                .collect(Collectors.groupingBy(
+                .collect(groupingBy(
                         it -> it.getTable().getName(), Collectors.mapping(ObjectDefinition::getName, Collectors.toSet())));
 
         records.forEach((tablename, schematypes) -> {

@@ -99,8 +99,8 @@ public class InterfaceMultipleTablesTest extends InterfaceTest {
     void withInput() {
         assertThatThrownBy(() -> generateFiles("withInput"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Input fields on fields returning interfaces is not currently supported. " +
-                        "Field 'someInterface' has one or more input field(s).");
+                .hasMessageContaining("Input fields on fields returning interfaces is currently only supported for discriminating interfaces. " +
+                        "Field 'someInterface' returning interface 'SomeInterface' has one or more input field(s).");
     }
 
     @Test

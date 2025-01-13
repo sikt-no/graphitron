@@ -47,4 +47,25 @@ public class CodeReference {
     public String getMethodName() {
         return methodName;
     }
+
+    public boolean hasSchemaClassReference() {
+        return schemaClassReference != null;
+    }
+
+    public boolean hasClassName() {
+        return className != null;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj instanceof CodeReference) {
+            CodeReference codeRef = (CodeReference) obj;
+            return codeRef.getMethodName().equals(this.getMethodName())
+                    && (codeRef.hasClassName() == this.hasClassName() && (!this.hasClassName() || codeRef.getClassName().equals(this.getClassName())))
+                    && (codeRef.hasSchemaClassReference() == this.hasSchemaClassReference() && (!this.hasSchemaClassReference() || codeRef.getSchemaClassReference().equals(this.getSchemaClassReference())));
+        } else {
+            return false;
+        }
+    }
 }

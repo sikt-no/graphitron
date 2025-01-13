@@ -150,4 +150,17 @@ public class FieldReference {
                 isNullable
         );
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj instanceof FieldReference) {
+            var ref = (FieldReference) obj;
+            return ref.hasTable() == this.hasTable() && (!this.hasTable() || ref.getTable().equals(this.getTable()))
+                    && ref.hasKey() == this.hasKey() && (!this.hasKey() || ref.getKey().equals(this.getKey()))
+                    && ref.getTableCondition().equals(this.tableCondition);
+        } else {
+            return false;
+        }
+    }
 }

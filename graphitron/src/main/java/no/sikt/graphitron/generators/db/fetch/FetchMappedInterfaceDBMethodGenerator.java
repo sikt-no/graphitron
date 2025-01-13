@@ -85,9 +85,10 @@ public class FetchMappedInterfaceDBMethodGenerator extends FetchDBMethodGenerato
                 .add(createAliasDeclarations(context.getAliasSet()))
                 .add(maybeOrderFields.orElse(empty()))
                 .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode))
-                .add("\n.from($L)", querySource)
+                .add("\n.from($L)\n", querySource)
+                .add(createSelectJoins(context.getJoinSet()))
+                .add("\n")
                 .add(whereBlock)
-                // TODO: input and conditions
                 .add(maybeOrderFields
                         .map(it -> CodeBlock.of("\n.orderBy($L)", ORDER_FIELDS_NAME))
                         .orElse(empty()))

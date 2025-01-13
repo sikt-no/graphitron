@@ -51,6 +51,12 @@ abstract public class ValidationTest extends GeneratorTest {
                 .hasMessageContaining(value);
     }
 
+    protected void assertErrorsContain(String file, String ... values) {
+        assertThatThrownBy(() -> getProcessedSchema(file))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContainingAll(values);
+    }
+
     @BeforeEach
     public void setup() {
         var logWatch = new ListAppender<ILoggingEvent>();

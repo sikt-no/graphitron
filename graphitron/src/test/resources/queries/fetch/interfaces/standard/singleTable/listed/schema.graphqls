@@ -14,5 +14,5 @@ type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discrimina
 
 type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {
   id: ID
-  postalCode: String
+  postalCode: String @field(name: "POSTAL_CODE")
 }

@@ -4,6 +4,7 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,7 @@ public class OptionalInputTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new MapOnlyFetchDBClassGenerator(schema));
+        return List.of(new MapOnlyFetchDBClassGenerator(schema), new InterfaceOnlyFetchDBClassGenerator(schema));
     }
 
     @Test
@@ -100,6 +101,36 @@ public class OptionalInputTest extends GeneratorTest {
                         "                DSL.row(DSL.inline(internal_it_.getId()))" +
                         "            ).collect(Collectors.toList())" +
                         "        ) : DSL.noCondition())"
+        );
+    }
+
+    @Test
+    @DisplayName("On field in discriminating interface")
+    void onFieldInDiscriminatingInterface() {
+        assertGeneratedContentContains("onFieldInDiscriminatingInterface",
+                Set.of(CUSTOMER_TABLE),
+                /*
+                Input på subspørringer fungerer ikke enda (se GGG-76), så jeg har lagt til en assert som vil feile når
+                GGG-76 er fikset sånn at vi ikke glemmer å endre testen her
+                */
+                "(DSLContext ctx, SelectionSet select)", // Tas bort når GGG-76 er løst
+//                "String lastName", // Dette er riktig assert når GGG-76 er løst
+                ".from(address_2030472956_customer).where(lastName"
+        );
+    }
+
+    @Test
+    @DisplayName("On field in type implementing discriminating interface")
+    void onFieldInTypeImplementingDiscriminatingInterface() {
+        assertGeneratedContentContains("onFieldInTypeImplementingDiscriminatingInterface",
+                Set.of(CUSTOMER_TABLE),
+                /*
+                Input på subspørringer fungerer ikke enda (se GGG-76), så jeg har lagt til en assert som vil feile når
+                GGG-76 er fikset sånn at vi ikke glemmer å endre testen her
+                */
+                "(DSLContext ctx, SelectionSet select)", // Tas bort når GGG-76 er løst
+//                "String lastName", // Dette er riktig assert når GGG-76 er løst
+                ".from(address_2030472956_customer).where(lastName"
         );
     }
 }
