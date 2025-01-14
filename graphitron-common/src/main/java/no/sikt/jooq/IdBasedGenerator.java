@@ -1,4 +1,4 @@
-package no.sikt.graphitron.jooq;
+package no.sikt.jooq;
 
 
 import org.jooq.codegen.GeneratorStrategy;
