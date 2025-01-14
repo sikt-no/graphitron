@@ -1,0 +1,3 @@
+interface AddressByDistrict @discriminate(on: "CITY_ID") @table(name: "ADDRESS") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}

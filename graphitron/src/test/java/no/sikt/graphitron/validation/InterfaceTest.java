@@ -85,6 +85,13 @@ public class InterfaceTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Discriminating coloumn is not of a String type")
+    void discriminateFieldOnInterfaceIsNotString() {
+        assertErrorsContain("discriminateFieldOnInterfaceIsNotString",
+                "Interface 'AddressByDistrict' has discriminating field set as 'CITY_ID', but the field does not return a string type, which is not supported.");
+    }
+
+    @Test
     @DisplayName("Discriminator directive on type, but does not implement any interfaces")
     void typeWithDiscriminatorDoesNotImplementAnyInterface() {
         assertErrorsContain("discriminatingInterface/typeWithDiscriminatorDoesNotImplementAnyInterface",
