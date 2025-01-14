@@ -246,7 +246,7 @@ type SomeType @table { ... }
 
 ### Tables, joins and records
 #### table directive
-The **table** directive links the object type or input type to a table in the database. Any **field**-directives within
+The **table** directive links the object, interface or input type to a table in the database. Any **field**-directives within
 this type will use this table as the source for the field mapping. This targets jOOQ generated classes, so
 the _name_ parameter must match the table name in jOOQ if it differs from the database. The _name_ parameter is optional,
 and does not need to be specified if the type name already equals the table name.
@@ -1135,6 +1135,59 @@ try {
     editCustomerErrorsList.add(error); // Update error list that is automatically defined somewhere above.
 }
 ```
+
+## Interface queries
+
+Graphitron currently supports generating queries for one type of interface.
+
+### Discriminating interfaces
+Discriminating interfaces are interfaces where every implementation is in the same table, and its type is determined by a discriminator column. Graphitron supports generating queries for this type of interface on the Query-type.
+
+#### Schema setup
+
+In order to define a discriminating interface and its types, the `discriminate` and `discriminator` directives are used, in addition to the `table` directive , which is described in more detail [here](#table-directive).
+
+For an interface to be considered a discriminating interface, both the `table` and `discriminate` directives must be set:
+```graphql
+interface Employee @table(name: "EMPLOYEE") @discriminate(on: "EMPLOYEE_TITLE") {
+  ...
+}
+```
+
+The `discriminate` directive determines the discriminator column for the interface.
+In the example above, the column `EMPLOYEE_TITLE` in table `EMPLOYEE` is the discriminator column.
+
+Each implementation of the interface must have the `table` and `discriminator`-directives set:
+
+```graphql
+type TechLead implements Employee @table(name: "EMPLOYEE") @discriminator(value: "TECH_LEAD") {
+  ...
+}
+```
+The `table` directive must be the same as the interface, and the `discriminator` directive indicates which value the discriminator column has if the row is of type `TechLead`. In other words, if `EMPLOYEE.EMPLOYEE_TITLE` is `"TECH_LEAD"`, the row is of type `TechLead`.
+
+
+
+#### Discriminating interface queries
+
+  With the example above, Graphitron can generate queries like these in the Query-type:
+
+```graphql
+type Query {
+  employees: [Employee]
+  employees(first: Int = 100, after: String): EmployeeConnection
+}
+```
+
+  Queries with input and [query conditions](#Query-conditions) is also supported.
+
+#### Additional requirements and limitations:
+- Types can only implement one discriminating interface
+- The discriminator column must return a string type
+- Every field in the interface must have the same configuration in every implementing type
+  - For example, overriding `field` configuration from the interface is currently not supported
+- Other fields sharing the same name must also have the same configuration across types
+
 
 ## Special interfaces
 Currently, Graphitron reserves two interface names for special purposes, _Node_ and _Error_.
