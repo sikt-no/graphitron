@@ -58,7 +58,8 @@ public enum ReferencedEntry {
     REFERENCE_CUSTOMER_CONDITION("REFERENCE_CUSTOMER_CONDITION", ReferenceCustomerCondition.class),
     REFERENCE_FILM_CONDITION("REFERENCE_FILM_CONDITION", ReferenceFilmCondition.class),
     QUERY_FETCH_CONDITION("QUERY_FETCH_CONDITION", QueryCustomerCondition.class),
-    QUERY_FETCH_STAFF_CONDITION("QUERY_FETCH_STAFF_CONDITION", QueryStaffCondition.class);
+    QUERY_FETCH_STAFF_CONDITION("QUERY_FETCH_STAFF_CONDITION", QueryStaffCondition.class),
+    QUERY_FETCH_ADDRESS_INTERFACE_CONDITION("QUERY_FETCH_INTERFACE_CONDITION", QueryAddressInterfaceCondition.class);
 
     private final ExternalReference reference;
 

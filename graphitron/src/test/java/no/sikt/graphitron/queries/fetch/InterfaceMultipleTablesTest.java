@@ -108,8 +108,9 @@ public class InterfaceMultipleTablesTest extends InterfaceTest {
     void withCondition() {
         assertThatThrownBy(() -> generateFiles("withCondition"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Conditions on fields returning interfaces is not currently " +
-                        "supported. Field 'someInterface' has condition.");
+                .hasMessageContaining("Conditions on fields returning interfaces is currently only " +
+                        "supported for discriminating interfaces. Field 'someInterface' returning interface 'SomeInterface' has condition."
+                );
     }
 
     @Test

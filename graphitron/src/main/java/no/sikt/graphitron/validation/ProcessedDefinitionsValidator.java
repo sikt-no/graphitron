@@ -460,9 +460,12 @@ public class ProcessedDefinitionsValidator {
                                 "more input field(s).", field.getName(), name));
                     }
 
-                    if (field.hasCondition()) {
-                        errorMessages.add(String.format("Conditions on fields returning interfaces is not " +
-                                "currently supported. Field '%s' has condition.", field.getName()));
+                    if (field.hasCondition() && !schema.getInterface(name).hasDiscrimatingField()) {
+                        errorMessages.add(String.format("Conditions on fields returning interfaces is currently only " +
+                                "supported for discriminating interfaces. Field '%s' returning interface '%s' has condition.",
+                                field.getName(),
+                                name)
+                        );
                     }
 
                     schema.getObjects()

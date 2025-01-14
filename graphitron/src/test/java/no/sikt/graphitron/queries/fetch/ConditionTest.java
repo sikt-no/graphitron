@@ -5,6 +5,7 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
@@ -14,8 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.QUERY_FETCH_CONDITION;
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.QUERY_FETCH_STAFF_CONDITION;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch query conditions - External conditions for queries")
@@ -27,7 +27,7 @@ public class ConditionTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(QUERY_FETCH_CONDITION, QUERY_FETCH_STAFF_CONDITION);
+        return makeReferences(QUERY_FETCH_CONDITION, QUERY_FETCH_STAFF_CONDITION, QUERY_FETCH_ADDRESS_INTERFACE_CONDITION);
     }
 
     @Override
@@ -37,7 +37,7 @@ public class ConditionTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
-        return List.of(new MapOnlyFetchDBClassGenerator(schema));
+        return List.of(new MapOnlyFetchDBClassGenerator(schema), new InterfaceOnlyFetchDBClassGenerator(schema));
     }
 
     @Test
@@ -389,6 +389,15 @@ public class ConditionTest extends GeneratorTest {
                 "onParamWithEnumInInput", Set.of(DUMMY_ENUM_CONVERTED),
                 ".queryEnum(_customer, in.getE() == null ? null : Map.of(", // Note, the null check is not necessary here.
                 ").getOrDefault(in.getE(), null))"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on field returning discriminating interface")
+    void onDiscriminatingInterface() {
+        assertGeneratedContentContains("onFieldReturningDiscriminatingInterface",
+                ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()",
+                ".and(no.sikt.graphitron.codereferences.conditions.QueryAddressInterfaceCondition.address(_address, filter.getPostalCode()"
         );
     }
 }
