@@ -17,7 +17,7 @@ import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_
 public class InterfaceTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "queries/fetch/interfaces/standard";
+        return "queries/fetch/interfaces/";
     }
 
     @Override

@@ -6,6 +6,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -61,6 +62,26 @@ public class ResolverPaginationTest extends GeneratorTest {
                 "splitquery/withOtherInput", Set.of(SPLIT_QUERY_WRAPPER),
                 "query(Wrapper wrapper, Integer first, String after, String other,",
                 "queryForWrapper(ctx, ids, other, pageSize, after,"
+        );
+    }
+
+    @Test
+    @DisplayName("Root resolver returning multi-table interface")
+    @Disabled("Disablet inntil GGG-79")
+    void multitableInterface() {
+        assertGeneratedContentContains("operation/multitableInterface",
+                "CompletableFuture<TitledConnection>",
+                "QueryDBQueries.titledForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("Root resolver returning a single table interface")
+    void singleTableInterface() {
+        assertGeneratedContentContains("operation/singleTableInterface",
+                "CompletableFuture<AddressConnection>",
+                "loadPaginated",
+                "QueryDBQueries.addressForQuery("
         );
     }
 }

@@ -336,9 +336,9 @@ public class ProcessedDefinitionsValidator {
                                     .filter(it -> interfaceDefinition.hasField(it.getName()))
                                     .forEach(it -> {
                                         var fieldInInterface = interfaceDefinition.getFieldByName(it.getName());
-                                        String sharedErrorMessage = "Overriding '%s' configuration in types implementing a discriminating interface is not " +
-                                                "currently supported, and must be identical with interface. Type '%s' has a " +
-                                                "configuration mismatch on field '%s' from the interface '%s'.";
+                                        String sharedErrorMessage = "Overriding '%s' configuration in types implementing " +
+                                                "a single table interface is not currently supported, and must be identical " +
+                                                "with interface. Type '%s' has a configuration mismatch on field '%s' from the interface '%s'.";
 
                                         if (!fieldInInterface.getUpperCaseName().equals(it.getUpperCaseName())){
                                             errorMessages.add(String.format(
@@ -378,7 +378,7 @@ public class ProcessedDefinitionsValidator {
                                     var first = fields.get(0);
 
                                     fields.stream().skip(1).forEach(field -> {
-                                        String sharedErrorMessage = "Different configuration on fields in types implementing the same discriminating interface is currently not supported. " +
+                                        String sharedErrorMessage = "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                                                 "Field '%s' occurs in two or more types implementing interface '%s', but there is a mismatch between the configuration of the '%s' directive.";
                                         if (!field.getUpperCaseName().equals(first.getUpperCaseName())) {
                                             errorMessages.add(String.format(
@@ -410,18 +410,18 @@ public class ProcessedDefinitionsValidator {
                 .forEach(objectDefinition -> {
                     var implementedInterfaces = objectDefinition.getImplementedInterfaces();
 
-                    var discriminatingInterfaces = implementedInterfaces.stream()
+                    var singleTableInterfaces = implementedInterfaces.stream()
                             .filter(it -> !it.equals(NODE_TYPE.getName()))
                             .filter(it -> schema.getInterface(it).hasDiscrimatingField())
                             .collect(Collectors.toList());
 
-                    if (discriminatingInterfaces.size() > 1) {
+                    if (singleTableInterfaces.size() > 1) {
                         errorMessages.add(
                                 String.format("Type '%s' implements multiple interfaces with a discriminator which is not allowed.", objectDefinition.getName())
                         );
                     }
 
-                    if (discriminatingInterfaces.isEmpty() && objectDefinition.hasDiscriminator()) {
+                    if (singleTableInterfaces.isEmpty() && objectDefinition.hasDiscriminator()) {
                         errorMessages.add(
                                 String.format("Type '%s' has discriminator, but doesn't implement any interfaces requiring it.", objectDefinition.getName())
                         );
@@ -463,13 +463,13 @@ public class ProcessedDefinitionsValidator {
 
                     if (field.hasNonReservedInputFields() && !schema.getInterface(name).hasDiscrimatingField()) {
                         errorMessages.add(String.format("Input fields on fields returning interfaces is currently only " +
-                                "supported for discriminating interfaces. Field '%s' returning interface '%s' has one or " +
+                                "supported for single table interfaces. Field '%s' returning interface '%s' has one or " +
                                 "more input field(s).", field.getName(), name));
                     }
 
                     if (field.hasCondition() && !schema.getInterface(name).hasDiscrimatingField()) {
                         errorMessages.add(String.format("Conditions on fields returning interfaces is currently only " +
-                                "supported for discriminating interfaces. Field '%s' returning interface '%s' has condition.",
+                                "supported for single table interfaces. Field '%s' returning interface '%s' has condition.",
                                 field.getName(),
                                 name)
                         );

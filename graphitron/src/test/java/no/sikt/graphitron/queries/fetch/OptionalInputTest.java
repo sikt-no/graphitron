@@ -105,9 +105,9 @@ public class OptionalInputTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("On field in discriminating interface")
-    void onFieldInDiscriminatingInterface() {
-        assertGeneratedContentContains("onFieldInDiscriminatingInterface",
+    @DisplayName("On field in single table interface")
+    void onFieldInSingleTableInterface() {
+        assertGeneratedContentContains("onFieldInSingleTableInterface",
                 Set.of(CUSTOMER_TABLE),
                 /*
                 Input på subspørringer fungerer ikke enda (se GGG-76), så jeg har lagt til en assert som vil feile når
@@ -120,9 +120,9 @@ public class OptionalInputTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("On field in type implementing discriminating interface")
-    void onFieldInTypeImplementingDiscriminatingInterface() {
-        assertGeneratedContentContains("onFieldInTypeImplementingDiscriminatingInterface",
+    @DisplayName("On field in type implementing single table interface")
+    void onFieldInTypeImplementingSingleTableInterface() {
+        assertGeneratedContentContains("onFieldInTypeImplementingSingleTableInterface",
                 Set.of(CUSTOMER_TABLE),
                 /*
                 Input på subspørringer fungerer ikke enda (se GGG-76), så jeg har lagt til en assert som vil feile når

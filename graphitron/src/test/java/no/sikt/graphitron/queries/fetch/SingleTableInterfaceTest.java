@@ -7,10 +7,10 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
-public class InterfaceSingleTableTest extends InterfaceTest {
+public class SingleTableInterfaceTest extends InterfaceTest {
     @Override
     protected String getSubpath() {
-        return super.getSubpath() + "/singleTable";
+        return super.getSubpath() + "/singleTableInterface";
     }
 
 

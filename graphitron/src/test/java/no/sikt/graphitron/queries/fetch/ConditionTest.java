@@ -393,9 +393,9 @@ public class ConditionTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Condition on field returning discriminating interface")
-    void onDiscriminatingInterface() {
-        assertGeneratedContentContains("onFieldReturningDiscriminatingInterface",
+    @DisplayName("Condition on field returning single table interface")
+    void onSingleTableInterface() {
+        assertGeneratedContentContains("onFieldReturningSingleTableInterface",
                 ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()",
                 ".and(no.sikt.graphitron.codereferences.conditions.QueryAddressInterfaceCondition.address(_address, filter.getPostalCode()"
         );

@@ -19,7 +19,7 @@ public class NodeResolverTest extends GeneratorTest {
 
     @Override
     protected String getSubpath() {
-        return "resolvers/fetch/interfaces/node";
+        return "resolvers/fetch/node";
     }
 
     @Override
@@ -65,5 +65,15 @@ public class NodeResolverTest extends GeneratorTest {
     @DisplayName("Implementing type has no path from Query")
     void withoutPathFromQuery() {
         assertGeneratedContentContains("withoutPathFromQuery", "CustomerDBQueries.loadCustomerByIdsAsNode(");
+    }
+
+    @Test
+    @DisplayName("Type implements interface and Node")
+    void doubleInterface() {
+        assertGeneratedContentContains(
+                "doubleInterface", Set.of(NODE),
+                "FilmDBQueries.loadFilmByIdsAsNode(",
+                "QueryDBQueries.titledForQuery("
+        );
     }
 }

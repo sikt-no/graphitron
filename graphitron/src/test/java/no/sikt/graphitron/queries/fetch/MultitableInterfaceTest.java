@@ -8,10 +8,10 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class InterfaceMultipleTablesTest extends InterfaceTest {
+public class MultitableInterfaceTest extends InterfaceTest {
     @Override
     protected String getSubpath() {
-        return super.getSubpath() + "/multipleTables";
+        return super.getSubpath() + "/multitableInterface";
     }
 
     @Test
@@ -99,7 +99,7 @@ public class InterfaceMultipleTablesTest extends InterfaceTest {
     void withInput() {
         assertThatThrownBy(() -> generateFiles("withInput"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Input fields on fields returning interfaces is currently only supported for discriminating interfaces. " +
+                .hasMessageContaining("Input fields on fields returning interfaces is currently only supported for single table interfaces. " +
                         "Field 'someInterface' returning interface 'SomeInterface' has one or more input field(s).");
     }
 
@@ -109,7 +109,7 @@ public class InterfaceMultipleTablesTest extends InterfaceTest {
         assertThatThrownBy(() -> generateFiles("withCondition"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Conditions on fields returning interfaces is currently only " +
-                        "supported for discriminating interfaces. Field 'someInterface' returning interface 'SomeInterface' has condition."
+                        "supported for single table interfaces. Field 'someInterface' returning interface 'SomeInterface' has condition."
                 );
     }
 

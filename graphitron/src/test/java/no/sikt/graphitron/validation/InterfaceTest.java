@@ -65,7 +65,7 @@ public class InterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Discriminate directive on interface but not table")
     void discriminateOnInterfaceButNotTable() {
-        assertErrorsContain("discriminatingInterface/discriminatingInterfaceWithoutTable",
+        assertErrorsContain("singleTableInterface/singleTableInterfaceWithoutTable",
                 "'discriminate' and 'table' directives on interfaces must be used together. " +
                         "Interface 'Address' is missing 'table' directive.");
     }
@@ -73,7 +73,7 @@ public class InterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Table directive on interface but not discriminate")
     void tableOnInterfaceButNotDiscriminate() {
-        assertErrorsContain("discriminatingInterface/discriminatingInterfaceWithoutDiscriminate",
+        assertErrorsContain("singleTableInterface/singleTableInterfaceWithoutDiscriminate",
                 "'discriminate' and 'table' directives on interfaces must be used together. " +
                         "Interface 'Address' is missing 'discriminate' directive.");
     }
@@ -81,7 +81,7 @@ public class InterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Column in discriminate directive does not exists in table")
     void discriminateFieldOnInterfaceDoesNotExist() {
-        assertErrorsContain("discriminatingInterface/discriminateFieldOnInterfaceDoesNotExist",
+        assertErrorsContain("singleTableInterface/discriminateFieldOnInterfaceDoesNotExist",
                 "Interface 'AddressByDistrict' has discriminating field set as 'COLUMN_DOES_NOT_EXIST', but the field does not exist in table 'ADDRESS'.");
     }
 
@@ -96,43 +96,43 @@ public class InterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Discriminator directive on type, but does not implement any interfaces")
     void typeWithDiscriminatorDoesNotImplementAnyInterface() {
-        assertErrorsContain("discriminatingInterface/typeWithDiscriminatorDoesNotImplementAnyInterface",
+        assertErrorsContain("singleTableInterface/typeWithDiscriminatorDoesNotImplementAnyInterface",
                 "Type 'Address' has discriminator, but doesn't implement any interfaces requiring it.");
     }
 
     @Test
     @DisplayName("Discriminator directive on type, but does not implement any interfaces with discriminate directive")
-    void typeWithDiscriminatorDoesNotImplementDiscriminatingInterface() {
-        assertErrorsContain("discriminatingInterface/typeWithDiscriminatorDoesNotImplementDiscriminatingInterface",
+    void typeWithDiscriminatorDoesNotImplementSingleTableInterface() {
+        assertErrorsContain("singleTableInterface/typeWithDiscriminatorDoesNotImplementSingleTableInterface",
                 "Type 'AddressInDistrictOne' has discriminator, but doesn't implement any interfaces requiring it.");
     }
 
     @Test
-    @DisplayName("Discriminator directive on type, but implements multiple discriminating interfaces")
-    void typeWithDiscriminatorImplementsMultipleDiscriminatingInterfaces() {
-        assertErrorsContain("discriminatingInterface/typeWithDiscriminatorImplementsMultipleDiscriminatingInterfaces",
+    @DisplayName("Discriminator directive on type, but implements multiple single table interfaces")
+    void typeWithDiscriminatorImplementsMultipleSingleTableInterfaces() {
+        assertErrorsContain("singleTableInterface/typeWithDiscriminatorImplementsMultipleSingleTableInterfaces",
                 "Type 'Address' implements multiple interfaces with a discriminator which is not allowed.");
     }
 
     @Test
-    @DisplayName("Type implements discriminating interface but is missing discriminator directive")
-    void typeWithoutDiscriminatorImplementsDiscriminatingInterface() {
-        assertErrorsContain("discriminatingInterface/typeWithoutDiscriminatorImplementsDiscriminatingInterface",
+    @DisplayName("Type implements single table interface but is missing discriminator directive")
+    void typeWithoutDiscriminatorImplementsSingleTableInterface() {
+        assertErrorsContain("singleTableInterface/typeWithoutDiscriminatorImplementsSingleTableInterface",
                 "Type 'Address' is missing 'discriminator' directive in order to implement interface 'AddressByDistrict'.");
     }
 
     @Test
-    @DisplayName("Discriminating interface has implementing type with different table")
-    void discriminatingInterfaceHasTypeWithDifferentTable() {
-        assertErrorsContain("discriminatingInterface/discriminatingInterfaceHasTypeWithDifferentTable",
+    @DisplayName("Single table interface has implementing type with different table")
+    void singleTableInterfaceHasTypeWithDifferentTable() {
+        assertErrorsContain("singleTableInterface/singleTableInterfaceHasTypeWithDifferentTable",
                 "Interface 'AddressByDistrict' requires implementing types to have table 'ADDRESS', but type 'Address' has table 'SOME_OTHER_TABLE'.");
     }
 
     @Test
-    @DisplayName("Mismatch in field directive on field in discriminating interface")
+    @DisplayName("Mismatch in field directive on field in single table interface")
     void fieldConflict() {
-        assertErrorsContain("discriminatingInterface/fieldConflict",
-                "Overriding 'field' configuration in types implementing a discriminating interface is not " +
+        assertErrorsContain("singleTableInterface/fieldConflict",
+                "Overriding 'field' configuration in types implementing a single table interface is not " +
                         "currently supported, and must be identical with interface. Type 'AddressInDistrictOne' has a configuration mismatch on field " +
                         "'postalCode' from the interface 'Address'.",
                 "Type 'AddressInDistrictTwo' has a configuration mismatch"
@@ -140,10 +140,10 @@ public class InterfaceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Mismatch in reference directive on field in discriminating interface")
+    @DisplayName("Mismatch in reference directive on field in single table interface")
     void referenceConflict() {
-        assertErrorsContain("discriminatingInterface/referenceConflict",
-                "Overriding 'reference' configuration in types implementing a discriminating interface is not " +
+        assertErrorsContain("singleTableInterface/referenceConflict",
+                "Overriding 'reference' configuration in types implementing a single table interface is not " +
                         "currently supported, and must be identical with interface. Type 'AddressInDistrictOne' has a configuration mismatch on field " +
                         "'customer' from the interface 'Address'.",
                         "Type 'AddressInDistrictTwo' has a configuration mismatch"
@@ -151,10 +151,10 @@ public class InterfaceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Mismatch in field directive on field in discriminating interface")
+    @DisplayName("Mismatch in field directive on field in single table interface")
     void conditionConflict() {
-        assertErrorsContain("discriminatingInterface/conditionConflict",
-                "Overriding 'condition' configuration in types implementing a discriminating interface is not " +
+        assertErrorsContain("singleTableInterface/conditionConflict",
+                "Overriding 'condition' configuration in types implementing a single table interface is not " +
                         "currently supported, and must be identical with interface. Type 'AddressInDistrictOne' has a configuration mismatch on field " +
                         "'customer' from the interface 'Address'.",
                 "Type 'AddressInDistrictTwo' has a configuration mismatch"
@@ -162,26 +162,26 @@ public class InterfaceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Mismatch in field directive on field in type implementing discriminating interface")
+    @DisplayName("Mismatch in field directive on field in type implementing single table interface")
     void fieldInTypeConflict() {
-        assertErrorsContain("discriminatingInterface/fieldInTypeConflict",
-                "Different configuration on fields in types implementing the same discriminating interface is currently not supported. Field " +
+        assertErrorsContain("singleTableInterface/fieldInTypeConflict",
+                "Different configuration on fields in types implementing the same single table interface is currently not supported. Field " +
                         "'sharedField' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'field' directive.");
     }
 
     @Test
-    @DisplayName("Mismatch in reference directive on field in type implementing discriminating interface")
+    @DisplayName("Mismatch in reference directive on field in type implementing single table interface")
     void referenceInTypeConflict() {
-        assertErrorsContain("discriminatingInterface/referenceInTypeConflict",
-                "Different configuration on fields in types implementing the same discriminating interface is currently not supported. " +
+        assertErrorsContain("singleTableInterface/referenceInTypeConflict",
+                "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                         "Field 'customer' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'reference' directive.");
     }
 
     @Test
-    @DisplayName("Mismatch in condition reference directive on field in type implementing discriminating interface")
+    @DisplayName("Mismatch in condition reference directive on field in type implementing single table interface")
     void conditionReferenceInTypeConflict() {
-        assertErrorsContain("discriminatingInterface/conditionReferenceInTypeConflict",
-                "Different configuration on fields in types implementing the same discriminating interface is currently not supported. " +
+        assertErrorsContain("singleTableInterface/conditionReferenceInTypeConflict",
+                "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                         "Field 'customer' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'reference' directive.");
     }
 }

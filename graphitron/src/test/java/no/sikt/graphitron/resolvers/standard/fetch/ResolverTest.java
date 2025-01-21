@@ -108,4 +108,22 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryNotGeneratedAbstractResolver() {
         assertGeneratedContentContains("splitquery/notGeneratedAbstractResolver", Set.of(SPLIT_QUERY_WRAPPER), "abstract class");
     }
+
+    @Test
+    @DisplayName("Root resolver returning multi-table interface")
+    void multitableInterface() {
+        assertGeneratedContentContains("operation/multitableInterface",
+                "CompletableFuture<List<Titled>>",
+                "QueryDBQueries.titledForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("Root resolver returning single table interface")
+    void singleTableInterface() {
+        assertGeneratedContentContains("operation/singleTableInterface",
+                "CompletableFuture<List<Address>>",
+                "QueryDBQueries.addressForQuery("
+        );
+    }
 }

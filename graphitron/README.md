@@ -1140,14 +1140,14 @@ try {
 
 Graphitron currently supports generating queries for one type of interface.
 
-### Discriminating interfaces
-Discriminating interfaces are interfaces where every implementation is in the same table, and its type is determined by a discriminator column. Graphitron supports generating queries for this type of interface on the Query-type.
+### Single table interfaces
+Single table interfaces are interfaces where every implementation is in the same table, and its type is determined by a discriminator column. Graphitron supports generating queries for this type of interface on the Query-type.
 
 #### Schema setup
 
-In order to define a discriminating interface and its types, the `discriminate` and `discriminator` directives are used, in addition to the `table` directive , which is described in more detail [here](#table-directive).
+In order to define a single table interface and its types, the `discriminate` and `discriminator` directives are used, in addition to the `table` directive , which is described in more detail [here](#table-directive).
 
-For an interface to be considered a discriminating interface, both the `table` and `discriminate` directives must be set:
+For an interface to be considered a single table interface, both the `table` and `discriminate` directives must be set:
 ```graphql
 interface Employee @table(name: "EMPLOYEE") @discriminate(on: "EMPLOYEE_TITLE") {
   ...
@@ -1168,7 +1168,7 @@ The `table` directive must be the same as the interface, and the `discriminator`
 
 
 
-#### Discriminating interface queries
+#### Single table interface queries
 
   With the example above, Graphitron can generate queries like these in the Query-type:
 
@@ -1182,7 +1182,7 @@ type Query {
   Queries with input and [query conditions](#Query-conditions) is also supported.
 
 #### Additional requirements and limitations:
-- Types can only implement one discriminating interface
+- Types can only implement one single table interface
 - The discriminator column must return a string type
 - Every field in the interface must have the same configuration in every implementing type
   - For example, overriding `field` configuration from the interface is currently not supported

@@ -170,9 +170,9 @@ public class InputTest extends GeneratorTest {
    }
 
     @Test
-    @DisplayName("On field returning discriminating interface")
-    void onDiscriminatingInterface() {
-        assertGeneratedContentContains("onDiscriminatingInterface",
+    @DisplayName("On field returning single table interface")
+    void onSingleTableInterface() {
+        assertGeneratedContentContains("onSingleTableInterface",
                 ", AddressInput filter",
                 ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()))");
     }

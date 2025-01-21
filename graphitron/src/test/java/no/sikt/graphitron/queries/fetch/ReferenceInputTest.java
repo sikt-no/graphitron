@@ -152,9 +152,9 @@ public class ReferenceInputTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("On field returning discriminating interface")
-    void onDiscriminatingInterface() {
-        assertGeneratedContentContains("onDiscriminatingInterface",
+    @DisplayName("On field returning single table interface")
+    void onSingleTableInterface() {
+        assertGeneratedContentContains("onSingleTableInterface",
                 "= _address.city()",
                 ".and(address_2030472956_city_left.CITY_.eq(filter.getCity()))",
                 ".leftJoin(address_2030472956_city_left)");
