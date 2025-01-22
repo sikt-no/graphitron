@@ -60,7 +60,8 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                         new FetchMappedObjectDBMethodGenerator(target, processedSchema),
                         new FetchCountDBMethodGenerator(target, processedSchema),
                         new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
-                        new FetchMappedInterfaceDBMethodGenerator(target, processedSchema),
+                        new FetchMultiTableInterfaceDBMethodGenerator(target, processedSchema),
+                        new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema),
                         new EntityFetcherResolverMethodGenerator(target, processedSchema)
                 )
         ).build();
