@@ -279,7 +279,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock mapOf(CodeBlock code) {
-        return CodeBlock.of("$T.of($L)", MAP.className, code);
+        return CodeBlock.of("$T.ofEntries($L)", MAP.className, code);
     }
 
     /**
@@ -724,6 +724,9 @@ public class FormatCodeBlocks {
 
         for (int i = 0; i < entrySetSize; i++) {
             var enumValue = entrySet.get(i);
+
+            code.add("$T.entry(", MAP.className);
+
             if (flipDirection) {
                 code
                         .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getUpperCaseName()))
@@ -733,10 +736,13 @@ public class FormatCodeBlocks {
                         .add("$L, ", renderEnumKeySide(entryClassName, enumValue.getName()))
                         .add(renderEnumValueSide(hasEnumReference, enumReference, enumValue.getUpperCaseName()));
             }
+
             if (i < entrySetSize - 1) {
+                code.add(")");
                 code.add(", ");
             }
         }
+        code.add(")");
 
         return code.build();
     }

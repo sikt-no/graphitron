@@ -14,24 +14,24 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.toJOOQ
 @DisplayName("Query input enums - Enum conversion for queries")
 public class InputEnumConversionFunctionTest extends CodeBlockTest {
     public static final String EXPECTED_JOOQ = ".convert(fake.graphql.example.model.DummyEnumConverted.class," +
-            " s -> s == null ? null : java.util.Map.of(" +
-            "no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A," +
-            " no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B," +
-            " no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C" +
-            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.of(" +
-            "fake.graphql.example.model.DummyEnumConverted.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A," +
-            " fake.graphql.example.model.DummyEnumConverted.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B," +
-            " fake.graphql.example.model.DummyEnumConverted.C, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C" +
+            " s -> s == null ? null : java.util.Map.ofEntries(" +
+            "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A, fake.graphql.example.model.DummyEnumConverted.A), " +
+            "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B, fake.graphql.example.model.DummyEnumConverted.B), " +
+            "java.util.Map.entry(no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C, fake.graphql.example.model.DummyEnumConverted.C)" +
+            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.ofEntries(" +
+            "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.A, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.A), " +
+            "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.B, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.B), " +
+            "java.util.Map.entry(fake.graphql.example.model.DummyEnumConverted.C, no.sikt.graphitron.codereferences.dummyreferences.DummyJOOQEnum.C)" +
             ").getOrDefault(s, null))";
     public static final String EXPECTED_STRING = ".convert(fake.graphql.example.model.DummyEnum.class," +
-            " s -> s == null ? null : java.util.Map.of(" +
-            "\"A\", fake.graphql.example.model.DummyEnum.A," +
-            " \"B\", fake.graphql.example.model.DummyEnum.B," +
-            " \"C\", fake.graphql.example.model.DummyEnum.C" +
-            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.of(" +
-            "fake.graphql.example.model.DummyEnum.A, \"A\"," +
-            " fake.graphql.example.model.DummyEnum.B, \"B\"," +
-            " fake.graphql.example.model.DummyEnum.C, \"C\"" +
+            " s -> s == null ? null : java.util.Map.ofEntries(" +
+            "java.util.Map.entry(\"A\", fake.graphql.example.model.DummyEnum.A), " +
+            "java.util.Map.entry(\"B\", fake.graphql.example.model.DummyEnum.B), " +
+            "java.util.Map.entry(\"C\", fake.graphql.example.model.DummyEnum.C)" +
+            ").getOrDefault(s, null), s -> s == null ? null : java.util.Map.ofEntries(" +
+            "java.util.Map.entry(fake.graphql.example.model.DummyEnum.A, \"A\"), " +
+            "java.util.Map.entry(fake.graphql.example.model.DummyEnum.B, \"B\"), " +
+            "java.util.Map.entry(fake.graphql.example.model.DummyEnum.C, \"C\")" +
             ").getOrDefault(s, null))";
 
     @Override
