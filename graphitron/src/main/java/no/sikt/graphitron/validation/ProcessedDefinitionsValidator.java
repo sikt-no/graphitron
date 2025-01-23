@@ -425,12 +425,6 @@ public class ProcessedDefinitionsValidator {
                             .filter(it -> schema.getInterface(it).hasDiscrimatingField())
                             .collect(Collectors.toList());
 
-                    if (singleTableInterfaces.size() > 1) {
-                        errorMessages.add(
-                                String.format("Type '%s' implements multiple interfaces with a discriminator which is not allowed.", objectDefinition.getName())
-                        );
-                    }
-
                     if (singleTableInterfaces.isEmpty() && objectDefinition.hasDiscriminator()) {
                         errorMessages.add(
                                 String.format("Type '%s' has discriminator, but doesn't implement any interfaces requiring it.", objectDefinition.getName())

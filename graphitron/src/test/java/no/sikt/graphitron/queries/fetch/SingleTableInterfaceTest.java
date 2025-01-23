@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 public class SingleTableInterfaceTest extends InterfaceTest {
     @Override
@@ -84,5 +85,11 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("Discriminator column name is case insensitive")
     void discriminatorColumnNameIsCaseInsensitive() {
         assertGeneratedContentMatches("discriminatorColumnNameIsCaseInsensitive");
+    }
+
+    @Test
+    @DisplayName("Type implementing multiple single table interfaces")
+    void typeImplementsMultipleSingleTableInterfaces() {
+        assertDoesNotThrow(() -> generateFiles("typeImplementsMultipleSingleTableInterfaces"));
     }
 }

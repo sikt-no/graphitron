@@ -107,13 +107,6 @@ public class InterfaceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Discriminator directive on type, but implements multiple single table interfaces")
-    void typeWithDiscriminatorImplementsMultipleSingleTableInterfaces() {
-        assertErrorsContain("singleTableInterface/typeWithDiscriminatorImplementsMultipleSingleTableInterfaces",
-                "Type 'Address' implements multiple interfaces with a discriminator which is not allowed.");
-    }
-
-    @Test
     @DisplayName("Type implements single table interface but is missing discriminator directive")
     void typeWithoutDiscriminatorImplementsSingleTableInterface() {
         assertErrorsContain("singleTableInterface/typeWithoutDiscriminatorImplementsSingleTableInterface",

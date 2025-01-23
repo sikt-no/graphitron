@@ -1182,7 +1182,7 @@ type Query {
   Queries with input and [query conditions](#Query-conditions) is also supported.
 
 #### Additional requirements and limitations:
-- Types can only implement one single table interface
+- Types implementing multiple single table interfaces is supported if it has the same discriminator value for all interfaces
 - The discriminator column must return a string type
 - Every field in the interface must have the same configuration in every implementing type
   - For example, overriding `field` configuration from the interface is currently not supported
