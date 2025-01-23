@@ -78,4 +78,11 @@ public class SingleTableInterfaceTest extends InterfaceTest {
                 "(_address.DISTRICT.as(\"_discriminator\"),_address.POSTAL_CODE.as(\"postalCode\")" +
                         ",_address.PHONE.as(\"phoneNumber\"))");
     }
+
+
+    @Test
+    @DisplayName("Discriminator column name is case insensitive")
+    void discriminatorColumnNameIsCaseInsensitive() {
+        assertGeneratedContentMatches("discriminatorColumnNameIsCaseInsensitive");
+    }
 }

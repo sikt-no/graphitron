@@ -306,16 +306,26 @@ public class ProcessedDefinitionsValidator {
                                     DISCRIMINATE.getName(), TABLE.getName(), name,
                                     interfaceDefinition.hasTable() ? DISCRIMINATE.getName() : TABLE.getName()));
                         } else {
-                            if (!getJavaFieldNamesForTable(interfaceDefinition.getTable().getName()).contains(interfaceDefinition.getDiscriminatingFieldName())) {
+                            Optional<?> field = getField(
+                                    interfaceDefinition.getTable().getName(),
+                                    interfaceDefinition.getDiscriminatingFieldName()
+                            );
+                            if (field.isEmpty()) {
                                 errorMessages.add(
                                         String.format("Interface '%s' has discriminating field set as '%s', but the field " +
                                                         "does not exist in table '%s'.",
                                                 name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
-//                            } else if (!getFieldType(interfaceDefinition.getTable().getName(), interfaceDefinition.getDiscriminatingFieldName()).get().equals(String.class)) {
-//                                errorMessages.add(
-//                                        String.format("Interface '%s' has discriminating field set as '%s', but the field " +
-//                                                        "does not return a string type, which is not supported.",
-//                                                name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
+                            } else {
+                                Optional<Class<?>> fieldType = getFieldType(
+                                        interfaceDefinition.getTable().getName(),
+                                        interfaceDefinition.getDiscriminatingFieldName()
+                                );
+                                if (fieldType.isEmpty() || !fieldType.get().equals(String.class)) {
+                                    errorMessages.add(
+                                            String.format("Interface '%s' has discriminating field set as '%s', but the field " +
+                                                            "does not return a string type, which is not supported.",
+                                                    name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
+                                }
                             }
                         }
                         implementations.forEach(impl -> {
