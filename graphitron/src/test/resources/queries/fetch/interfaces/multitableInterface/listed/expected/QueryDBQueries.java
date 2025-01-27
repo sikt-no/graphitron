@@ -46,13 +46,13 @@ public class QueryDBQueries {
                 .fetch()
                 .map(
                         internal_it_ -> {
-                            switch ((String) internal_it_.get(0)) {
+                            switch (internal_it_.get(0, String.class)) {
                                 case "Address":
-                                    return (SomeInterface) internal_it_.get("$dataForAddress");
+                                    return internal_it_.get("$dataForAddress", SomeInterface.class);
                                 case "Customer":
-                                    return (SomeInterface) internal_it_.get("$dataForCustomer");
+                                    return internal_it_.get("$dataForCustomer", SomeInterface.class);
                                 default:
-                                    throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "SomeInterface", (String) internal_it_.get(0)));
+                                    throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "SomeInterface", internal_it_.get(0, String.class)));
                             }
                         }
 

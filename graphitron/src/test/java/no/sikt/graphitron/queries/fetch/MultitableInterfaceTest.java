@@ -47,9 +47,9 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 "mappedAddress.field(\"$data\").as(\"$dataForAddress\")," +
                         "mappedCustomer.field(\"$data\").as(\"$dataForCustomer\")," +
                         "mappedCity.field(\"$data\").as(\"$dataForCity\")",
-                "case \"Address\": return (SomeInterface) internal_it_.get(\"$dataForAddress\")",
-                "case \"Customer\": return (SomeInterface) internal_it_.get(\"$dataForCustomer\")",
-                "case \"City\": return (SomeInterface) internal_it_.get(\"$dataForCity\")"
+                "case \"Address\": return internal_it_.get(\"$dataForAddress\", SomeInterface.class)",
+                "case \"Customer\": return internal_it_.get(\"$dataForCustomer\"",
+                "case \"City\": return internal_it_.get(\"$dataForCity\""
         );
     }
 
@@ -90,6 +90,13 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentMatches("listed");
     }
 
+
+    @Test
+    @DisplayName("Paginated")
+    void paginated() {
+        assertGeneratedContentMatches("paginated");
+    }
+
     /*
      * Temporary validation tests
      * */
@@ -111,16 +118,6 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 .hasMessageContaining("Conditions on fields returning interfaces is currently only " +
                         "supported for single table interfaces. Field 'someInterface' returning interface 'SomeInterface' has condition."
                 );
-    }
-
-    @Test
-    @DisplayName("Paginated fields returning interface is not currently supported")
-    void paginated() {
-        assertThatThrownBy(() -> generateFiles("paginated"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Fields returning paginated list of interfaces is currently only " +
-                        "supported for interfaces with discriminator. Field 'someInterface' returns a connection type " +
-                        "for interface 'SomeInterfaceConnection', which does not have a discriminator.");
     }
 
     @Test

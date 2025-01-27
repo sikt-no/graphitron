@@ -10,6 +10,11 @@ type Customer implements SomeInterface @table {
   id: ID
 }
 
+type Address implements SomeInterface @table {
+  id: ID
+}
+
+
 type SomeInterfaceConnection {
   edges: [SomeInterfaceConnectionEdge]
   nodes: [SomeInterface!]!

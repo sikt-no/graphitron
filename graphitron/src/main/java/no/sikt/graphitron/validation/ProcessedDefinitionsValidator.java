@@ -459,12 +459,6 @@ public class ProcessedDefinitionsValidator {
                                     "'%s' must return only one %s", name, field.getName(), field.getTypeName()
                     );
                 } else {
-                    if (field.hasForwardPagination() && !schema.getInterface(name).hasDiscrimatingField()) {
-                        errorMessages.add(String.format("Fields returning paginated list of interfaces is currently only " +
-                                "supported for interfaces with discriminator. Field '%s' returns a connection type for " +
-                                "interface '%s', which does not have a discriminator.", field.getName(), name));
-                    }
-
                     if (field.hasNonReservedInputFields() && !schema.getInterface(name).hasDiscrimatingField()) {
                         errorMessages.add(String.format("Input fields on fields returning interfaces is currently only " +
                                 "supported for single table interfaces. Field '%s' returning interface '%s' has one or " +
