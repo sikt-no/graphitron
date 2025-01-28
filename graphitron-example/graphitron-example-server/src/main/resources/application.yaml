@@ -1,0 +1,13 @@
+quarkus:
+  http:
+    port: 8088
+  datasource:
+    db-kind: postgresql
+    username: sakila
+    password: p_ssW0rd
+    jdbc:
+      url: jdbc:postgresql://localhost:5432/sakila
+      max-size: 16
+
+application:
+  authentication-required: false

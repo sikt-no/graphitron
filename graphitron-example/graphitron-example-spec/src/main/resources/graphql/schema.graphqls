@@ -1,0 +1,45 @@
+type Query {
+  customers(first: Int = 100, after: String): CustomerConnection
+}
+
+type CustomerConnection {
+    edges: [CustomerConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Customer!]!
+    totalCount: Int
+}
+
+type CustomerConnectionEdge {
+    cursor: String
+    node: Customer
+}
+
+type Customer @table {
+    id: ID
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+    email: String
+    address: Address!
+}
+
+type Address @table {
+    id: ID
+    addressLine1: String! @field(name: "ADDRESS_")
+    addressLine2: String @field(name: "ADDRESS2")
+    city: City!
+    zip: String @field(name: "POSTAL_CODE")
+    phone: String!
+}
+
+type City @table {
+    id: ID
+    name: String! @field(name: "CITY_")
+    countryName: String! @field(name: "COUNTRY_") @reference(references: [{table: "COUNTRY"}])
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}

@@ -439,6 +439,16 @@
                 <maven.javadoc.skip>true</maven.javadoc.skip>
             </properties>
         </profile>
+        <profile>
+            <!-- By default, we don't want to include the example project as this requires java 21 and impacts the overall build time -->
+            <id>include-graphitron-example</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <modules>
+                <module>graphitron-example</module>
+            </modules>
+        </profile>
     </profiles>
 </project>
 
