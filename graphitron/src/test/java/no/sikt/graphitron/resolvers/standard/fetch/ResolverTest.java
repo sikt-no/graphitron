@@ -2,6 +2,7 @@ package no.sikt.graphitron.resolvers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.fetch.FetchResolverClassGenerator;
@@ -126,4 +127,14 @@ public class ResolverTest extends GeneratorTest {
                 "QueryDBQueries.addressForQuery("
         );
     }
+
+    @Test
+    @DisplayName("Resolver with annotation configured")
+    void resolverAnnotaion() {
+        GeneratorConfig.setResolverAnnotation("example.org.cdi.Bean");
+        assertGeneratedContentContains("operation/default", "@Bean" +
+                "public class QueryGeneratedResolver implements QueryResolver ");
+
+    }
+
 }

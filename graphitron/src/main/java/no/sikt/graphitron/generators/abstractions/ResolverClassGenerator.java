@@ -33,6 +33,7 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> extends
         if (generators.stream().anyMatch(g -> !g.generatesAll())) {
             spec.addModifiers(Modifier.ABSTRACT);
         }
+        GeneratorConfig.getResolverAnnotation().map(annotation -> spec.addAnnotation(ClassName.bestGuess(annotation)));
 
         spec.addSuperinterface(ClassName.get(GeneratorConfig.generatedResolversPackage(), className + getExpectedInterfaceSuffix()));
         setDependencies(generators, spec);

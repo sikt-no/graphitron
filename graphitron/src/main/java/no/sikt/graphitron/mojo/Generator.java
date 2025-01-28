@@ -15,6 +15,7 @@ public interface Generator {
     Set<String> getSchemaFiles();
     String getGeneratedSchemaCodePackage();
     String getJooqGeneratedPackage();
+    String getResolverAnnotation();
 
     RecordValidation getRecordValidation();
 

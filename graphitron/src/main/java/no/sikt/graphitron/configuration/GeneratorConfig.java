@@ -11,6 +11,7 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -76,6 +77,7 @@ public class GeneratorConfig {
         generatedSchemaResolversPackage = graphQLGeneratedPackage + DEFAULT_API_SUFFIX; // Once codegen is fully contained in this module, this will be redundant.
         generatedSchemaModelsPackage = graphQLGeneratedPackage + DEFAULT_MODEL_SUFFIX;
         generatedJooqPackage = mojo.getJooqGeneratedPackage();
+        resolverAnnotation = mojo.getResolverAnnotation();
         maxAllowedPageSize = mojo.getMaxAllowedPageSize();
 
         externalReferences = new ExternalReferences(mojo.getExternalReferences());
@@ -100,6 +102,7 @@ public class GeneratorConfig {
         externalReferenceImports = Set.of();
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
+        resolverAnnotation = null;
     }
 
     private static Set<String> schemaFiles;
@@ -109,7 +112,8 @@ public class GeneratorConfig {
             outputPackage,
             generatedSchemaResolversPackage,
             generatedSchemaModelsPackage,
-            generatedJooqPackage;
+            generatedJooqPackage,
+            resolverAnnotation;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -144,6 +148,10 @@ public class GeneratorConfig {
 
     public static String getGeneratedJooqPackage() {
         return generatedJooqPackage;
+    }
+
+    public static Optional<String> getResolverAnnotation() {
+        return Optional.ofNullable(resolverAnnotation);
     }
 
     public static ExternalReferences getExternalReferences() {
@@ -195,5 +203,9 @@ public class GeneratorConfig {
 
     public static boolean useOptionalSelects() {
         return USE_OPTIONAL_SELECTS;
+    }
+
+    public static void setResolverAnnotation(String resolverAnnotation) {
+        GeneratorConfig.resolverAnnotation = resolverAnnotation;
     }
 }
