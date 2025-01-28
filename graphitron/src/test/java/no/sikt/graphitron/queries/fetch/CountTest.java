@@ -48,4 +48,10 @@ public class CountTest extends GeneratorTest {
     void singleTableInterface() {
         assertGeneratedContentMatches("singleTableInterface");
     }
+
+    @Test
+    @DisplayName("Connection on multitable interface")
+    void multiTableInterface() {
+        assertGeneratedContentMatches("multiTableInterface");
+    }
 }
