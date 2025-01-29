@@ -1,6 +1,7 @@
 package no.sikt.graphql.helpers.query;
 
 import org.jooq.*;
+import org.jooq.Record;
 import org.jooq.impl.TableImpl;
 
 import javax.json.Json;
