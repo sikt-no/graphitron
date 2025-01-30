@@ -305,7 +305,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                     .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.getFields())) : $T.noCondition())", TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsBlock(alias.getMappingName()), DSL.className, TOKEN, DSL.className);
         }
                 return code.add("\n.orderBy($L)", getPrimaryKeyFieldsBlock(alias.getMappingName()))
-                .add(isConnection ?  CodeBlock.of("\n.limit($N);", PAGE_SIZE_NAME) : CodeBlock.of(";"))
+                .add(isConnection ?  CodeBlock.of("\n.limit($N + 1);", PAGE_SIZE_NAME) : CodeBlock.of(";"))
                 .unindent()
                 .build();
     }

@@ -83,7 +83,7 @@ public class QueryDBQueries {
                 .where(_token == null ? DSL.noCondition() : DSL.inline("Address").greaterOrEqual(_token.getTypeName()))
                 .and(_token != null && _token.matches("Address") ? DSL.row(_address.fields(_address.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.getFields())) : DSL.noCondition())
                 .orderBy(_address.fields(_address.getPrimaryKey().getFieldsArray()))
-                .limit(pageSize);
+                .limit(pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSON, Record2<SelectField<String>, SelectSelectStep<Record1<Address>>>>> addressForSomeInterface(
@@ -109,7 +109,7 @@ public class QueryDBQueries {
                 .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.getTypeName()))
                 .and(_token != null && _token.matches("Customer") ? DSL.row(_customer.fields(_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.getFields())) : DSL.noCondition())
                 .orderBy(_customer.fields(_customer.getPrimaryKey().getFieldsArray()))
-                .limit(pageSize);
+                .limit(pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSON, Record2<SelectField<String>, SelectSelectStep<Record1<Customer>>>>> customerForSomeInterface() {
