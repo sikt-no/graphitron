@@ -1,5 +1,12 @@
 type Query {
-  payments(customerId: String @field(name: "CUSTOMER_ID")): [Payment]
+  payments(
+    customerId: String @field(name: "CUSTOMER_ID")
+    staff: PaymentStaffInput!
+  ): [Payment]
+}
+
+input PaymentStaffInput {
+  staffId: String! @field(name: "STAFF_ID")
 }
 
 interface Payment {

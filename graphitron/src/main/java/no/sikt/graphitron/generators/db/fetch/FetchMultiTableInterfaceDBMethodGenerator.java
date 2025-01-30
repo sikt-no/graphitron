@@ -7,9 +7,7 @@ import com.squareup.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.helpers.query.AfterTokenWithTypeName;
@@ -46,8 +44,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var parser = new InputParser(target, processedSchema);
-
+        var inputParser = new InputParser(target, processedSchema);
         var interfaceDefinition = processedSchema.getInterface(target);
 
         var implementations = processedSchema
@@ -57,12 +54,12 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
                 .collect(Collectors.toSet());
 
-        return getSpecBuilder(target, interfaceDefinition.getGraphClassName(), parser)
-                .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations))
+        return getSpecBuilder(target, interfaceDefinition.getGraphClassName(), inputParser)
+                .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
                 .build();
     }
 
-    private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations) {
+    private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations, Set<String> inputs) {
         List<String> sortFieldQueryMethodCalls = new ArrayList<>();
         LinkedHashMap<String, String> mappedQueryVariables = new LinkedHashMap<>();
         var joins = CodeBlock.builder();
@@ -82,10 +79,9 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                     mappedVariableName,
                     UNION_KEYS_QUERY, SORT_FIELDS, JSON_JOOQ.className,
                     mappedVariableName, SORT_FIELDS, JSON_JOOQ.className);
-
         }
 
-        var unionQuery = target.hasForwardPagination() ? getUnionQueryForConnection(sortFieldQueryMethodCalls) : getUnionQuery(sortFieldQueryMethodCalls);
+        var unionQuery = getUnionQuery(sortFieldQueryMethodCalls, inputs, target.hasForwardPagination());
         var mapping = createMapping(target, implementations);
 
         var returnsMultiple = target.isIterableWrapped() || target.hasForwardPagination();
@@ -127,18 +123,24 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .build();
     }
 
-    private static @NotNull CodeBlock getUnionQuery(List<String> subselectVariableNames) {
-        return CodeBlock.of(subselectVariableNames.stream()
-                .reduce("",
-                        (currString, element) -> String.format(currString.isEmpty() ? "%s()" : "%s().unionAll(%s)", element, currString))
-        );
-    }
+    private static @NotNull CodeBlock getUnionQuery(List<String> subselectVariableNames, Set<String> inputNames, boolean isConnection) {
 
-    private static @NotNull CodeBlock getUnionQueryForConnection(List<String> subselectVariableNames) {
-        return CodeBlock.of(subselectVariableNames.stream()
-                .reduce("",
-                        (currString, element) -> String.format(currString.isEmpty() ? "%s(%s, %s)" : "%s(%s, %s).unionAll(%s)", element, PAGE_SIZE_NAME, TOKEN, currString))
-        );
+        var inputs = CodeBlock.builder()
+                .add(isConnection ? CodeBlock.of("$N, $N", PAGE_SIZE_NAME, TOKEN) : empty())
+                .add(isConnection && !inputNames.isEmpty() ? ", " : "")
+                .add(CodeBlock.join(inputNames.stream().map(CodeBlock::of).collect(Collectors.toSet()), ", "))
+                .build();
+
+            return CodeBlock.of(subselectVariableNames.stream()
+                    .reduce("",
+                            (currString, element) -> {
+                                if (currString.isEmpty()) {
+                                    return String.format("%s(%s)", element, inputs);
+                                } else {
+                                    return String.format("%s(%s)\n.unionAll(%s)", element, inputs, currString);
+                                }
+                            })
+            );
     }
 
     private CodeBlock createSelectBlock(Map<String, String> mappedQueryVariables, boolean getFieldByName) {
@@ -225,6 +227,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
     public List<MethodSpec> generateWithSubselectMethods(ObjectField target) {
         var methods = new ArrayList<MethodSpec>();
         methods.add(generate(target));
+        var inputParser = new InputParser(target, processedSchema);
 
         processedSchema
                 .getObjects()
@@ -232,35 +235,40 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .stream()
                 .filter(it -> it.implementsInterface(processedSchema.getInterface(target).getName()))
                 .forEach(implementation -> {
-                    var sortFieldsMethodSpec = MethodSpec
+                    var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments());
+                    var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+
+                    var sortFieldsMethod = MethodSpec
                             .methodBuilder(getSortFieldsMethodName(target, implementation))
                             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                             .returns(getReturnTypeForKeysMethod(target.hasForwardPagination()))
-                            .addCode(getSortFieldsMethodCode(implementation, target.hasForwardPagination()));
+                            .addCode(getSortFieldsMethodCode(implementation, context, target.hasForwardPagination()));
 
                     if (target.hasForwardPagination()) {
-                        sortFieldsMethodSpec
+                        sortFieldsMethod
                                 .addParameter(Integer.class, PAGE_SIZE_NAME)
                                 .addParameter(AfterTokenWithTypeName.class, TOKEN);
                     }
 
-                    methods.add(sortFieldsMethodSpec.build());
+                    inputParser.getMethodInputs()
+                            .forEach((key, value) -> sortFieldsMethod.addParameter(iterableWrapType(value), key));
 
-                    methods.add(
-                            MethodSpec
-                                    .methodBuilder(getMappedMethodName(target, implementation))
-                                    .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                                    .returns(target.hasForwardPagination() ? getReturnTypeForMappedConnectionMethod(implementation.getGraphClassName()) : getReturnTypeForMappedMethod(implementation.getGraphClassName()))
-                                    .addCode(getMappedMethodCode(target, implementation)).build()
-                    );
+                    var mappedMethod = MethodSpec
+                            .methodBuilder(getMappedMethodName(target, implementation))
+                            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                            .returns(target.hasForwardPagination() ?
+                                    getReturnTypeForMappedConnectionMethod(implementation.getGraphClassName())
+                                    : getReturnTypeForMappedMethod(implementation.getGraphClassName()))
+                            .addCode(getMappedMethodCode(target, implementation, context));
+
+                    methods.add(sortFieldsMethod.build());
+                    methods.add(mappedMethod.build());
                 });
         return methods;
     }
 
-    private CodeBlock getMappedMethodCode(ObjectField target, ObjectDefinition implementation) {
+    private CodeBlock getMappedMethodCode(ObjectField target, ObjectDefinition implementation, FetchContext context) {
         var code = CodeBlock.builder();
-        var virtualReference = new VirtualSourceField(implementation, target.getTypeName());
-        var context = new FetchContext(processedSchema, virtualReference, implementation, false);
         var querySource = context.renderQuerySource(getLocalTable());
         var selectCode = generateSelectRow(context);
 
@@ -287,27 +295,31 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
         return String.format("$dataFor%s", typeName);
     }
 
-    private static CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, boolean isConnection) {
+    private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, boolean isConnection) {
         var code = CodeBlock.builder();
-        var alias = new Alias("", implementation.getTable(), false);
+        var alias = context.getTargetAlias();
+        var whereBlock = formatWhereContents(context, idParamName, isRoot, false);
 
-        code
-                .add(createAliasDeclarations(Set.of(alias)))
-                .add("return $T.select(\n", DSL.className)
-                .indent()
-                .add("$T.inline($S).as($S),\n", DSL.className, implementation.getName(), TYPE_FIELD)
-                .add(getSortFieldsArray(implementation.getName(), alias.getMappingName(), alias.getTable().getName()))
-                .add(".as($S))", SORT_FIELDS)
-                .add("\n.from($N)", alias.getMappingName());
+        code.add(createAliasDeclarations(context.getAliasSet()))
+            .add("return $T.select(\n", DSL.className)
+            .indent()
+            .add("$T.inline($S).as($S),\n", DSL.className, implementation.getName(), TYPE_FIELD)
+            .add(getSortFieldsArray(implementation.getName(), alias, context.getTargetTable().getName()))
+            .add(".as($S))", SORT_FIELDS)
+            .add("\n.from($N)\n", alias)
+            .add(whereBlock);
 
-        if (isConnection){
-                code.add("\n.where($N == null ? $T.noCondition() : $T.inline($S).greaterOrEqual($N.getTypeName()))", TOKEN, DSL.className, DSL.className, implementation.getName(), TOKEN)
-                    .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.getFields())) : $T.noCondition())", TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsBlock(alias.getMappingName()), DSL.className, TOKEN, DSL.className);
+        if (isConnection) {
+            code.add(".$L", whereBlock.isEmpty() ? "where" : "and")
+                .add("($N == null ? $T.noCondition() : $T.inline($S).greaterOrEqual($N.getTypeName()))",
+                        TOKEN, DSL.className, DSL.className, implementation.getName(), TOKEN)
+                .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.getFields())) : $T.noCondition())",
+                        TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsBlock(alias), DSL.className, TOKEN, DSL.className);
         }
-                return code.add("\n.orderBy($L)", getPrimaryKeyFieldsBlock(alias.getMappingName()))
-                .add(isConnection ?  CodeBlock.of("\n.limit($N + 1);", PAGE_SIZE_NAME) : CodeBlock.of(";"))
-                .unindent()
-                .build();
+        return code.add(".orderBy($L)", getPrimaryKeyFieldsBlock(alias))
+                    .add(isConnection ? CodeBlock.of("\n.limit($N + 1);", PAGE_SIZE_NAME) : CodeBlock.of(";"))
+                    .unindent()
+                    .build();
     }
 
     private static CodeBlock getSortFieldsArray(String name, String alias, String tableName) {

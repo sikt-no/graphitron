@@ -75,7 +75,7 @@ public class QueryDBQueries {
     }
 
     private static SelectLimitPercentStep<Record2<String, JSON>> addressSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
-        var _address = ADDRESS.as("_1178824934");
+        var _address = ADDRESS.as("address_2030472956");
         return DSL.select(
                         DSL.inline("Address").as("$type"),
                         DSL.jsonArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$sortFields"))
@@ -101,7 +101,7 @@ public class QueryDBQueries {
     }
 
     private static SelectLimitPercentStep<Record2<String, JSON>> customerSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
-        var _customer = CUSTOMER.as("_1774868261");
+        var _customer = CUSTOMER.as("customer_2952383337");
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
                         DSL.jsonArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$sortFields"))

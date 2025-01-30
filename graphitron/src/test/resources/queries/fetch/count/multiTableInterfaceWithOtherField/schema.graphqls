@@ -1,5 +1,5 @@
 type Query {
-    payments(first: Int = 100, after: String): PaymentConnection
+    payments(customerId: String! @field(name: "CUSTOMER_ID"), first: Int = 100, after: String): PaymentConnection
 }
 
 interface Payment {

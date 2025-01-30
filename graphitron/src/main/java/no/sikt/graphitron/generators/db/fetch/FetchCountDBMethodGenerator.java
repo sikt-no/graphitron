@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.db.fetch;
 import com.squareup.javapoet.CodeBlock;
 import com.squareup.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -42,42 +43,16 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var context = new FetchContext(processedSchema, target, getLocalObject(), true);
-        var targetSource = context.renderQuerySource(getLocalTable());
-
-        var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
-        if (target.isResolver()) context = context.nextContext(target);
 
         var code = CodeBlock.builder();
         if (processedSchema.isInterface(target.getTypeName()) && !processedSchema.getInterface(target.getTypeName()).hasDiscrimatingField()) {
-            var interfaceDefinition = processedSchema.getInterface(target.getTypeName());
-
-            var implementations = processedSchema
-                    .getObjects()
-                    .values()
-                    .stream()
-                    .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
-                    .collect(Collectors.toSet());
-
-            implementations.forEach(implementation -> {
-                var variableName = String.format("count%s", implementation.getName());
-                        code.add(declare(variableName,
-                                CodeBlock.of("$T.select($T.count().as($S)).from($L)",
-                                        DSL.className, DSL.className, COUNT_FIELD_NAME, implementation.getTable().getMappingName())));
-            });
-
-            var unionQuery = implementations.stream()
-                    .map(AbstractObjectDefinition::getName)
-                    .reduce("", (currString, element) ->
-                            String.format(currString.isEmpty() ? "count%s" : "count%s\n.unionAll(%s)", element, currString));
-
-            code.add(declare(UNION_COUNT_QUERY, CodeBlock.of("$L\n.asTable()", unionQuery)))
-                    .add("\nreturn ctx.select($T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
-                    .indent()
-                    .add("\n.from($N)", UNION_COUNT_QUERY)
-                    .add("\n.fetchOne(0, $T.class);", INTEGER.className)
-                    .unindent();
+            code = getCodeForMultitableCountMethod(target);
         } else {
+            var context = new FetchContext(processedSchema, target, getLocalObject(), true);
+            var targetSource = context.renderQuerySource(getLocalTable());
+            var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+            if (target.isResolver()) context = context.nextContext(target);
+
             code.add(createAliasDeclarations(context.getAliasSet()))
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
@@ -96,6 +71,49 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         return getSpecBuilder(target, parser)
                 .addCode(code.build())
                 .build();
+    }
+
+    private CodeBlock.Builder getCodeForMultitableCountMethod(ObjectField target) {
+        var code = CodeBlock.builder();
+        var interfaceDefinition = processedSchema.getInterface(target.getTypeName());
+
+        var implementations = processedSchema
+                .getObjects()
+                .values()
+                .stream()
+                .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
+                .collect(Collectors.toList());
+
+        implementations.forEach(implementation -> {
+            var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments());
+            var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+            var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+            var countForImplementation = CodeBlock.builder()
+                    .add("$T.select($T.count().as($S))", DSL.className, DSL.className, COUNT_FIELD_NAME)
+                    .add("\n.from($L)\n", context.getTargetAlias())
+                    .add(createSelectJoins(context.getJoinSet()))
+                    .add(where)
+                    .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
+
+            code.add(createAliasDeclarations(context.getAliasSet()));
+            code.add(declare(getCountVariableName(implementation.getName()), countForImplementation.build()));
+        });
+
+        var unionQuery = implementations.stream()
+                .map(AbstractObjectDefinition::getName)
+                .reduce("", (currString, element) ->
+                        String.format(currString.isEmpty() ? "%s" : "%s\n.unionAll(%s)", getCountVariableName(element), currString));
+
+        return code.add(declare(UNION_COUNT_QUERY, CodeBlock.of("$L\n.asTable()", unionQuery)))
+                    .add("\nreturn ctx.select($T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
+                    .indent()
+                    .add("\n.from($N)", UNION_COUNT_QUERY)
+                    .add("\n.fetchOne(0, $T.class);", INTEGER.className)
+                    .unindent();
+    }
+
+    private static String getCountVariableName(String implementationName) {
+        return String.format("count%s", implementationName);
     }
 
     @NotNull

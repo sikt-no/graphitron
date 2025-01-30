@@ -459,12 +459,6 @@ public class ProcessedDefinitionsValidator {
                                     "'%s' must return only one %s", name, field.getName(), field.getTypeName()
                     );
                 } else {
-                    if (field.hasNonReservedInputFields() && !schema.getInterface(name).hasDiscrimatingField()) {
-                        errorMessages.add(String.format("Input fields on fields returning interfaces is currently only " +
-                                "supported for single table interfaces. Field '%s' returning interface '%s' has one or " +
-                                "more input field(s).", field.getName(), name));
-                    }
-
                     if (field.hasCondition() && !schema.getInterface(name).hasDiscrimatingField()) {
                         errorMessages.add(String.format("Conditions on fields returning interfaces is currently only " +
                                 "supported for single table interfaces. Field '%s' returning interface '%s' has condition.",

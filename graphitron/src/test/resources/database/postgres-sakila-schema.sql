@@ -452,6 +452,9 @@ INHERITS (payment);
 
 ALTER TABLE public.payment_p2007_01 OWNER TO postgres;
 
+ALTER TABLE payment_p2007_01
+    ADD CONSTRAINT payment_p2007_01_pkey PRIMARY KEY (payment_id);
+
 --
 -- Name: payment_p2007_02; Type: TABLE; Schema: public; Owner: postgres; Tablespace: 
 --
@@ -462,6 +465,9 @@ INHERITS (payment);
 
 
 ALTER TABLE public.payment_p2007_02 OWNER TO postgres;
+
+ALTER TABLE payment_p2007_02
+    ADD CONSTRAINT payment_p2007_02_pkey PRIMARY KEY (payment_id);
 
 --
 -- Name: payment_p2007_03; Type: TABLE; Schema: public; Owner: postgres; Tablespace: 

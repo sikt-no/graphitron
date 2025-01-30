@@ -92,23 +92,41 @@ public class MultitableInterfaceTest extends InterfaceTest {
 
 
     @Test
+    @DisplayName("Input on multitable interface")
+    void withInput() {
+        assertGeneratedContentMatches("withInput");
+    }
+
+    @Test
     @DisplayName("Paginated")
     void paginated() {
         assertGeneratedContentMatches("paginated");
     }
 
+    @Test
+    @DisplayName("Paginated with input")
+    void paginatedWithInput() {
+        assertGeneratedContentContains("paginatedWithInput",
+                "SortFieldsForPayments(pageSize, _token, customerId).union",
+                ".where(customerId != null ? _paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition()).and(_token"
+        );
+    }
+
+    @Test
+    @DisplayName("Multiple inputs on multitable interface")
+    void withMultipleInputs() {
+        assertGeneratedContentContains("withMultipleInputs",
+                "paymenttypetwoSortFieldsForPayments(customerId, staff)" +
+                        ".unionAll(paymenttypeoneSortFieldsForPayments(customerId, staff))",
+                "SortFieldsForPayments(String customerId, PaymentStaffInput staff)",
+                ".where(customerId != null ? _paymentp2007_01.",
+                ".and(_paymentp2007_01.STAFF_ID.eq(staff.getStaffId()))"
+                );
+    }
+
     /*
      * Temporary validation tests
      * */
-
-    @Test
-    @DisplayName("Input on interface is not currently supported")
-    void withInput() {
-        assertThatThrownBy(() -> generateFiles("withInput"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Input fields on fields returning interfaces is currently only supported for single table interfaces. " +
-                        "Field 'someInterface' returning interface 'SomeInterface' has one or more input field(s).");
-    }
 
     @Test
     @DisplayName("Condition on interface is not currently supported")

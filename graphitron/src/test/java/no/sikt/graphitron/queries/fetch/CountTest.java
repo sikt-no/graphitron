@@ -54,4 +54,13 @@ public class CountTest extends GeneratorTest {
     void multiTableInterface() {
         assertGeneratedContentMatches("multiTableInterface");
     }
+
+    @Test
+    @DisplayName("Connection on multitable interface with an extra field")
+    void multiTableInterfaceWithOtherField() {
+        assertGeneratedContentContains("multiTableInterfaceWithOtherField",
+                ", String customerId){",
+                ".from(_paymentp2007_01).where(_paymentp2007_01.CUSTOMER_ID.eq(customerId))"
+        );
+    }
 }
