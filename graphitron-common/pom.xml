@@ -13,11 +13,11 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.jooq.pro-java-11</groupId>
+            <groupId>org.jooq.pro</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jooq.pro-java-11</groupId>
+            <groupId>org.jooq.pro</groupId>
             <artifactId>jooq-codegen</artifactId>
         </dependency>
         <dependency>
