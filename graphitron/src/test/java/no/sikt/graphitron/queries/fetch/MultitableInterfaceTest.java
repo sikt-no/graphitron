@@ -124,26 +124,22 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 );
     }
 
-    /*
-     * Temporary validation tests
-     * */
-
     @Test
-    @DisplayName("Condition on interface is not currently supported")
-    void withCondition() {
-        assertThatThrownBy(() -> generateFiles("withCondition"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Conditions on fields returning interfaces is currently only " +
-                        "supported for single table interfaces. Field 'someInterface' returning interface 'SomeInterface' has condition."
-                );
+    @DisplayName("Condition on multi table interface")
+    void withQueryCondition() {
+        assertGeneratedContentContains("withQueryCondition",
+                ".from(_paymentp2007_01).where(no.sikt.",
+                ".from(_paymentp2007_02).where(no.sikt."
+        );
     }
 
     @Test
-    @DisplayName("Interface returned in field has an implementing type with table missing primary key")
-    void listedNoPrimarykey() {
-        assertThatThrownBy(() -> generateFiles("listedNoPrimaryKey"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Interface 'SomeInterface' is returned in field 'query', but implementing " +
-                        "type 'PgUserMapping' has table 'PG_USER_MAPPING' which does not have a primary key.");
+    @DisplayName("Condition on input on multi table interface")
+    void withInputCondition() {
+        assertGeneratedContentContains("withInputCondition",
+                ".from(_paymentp2007_01).where(customerId",
+                ": DSL.noCondition()).and(no.sikt",
+                "QueryPaymentInterfaceCondition.payments(_paymentp2007_01, customerId)"
+        );
     }
 }

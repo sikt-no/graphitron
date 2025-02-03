@@ -1,5 +1,5 @@
 type Query {
-  address(filter: AddressInput!): [Address] @condition(condition: {name: "QUERY_FETCH_INTERFACE_CONDITION"})
+  address(filter: AddressInput!): [Address] @condition(condition: {name: "QUERY_FETCH_ADDRESS_INTERFACE_CONDITION"})
 }
 
 input AddressInput {

@@ -9,6 +9,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @DisplayName("Interface validation - Checks run when building the schema for interfaces")
@@ -175,5 +176,14 @@ public class InterfaceTest extends ValidationTest {
         assertErrorsContain("singleTableInterface/conditionReferenceInTypeConflict",
                 "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                         "Field 'customer' occurs in two or more types implementing interface 'Address', but there is a mismatch between the configuration of the 'reference' directive.");
+    }
+
+    @Test
+    @DisplayName("Interface returned in field has an implementing type with table missing primary key")
+    void listedMultiTableInterfaceNoPrimarykey() {
+        assertThatThrownBy(() -> generateFiles("listedNoPrimaryKey"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Interface 'SomeInterface' is returned in field 'query', but implementing " +
+                        "type 'PgUserMapping' has table 'PG_USER_MAPPING' which does not have a primary key.");
     }
 }

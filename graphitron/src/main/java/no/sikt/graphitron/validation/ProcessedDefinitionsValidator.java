@@ -459,14 +459,6 @@ public class ProcessedDefinitionsValidator {
                                     "'%s' must return only one %s", name, field.getName(), field.getTypeName()
                     );
                 } else {
-                    if (field.hasCondition() && !schema.getInterface(name).hasDiscrimatingField()) {
-                        errorMessages.add(String.format("Conditions on fields returning interfaces is currently only " +
-                                "supported for single table interfaces. Field '%s' returning interface '%s' has condition.",
-                                field.getName(),
-                                name)
-                        );
-                    }
-
                     schema.getObjects()
                             .values()
                             .stream()

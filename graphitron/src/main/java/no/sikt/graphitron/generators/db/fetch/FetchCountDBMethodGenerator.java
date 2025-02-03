@@ -82,10 +82,10 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .values()
                 .stream()
                 .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
-                .collect(Collectors.toList());
+                .toList();
 
         implementations.forEach(implementation -> {
-            var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments());
+            var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
             var context = new FetchContext(processedSchema, virtualReference, implementation, false);
             var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
             var countForImplementation = CodeBlock.builder()

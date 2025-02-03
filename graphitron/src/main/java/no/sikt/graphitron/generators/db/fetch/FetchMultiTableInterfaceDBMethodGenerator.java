@@ -237,14 +237,14 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .stream()
                 .filter(it -> it.implementsInterface(processedSchema.getInterface(target).getName()))
                 .forEach(implementation -> {
-                    var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments());
+                    var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
                     var context = new FetchContext(processedSchema, virtualReference, implementation, false);
 
                     var sortFieldsMethod = MethodSpec
                             .methodBuilder(getSortFieldsMethodName(target, implementation))
                             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
                             .returns(getReturnTypeForKeysMethod(target.hasForwardPagination()))
-                            .addCode(getSortFieldsMethodCode(implementation, context, target.hasForwardPagination()));
+                            .addCode(getSortFieldsMethodCode(implementation, context, target));
 
                     if (target.hasForwardPagination()) {
                         sortFieldsMethod
@@ -297,7 +297,8 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
         return String.format("$dataFor%s", typeName);
     }
 
-    private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, boolean isConnection) {
+    private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, ObjectField queryTarget) {
+        var isConnection = queryTarget.hasForwardPagination();
         var code = CodeBlock.builder();
         var alias = context.getTargetAlias();
         var whereBlock = formatWhereContents(context, idParamName, isRoot, false);
@@ -305,15 +306,16 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
 
         code.add(createAliasDeclarations(context.getAliasSet()))
                 .add(declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsBlock(alias)))
-            .add("return $T.select(\n", DSL.className)
-            .indent()
+                .add("return $T.select(\n", DSL.className)
+                .indent()
                 .add("$T.inline($S).as($S),\n", DSL.className, implName, TYPE_FIELD)
                 .add("$T.rowNumber().over($T.orderBy($L", DSL.className, DSL.className, ORDER_FIELDS_NAME)
                 .add(")).as($S),\n", INNER_ROW_NUM)
                 .add(getPrimaryKeyFieldsArray(implName, alias, context.getTargetTable().getName()))
                 .add(".as($S))", PK_FIELDS)
-            .add("\n.from($N)\n", alias)
-            .add(whereBlock);
+                .add("\n.from($N)\n", alias)
+                .add(whereBlock)
+                .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()));
 
         if (isConnection) {
             code.add(".$L", whereBlock.isEmpty() ? "where" : "and")
