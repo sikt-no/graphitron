@@ -8,7 +8,6 @@
         <artifactId>graphitron-parent</artifactId>
         <version>${revision}${changelist}</version>
     </parent>
-    <groupId>no.sikt</groupId>
     <artifactId>graphitron-error-handling-javax</artifactId>
     <dependencies>
         <dependency>
