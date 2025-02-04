@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -29,7 +29,7 @@ public abstract class AbstractMapperClassGenerator<T extends GenerationField> ex
     }
 
     protected boolean typeSpecFilter(TypeSpec spec) {
-        return !spec.methodSpecs.isEmpty();
+        return !spec.methodSpecs().isEmpty();
     }
 
     protected abstract boolean filterHasTableAndRecordProperties(GenerationField field);

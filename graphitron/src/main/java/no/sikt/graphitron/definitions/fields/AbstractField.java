@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.fields;
 
-import com.squareup.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;

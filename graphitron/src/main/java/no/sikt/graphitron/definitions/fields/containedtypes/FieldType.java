@@ -13,17 +13,17 @@ import java.util.Map;
  */
 public class FieldType {
     private String name;
-    private com.squareup.javapoet.TypeName typeClass;
+    private com.palantir.javapoet.TypeName typeClass;
     private boolean isNonNullable = false;
     private boolean isIterableNonNullable = false;
     private boolean isIterableWrapped = false;
     private boolean isID = false;
-    private final static Map<String, com.squareup.javapoet.TypeName> TYPE_NAME_MAPPER = Map.of(
-            "ID", com.squareup.javapoet.TypeName.get(String.class),
-            "String", com.squareup.javapoet.TypeName.get(String.class),
-            "Int", com.squareup.javapoet.TypeName.get(Integer.class),
-            "Float", com.squareup.javapoet.TypeName.get(Float.class),
-            "Boolean", com.squareup.javapoet.TypeName.get(Boolean.class)
+    private final static Map<String, com.palantir.javapoet.TypeName> TYPE_NAME_MAPPER = Map.of(
+            "ID", com.palantir.javapoet.TypeName.get(String.class),
+            "String", com.palantir.javapoet.TypeName.get(String.class),
+            "Int", com.palantir.javapoet.TypeName.get(Integer.class),
+            "Float", com.palantir.javapoet.TypeName.get(Float.class),
+            "Boolean", com.palantir.javapoet.TypeName.get(Boolean.class)
     );
 
     public FieldType(Type<?> fieldType) {
@@ -94,9 +94,9 @@ public class FieldType {
     }
 
     /**
-     * @return {@link com.squareup.javapoet.TypeName} for this field.
+     * @return {@link com.palantir.javapoet.TypeName} for this field.
      */
-    public com.squareup.javapoet.TypeName getTypeClass() {
+    public com.palantir.javapoet.TypeName getTypeClass() {
         return typeClass;
     }
 }

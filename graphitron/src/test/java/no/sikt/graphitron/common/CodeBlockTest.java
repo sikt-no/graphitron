@@ -1,6 +1,6 @@
 package no.sikt.graphitron.common;
 
-import com.squareup.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphql.schema.ProcessedSchema;
 

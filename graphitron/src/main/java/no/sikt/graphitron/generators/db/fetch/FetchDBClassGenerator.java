@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
@@ -49,7 +49,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                 .filter(it -> !it.getName().equals(SCHEMA_MUTATION.getName()))
                 .filter(it -> it.isGeneratedWithResolver() || it.isEntity() || (!objectFieldsReturningNode.isEmpty()))
                 .map(this::generate)
-                .filter(it -> !it.methodSpecs.isEmpty())
+                .filter(it -> !it.methodSpecs().isEmpty())
                 .collect(Collectors.toList());
     }
 

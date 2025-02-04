@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 
 import java.util.List;
@@ -25,7 +25,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
     void generateQualifyingObjectsToDirectory(String path, String packagePath);
 
     /**
-     * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
+     * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
      * @param generatedClass A complete javapoet {@link TypeSpec}.
      * @param path           The path to the output directory.
      * @param packagePath    The package path that this class should be written to.
@@ -33,7 +33,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
     void writeToFile(TypeSpec generatedClass, String path, String packagePath);
 
     /**
-     * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
+     * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
      * @param generatedClass A complete javapoet {@link TypeSpec}.
      * @param path           The path to the output directory.
      * @param packagePath    The package path that this class should be written to.
@@ -47,7 +47,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
     Map<String, String> generateQualifyingObjects();
 
     /**
-     * Create the {@link com.squareup.javapoet.JavaFile JavaFile} for this class, add any common static imports and render the file as a string.
+     * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and render the file as a string.
      * @param generatedClass A complete javapoet {@link TypeSpec}.
      */
     String writeToString(TypeSpec generatedClass);

@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -415,7 +415,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .flatMap(it -> generateWithSubselectMethods(it).stream())
-                .filter(it -> !it.code.isEmpty())
+                .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
     }
 

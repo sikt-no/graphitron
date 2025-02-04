@@ -1,6 +1,6 @@
 package no.sikt.graphitron.reducedgenerators.dummygenerators;
 
-import com.squareup.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.resolvers.mapping.TransformerMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

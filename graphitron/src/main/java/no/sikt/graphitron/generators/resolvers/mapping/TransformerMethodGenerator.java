@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.resolvers.mapping;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -120,7 +120,7 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
                 .getTransformableFields()
                 .stream()
                 .map(this::generate)
-                .filter(it -> !it.code.isEmpty())
+                .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
     }
 

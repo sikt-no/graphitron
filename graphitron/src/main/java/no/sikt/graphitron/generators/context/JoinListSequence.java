@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.context;
 
-import com.squareup.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.db.update;
 
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -30,7 +30,7 @@ public class UpdateDBClassGenerator extends DBClassGenerator<ObjectField> {
                     .filter(ObjectField::isGeneratedWithResolver)
                     .filter(ObjectField::hasMutationType)
                     .map(this::generate)
-                    .filter(it -> !it.methodSpecs.isEmpty())
+                    .filter(it -> !it.methodSpecs().isEmpty())
                     .collect(Collectors.toList());
         }
         return List.of();

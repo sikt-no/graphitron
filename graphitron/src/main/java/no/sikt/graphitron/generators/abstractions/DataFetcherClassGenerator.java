@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.datafetchers.wiring.ClassWiringContainer;
 import no.sikt.graphitron.generators.datafetchers.wiring.WiringContainer;

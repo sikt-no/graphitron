@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.objects;
 
-import com.squareup.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import graphql.language.InterfaceTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.helpers.ClassReference;

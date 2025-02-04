@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -13,7 +13,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 public class TypeNameFormat {
     private static final ParameterizedTypeName
             STRING_SET = ParameterizedTypeName.get(SET.className, STRING.className),
-            STRING_OBJECT_MAP = ParameterizedTypeName.get(MAP.className, STRING.className, TypeName.OBJECT);
+            STRING_OBJECT_MAP = ParameterizedTypeName.get(MAP.className, STRING.className, ClassName.get("java.lang", "Object"));
 
     /**
      * @return The type wrapped in a List ParameterizedTypeName, if the boolean condition is true.

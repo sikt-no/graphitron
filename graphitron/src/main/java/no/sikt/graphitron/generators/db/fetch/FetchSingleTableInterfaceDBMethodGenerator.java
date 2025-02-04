@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -155,7 +155,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
-                .filter(it -> !it.code.isEmpty())
+                .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
     }
 
