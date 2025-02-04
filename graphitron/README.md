@@ -1138,7 +1138,7 @@ try {
 
 ## Interface queries
 
-Graphitron currently supports generating queries for one type of interface.
+Graphitron currently supports generating queries for two types of interfaces.
 
 ### Single table interfaces
 Single table interfaces are interfaces where every implementation is in the same table, and its type is determined by a discriminator column. Graphitron supports generating queries for this type of interface on the Query-type.
@@ -1188,6 +1188,62 @@ type Query {
   - For example, overriding `field` configuration from the interface is currently not supported
 - Other fields sharing the same name must also have the same configuration across types
 
+### Multi table interfaces
+
+Multi table interfaces are interfaces where the implementations are spread across tables, and a row's type is determined by
+its table. Graphitron supports generating queries for this type of interface on the Query-type.
+
+### Schema setup
+No special directives are required on the interface definition. Any directives on fields in the interface will be ignored, and should instead be placed on the fields in the implementing type.
+
+```graphql
+interface Titled {
+  title: String
+}
+```
+
+For every implementing type, the [table](#table-directive) directive is required.
+
+```graphql
+type Film implements Titled @table(name: "FILM") {
+  title: String @field(name: ...)
+  ...
+}
+
+type Book implements Titled @table(name: "BOOK") {
+  title: String
+  ...
+}
+```
+
+#### Multi table interface queries
+
+With the example above, Graphitron can generate queries like these in the Query-type:
+
+```graphql
+type Query {
+  titled: [Titled]
+  titled(first: Int = 100, after: String): TitledConnection
+}
+```
+
+##### Query conditions
+
+[Conditions](#Query-conditions) on queries returning multi table interfaces is also supported. Since the table is passed as a parameter to the condition method and each implementing type has a different table, a unique method for each implementation is necessary. These methods must all share the same method signature, except for the first table parameter.
+
+```graphql
+type Query {
+  titled(prefix: String): [Titled] @condition(condition: {className: "TitledCondition", method: "titledMethod"})
+}
+```
+
+
+```java
+class TitledCondition {
+  static Condition titledMethod(Film film, String prefix) {...}
+  static Condition titledMethod(Book book, String prefix) {...}
+}
+```
 
 ## Special interfaces
 Currently, Graphitron reserves two interface names for special purposes, _Node_ and _Error_.
