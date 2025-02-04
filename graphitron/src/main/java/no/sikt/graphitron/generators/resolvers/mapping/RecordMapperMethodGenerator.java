@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.resolvers.mapping;
 
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
 import no.sikt.graphitron.generators.context.MapperContext;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.interfaces;
 
-import com.squareup.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
@@ -24,7 +24,7 @@ public interface FieldSpecification {
     String getTypeName();
 
     /**
-     * @return {@link com.squareup.javapoet.TypeName} for this field's type.
+     * @return {@link com.palantir.javapoet.TypeName} for this field's type.
      */
     TypeName getTypeClass();
 

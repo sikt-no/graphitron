@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.interfaces;
 
-import com.squareup.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 
 import java.util.List;
 

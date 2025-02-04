@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.JavaFile;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
@@ -57,7 +57,7 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
 
     @Override
     public Map<String, String> generateQualifyingObjects() {
-        return generateTypeSpecs().stream().collect(Collectors.toMap(it -> it.name, this::writeToString));
+        return generateTypeSpecs().stream().collect(Collectors.toMap(TypeSpec::name, this::writeToString));
     }
 
     @Override

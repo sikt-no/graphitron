@@ -1,6 +1,6 @@
 package no.sikt.graphitron.reducedgenerators;
 
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.resolvers.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.resolvers.mapping.RecordValidatorMethodGenerator;

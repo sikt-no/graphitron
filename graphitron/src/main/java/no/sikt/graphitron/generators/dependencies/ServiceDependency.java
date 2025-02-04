@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.dependencies;
 
-import com.squareup.javapoet.FieldSpec;
+import com.palantir.javapoet.FieldSpec;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 
 import javax.lang.model.element.Modifier;

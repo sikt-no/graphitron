@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.resolvers.update;
 
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.ResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -31,7 +31,7 @@ public class UpdateResolverClassGenerator extends ResolverClassGenerator<ObjectF
                     .stream()
                     .filter(ObjectField::isGeneratedWithResolver)
                     .map(this::generate)
-                    .filter(it -> !it.methodSpecs.isEmpty())
+                    .filter(it -> !it.methodSpecs().isEmpty())
                     .collect(Collectors.toList());
         }
         return List.of();

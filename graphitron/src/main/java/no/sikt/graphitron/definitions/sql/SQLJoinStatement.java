@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.sql;
 
-import com.squareup.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.generators.context.JoinListSequence;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.datafetchers.wiring;
 
-import com.squareup.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 
 public class ClassWiringContainer {
     private final WiringContainer wiring;

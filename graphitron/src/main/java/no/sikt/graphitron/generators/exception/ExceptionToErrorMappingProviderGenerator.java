@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.exception;
 
-import com.squareup.javapoet.*;
+import com.palantir.javapoet.*;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.ExceptionToErrorMapping;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -76,7 +76,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractClassGener
             var generated = Optional
                     .ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
-                    .filter(it -> !it.methodSpecs.isEmpty());
+                    .filter(it -> !it.methodSpecs().isEmpty());
             if (generated.isPresent()) {
                 return List.of(generated.get());
             }

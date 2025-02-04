@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.datafetchers.resolvers.fetch;
 
-import com.squareup.javapoet.*;
+import com.palantir.javapoet.*;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
@@ -56,7 +56,7 @@ public class EntityFetcherResolverMethodGenerator extends DataFetcherMethodGener
                 .beginControlFlow("return $N -> (($T) $N.getArgument($S)).stream().map($L ->", VARIABLE_ENV, LIST_MAP_TYPE, VARIABLE_ENV, FEDERATION_REPRESENTATIONS_ARGUMENT.getName(), VARIABLE_INTERNAL_ITERATION)
                 .addCode(declare(CONTEXT_NAME, CodeBlock.of("($T) $N.getLocalContext()", DSL_CONTEXT.className, VARIABLE_ENV)))
                 .addCode(declare(VARIABLE_TYPENAME, CodeBlock.of("($T) $N.get($S)", STRING.className, VARIABLE_INTERNAL_ITERATION, TYPE_NAME.getName())))
-                .addCode(declare(VARIABLE_OBJECT, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, TypeName.OBJECT)))
+                .addCode(declare(VARIABLE_OBJECT, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, ClassName.get("java.lang", "Object"))))
                 .addStatement("$N.put($S, $N)", VARIABLE_OBJECT, TYPE_NAME.getName(), VARIABLE_TYPENAME)
                 .beginControlFlow("switch ($N)", VARIABLE_TYPENAME)
                 .addCode(cases.build())

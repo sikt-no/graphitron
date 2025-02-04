@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.resolvers.fetch;
 
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -193,7 +193,7 @@ public class FetchResolverMethodGenerator extends ResolverMethodGenerator<Object
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(this::generationCondition)
                 .map(this::generate)
-                .filter(it -> !it.code.isEmpty())
+                .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
     }
 

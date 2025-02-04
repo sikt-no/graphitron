@@ -1,7 +1,7 @@
 package no.sikt.graphitron.reducedgenerators.dummygenerators;
 
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.MethodSpec;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.datafetchers.resolvers.fetch.EntityFetcherResolverMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.exception;
 
-import com.squareup.javapoet.*;
+import com.palantir.javapoet.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -148,7 +148,7 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractCla
             var generated = Optional
                     .ofNullable(processedSchema.getMutationType())
                     .map(this::generate)
-                    .filter(it -> !it.methodSpecs.isEmpty());
+                    .filter(it -> !it.methodSpecs().isEmpty());
             if (generated.isPresent()) {
                 return List.of(generated.get());
             }

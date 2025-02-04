@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.resolvers.fetch;
 
-import com.squareup.javapoet.CodeBlock;
-import com.squareup.javapoet.FieldSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -44,7 +44,7 @@ public class FetchResolverClassGenerator extends ResolverClassGenerator<ObjectDe
                 .filter(ObjectDefinition::isGenerated)
                 .filter(obj -> !obj.getName().equals(SCHEMA_MUTATION.getName()))
                 .map(this::generate)
-                .filter(it -> !it.methodSpecs.isEmpty())
+                .filter(it -> !it.methodSpecs().isEmpty())
                 .collect(Collectors.toList());
     }
 
