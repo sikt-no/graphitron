@@ -38,20 +38,14 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var parser = new InputParser(target, processedSchema);
 
         var interfaceDefinition = processedSchema.getInterface(target);
-
-        var implementations = processedSchema
-                .getObjects()
-                .values()
-                .stream()
-                .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
-                .collect(Collectors.toList());
+        var implementations = processedSchema.getImplementationsForInterface(interfaceDefinition);
 
         return getSpecBuilder(target, interfaceDefinition.getGraphClassName(), parser)
                 .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations))
                 .build();
     }
 
-    private CodeBlock getCode(ObjectField target, List<ObjectDefinition> implementations) {
+    private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
         var selectCode = generateSelectRow(context, target, implementations);
         var querySource = context.getTargetAlias();
@@ -76,7 +70,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .build();
     }
 
-    protected CodeBlock generateSelectRow(FetchContext context, ObjectField target, List<ObjectDefinition> implementations) {
+    protected CodeBlock generateSelectRow(FetchContext context, ObjectField target, Set<ObjectDefinition> implementations) {
         List<GenerationField> allFields = context
                 .getReferenceObject()
                 .getFields()
@@ -106,7 +100,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         return CodeBlock.join(rowElements, ",\n");
     }
 
-    private CodeBlock fetchAndMap(ObjectField target, List<ObjectDefinition> implementations, String querySource) {
+    private CodeBlock fetchAndMap(ObjectField target, Set<ObjectDefinition> implementations, String querySource) {
         var interfaceDefinition = processedSchema.getInterface(target);
 
         var mapping = CodeBlock.builder()

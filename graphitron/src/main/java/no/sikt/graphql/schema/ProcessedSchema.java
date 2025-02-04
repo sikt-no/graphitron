@@ -287,6 +287,24 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Get the implementations for an interface given its name
+     */
+    public Set<ObjectDefinition> getImplementationsForInterface(String interfaceName) {
+        return getObjects()
+                .values()
+                .stream()
+                .filter(it -> it.implementsInterface(interfaceName))
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * @return Get the implementations for an interface
+     */
+    public Set<ObjectDefinition> getImplementationsForInterface(InterfaceDefinition interfaceDefinition) {
+        return getImplementationsForInterface(interfaceDefinition.getName());
+    }
+
+    /**
      * @return Map of all the objects in the schema by name.
      */
     public Map<String, ObjectDefinition> getObjects() {
@@ -687,6 +705,16 @@ public class ProcessedSchema {
                 .filter(this::isRecordType)
                 .map(this::getRecordType)
                 .filter(Objects::nonNull)
+                .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
+                .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
+
+        object
+                .getFields()
+                .stream()
+                .filter(this::isInterface)
+                .map(this::getInterface)
+                .map(this::getImplementationsForInterface)
+                .flatMap(Collection::stream)
                 .filter(it -> !objectWithPreviousTable.containsKey(it.getName()))
                 .forEach(it -> buildPreviousTableMap(it, tableObject, seenObjects, recursion + 1));
     }
