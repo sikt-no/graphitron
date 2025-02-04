@@ -19,51 +19,20 @@ We have provided a step by step guide below to show how you could configure and
 implement global identification. The only requirement as of now is that you implement
 the interface NodeIdHandler. How you decide to do the implementation is up to you.
 
-Step by step:
+### For users of kjerneapi-codegen
 
-1. Create a configuration that contains a map between a table name and its id.
-The sample below shows how such configuration can be created using XML:
-```xml
-<configuration>
-    <tables>
-        <table>
-            <id>1</id>
-            <name>car</name>
-        </table>
-    </tables>
-</configuration>
-```
-2. Create a singleton class that extends TableIdPrefixedNodeIdHandler, which is
-a provided default implementation of NodeIdHandler. TableIdPrefixedNodeIdHandler 
-requires a parameter of the type `Map<String, String>` which represents the map
-between `id to name` (in this order). The code below shows how our previous XML
-configuration can be read and transformed into this required type:
+The KjerneJooqGenerator from kjerneapi-codegen already implements this.
+If you're using it, then you only need to create a singleton class as follows:
 
 ```java 
 @Singleton
-public class MyNodeIdHandler extends TableIdPrefixedNodeIdHandler {
-    private static final String CONFIGURATION_XML_LOCATION = "/configuration.xml";
-
-    public MyNodeIdHandler() {
-        super(getIdToName(), Kjerneapi.KJERNEAPI.getTables());
-    }
-
-    private static Map<String, String> getIdToName() {
-        Map<String, String> idToName;
-        try {
-            var configuration = Configuration.loadFromClasspath(CONFIGURATION_XML_LOCATION);
-            idToName = configuration.tables.stream().collect(toMap(Table::getId, Table::getName));
-        } catch (IOException | JAXBException e) {
-            throw new RuntimeException(e);
-        }
-        return idToName;
+public class MyNodeIdHandler implements NodeIdHandler {
+    @Override
+    public Table<?> getTable(String id) {
+        return IdHelpers.getTable(id);
     }
 }
-
 ```
-
-When your NodeIdHandler implementation is located in your project, it should be
-discovered and used when running Graphitron.
 
 ## A GraphQL resolver implementation generator
 Graphitron creates complete or partial resolver implementations from GraphQL-schemas using Java and jOOQ.
