@@ -29,8 +29,9 @@
     </modules>
 
     <properties>
-        <revision>3.0</revision>
-        <changelist>-SNAPSHOT</changelist>
+        <revision>3.1</revision>
+        <!-- is overwritten by CI. Default is 999999-SNAPSHOT to ensure that the version is higher than the last release, when developing locally -->
+        <changelist>.999999-SNAPSHOT</changelist>
 
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
