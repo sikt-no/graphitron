@@ -203,4 +203,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 ".sequel(film_sequel, film_sequel_sequel_film"
         );
     }
+
+    @Test
+    @DisplayName("Reference from multi table interface")
+    void fromMultitableInterface() {
+        assertGeneratedContentContains(
+                "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
+                "_payment.getId(), DSL.field(",
+                "CustomerTable::new))).from(payment_425747824_customer)",
+                ".from(_payment).where(_payment.hasIds(paymentIds))"
+        );
+    }
 }

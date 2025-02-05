@@ -50,19 +50,15 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
         var inputParser = new InputParser(target, processedSchema);
         var interfaceDefinition = processedSchema.getInterface(target);
 
-        var implementations = processedSchema
-                .getObjects()
-                .values()
-                .stream()
-                .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
-                .collect(Collectors.toSet());
+        // Order is important for paginated queries as it gets data fields by index in the mapping
+        var implementations = new LinkedHashSet<>(processedSchema.getImplementationsForInterface(interfaceDefinition));
 
         return getSpecBuilder(target, interfaceDefinition.getGraphClassName(), inputParser)
                 .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
                 .build();
     }
 
-    private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations, Set<String> inputs) {
+    private CodeBlock getCode(ObjectField target, LinkedHashSet<ObjectDefinition> implementations, Set<String> inputs) {
         List<String> sortFieldQueryMethodCalls = new ArrayList<>();
         LinkedHashMap<String, String> mappedQueryVariables = new LinkedHashMap<>();
         var joins = CodeBlock.builder();
@@ -232,10 +228,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
         var inputParser = new InputParser(target, processedSchema);
 
         processedSchema
-                .getObjects()
-                .values()
-                .stream()
-                .filter(it -> it.implementsInterface(processedSchema.getInterface(target).getName()))
+                .getImplementationsForInterface(processedSchema.getInterface(target))
                 .forEach(implementation -> {
                     var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
                     var context = new FetchContext(processedSchema, virtualReference, implementation, false);
