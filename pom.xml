@@ -24,6 +24,7 @@
         <module>graphitron-error-handling-javax</module>
         <module>graphitron-error-handling-jakarta</module>
         <module>graphitron-common</module>
+        <module>graphitron-jakarta-servlet</module>
         <module>graphitron</module>
         <module>graphitron-maven-plugin</module>
     </modules>
