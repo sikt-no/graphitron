@@ -77,4 +77,14 @@ public class QueryTest extends ValidationTest {
         getProcessedSchema("reverseJoin", Set.of(CUSTOMER_TABLE));
         assertNoWarnings();
     }
+
+    @Test  // Input on subqueries is not supported due to limitations in graphql-java
+    @DisplayName("Input on subquery")
+    void inputOnSubquery() {
+        assertErrorsContain(
+                () -> getProcessedSchema("inputOnSubquery", CUSTOMER_TABLE),
+                "Input on fields without splitQuery is not supported. " +
+                        "Field \"customers\" in type \"Address\" has argument(s), but missing splitQuery-directive."
+        );
+    }
 }

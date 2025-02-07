@@ -103,34 +103,4 @@ public class OptionalInputTest extends GeneratorTest {
                         "        ) : DSL.noCondition())"
         );
     }
-
-    @Test
-    @DisplayName("On field in single table interface")
-    void onFieldInSingleTableInterface() {
-        assertGeneratedContentContains("onFieldInSingleTableInterface",
-                Set.of(CUSTOMER_TABLE),
-                /*
-                Input på subspørringer fungerer ikke enda (se GGG-76), så jeg har lagt til en assert som vil feile når
-                GGG-76 er fikset sånn at vi ikke glemmer å endre testen her
-                */
-                "(DSLContext ctx, SelectionSet select)", // Tas bort når GGG-76 er løst
-//                "String lastName", // Dette er riktig assert når GGG-76 er løst
-                ".from(address_2030472956_customer).where(lastName"
-        );
-    }
-
-    @Test
-    @DisplayName("On field in type implementing single table interface")
-    void onFieldInTypeImplementingSingleTableInterface() {
-        assertGeneratedContentContains("onFieldInTypeImplementingSingleTableInterface",
-                Set.of(CUSTOMER_TABLE),
-                /*
-                Input på subspørringer fungerer ikke enda (se GGG-76), så jeg har lagt til en assert som vil feile når
-                GGG-76 er fikset sånn at vi ikke glemmer å endre testen her
-                */
-                "(DSLContext ctx, SelectionSet select)", // Tas bort når GGG-76 er løst
-//                "String lastName", // Dette er riktig assert når GGG-76 er løst
-                ".from(address_2030472956_customer).where(lastName"
-        );
-    }
 }

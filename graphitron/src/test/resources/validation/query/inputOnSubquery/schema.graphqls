@@ -1,0 +1,7 @@
+type Query {
+  address: [Address]
+}
+
+type Address @table(name: "ADDRESS") {
+  customers(lastName: String @field(name: "LAST_NAME")): [CustomerTable]
+}

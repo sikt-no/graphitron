@@ -131,27 +131,6 @@ public class ReferenceInputTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Table path on input on subquery")
-    void subquery() {
-        assertGeneratedContentContains("subquery", Set.of(CUSTOMER_TABLE),
-                ".from(address_2030472956_customer).leftJoin(customer_2337142794_address_left)",
-                ".where(customer_2337142794_address_left.DISTRICT.eq(district",
-                ".from(_address).fetch"
-        );
-    }
-
-    @Test
-    @DisplayName("Condition path on input on subquery")
-    void conditionOnSubquery() {
-        assertGeneratedContentContains(
-                "conditionOnSubquery", Set.of(CUSTOMER_TABLE),
-                ".from(_customer).leftJoin(_customer_citycustomer_customer_left",
-                ".cityCustomer(_customer, _customer_citycustomer_customer_left)",
-                ".where(_customer_citycustomer_customer_left.COUNTRY_ID.eq(countryId)))"
-        );
-    }
-
-    @Test
     @DisplayName("On field returning single table interface")
     void onSingleTableInterface() {
         assertGeneratedContentContains("onSingleTableInterface",

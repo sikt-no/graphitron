@@ -1,7 +1,0 @@
-type Query {
-  query: Address
-}
-
-type Address @table {
-  customers(district: String! @reference(references: [{table: "ADDRESS"}])): [CustomerTable]
-}

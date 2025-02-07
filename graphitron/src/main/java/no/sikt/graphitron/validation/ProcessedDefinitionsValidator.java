@@ -72,6 +72,7 @@ public class ProcessedDefinitionsValidator {
         validateInterfacesReturnedInFields();
         validateTypesUsingNodeInterface();
         validateInputFields();
+        validateFieldsWithInputHasSplitQuery();
         validateExternalMappingReferences();
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
@@ -767,6 +768,19 @@ public class ProcessedDefinitionsValidator {
                                 errorMessages.add("Self reference must have splitQuery, field \"" + field.getName() + "\" in object \"" + object.getName() + "\"");
                             }
                         })
+                );
+    }
+
+    private void validateFieldsWithInputHasSplitQuery() {
+        allFields.stream()
+                .filter(it -> !it.isGeneratedWithResolver())
+                .filter(ObjectField::hasInputFields)
+                .filter(it -> !it.isExplicitlyNotGenerated())
+                .forEach(field -> {
+                    errorMessages.add(String.format("Input on fields without splitQuery is not supported. " +
+                            "Field \"%s\" in type \"%s\" has argument(s), but missing splitQuery-directive.",
+                            field.getName(), field.getContainerTypeName()));
+                        }
                 );
     }
 }
