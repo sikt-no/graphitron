@@ -1,0 +1,6 @@
+type Wrapper {
+  id: ID
+
+  query1: DummyType @splitQuery
+  query2: DummyType @splitQuery @notGenerated
+}

@@ -3,10 +3,6 @@ package no.sikt.graphitron.generate;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
-import no.sikt.graphitron.generators.wiring.WiringClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.EntityFetcherClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
@@ -14,6 +10,12 @@ import no.sikt.graphitron.generators.exception.MutationExceptionStrategyConfigur
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.EntityFetcherClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
+import no.sikt.graphitron.generators.resolvers.kickstart.fetch.FetchResolverClassGenerator;
+import no.sikt.graphitron.generators.resolvers.kickstart.update.UpdateResolverClassGenerator;
+import no.sikt.graphitron.generators.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +52,8 @@ public class GraphQLGenerator {
     public static List<ClassGenerator<?>> getGenerators(ProcessedSchema processedSchema) {
         List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
+                new FetchResolverClassGenerator(processedSchema),
+                new UpdateResolverClassGenerator(processedSchema),
                 new FetchClassGenerator(processedSchema),
                 new UpdateClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
@@ -65,7 +69,7 @@ public class GraphQLGenerator {
         return Stream.concat(
                 generators.stream(),
                 Stream.of(new WiringClassGenerator(generators, processedSchema))  // This one must be the last generator.
-        ).collect(Collectors.toList());
+        ).toList();
     }
 
     /**

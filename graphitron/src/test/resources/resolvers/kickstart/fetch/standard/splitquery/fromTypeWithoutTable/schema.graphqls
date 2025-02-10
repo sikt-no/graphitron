@@ -1,0 +1,9 @@
+type Address @table {
+  wrapper: Wrapper
+}
+
+type Wrapper {
+  id: ID
+
+  customer: CustomerTable @splitQuery
+}
