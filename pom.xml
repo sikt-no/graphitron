@@ -41,7 +41,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <version.jakarta>8.0.0</version.jakarta>
-        <version.jakarta.validation>3.0.2</version.jakarta.validation>
+        <version.jakarta.validation>3.1.0</version.jakarta.validation>
 
         <version.org.jooq>3.19.18</version.org.jooq>
 
@@ -174,22 +174,6 @@
                 <artifactId>maven-plugin-annotations</artifactId>
                 <version>3.15.0</version>
             </dependency>
-
-            <dependency>
-                <groupId>no.sikt</groupId>
-                <artifactId>graphitron-error-handling-javax</artifactId>
-                <version>${version.graphitron}</version>
-            </dependency>
-            <dependency>
-                <groupId>no.sikt</groupId>
-                <artifactId>graphitron-error-handling-jakarta</artifactId>
-                <version>${version.graphitron}</version>
-            </dependency>
-            <dependency>
-                <groupId>no.sikt</groupId>
-                <artifactId>graphitron</artifactId>
-                <version>${version.graphitron}</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
     <distributionManagement>
@@ -212,6 +196,11 @@
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.2.0</version>
+                </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>

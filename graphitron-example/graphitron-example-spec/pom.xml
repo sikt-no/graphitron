@@ -8,7 +8,6 @@
     </parent>
 
     <artifactId>graphitron-example-spec</artifactId>
-    <packaging>jar</packaging>
 
     <name>graphitron-example-spec</name>
 
@@ -156,7 +155,7 @@
                 <dependencies>
                     <dependency>
                         <groupId>no.sikt</groupId>
-                        <artifactId>graphitron-error-handling-javax</artifactId>
+                        <artifactId>graphitron-error-handling-jakarta</artifactId>
                         <version>${revision}${changelist}</version>
                     </dependency>
                     <dependency>

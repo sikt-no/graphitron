@@ -8,8 +8,6 @@
     </parent>
 
     <artifactId>graphitron-example-db</artifactId>
-    <packaging>jar</packaging>
-
     <name>graphitron-example-db</name>
 
     <properties>

@@ -10,7 +10,7 @@
     <artifactId>graphitron-example-server</artifactId>
 
     <properties>
-        <quarkus.platform.version>3.17.7</quarkus.platform.version>
+        <quarkus.platform.version>3.18.2</quarkus.platform.version>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus</quarkus.platform.group-id>
         <maven.compiler.source>21</maven.compiler.source>
@@ -63,11 +63,6 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-agroal</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.platform</groupId>
-            <artifactId>jakarta.jakartaee-api</artifactId>
-            <version>${version.jakarta}</version>
         </dependency>
         <dependency>
             <groupId>com.graphql-java</groupId>
