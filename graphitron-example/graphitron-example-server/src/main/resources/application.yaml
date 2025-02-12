@@ -6,7 +6,7 @@ quarkus:
     username: sakila
     password: p_ssW0rd
     jdbc:
-      url: jdbc:postgresql://localhost:5432/sakila
+      url: jdbc:postgresql://localhost:5433/sakila
       max-size: 16
 
 application:

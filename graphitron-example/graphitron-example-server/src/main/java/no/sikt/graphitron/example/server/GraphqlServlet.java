@@ -6,13 +6,9 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
-import graphql.kickstart.tools.GraphQLResolver;
-import graphql.kickstart.tools.SchemaParser;
-import graphql.kickstart.tools.SchemaParserOptions;
-import graphql.scalars.ExtendedScalars;
-import graphql.schema.GraphQLSchema;
+import graphql.schema.idl.SchemaGenerator;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import jakarta.enterprise.context.Dependent;
-import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -20,6 +16,7 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.ClientErrorException;
+import no.sikt.graphitron.example.generated.graphitron.wiring.Wiring;
 import org.dataloader.DataLoaderRegistry;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
@@ -28,9 +25,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 @Dependent
 @WebServlet(name = "GraphqlServlet", urlPatterns = {"graphql/*"}, loadOnStartup = 1)
@@ -48,8 +43,6 @@ public class GraphqlServlet extends HttpServlet {
 
     private final static String SCHEMA_NAME = "graphql/schema.graphqls";
 
-    @Inject
-    Instance<GraphQLResolver<?>> resolvers;
     @Inject
     DSLContext dslContext;
 
@@ -95,8 +88,11 @@ public class GraphqlServlet extends HttpServlet {
     }
 
     protected ExecutionResult execute(ExecutionInput executionInput) {
-        var schema = createSchema(getResolvers());
+        TypeDefinitionRegistry typeRegistry =
+                new graphql.schema.idl.SchemaParser().parse(removeDirectives(readGraphQLSchemaAsString()));
 
+        SchemaGenerator schemaGenerator = new SchemaGenerator();
+        var schema = schemaGenerator.makeExecutableSchema(typeRegistry, Wiring.getRuntimeWiring());
         var graphqlBuilder = GraphQL.newGraphQL(schema);
 
         var graphQL = graphqlBuilder.build();
@@ -108,22 +104,6 @@ public class GraphqlServlet extends HttpServlet {
 
     protected void addDataloaderRegistry(ExecutionInput.Builder builder) {
         builder.dataLoaderRegistry(new DataLoaderRegistry());
-    }
-
-    protected GraphQLSchema createSchema(List<GraphQLResolver<?>> resolvers) {
-        var schemaString = removeDirectives(readGraphQLSchemaAsString());
-        var options = SchemaParserOptions.newOptions()
-                .objectMapperProvider(fieldDefinition -> objectMapper)
-                .build();
-
-        return SchemaParser
-                .newParser()
-                .schemaString(schemaString)
-                .resolvers(resolvers)
-                .options(options)
-                .scalars(ExtendedScalars.Date, ExtendedScalars.DateTime, ExtendedScalars.GraphQLBigDecimal, ExtendedScalars.GraphQLShort, ExtendedScalars.Time)
-                .build()
-                .makeExecutableSchema();
     }
 
     protected String readGraphQLSchemaAsString() {
@@ -144,7 +124,4 @@ public class GraphqlServlet extends HttpServlet {
         return graphqlString.replaceAll(regex, "");
     }
 
-    protected List<GraphQLResolver<?>> getResolvers() {
-        return resolvers.stream().collect(Collectors.toList());
-    }
 }
