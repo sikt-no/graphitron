@@ -1,4 +1,4 @@
-union Union = CustomerUnion0 | CustomerUnion1 | CustomerUnion2
+union U = CustomerUnion0 | CustomerUnion1 | CustomerUnion2
 
 type CustomerUnion0 {
   email: String

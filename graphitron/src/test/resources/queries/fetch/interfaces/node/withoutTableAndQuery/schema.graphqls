@@ -2,10 +2,10 @@ type Query {
   query: Customer
 }
 
-interface Interface {
+interface I {
   id: ID
 }
 
-type Customer implements Interface {
+type Customer implements I {
   id: ID
 }

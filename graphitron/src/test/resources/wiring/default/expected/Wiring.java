@@ -5,7 +5,7 @@ import graphql.schema.idl.TypeRuntimeWiring;
 public class Wiring {
     public static RuntimeWiring getRuntimeWiring() {
         var wiring = RuntimeWiring.newRuntimeWiring();
-        wiring.type(TypeRuntimeWiring.newTypeWiring("Query").dataFetcher("customer", QueryGeneratedDataFetcher.customer()));
+        wiring.type(TypeRuntimeWiring.newTypeWiring("Query").dataFetcher("query", QueryGeneratedDataFetcher.query()));
         return wiring.build();
     }
 }

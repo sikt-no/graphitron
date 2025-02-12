@@ -31,52 +31,43 @@ public class TypeResolverMethodGenerator extends AbstractSchemaMethodGenerator<T
         super(localObject, processedSchema);
     }
 
-    public MethodSpec.Builder getDefaultSpecBuilder(String methodName) {
-        return getDefaultSpecBuilder(asTypeResolverMethodName(methodName), TYPE_RESOLVER.className)
-                .addModifiers(Modifier.STATIC);
-    }
-
     @Override
     public MethodSpec generate(TypeResolverTarget target) {
-        var typeName = selectName(target);
+        var typeName = isEntity(target) ? FEDERATION_ENTITY_UNION.getName() : target.getName();
         typeResolverWiring.add(new WiringContainer(asTypeResolverMethodName(typeName), typeName, null, false));
-        return getDefaultSpecBuilder(typeName)
+        var spec = getDefaultSpecBuilder(asTypeResolverMethodName(typeName), TYPE_RESOLVER.className)
+                .addModifiers(Modifier.STATIC);
+        if (!isEntity(target)) { // At some point these two path will have to unify if both are to work.
+            return spec.addCode(returnWrap(getResolver())).build();
+        }
+
+        return spec
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(declare(VARIABLE_OBJECT, CodeBlock.of("$N.getObject()", VARIABLE_ENV)))
                 .beginControlFlow("if (!($N instanceof $T))", VARIABLE_OBJECT, MAP.className)
                 .addCode(returnWrap("null"))
                 .endControlFlow()
-                .addCode(returnWrap(getSchemaBlock(extractNameBlock(target))))
-                .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
+                .addCode(returnWrap(getEntityResolverReturn()))
+                .endControlFlow("") // Keep this empty string, logic to set semicolon only kicks in if a string is set.
                 .build();
     }
 
     private boolean isEntity(TypeResolverTarget target) {
-        return target != null && FEDERATION_ENTITY_UNION.getName().equals(target.getName());
+        return target == null || FEDERATION_ENTITY_UNION.getName().equals(target.getName());
     }
 
-    private String selectName(TypeResolverTarget target) {
-        if (!isEntity(target)) {
-            return target.getName();
-        }
-        return FEDERATION_ENTITY_UNION.getName();
-    }
-
-    private CodeBlock extractNameBlock(TypeResolverTarget target) {
-        if (!isEntity(target)) {
-            return CodeBlock.of("$S", selectName(target));
-        }
+    protected static CodeBlock getEntityResolverReturn() {
         return CodeBlock.of(
-                "($T) (($T) $N).get($S)",
+                "$N.getSchema().getObjectType(($T) (($T) $N).get($S))",
+                VARIABLE_ENV,
                 STRING.className,
                 getObjectMapTypeName(),
                 VARIABLE_OBJECT,
-                TYPE_NAME.getName()
-        );
+                TYPE_NAME.getName());
     }
 
-    protected static CodeBlock getSchemaBlock(CodeBlock name) {
-        return CodeBlock.of("$N.getSchema().getObjectType($L)", VARIABLE_ENV, name);
+    protected static CodeBlock getResolver() {
+        return CodeBlock.of("$1L -> $1N.getSchema().getObjectType($2N($1N.getObject()))", VARIABLE_ENV, TypeNameMethodGenerator.METHOD_NAME);
     }
 
     public List<MethodSpec> generateAll() {

@@ -5,9 +5,9 @@ import java.util.concurrent.CompletableFuture;
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 
 public class QueryGeneratedDataFetcher {
-    public static DataFetcher<CompletableFuture<Customer>> customer() {
+    public static DataFetcher<CompletableFuture<Customer>> query() {
         return env -> {
-            return new DataFetcherHelper(env).load((ctx, selectionSet) -> QueryDBQueries.customerForQuery(ctx, selectionSet));
+            return new DataFetcherHelper(env).load((ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, selectionSet));
         } ;
     }
 }

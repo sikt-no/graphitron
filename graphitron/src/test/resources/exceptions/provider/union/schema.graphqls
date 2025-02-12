@@ -1,8 +1,8 @@
 type Response {
-  errors: [Union]
+  errors: [U]
 }
 
-union Union = SomeError
+union U = SomeError
 
 type SomeError implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
   path: [String!]!

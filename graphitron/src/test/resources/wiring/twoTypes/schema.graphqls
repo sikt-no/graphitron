@@ -2,11 +2,11 @@ type Query {
   customer: Customer
 }
 
-type Customer @table {
+type Customer {
   id: ID
   address: Address @splitQuery
 }
 
-type Address @table {
+type Address {
   id: ID
 }

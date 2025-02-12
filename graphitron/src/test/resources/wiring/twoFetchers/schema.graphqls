@@ -3,10 +3,6 @@ type Query {
   payment: Payment
 }
 
-type Customer @table {
-  id: ID
-}
-
-type Payment @table {
+type Payment {
   id: ID
 }

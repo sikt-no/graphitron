@@ -1,0 +1,9 @@
+union U = A | B
+
+type A {
+  string: String
+}
+
+type B {
+  string: String
+}

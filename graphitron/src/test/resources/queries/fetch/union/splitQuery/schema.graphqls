@@ -5,10 +5,10 @@ type Wrapper {
 }
 
 type Customer @table {
-  union: Union
+  union: U
 }
 
-union Union = CustomerUnion
+union U = CustomerUnion
 
 type CustomerUnion {
   email: String

@@ -1,9 +1,9 @@
 type Customer @table {
   id: ID!
-  union: Union
+  union: U
 }
 
-union Union = CustomerUnion
+union U = CustomerUnion
 
 type CustomerUnion {
   email: String

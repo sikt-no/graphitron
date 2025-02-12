@@ -1,7 +1,6 @@
 package no.sikt.graphitron.resolvers.type;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers.TypeResolverClassGenerator;
@@ -10,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.FEDERATION_QUERY;
 
@@ -22,19 +20,44 @@ public class TypeResolverTest extends GeneratorTest {
     }
 
     @Override
-    protected Set<SchemaComponent> getComponents() {
-        return makeComponents(FEDERATION_QUERY);
-    }
-
-    @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new TypeResolverClassGenerator(schema));
     }
 
     @Test
-    @DisplayName("Entity exists")
+    @DisplayName("Union with one component")
+    void unionType() {
+        assertGeneratedContentMatches("union");
+    }
+
+    @Test
+    @DisplayName("Interface with one implementation")
+    void interfaceType() {
+        assertGeneratedContentMatches("interface");
+    }
+
+    @Test
+    @DisplayName("Union with two components")
+    void unionTypeDouble() {
+        assertGeneratedContentContains("unionDouble", "_obj instanceof A", "_obj instanceof B");
+    }
+
+    @Test
+    @DisplayName("Interface with two implementations")
+    void interfaceTypeDouble() {
+        assertGeneratedContentContains("interfaceDouble", "_obj instanceof A", "_obj instanceof B");
+    }
+
+    @Test
+    @DisplayName("Interface with no implementations")
+    void interfaceNoImplementations() {
+        assertGeneratedContentContains("interfaceNoImplementations", "Object _obj) {throw new");
+    }
+
+    @Test
+    @DisplayName("Federation Entity union")
     void entity() {
         GeneratorConfig.setIncludeApolloFederation(true);
-        assertGeneratedContentMatches("entity");
+        assertGeneratedContentMatches("entity", FEDERATION_QUERY);
     }
 }

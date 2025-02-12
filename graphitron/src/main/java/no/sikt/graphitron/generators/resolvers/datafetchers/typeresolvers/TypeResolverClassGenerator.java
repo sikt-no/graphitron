@@ -15,7 +15,6 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer.asClassWiring;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
-import static org.apache.commons.text.WordUtils.capitalize;
 
 /**
  * Class generator for wrapping the entity resolver.
@@ -30,11 +29,11 @@ public class TypeResolverClassGenerator extends AbstractSchemaClassGenerator<Typ
 
     @Override
     public TypeSpec generate(TypeResolverTarget target) {
-        var generator = new TypeResolverMethodGenerator(target, processedSchema);
-        var name = capitalize(target.getName().replace("_", ""));
-        var spec = getSpec(name, generator).build();
-        var className = getGeneratedClassName(name + getFileNameSuffix());
-        addTypeResolvers(generator.getTypeResolverWiring(), className);
+        var typeName = (target != null ? target.getName() : FEDERATION_ENTITY_UNION.getName()).replace("_", "");
+        var resolverGenerator = new TypeResolverMethodGenerator(target, processedSchema);
+        var spec = getSpec(typeName, List.of(resolverGenerator, new TypeNameMethodGenerator(target, processedSchema))).build();
+        var className = getGeneratedClassName(typeName + getFileNameSuffix());
+        addTypeResolvers(resolverGenerator.getTypeResolverWiring(), className);
         return spec;
     }
 
@@ -58,9 +57,9 @@ public class TypeResolverClassGenerator extends AbstractSchemaClassGenerator<Typ
                 .toList();
         // Federation is not available, so neither stream actually finds the union except in our tests. If it becomes available, remove the special cases for entity.
         if (processedSchema.hasEntitiesField() && unions.stream().noneMatch(it -> it.getName().equals(FEDERATION_ENTITY_UNION.getName()))) {
-            var entity = Stream.of(processedSchema.getUnion(FEDERATION_ENTITY_UNION.getName())); // Adds a null entry for the special case.
+            var entity = processedSchema.getUnion(FEDERATION_ENTITY_UNION.getName()); // Adds a null entry for the special case.
             return Stream
-                    .concat(interfaces, Stream.concat(unions.stream(), entity))
+                    .concat(interfaces, Stream.concat(unions.stream(), Stream.of(entity)))
                     .map(this::generate)
                     .toList();
         }

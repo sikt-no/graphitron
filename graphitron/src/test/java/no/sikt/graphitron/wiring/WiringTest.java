@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Wiring - Generation of the method returning a runtime wiring")
 public class WiringTest extends GeneratorTest {
@@ -30,7 +30,7 @@ public class WiringTest extends GeneratorTest {
     @Test
     @DisplayName("One data fetcher generator exists")
     void defaultCase() {
-        assertGeneratedContentMatches("default");
+        assertGeneratedContentMatches("default", CUSTOMER_QUERY, CUSTOMER);
     }
 
     @Test
@@ -53,7 +53,7 @@ public class WiringTest extends GeneratorTest {
     @DisplayName("Two data fetcher generators exist for the same type")
     void twoFetchers() {
         assertGeneratedContentContains(
-                "twoFetchers",
+                "twoFetchers", Set.of(CUSTOMER),
                 "TypeRuntimeWiring.newTypeWiring(\"Query\")" +
                         ".dataFetcher(\"customer\", QueryGeneratedDataFetcher.customer())" +
                         ".dataFetcher(\"payment\", QueryGeneratedDataFetcher.payment())"
