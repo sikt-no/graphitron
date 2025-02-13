@@ -128,7 +128,7 @@ Example of extending/customizing certain classes:
 Applying this to a type reference denotes a split in the generated query/resolver.
 In other words, this will require the specification of a resolver for the annotated field.
 Should match the splitting directive used by the graphql-codegen-plugin(TODO: link readme) so that the generated
-interfaces match the classes produced by Graphitron. Fields in the Query and Mutation types do not require this directive, as
+interfaces match the classes produced by Graphitron. Fields in the Query and Mutation types, as well as fields with arguments, do not require this directive, as
 they are always considered start points for resolvers.
 
 In this example, the code generation would create the classes _ATypeDBQueries_ and _ATypeGeneratedResolver_, containing

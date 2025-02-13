@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static no.sikt.graphql.directives.GenerationDirective.LOOKUP_KEY;
 import static no.sikt.graphql.directives.GenerationDirective.ORDER_BY;
 
@@ -76,15 +75,5 @@ public class QueryTest extends ValidationTest {
     void reverseJoin() {
         getProcessedSchema("reverseJoin", Set.of(CUSTOMER_TABLE));
         assertNoWarnings();
-    }
-
-    @Test  // Input on subqueries is not supported due to limitations in graphql-java
-    @DisplayName("Input on subquery")
-    void inputOnSubquery() {
-        assertErrorsContain(
-                () -> getProcessedSchema("inputOnSubquery", CUSTOMER_TABLE),
-                "Input on fields without splitQuery is not supported. " +
-                        "Field \"customers\" in type \"Address\" has argument(s), but missing splitQuery-directive."
-        );
     }
 }

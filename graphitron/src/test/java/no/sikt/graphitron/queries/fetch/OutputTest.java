@@ -65,6 +65,15 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Implicit splitquery due to argument")
+    void implicitSplitQuery() {
+        assertFilesAreGenerated(
+                "implicitSplitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
+                "WrapperDBQueries"
+        );
+    }
+
+    @Test
     @DisplayName("Containing field annotated with @splitQuery")
     void skipsSplits() {
         resultDoesNotContain("skipsSplits", Set.of(CUSTOMER_TABLE), "CustomerTable::new");

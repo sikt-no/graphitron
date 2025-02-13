@@ -63,7 +63,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
             mappingForRecordFieldOverride = getMappingFromFieldOverride();
         }
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
-        isResolver = field.hasDirective(SPLIT_QUERY.getName());
+        isResolver = field.hasDirective(SPLIT_QUERY.getName())
+                || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
+
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
     }
 
