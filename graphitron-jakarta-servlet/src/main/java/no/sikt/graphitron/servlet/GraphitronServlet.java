@@ -63,12 +63,11 @@ public abstract class GraphitronServlet extends HttpServlet {
 
             writeResponse(response, result, requestedMediaType);
         } catch (ClientErrorException e) {
+            logger.error("GraphQL request failed because of a client error", e);
             writeResponse(response, mkResult(e, e.getResponse().getStatus()), requestedMediaType);
-        } catch (GraphQLException e) {
-            writeResponse(response, mkResult(e, 500), requestedMediaType);
         } catch (Exception e) {
-            logger.error("Internal Server Error!", e);
-            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            logger.error("GraphQL request failed because of a server error", e);
+            writeResponse(response, mkResult(e, 500), requestedMediaType);
         }
     }
 
