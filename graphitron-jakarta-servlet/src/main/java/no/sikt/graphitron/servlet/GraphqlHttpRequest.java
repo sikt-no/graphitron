@@ -1,13 +1,5 @@
 package no.sikt.graphitron.servlet;
 
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
-import org.jboss.resteasy.util.MediaTypeHelper;
-
 import graphql.language.OperationDefinition;
 import graphql.parser.Parser;
 import jakarta.json.bind.JsonbBuilder;
@@ -18,11 +10,18 @@ import jakarta.ws.rs.NotAcceptableException;
 import jakarta.ws.rs.NotAllowedException;
 import jakarta.ws.rs.NotSupportedException;
 import jakarta.ws.rs.core.MediaType;
+import org.jboss.resteasy.reactive.common.util.MediaTypeHelper;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 class GraphqlHttpRequest {
-    private static final List<MediaType> PROVIDED_MEDIA_TYPES = MediaTypeHelper.parseHeader("application/graphql-response+json,application/json");
     protected static final String GRAPHQL_RESPONSE = "application/graphql-response+json";
     protected static final MediaType GRAPHQL_RESPONSE_TYPE = MediaType.valueOf(GRAPHQL_RESPONSE);
+    private static final List<MediaType> PROVIDED_MEDIA_TYPES = List.of(GRAPHQL_RESPONSE_TYPE, MediaType.APPLICATION_JSON_TYPE);
 
     public record Payload(String query, String operationName, Map<String, Object> variables, Map<String, Object> extensions) { }
 

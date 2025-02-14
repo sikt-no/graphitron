@@ -1,14 +1,15 @@
 # Graphitron Example
 
 This example demonstrates how to use Graphitron to generate GraphQL resolvers from a given GraphQL schema. The example is based on the Sakila test database. For more information, see [Sakila](https://www.jooq.org/sakila).
-The `graphitron-example-server` is a Quarkus application that requires Java 21 to run. Due to this requirement and build time performance considerations, the example is not included in the main build of Graphitron.
+The `graphitron-example-server` is a Quarkus application that runs a GraphQL server with the generated resolvers.
+Due to build time performance considerations, the example is not included in the main build of Graphitron.
 When building the example, Maven is thus ran with the `include-graphitron-example` profile.
 
 ## Requirements
 
 - Docker - for running the Postgres database)
 - [Mise](https://mise.jdx.dev/) - for task management (Recommended)
-  - Alternatively, you can use maven directly with java 21
+  - Alternatively, you can use maven directly with java 17
 
 
 ## Quickstart

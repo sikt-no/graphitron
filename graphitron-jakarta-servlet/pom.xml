@@ -27,9 +27,9 @@
             <version>${revision}${changelist}</version>
         </dependency>
         <dependency>
-            <groupId>org.jboss.resteasy</groupId>
-            <artifactId>resteasy-core</artifactId>
-            <version>6.2.11.Final</version>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-common</artifactId>
+            <version>3.19.0.CR1</version>
         </dependency>
         <dependency>
             <groupId>jakarta.platform</groupId>

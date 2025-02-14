@@ -1,12 +1,5 @@
 package no.sikt.graphitron.servlet;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Optional;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import graphql.ErrorClassification;
 import graphql.ErrorType;
 import graphql.ExecutionInput;
@@ -19,7 +12,14 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.ClientErrorException;
+import jakarta.ws.rs.core.MediaType;
 import no.sikt.graphitron.servlet.GraphqlHttpRequest.Payload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public abstract class GraphitronServlet extends HttpServlet {
     Logger logger = LoggerFactory.getLogger(GraphitronServlet.class);
@@ -35,16 +35,12 @@ public abstract class GraphitronServlet extends HttpServlet {
     }
 
     private ErrorClassification getClassificationFor(int status) {
-        switch (status) {
-        case 401:
-            return ErrorClassification.errorClassification("Authentication");
-        case 403:
-            return ErrorClassification.errorClassification("Authorization");
-        case 400:
-            return ErrorType.InvalidSyntax;
-        default:
-            return ErrorClassification.errorClassification("Unknown");
-        }
+        return switch (status) {
+            case 401 -> ErrorClassification.errorClassification("Authentication");
+            case 403 -> ErrorClassification.errorClassification("Authorization");
+            case 400 -> ErrorType.InvalidSyntax;
+            default -> ErrorClassification.errorClassification("Unknown");
+        };
     }
 
     private ExecutionResult mkResult(Exception t, int status) {
@@ -70,9 +66,7 @@ public abstract class GraphitronServlet extends HttpServlet {
             writeResponse(response, mkResult(e, e.getResponse().getStatus()), requestedMediaType);
         } catch (GraphQLException e) {
             writeResponse(response, mkResult(e, 500), requestedMediaType);
-        }
-
-        catch (Exception e) {
+        } catch (Exception e) {
             logger.error("Internal Server Error!", e);
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
@@ -97,13 +91,16 @@ public abstract class GraphitronServlet extends HttpServlet {
 
     protected abstract GraphQL getSchema(HttpServletRequest request);
 
+    /**
+     * Override this method to add custom context to the execution input.
+     */
     protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
         return builder.build();
     }
 
     private void writeResponse(HttpServletResponse response, ExecutionResult result, String requestedMediaType)
             throws IOException {
-        if (result.isDataPresent() || requestedMediaType.equals("application/json")) {
+        if (result.isDataPresent() || requestedMediaType.equals(MediaType.APPLICATION_JSON)) {
             response.setStatus(HttpServletResponse.SC_OK);
         } else {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);

@@ -5,9 +5,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /***
- * Se https://graphql-http.com/ for den autorative audit suiten fra GraphQL over HTTP-arbeidsgruppen.
+ * Se <a href="https://graphql-http.com/">graphql-http.com</a> for den autorative audit suiten fra GraphQL over HTTP-arbeidsgruppen.
  * Bruk kommandoen: `npm run test` i `fsapi-rest/fsapi-rest` for å kjøre disse testene lokalt.
- *
  * Følgende enhetstester skal ikke gjenskape testene i den autorative audit-suiten.
  */
 public class GraphqlHttpRequestTest {
