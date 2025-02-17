@@ -4,27 +4,31 @@ import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
-import jakarta.enterprise.context.Dependent;
+import io.agroal.api.AgroalDataSource;
 import jakarta.inject.Inject;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import no.sikt.graphitron.example.generated.graphitron.wiring.Wiring;
 import no.sikt.graphitron.servlet.GraphitronServlet;
 import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-@Dependent
 @WebServlet(name = "GraphqlServlet", urlPatterns = {"graphql/*"}, loadOnStartup = 1)
 public class GraphqlServlet extends GraphitronServlet {
 
     private final static String SCHEMA_NAME = "graphql/schema.graphqls";
+    private final AgroalDataSource dataSource;
 
     @Inject
-    DSLContext dslContext;
+    public GraphqlServlet(AgroalDataSource dataSource) {
+        this.dataSource = dataSource;
+    }
 
     @Override
     protected GraphQL getSchema(HttpServletRequest request) {
@@ -36,7 +40,8 @@ public class GraphqlServlet extends GraphitronServlet {
 
     @Override
     protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
-        return builder.localContext(dslContext).build();
+        DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
+        return builder.localContext(ctx).build();
     }
 
     private String readGraphQLSchemaAsString() {
