@@ -22,7 +22,7 @@ public class FetchResolverClassGenerator extends KickstartResolverClassGenerator
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         return processedSchema
                 .getObjects()
                 .values()

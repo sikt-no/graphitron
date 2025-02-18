@@ -1,10 +1,9 @@
 package no.sikt.graphitron.wiring;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
-import no.sikt.graphitron.generators.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -23,9 +22,9 @@ public class WiringTest extends GeneratorTest {
     }
 
     @Override
-    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         var generator = new FetchClassGenerator(schema);
-        return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
+        return List.of(generator, new WiringClassGenerator(List.of(generator), schema.nodeExists()));
     }
 
     @Test

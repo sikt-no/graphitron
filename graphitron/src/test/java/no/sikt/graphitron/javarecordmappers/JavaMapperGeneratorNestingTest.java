@@ -2,7 +2,6 @@ package no.sikt.graphitron.javarecordmappers;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.reducedgenerators.dummygenerators.DummyTransformerClassGenerator;
@@ -30,7 +29,7 @@ public class JavaMapperGeneratorNestingTest extends GeneratorTest {
     }
 
     @Override
-    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new JavaRecordMapperClassGenerator(schema, false), new JavaRecordMapperClassGenerator(schema, true), new DummyTransformerClassGenerator(schema));
     }
 

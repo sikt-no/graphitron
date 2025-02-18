@@ -2,9 +2,8 @@ package no.sikt.graphitron.generators.exception;
 
 import com.palantir.javapoet.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -21,7 +20,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
-public class MutationExceptionStrategyConfigurationGenerator extends AbstractClassGenerator<ObjectDefinition> {
+public class MutationExceptionStrategyConfigurationGenerator extends AbstractSchemaClassGenerator<ObjectDefinition> {
     private static final String
             PAYLOAD_NAME = "payload",
             ERRORS_NAME = "errors",
@@ -143,7 +142,7 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractCla
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || schemaContainsExceptionToErrorMappings()) {
             var generated = Optional
                     .ofNullable(processedSchema.getMutationType())
@@ -171,7 +170,7 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractCla
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(MUTATION_EXCEPTION_STRATEGY_CONFIGURATION.className)
                 .addModifiers(Modifier.PUBLIC)

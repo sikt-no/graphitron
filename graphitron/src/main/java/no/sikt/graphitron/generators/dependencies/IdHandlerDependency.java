@@ -8,7 +8,8 @@ import javax.lang.model.element.Modifier;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
 
 /**
  * A dependency on DSLContext.

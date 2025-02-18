@@ -29,7 +29,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 /**
  * Generates resolvers for queries returning an interface. E.g. the node resolver.
  */
-public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGenerator<ObjectField> {
+public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGenerator {
     private final ObjectDefinition localObject;
     private final static String VARIABLE_LOADER = "_loaderName";
 
@@ -86,13 +86,13 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
 
         implementations
                 .stream()
-                .map(implementation -> codeForImplementation(target, implementation.getName(), inputFieldName))
+                .map(implementation -> codeForImplementation(implementation.getName(), inputFieldName))
                 .forEach(spec::addCode);
 
         return spec.addCode("default: $L", illegalBlock).endControlFlow().build();
     }
 
-    private CodeBlock codeForImplementation(ObjectField target, String implementationTypeName, String inputFieldName) {
+    private CodeBlock codeForImplementation(String implementationTypeName, String inputFieldName) {
         var queryLocation = asQueryClass(implementationTypeName);
         var queryClass = getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         var dbFunction = CodeBlock.of(

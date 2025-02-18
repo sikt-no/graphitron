@@ -11,7 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 
-public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
+public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     public RecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
         super(localField, processedSchema, toRecord);
     }
@@ -87,10 +87,5 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator<G
     @Override
     public boolean mapsJavaRecord() {
         return false;
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return processedSchema.isRecordType(getLocalField());
     }
 }

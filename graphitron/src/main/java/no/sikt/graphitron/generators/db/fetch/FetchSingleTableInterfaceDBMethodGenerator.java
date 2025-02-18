@@ -143,7 +143,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
     @Override
     public List<MethodSpec> generateAll() {
-        return ((ObjectDefinition) getLocalObject())
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(processedSchema::isInterface)
@@ -154,10 +154,5 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return false;
     }
 }

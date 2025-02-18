@@ -133,7 +133,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return ((ObjectDefinition) getLocalObject())
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(GenerationField::isGeneratedWithResolver)
@@ -142,13 +142,5 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return getLocalObject()
-                .getFields()
-                .stream()
-                .allMatch(field -> field.isGeneratedWithResolver() && ((ObjectField) field).hasRequiredPaginationFields());
     }
 }

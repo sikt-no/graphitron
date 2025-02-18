@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.abstractions;
 
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
-import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -12,9 +11,8 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.OVERRIDE;
 
 /**
  * This class contains common information and operations shared by resolver method generators.
- * @param <T> The field type that this generator operates on.
  */
-abstract public class KickstartResolverMethodGenerator<T extends ObjectField> extends ResolverMethodGenerator<T> {
+abstract public class KickstartResolverMethodGenerator extends ResolverMethodGenerator {
     public KickstartResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
@@ -26,4 +24,9 @@ abstract public class KickstartResolverMethodGenerator<T extends ObjectField> ex
                 .addAnnotation(OVERRIDE.className)
                 .addException(EXCEPTION.className);
     }
+
+    /**
+     * @return Does this method generator generate all possible methods? False if any are set to not generate.
+     */
+    public abstract boolean generatesAll();
 }

@@ -4,8 +4,8 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declareArgs;
@@ -18,7 +18,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_
 /**
  * This class generates the resolvers for default update queries.
  */
-public abstract class UpdateMethodGenerator extends DataFetcherMethodGenerator<ObjectField> {
+public abstract class UpdateMethodGenerator extends DataFetcherMethodGenerator {
     protected final ObjectField localField;
     protected InputParser parser;
 
@@ -54,11 +54,6 @@ public abstract class UpdateMethodGenerator extends DataFetcherMethodGenerator<O
         }
 
         return asListedNameIf(target.getTypeName(), target.isIterableWrapped());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return localField.isGeneratedWithResolver() && (localField.hasServiceReference() || localField.hasMutationType());
     }
 
     /**

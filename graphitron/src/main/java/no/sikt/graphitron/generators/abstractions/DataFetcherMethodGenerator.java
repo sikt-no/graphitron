@@ -6,7 +6,7 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -18,7 +18,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-abstract public class DataFetcherMethodGenerator<T extends ObjectField> extends ResolverMethodGenerator<T> {
+abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator {
     protected final List<WiringContainer> dataFetcherWiring = new ArrayList<>();
 
     public DataFetcherMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {

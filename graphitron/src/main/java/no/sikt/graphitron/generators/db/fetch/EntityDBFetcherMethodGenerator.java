@@ -177,9 +177,4 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
         }
         return List.of(generate(new VirtualSourceField(getLocalObject(), query.getName())));
     }
-
-    @Override
-    public boolean generatesAll() {
-        return true;
-    }
 }

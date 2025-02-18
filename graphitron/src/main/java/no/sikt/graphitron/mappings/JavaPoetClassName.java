@@ -4,6 +4,7 @@ import com.palantir.javapoet.ClassName;
 import graphql.GraphQLError;
 import graphql.schema.TypeResolver;
 import graphql.schema.idl.RuntimeWiring;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.TypeRuntimeWiring;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphitron.validation.RecordValidator;
@@ -16,6 +17,7 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
+import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.JSON;
@@ -84,7 +86,9 @@ public enum JavaPoetClassName {
     JSON_JOOQ(JSON.class),
     RUNTIME_WIRING(RuntimeWiring.class),
     TYPE_RUNTIME_WIRING(TypeRuntimeWiring.class),
-    TYPE_RESOLVER(TypeResolver.class);
+    TYPE_RESOLVER(TypeResolver.class),
+    TYPE_DEFINITION_REGISTRY(TypeDefinitionRegistry.class),
+    SCHEMA_READER(SchemaReadingHelper.class);
 
     public final ClassName className;
 

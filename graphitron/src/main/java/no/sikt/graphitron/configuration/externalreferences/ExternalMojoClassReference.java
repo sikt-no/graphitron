@@ -12,12 +12,12 @@ public class ExternalMojoClassReference implements ExternalReference {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return name;
     }
 
     @Override
-    public Class<?> getClassReference() {
+    public Class<?> classReference() {
         try {
             return Class.forName(fullyQualifiedClassName);
         } catch (ClassNotFoundException e) {

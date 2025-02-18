@@ -7,8 +7,8 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -24,7 +24,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 /**
  * This class generates the fetchers for default fetch queries with potential arguments or pagination.
  */
-public class FetchMethodGenerator extends DataFetcherMethodGenerator<ObjectField> {
+public class FetchMethodGenerator extends DataFetcherMethodGenerator {
     public FetchMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
@@ -78,7 +78,7 @@ public class FetchMethodGenerator extends DataFetcherMethodGenerator<ObjectField
 
     @Override
     public List<MethodSpec> generateAll() {
-        return ((ObjectDefinition) getLocalObject())
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(GenerationField::isGeneratedWithResolver)
@@ -86,16 +86,5 @@ public class FetchMethodGenerator extends DataFetcherMethodGenerator<ObjectField
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
-    }
-
-    @Override
-    public boolean generatesAll() {
-        var fieldStream = getLocalObject()
-                .getFields()
-                .stream()
-                .filter(this::generationCondition);
-        return getLocalObject().isOperationRoot()
-                ? fieldStream.allMatch(GenerationField::isGeneratedWithResolver)
-                : fieldStream.allMatch(f -> (!f.isResolver() || f.isGeneratedWithResolver()));
     }
 }

@@ -7,7 +7,7 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphitron.generators.abstractions.AbstractMethodGenerator;
+import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -23,7 +23,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 
-public class TransformerMethodGenerator extends AbstractMethodGenerator<GenerationField> {
+public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<GenerationField>> {
     protected static final String VARIABLE_INPUT = "input", VARIABLE_RECORDS = "records";
 
     public TransformerMethodGenerator(ProcessedSchema processedSchema) {
@@ -121,10 +121,5 @@ public class TransformerMethodGenerator extends AbstractMethodGenerator<Generati
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return getLocalObject() != null && getLocalObject().isGenerated();
     }
 }

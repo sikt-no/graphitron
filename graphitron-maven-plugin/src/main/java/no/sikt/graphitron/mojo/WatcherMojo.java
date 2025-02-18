@@ -44,13 +44,13 @@ public class WatcherMojo extends GenerateMojo {
      */
     private final static Pattern GRAPHQL_FILE_PATTERN = Pattern.compile("\\.graphqls?$");
 
-    private final Function<ProcessedSchema, List<ClassGenerator<?>>> generatorFunction;
+    private final Function<ProcessedSchema, List<ClassGenerator>> generatorFunction;
 
     public WatcherMojo() {
         generatorFunction = GraphQLGenerator::getGenerators;
     }
 
-    public WatcherMojo(Function<ProcessedSchema, List<ClassGenerator<?>>> generatorFunction) {
+    public WatcherMojo(Function<ProcessedSchema, List<ClassGenerator>> generatorFunction) {
         this.generatorFunction = generatorFunction;
     }
 
@@ -146,7 +146,7 @@ public class WatcherMojo extends GenerateMojo {
                 .stream()
                 .filter(it -> it.context() instanceof Path)
                 .filter(it -> !it.toString().endsWith("~")) // These seem to be temporary files.
-                .collect(Collectors.toList());
+                .toList();
 
         var runUpdate = false;
         for (var event : events) { // When an event happens, figure out whether this file + directory should be added or removed.
@@ -188,7 +188,7 @@ public class WatcherMojo extends GenerateMojo {
             processedSchema.validate();
             var generators = generatorFunction.apply(processedSchema);
             for (var g : generators) {
-                g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
+                g.generateAllToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
             }
         } catch (Exception e) {
             getLog().error("Code generation has failed, an exception was thrown.", e);

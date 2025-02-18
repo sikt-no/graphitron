@@ -17,7 +17,7 @@ import java.util.Set;
 /**
  * Class for reading schema files from disk.
  */
-public class SchemaReader {
+public class SchemaReadingHelper {
     /**
      * Default is 15000 for the GraphQL parser. With a new directive on every field it goes over this limit.
      * If the error about preventing DoS attacks shows up again, increase this value here.

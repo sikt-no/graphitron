@@ -6,8 +6,8 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.dependencies.Dependency;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -21,12 +21,12 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList
 /**
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.
  */
-abstract public class AbstractMethodGenerator<T extends GenerationTarget> implements MethodGenerator<T> {
-    protected final RecordObjectSpecification<? extends GenerationField> localObject;
+abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, U extends GenerationTarget> implements MethodGenerator {
+    protected final U localObject;
     protected final ProcessedSchema processedSchema;
     protected Set<Dependency> dependencySet = new HashSet<>();
 
-    public AbstractMethodGenerator(RecordObjectSpecification<? extends GenerationField> localObject, ProcessedSchema processedSchema) {
+    public AbstractSchemaMethodGenerator(U localObject, ProcessedSchema processedSchema) {
         this.localObject = localObject;
         this.processedSchema = processedSchema;
     }
@@ -34,22 +34,29 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
     /**
      * @return The object that this generator is attempting to build methods for.
      */
-    public RecordObjectSpecification<? extends GenerationField> getLocalObject() {
+    public U getLocalObject() {
         return localObject;
     }
 
     protected JOOQMapping getLocalTable() {
-        var localObject = getLocalObject();
-        if (localObject.hasTable()) {
-            return localObject.getTable();
+        if (!(getLocalObject() instanceof RecordObjectSpecification<? extends GenerationField> localRecordObject)) {
+            return null;
+        }
+
+        if (localRecordObject.hasTable()) {
+            return localRecordObject.getTable();
         }
         return Optional
-                .ofNullable(processedSchema.getPreviousTableObjectForObject(localObject))
+                .ofNullable(processedSchema.getPreviousTableObjectForObject(localRecordObject))
                 .map(RecordObjectSpecification::getTable)
                 .orElse(null);
     }
 
-    @Override
+    /**
+     * @param methodName The name of the method.
+     * @param returnType The return type of the method, as a javapoet {@link TypeName}.
+     * @return The default builder for this class' methods, with any common settings applied.
+     */
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
         return MethodSpec
                 .methodBuilder(methodName)
@@ -96,11 +103,22 @@ abstract public class AbstractMethodGenerator<T extends GenerationTarget> implem
         return typeClass;
     }
 
+    /**
+     * @return Any DataFetcher wiring this generator produces.
+     */
     public List<WiringContainer> getDataFetcherWiring() {
         return List.of();
     }
 
+    /**
+     * @return Any TypeRespolver wiring this generator produces.
+     */
     public List<WiringContainer> getTypeResolverWiring() {
         return List.of();
     }
+
+    /**
+     * @return The complete javapoet {@link MethodSpec} based on the provided target.
+     */
+    abstract public MethodSpec generate(T target);
 }

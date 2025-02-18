@@ -3,10 +3,8 @@ package no.sikt.graphitron.generators.abstractions;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.JavaFile;
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
-import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.io.File;
@@ -15,16 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-abstract public class AbstractClassGenerator<T extends GenerationTarget> implements ClassGenerator<T> {
-
-    protected final ProcessedSchema processedSchema;
-
-    public AbstractClassGenerator(ProcessedSchema processedSchema) {
-        this.processedSchema = processedSchema;
-    }
-
+abstract public class AbstractClassGenerator implements ClassGenerator {
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         return TypeSpec
                 .classBuilder(className + getFileNameSuffix())
                 .addModifiers(Modifier.PUBLIC)
@@ -37,7 +28,7 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
                 );
     }
 
-    public TypeSpec.Builder getSpec(String className, MethodGenerator<? extends GenerationTarget> generator) {
+    public TypeSpec.Builder getSpec(String className, MethodGenerator generator) {
         return getSpec(className, List.of(generator));
     }
 
@@ -45,7 +36,7 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
      * Add all the dependency fields for this class.
      * @param generators Generators to extract dependencies from.
      */
-    protected void setDependencies(List<MethodGenerator<? extends GenerationTarget>> generators, TypeSpec.Builder spec) {
+    protected void setDependencies(List<? extends MethodGenerator> generators, TypeSpec.Builder spec) {
         generators
                 .stream()
                 .flatMap(gen -> gen.getDependencySet().stream())
@@ -56,13 +47,13 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
     }
 
     @Override
-    public Map<String, String> generateQualifyingObjects() {
-        return generateTypeSpecs().stream().collect(Collectors.toMap(TypeSpec::name, this::writeToString));
+    public Map<String, String> generateAllAsMap() {
+        return generateAll().stream().collect(Collectors.toMap(TypeSpec::name, this::writeToString));
     }
 
     @Override
-    public void generateQualifyingObjectsToDirectory(String path, String packagePath) {
-        generateTypeSpecs().forEach(it -> writeToFile(it, path, packagePath));
+    public void generateAllToDirectory(String path, String packagePath) {
+        generateAll().forEach(it -> writeToFile(it, path, packagePath));
     }
 
     @Override
@@ -95,6 +86,4 @@ abstract public class AbstractClassGenerator<T extends GenerationTarget> impleme
     public ClassName getGeneratedClassName(String name) {
         return TypeNameFormat.getGeneratedClassName(getDefaultSaveDirectoryName(), name);
     }
-
-    abstract public List<TypeSpec> generateTypeSpecs();
 }

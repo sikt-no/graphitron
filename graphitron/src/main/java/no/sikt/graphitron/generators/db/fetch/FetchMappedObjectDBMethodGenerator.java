@@ -166,7 +166,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return ((ObjectDefinition) getLocalObject())
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isInterface(it))
@@ -176,17 +176,5 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        var fieldStream = getLocalObject()
-                .getFields()
-                .stream()
-                .filter(it -> !processedSchema.isInterface(it))
-                .filter(it -> !it.hasServiceReference());
-        return isRoot
-                ? fieldStream.allMatch(GenerationField::isGeneratedWithResolver)
-                : fieldStream.allMatch(f -> (!f.isResolver() || f.isGeneratedWithResolver()));
     }
 }

@@ -7,8 +7,8 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -25,7 +25,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.*;
 /**
  * This class generates the main entity resolver.
  */
-public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator<ObjectField> {
+public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
     public static final String METHOD_NAME = "entityFetcher";
     private static final String VARIABLE_TYPENAME = "_typeName";
     protected static final TypeName LIST_MAP_TYPE = ParameterizedTypeName.get(LIST.className, getObjectMapTypeName()),
@@ -78,10 +78,5 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator<Obj
             return List.of();
         }
         return List.of(generate(null));  // Does not currently require access to the field here.
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return true;
     }
 }

@@ -24,7 +24,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.GRAPHQL_ERROR;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.HASH_SET;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
+public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerator {
     public RecordValidatorMethodGenerator(GenerationField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema, false); // It operates on records as input, so technically false.
     }
@@ -91,11 +91,6 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
         }
 
         return List.of(generate(getLocalField()));
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return (getLocalObject() == null || !recordValidationEnabled() || !getLocalObject().isExplicitlyNotGenerated()) && processedSchema.hasInputJOOQRecord(getLocalField());
     }
 
     @Override

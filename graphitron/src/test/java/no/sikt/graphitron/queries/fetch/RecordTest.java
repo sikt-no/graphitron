@@ -3,7 +3,6 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -34,7 +33,7 @@ public class RecordTest extends GeneratorTest {
     }
 
     @Override
-    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new MapOnlyFetchDBClassGenerator(schema));
     }
 

@@ -26,6 +26,7 @@ import org.jetbrains.annotations.NotNull;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
@@ -331,14 +332,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that wraps the provided variable name in a simple null check.
-     */
-    @NotNull
-    public static CodeBlock nullIfNullElse(String variable) {
-        return CodeBlock.of("$N == null ? null : ", variable);
-    }
-
-    /**
      * @return CodeBlock that wraps the provided CodeBlock name in a simple null check.
      */
     @NotNull
@@ -347,19 +340,11 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return CodeBlock that wraps the provided variable name in a simple null check.
-     */
-    @NotNull
-    public static CodeBlock nullIfNullElseThis(String variable) {
-        return CodeBlock.of("$L$N", nullIfNullElse(variable), variable);
-    }
-
-    /**
      * @return CodeBlock that wraps the provided CodeBlock name in a simple null check.
      */
     @NotNull
     public static CodeBlock nullIfNullElseThis(CodeBlock code) {
-        return CodeBlock.of("$L$L", nullIfNullElse(code), code);
+        return join(nullIfNullElse(code), code);
     }
 
     /**
@@ -693,6 +678,13 @@ public class FormatCodeBlocks {
                 .unindent()
                 .unindent()
                 .build();
+    }
+
+    /**
+     * @return Join several CodeBlocks.
+     */
+    public static CodeBlock join(CodeBlock... code) {
+        return CodeBlock.join(List.of(code), "");
     }
 
     /**

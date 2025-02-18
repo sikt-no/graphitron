@@ -6,7 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.sikt.graphql.directives.GenerationDirective.LOOKUP_KEY;
 import static no.sikt.graphql.directives.GenerationDirective.ORDER_BY;
 

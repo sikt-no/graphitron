@@ -1,7 +1,6 @@
 package no.sikt.graphitron.reducedgenerators.dummygenerators;
 
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
@@ -11,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DummyTransformerClassGenerator extends TransformerClassGenerator {
-    private final List<MethodGenerator<? extends GenerationTarget>> generators = new ArrayList<>();
+    private final List<MethodGenerator> generators = new ArrayList<>();
 
     public DummyTransformerClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);

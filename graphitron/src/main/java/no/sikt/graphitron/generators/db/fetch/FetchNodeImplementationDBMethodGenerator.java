@@ -5,7 +5,6 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -92,18 +91,9 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
     public List<MethodSpec> generateAll() {
         return objectFieldsReturningNode
                 .stream()
-                .filter(entry -> ((ObjectDefinition) getLocalObject()).implementsInterface(NODE_TYPE.getName()))
+                .filter(entry -> getLocalObject().implementsInterface(NODE_TYPE.getName()))
                 .sorted(Comparator.comparing(AbstractField::getName))
                 .map(this::generate)
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return getLocalObject()
-                .getFields()
-                .stream()
-                .filter(processedSchema::isInterface)
-                .allMatch(GenerationField::isGenerated);
     }
 }

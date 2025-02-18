@@ -17,7 +17,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
  * Generic select query generation functionality is contained within this class.
  * @param <T> Field type that this generator operates on.
  */
-abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractMethodGenerator<T> {
+abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractSchemaMethodGenerator<T, ObjectDefinition> {
 
     public DBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);

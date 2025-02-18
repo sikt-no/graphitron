@@ -4,17 +4,7 @@ import no.sikt.graphitron.definitions.interfaces.EntityKey;
 
 import java.util.List;
 
-public class SimpleEntityKey implements EntityKey {
-    private final String key;
-
-    public SimpleEntityKey(String key) {
-        this.key = key;
-    }
-
-    public String getKey() {
-        return key;
-    }
-
+public record SimpleEntityKey(String key) implements EntityKey {
     @Override
     public List<String> getKeys() {
         return List.of(key);

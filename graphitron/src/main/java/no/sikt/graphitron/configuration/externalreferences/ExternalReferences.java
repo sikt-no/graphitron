@@ -16,7 +16,7 @@ public class ExternalReferences {
         if (references != null) {
             classes = references
                     .stream()
-                    .collect(Collectors.toMap(ExternalReference::getName, ExternalReference::getClassReference));
+                    .collect(Collectors.toMap(ExternalReference::name, ExternalReference::classReference));
         } else {
             classes = Map.of();
         }

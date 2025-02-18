@@ -4,10 +4,9 @@ import com.palantir.javapoet.*;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.ExceptionToErrorMapping;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ExceptionDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -23,7 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
-public class ExceptionToErrorMappingProviderGenerator extends AbstractClassGenerator<ObjectDefinition> {
+public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClassGenerator<ObjectDefinition> {
     private static final String DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME = "dataAccessMappingsForMutation";
     private static final String GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME = "genericMappingsForMutation";
 
@@ -71,7 +70,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractClassGener
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         if (processedSchema.getExceptions().entrySet().stream().anyMatch(it -> !it.getValue().getExceptionToErrorMappings().isEmpty())) {
             var generated = Optional
                     .ofNullable(processedSchema.getMutationType())
@@ -95,7 +94,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractClassGener
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(EXCEPTION_TO_ERROR_MAPPING_PROVIDER.className)
                 .addModifiers(Modifier.PUBLIC)

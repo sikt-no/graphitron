@@ -592,6 +592,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Get all union types keyed by name.
+     */
+    public Map<String, UnionDefinition> getUnions() {
+        return unions;
+    }
+
+    /**
      * @return Does this name belong to a scalar in the schema?
      */
     public boolean isScalar(String name) {

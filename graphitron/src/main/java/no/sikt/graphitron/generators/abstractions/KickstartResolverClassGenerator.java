@@ -28,9 +28,9 @@ abstract public class KickstartResolverClassGenerator<T extends GenerationTarget
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         var spec = super.getSpec(className, generators);
-        if (generators.stream().anyMatch(g -> !g.generatesAll())) {
+        if (generators.stream().anyMatch(g -> !((KickstartResolverMethodGenerator)g).generatesAll())) {
             spec.addModifiers(Modifier.ABSTRACT);
         }
         GeneratorConfig.getResolverAnnotation().map(annotation -> spec.addAnnotation(ClassName.bestGuess(annotation)));

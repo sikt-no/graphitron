@@ -6,6 +6,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -22,18 +23,18 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-abstract public class AbstractMapperMethodGenerator<T extends GenerationField> extends AbstractMethodGenerator<T> {
-    private final T localField;
+abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<?>> {
+    private final GenerationField localField;
     protected final boolean toRecord;
 
-    public AbstractMapperMethodGenerator(T localField, ProcessedSchema processedSchema, boolean toRecord) {
+    public AbstractMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
         super(processedSchema.getRecordType(localField.getContainerTypeName()), processedSchema);
 
         this.localField = localField;
         this.toRecord = toRecord;
     }
 
-    public T getLocalField() {
+    public GenerationField getLocalField() {
         return localField;
     }
 
@@ -46,7 +47,7 @@ abstract public class AbstractMapperMethodGenerator<T extends GenerationField> e
                 .addCode(declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/")));
     }
 
-    public MethodSpec.Builder getMapperSpecBuilder(T target) {
+    public MethodSpec.Builder getMapperSpecBuilder(GenerationField target) {
         var context = MapperContext.createContext(target, toRecord, mapsJavaRecord(), processedSchema);
         var methodName = recordTransformMethod(context.hasJavaRecordReference(), toRecord);
 

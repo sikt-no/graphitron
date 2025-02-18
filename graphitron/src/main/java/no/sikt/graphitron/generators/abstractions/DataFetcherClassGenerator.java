@@ -3,26 +3,25 @@ package no.sikt.graphitron.generators.abstractions;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
-import no.sikt.graphitron.generators.wiring.ClassWiringContainer;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
+import no.sikt.graphitron.generators.codeinterface.wiring.ClassWiringContainer;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
+
+import static no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer.asClassWiring;
 
 abstract public class DataFetcherClassGenerator<T extends GenerationTarget> extends ResolverClassGenerator<T> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "datafetchers", FILE_NAME_SUFFIX = "GeneratedDataFetcher";
-    protected final List<ClassWiringContainer>
-            fetcherWiringContainer = new ArrayList<>(),
-            typeWiringContainer = new ArrayList<>();
+    protected final List<ClassWiringContainer> fetcherWiringContainer = new ArrayList<>();
 
     public DataFetcherClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         var spec = super.getSpec(className, generators);
         setDependencies(generators, spec);
         return spec;
@@ -42,22 +41,7 @@ abstract public class DataFetcherClassGenerator<T extends GenerationTarget> exte
         return fetcherWiringContainer;
     }
 
-    public List<ClassWiringContainer> getGeneratedTypeResolvers() {
-        return typeWiringContainer;
-    }
-
     protected void addFetchers(List<WiringContainer> containers, ClassName className) {
         fetcherWiringContainer.addAll(asClassWiring(containers, className));
-    }
-
-    protected void addTypeResolvers(List<WiringContainer> containers, ClassName className) {
-        typeWiringContainer.addAll(asClassWiring(containers, className));
-    }
-
-    private static List<ClassWiringContainer> asClassWiring(List<WiringContainer> containers, ClassName className) {
-        return containers
-                .stream()
-                .map(it -> new ClassWiringContainer(it, className))
-                .collect(Collectors.toList());
     }
 }

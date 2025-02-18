@@ -1,11 +1,9 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
 import no.sikt.graphitron.generators.abstractions.KickstartResolverClassGenerator;
-import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -25,7 +23,7 @@ public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinit
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         return processedSchema
                 .getObjects()
                 .values()
@@ -39,7 +37,7 @@ public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinit
 
     @Override
     public TypeSpec generate(ObjectDefinition target) {
-        var generators = List.<MethodGenerator<? extends GenerationTarget>>of(
+        var generators = List.of(
                 new FetchMethodGenerator(target, processedSchema),
                 new FetchNodeMethodGenerator(target, processedSchema)
         );

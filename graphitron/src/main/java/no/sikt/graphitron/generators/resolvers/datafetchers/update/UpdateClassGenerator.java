@@ -22,7 +22,7 @@ public class UpdateClassGenerator extends DataFetcherClassGenerator<ObjectField>
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         var mutation = processedSchema.getMutationType();
         if (mutation == null || mutation.isExplicitlyNotGenerated()) {
             return List.of();

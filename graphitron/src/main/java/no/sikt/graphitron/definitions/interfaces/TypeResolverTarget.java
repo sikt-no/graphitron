@@ -1,3 +1,5 @@
 package no.sikt.graphitron.definitions.interfaces;
 
-public interface TypeResolverTarget extends GenerationTarget { }
+import no.sikt.graphitron.definitions.fields.ObjectField;
+
+public interface TypeResolverTarget extends GenerationTarget, ObjectSpecification<ObjectField> { }

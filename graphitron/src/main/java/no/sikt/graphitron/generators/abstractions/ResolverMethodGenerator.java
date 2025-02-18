@@ -28,9 +28,8 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * This class contains common information and operations shared by resolver method generators.
- * @param <T> The field type that this generator operates on.
  */
-abstract public class ResolverMethodGenerator<T extends ObjectField> extends AbstractMethodGenerator<T> {
+abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenerator<ObjectField, ObjectDefinition> {
     protected static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response";
 
     public ResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -92,7 +91,7 @@ abstract public class ResolverMethodGenerator<T extends ObjectField> extends Abs
                 dataBlock.add("\n");
             }
             return dataBlock
-                    .add("$L$L", queryFunction, transformWrap)
+                    .add(join(queryFunction, transformWrap))
                     .unindent()
                     .unindent()
                     .addStatement(")")

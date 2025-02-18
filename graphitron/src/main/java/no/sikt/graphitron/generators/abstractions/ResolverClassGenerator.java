@@ -22,7 +22,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 /**
  * Superclass for any select resolver generator classes.
  */
-abstract public class ResolverClassGenerator<T extends GenerationTarget> extends AbstractClassGenerator<T> {
+abstract public class ResolverClassGenerator<T extends GenerationTarget> extends AbstractSchemaClassGenerator<T> {
     public ResolverClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }

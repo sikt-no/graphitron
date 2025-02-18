@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generate;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
@@ -15,7 +14,7 @@ import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGene
 import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.fetch.FetchResolverClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.update.UpdateResolverClassGenerator;
-import no.sikt.graphitron.generators.wiring.WiringClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +24,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphql.schema.SchemaReader.getTypeDefinitionRegistry;
+import static no.sikt.graphql.schema.SchemaReadingHelper.getTypeDefinitionRegistry;
 
 /**
  * Class for executing the code generation. Defines which generators should run by default.
@@ -49,8 +48,8 @@ public class GraphQLGenerator {
         generate(getGenerators(processedSchema));
     }
 
-    public static List<ClassGenerator<?>> getGenerators(ProcessedSchema processedSchema) {
-        List<ClassGenerator<? extends GenerationTarget>> generators = List.of(
+    public static List<ClassGenerator> getGenerators(ProcessedSchema processedSchema) {
+        List<ClassGenerator> generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema),
@@ -68,7 +67,7 @@ public class GraphQLGenerator {
         );
         return Stream.concat(
                 generators.stream(),
-                Stream.of(new WiringClassGenerator(generators, processedSchema))  // This one must be the last generator.
+                Stream.of(new WiringClassGenerator(generators, processedSchema.nodeExists()))  // This one must be the last generator.
         ).toList();
     }
 
@@ -76,17 +75,17 @@ public class GraphQLGenerator {
      * Run a list of generators.
      * @param generators The generators that should be executed.
      */
-    public static void generate(List<ClassGenerator<? extends GenerationTarget>> generators) {
+    public static void generate(List<ClassGenerator> generators) {
         for (var g : generators) {
-            g.generateQualifyingObjectsToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
+            g.generateAllToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
             LOGGER.info("Generated sources to: {}.{}", GeneratorConfig.outputPackage(), g.getDefaultSaveDirectoryName());
         }
     }
 
-    public static Map<String, List<String>> generateAsStrings(List<ClassGenerator<? extends GenerationTarget>> generators) {
+    public static Map<String, List<String>> generateAsStrings(List<ClassGenerator> generators) {
         return generators
                 .stream()
-                .flatMap(it -> it.generateQualifyingObjects().entrySet().stream())
+                .flatMap(it -> it.generateAllAsMap().entrySet().stream())
                 .collect(Collectors.toMap(Map.Entry::getKey, it -> List.of(it.getValue().split("\n"))));
     }
 

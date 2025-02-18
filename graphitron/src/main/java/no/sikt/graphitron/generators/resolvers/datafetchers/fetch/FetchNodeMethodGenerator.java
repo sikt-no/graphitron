@@ -7,8 +7,8 @@ import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
-import no.sikt.graphitron.generators.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.Comparator;
@@ -25,9 +25,9 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
- * Generates resolvers for queries returning an interface. E.g. the node resolver.
+ * Generates resolvers for the Node interface.
  */
-public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator<ObjectField> {
+public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
     private final ObjectDefinition localObject;
     private final static String VARIABLE_LOADER = "_loaderName";
 
@@ -127,14 +127,5 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator<ObjectF
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return localObject
-                .getFields()
-                .stream()
-                .filter(it -> processedSchema.isInterface(it.getTypeName()))
-                .allMatch(ObjectField::isGeneratedWithResolver);
     }
 }

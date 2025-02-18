@@ -39,7 +39,7 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         return processedSchema
                 .getObjects()
                 .values()

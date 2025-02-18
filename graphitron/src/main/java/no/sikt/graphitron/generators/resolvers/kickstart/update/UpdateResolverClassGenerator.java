@@ -23,7 +23,7 @@ public class UpdateResolverClassGenerator extends KickstartResolverClassGenerato
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         var mutation = processedSchema.getMutationType();
         if (mutation != null && !mutation.isExplicitlyNotGenerated()) {
             return mutation

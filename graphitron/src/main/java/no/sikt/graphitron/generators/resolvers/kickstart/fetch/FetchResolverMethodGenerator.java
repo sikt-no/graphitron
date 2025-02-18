@@ -23,7 +23,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 /**
  * This class generates the resolvers for default fetch queries with potential arguments or pagination.
  */
-public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerator<ObjectField> {
+public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerator {
     public FetchResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
     }
@@ -88,7 +88,7 @@ public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerat
 
     @Override
     public List<MethodSpec> generateAll() {
-        return ((ObjectDefinition) getLocalObject())
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(GenerationField::isGeneratedWithResolver)

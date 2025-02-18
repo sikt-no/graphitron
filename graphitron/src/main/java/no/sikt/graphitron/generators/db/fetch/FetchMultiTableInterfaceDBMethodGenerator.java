@@ -399,7 +399,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
 
     @Override
     public List<MethodSpec> generateAll() {
-        return ((ObjectDefinition) getLocalObject())
+        return getLocalObject()
                 .getFields()
                 .stream()
                 .filter(processedSchema::isInterface)
@@ -410,10 +410,5 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .flatMap(it -> generateWithSubselectMethods(it).stream())
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return false;
     }
 }

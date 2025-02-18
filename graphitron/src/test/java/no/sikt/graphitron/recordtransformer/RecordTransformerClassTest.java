@@ -2,7 +2,6 @@ package no.sikt.graphitron.recordtransformer;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -28,7 +27,7 @@ public class RecordTransformerClassTest extends GeneratorTest {
     }
 
     @Override
-    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new TransformerClassGenerator(schema));
     }
 

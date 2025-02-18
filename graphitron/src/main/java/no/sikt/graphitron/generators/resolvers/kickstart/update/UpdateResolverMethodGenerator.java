@@ -15,7 +15,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRO
 /**
  * This class generates the resolvers for default update queries.
  */
-public abstract class UpdateResolverMethodGenerator extends KickstartResolverMethodGenerator<ObjectField> {
+public abstract class UpdateResolverMethodGenerator extends KickstartResolverMethodGenerator {
     protected final ObjectField localField;
     protected InputParser parser;
 

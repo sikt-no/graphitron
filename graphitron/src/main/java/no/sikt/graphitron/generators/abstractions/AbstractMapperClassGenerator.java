@@ -7,7 +7,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public abstract class AbstractMapperClassGenerator<T extends GenerationField> extends AbstractClassGenerator<T> {
+public abstract class AbstractMapperClassGenerator<T extends GenerationField> extends AbstractSchemaClassGenerator<T> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "mappers";
     private final boolean toRecord;
 
@@ -17,7 +17,7 @@ public abstract class AbstractMapperClassGenerator<T extends GenerationField> ex
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         return processedSchema
                 .getTransformableFields()
                 .stream()

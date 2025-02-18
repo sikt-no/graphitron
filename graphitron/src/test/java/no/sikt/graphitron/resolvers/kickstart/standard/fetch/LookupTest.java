@@ -2,7 +2,6 @@ package no.sikt.graphitron.resolvers.kickstart.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.fetch.FetchResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -28,7 +27,7 @@ public class LookupTest extends GeneratorTest {
     }
 
     @Override
-    protected List<ClassGenerator<? extends GenerationTarget>> makeGenerators(ProcessedSchema schema) {
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new FetchResolverClassGenerator(schema));
     }
 

@@ -1,28 +1,23 @@
 package no.sikt.graphitron.generators.abstractions;
 
 import com.palantir.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * A class generator uses a GraphQL object in order to generate an entire class, based on only the data contained
- * within a parsed object from {@link no.sikt.graphitron.definitions.objects objects}.
- * @param <T> Object type that this generator operates on.
+ * A class generator generates a set of classes for any purpose.
  */
-public interface ClassGenerator<T extends GenerationTarget> {
+public interface ClassGenerator {
     /**
-     * @param target A {@link GenerationTarget} object representing a source from which a class should be generated.
-     * @return A complete class in the form of a javapoet {@link TypeSpec}.
+     * Generate the classes and return the list of TypeSpecs.
      */
-    TypeSpec generate(T target);
-
+    List<TypeSpec> generateAll();
     /**
      * @param path The path to the output directory.
      * @param packagePath The package path that this class should be written to.
      */
-    void generateQualifyingObjectsToDirectory(String path, String packagePath);
+    void generateAllToDirectory(String path, String packagePath);
 
     /**
      * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
@@ -44,7 +39,7 @@ public interface ClassGenerator<T extends GenerationTarget> {
     /**
      * Generate the classes and write them to a String.
      */
-    Map<String, String> generateQualifyingObjects();
+    Map<String, String> generateAllAsMap();
 
     /**
      * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and render the file as a string.
@@ -67,5 +62,5 @@ public interface ClassGenerator<T extends GenerationTarget> {
      * @param generators List of method generators that this class should use to generate its methods.
      * @return A completed {@link TypeSpec.Builder} for this class, where all methods have already been added.
      */
-    TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators);
+    TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators);
 }

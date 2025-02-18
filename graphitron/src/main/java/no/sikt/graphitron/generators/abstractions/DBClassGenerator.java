@@ -15,7 +15,7 @@ import java.util.Set;
 /**
  * Superclass for any select query generator classes.
  */
-abstract public class DBClassGenerator<T extends GenerationTarget> extends AbstractClassGenerator<T> {
+abstract public class DBClassGenerator<T extends GenerationTarget> extends AbstractSchemaClassGenerator<T> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "queries", FILE_NAME_SUFFIX = "DBQueries";
 
     public DBClassGenerator(ProcessedSchema processedSchema) {
@@ -28,7 +28,7 @@ abstract public class DBClassGenerator<T extends GenerationTarget> extends Abstr
     }
 
     @Override
-    public TypeSpec.Builder getSpec(String className, List<MethodGenerator<? extends GenerationTarget>> generators) {
+    public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         var spec = super.getSpec(className, generators);
         setDependencies(generators, spec);
         return spec;

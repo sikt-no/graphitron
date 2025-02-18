@@ -4,23 +4,7 @@ import no.sikt.graphitron.definitions.interfaces.EntityKey;
 
 import java.util.List;
 
-public class NestedEntityKey implements EntityKey {
-    private final EntityKey key;
-    private final String source;
-
-    public NestedEntityKey(EntityKey key, String source) {
-        this.key = key;
-        this.source = source;
-    }
-
-    public EntityKey getKey() {
-        return key;
-    }
-
-    public String getSource() {
-        return source;
-    }
-
+public record NestedEntityKey(EntityKey key, String source) implements EntityKey {
     @Override
     public List<String> getKeys() {
         return List.of(source);

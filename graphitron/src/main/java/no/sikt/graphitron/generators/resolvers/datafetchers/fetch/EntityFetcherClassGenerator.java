@@ -18,7 +18,7 @@ public class EntityFetcherClassGenerator extends DataFetcherClassGenerator<Objec
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         if (!processedSchema.hasEntitiesField() || !processedSchema.getQueryType().isGeneratedWithResolver()) {
             return List.of();
         }
@@ -30,11 +30,9 @@ public class EntityFetcherClassGenerator extends DataFetcherClassGenerator<Objec
         var query = processedSchema.getQueryType();
         var name = query.getName() + CLASS_NAME;
         var fetcherGenerator = new EntityFetcherMethodGenerator(processedSchema);
-        var typeResolver = new EntityTypeResolverMethodGenerator(processedSchema);
-        var spec = getSpec(name, List.of(fetcherGenerator, typeResolver)).build();
+        var spec = getSpec(name, fetcherGenerator).build();
         var className = getGeneratedClassName(name + getFileNameSuffix());
         addFetchers(fetcherGenerator.getDataFetcherWiring(), className);
-        addTypeResolvers(typeResolver.getTypeResolverWiring(), className);
         return spec;
     }
 

@@ -3,7 +3,6 @@ package no.sikt.graphitron.definitions.objects;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.TopLevelObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphql.directives.GenerationDirective;
 
@@ -43,7 +42,7 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
     @Override
     protected List<ObjectField> createFields(ObjectTypeDefinition objectDefinition) {
         var definitions = objectDefinition.getFieldDefinitions();
-        return isRootType(objectDefinition) ? TopLevelObjectField.from(definitions, getName()) : ObjectField.from(definitions, getName());
+        return ObjectField.from(definitions, getName());
     }
 
     private boolean isRootType(ObjectTypeDefinition objectDefinition) {

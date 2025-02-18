@@ -4,20 +4,20 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class QueryTypeFieldsWrappingMockGenerator extends AbstractClassGenerator<GenerationTarget> {
+public class QueryTypeFieldsWrappingMockGenerator extends AbstractSchemaClassGenerator<GenerationTarget> {
 
     public QueryTypeFieldsWrappingMockGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }
 
     @Override
-    public List<TypeSpec> generateTypeSpecs() {
+    public List<TypeSpec> generateAll() {
         return List.of(generate(null));
     }
 

@@ -97,9 +97,4 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         }
         return List.of();
     }
-
-    @Override
-    public boolean generatesAll() {
-        return localField.isGeneratedWithResolver() && localField.hasMutationType() && !localField.hasServiceReference();
-    }
 }

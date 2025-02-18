@@ -11,7 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 
-public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator<GenerationField> {
+public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
         super(localField, processedSchema, toRecord);
     }
@@ -70,10 +70,5 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
     @Override
     public boolean mapsJavaRecord() {
         return true;
-    }
-
-    @Override
-    public boolean generatesAll() {
-        return processedSchema.hasJavaRecord(getLocalField());
     }
 }

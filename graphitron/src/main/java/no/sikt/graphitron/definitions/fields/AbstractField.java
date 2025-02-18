@@ -12,6 +12,8 @@ import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveAr
 import static no.sikt.graphql.directives.GenerationDirective.FIELD;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.JAVA_NAME;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
 /**
  * This class represents the general functionality associated with GraphQLs object fields.
@@ -122,6 +124,6 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
      * @return Is this object field a Query or Mutation root field?
      */
     public boolean isRootField() {
-        return false;
+        return containerType.equals(SCHEMA_QUERY.getName()) || containerType.equals(SCHEMA_MUTATION.getName());
     }
 }

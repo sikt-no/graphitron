@@ -394,7 +394,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.renderQuerySource(getLocalTable());
         if (field.isID()) {
-            return CodeBlock.of("$L$L", renderedSource, field.getMappingFromFieldOverride().asGetCall());
+            return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
         var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), processedSchema));

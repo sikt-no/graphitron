@@ -32,7 +32,7 @@ public class EntityKeySet {
                 nestingCount--;
                 if (nestingCount == 0) {  // Reached the end of the outermost nesting.
                     var source = (SimpleEntityKey) compound.remove(compound.size() - 1);
-                    compound.add(new NestedEntityKey(parseKeys(String.join(" ", nestedContent)), source.getKey()));
+                    compound.add(new NestedEntityKey(parseKeys(String.join(" ", nestedContent)), source.key()));
                     nestedContent.clear();
                 }
             } else if (nestingCount == 0) {  // Key on this level is found.
