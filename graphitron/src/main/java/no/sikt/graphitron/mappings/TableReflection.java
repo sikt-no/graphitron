@@ -451,4 +451,17 @@ public class TableReflection {
     public static Optional<? extends UniqueKey<?>> getPrimaryKeyForTable(String tableName) {
         return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst();
     }
+
+    public static Optional<Method> getMethodFromReference(String reference, String tableName, String methodName) {
+        try {
+        Class<?> clazz = Class.forName(reference);
+        Optional<Class<?>> tableClass = getTableClass(tableName);
+        if (tableClass.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(clazz.getMethod(methodName, tableClass.get()));
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            return Optional.empty();
+        }
+    }
 }

@@ -20,6 +20,13 @@ It defaults to the value of the first parameter.
 """
 directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
+"""
+The @externalField directive indicates that the annotated field is
+retrieved using a static extension method implemented in Java.
+This is typically used when the field's value requires custom logic implemented in Java."
+"""
+directive @externalField on FIELD_DEFINITION
+
 """Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
 directive @enum(enumReference: ExternalCodeReference!) on ENUM
 

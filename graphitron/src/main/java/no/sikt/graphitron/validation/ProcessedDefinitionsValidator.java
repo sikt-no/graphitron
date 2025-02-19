@@ -20,9 +20,13 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Field;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -76,6 +80,8 @@ public class ProcessedDefinitionsValidator {
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
         validateSelfReferenceHasSplitQuery();
+        validateNotUsingBothExternalFieldAndField();
+        validateExternalField(schema);
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -765,6 +771,65 @@ public class ProcessedDefinitionsValidator {
                         .forEach(field -> {
                             if (Objects.equals(field.getTypeName(), object.getName()) && !field.isResolver()) {
                                 errorMessages.add("Self reference must have splitQuery, field \"" + field.getName() + "\" in object \"" + object.getName() + "\"");
+                            }
+                        })
+                );
+    }
+
+    private void validateNotUsingBothExternalFieldAndField() {
+        schema.getObjects().values()
+                .forEach(object -> object.getFields().stream()
+                        .filter(it -> it.isExternalField() && it.hasFieldDirective())
+                        .forEach(it -> errorMessages.add(
+                                        "Field " + it.getName() + " in type " + it.getContainerTypeName() + " cannot have both the field and externalField directives."
+                                )
+                        )
+                );
+    }
+
+    private void validateExternalField(ProcessedSchema schema) {
+        this.schema.getObjects().values()
+                .forEach(object -> object.getFields().stream()
+                        .filter(GenerationSourceField::isExternalField)
+                        .forEach(field -> {
+                            String typeName = field.getContainerTypeName();
+                            JOOQMapping table = schema.getObject(typeName).getTable();
+
+                            if (table == null) {
+                                errorMessages.add("No table found for field " + field.getName() + "in type " + typeName);
+                                return;
+                            }
+
+                            Set<String> referenceImports = GeneratorConfig.getExternalReferenceImports();
+                            List<Method> methods = referenceImports.stream()
+                                    .map(it -> getMethodFromReference(it, table.getName(), field.getName()))
+                                    .flatMap(Optional::stream)
+                                    .toList();
+
+                            if (methods.isEmpty()) {
+                                errorMessages.add("No method found for field " + field.getName() + "in type " + typeName);
+                                return;
+                            }
+
+                            if (methods.size() > 1) {
+                                errorMessages.add("Multiple methods found for field " + field.getName() + "in type " + typeName);
+                                return;
+                            }
+
+                            Method method = methods.get(0);
+
+                            if (!method.getReturnType().equals(Field.class)) {
+                                errorMessages.add("Return type of method needs to be generic type Field for field " + field.getName() + "in type " + typeName);
+                            }
+
+                            Type type = method.getGenericReturnType();
+
+                            if (type instanceof ParameterizedType paramType) {
+                                Type actualType = paramType.getActualTypeArguments()[0];
+
+                                if(!actualType.getTypeName().equals(field.getTypeClass().toString())) {
+                                    errorMessages.add("Type parameter of generic type Field in method needs to match scalar type of field " + field.getName() + "in type " + typeName);
+                                }
                             }
                         })
                 );

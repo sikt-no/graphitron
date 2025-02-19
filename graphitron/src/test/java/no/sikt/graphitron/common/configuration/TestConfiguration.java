@@ -45,7 +45,9 @@ public class TestConfiguration {
                     "no.sikt.graphitron.codereferences.dummyreferences",
                     "no.sikt.graphitron.codereferences.records",
                     "no.sikt.graphitron.codereferences.services",
-                    "no.sikt.graphitron.codereferences.transforms"
+                    "no.sikt.graphitron.codereferences.transforms",
+                    "no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod",
+                    "no.sikt.graphitron.codereferences.extensionmethods.ClassWithDuplicatedExtensionMethod"
                 ),
                 globalTransforms,
                 extendedClasses

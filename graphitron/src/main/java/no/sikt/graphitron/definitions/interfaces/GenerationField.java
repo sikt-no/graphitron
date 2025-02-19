@@ -15,6 +15,8 @@ import java.util.List;
 public interface GenerationField extends GenerationTarget, FieldSpecification {
     boolean hasFieldReferences();
 
+    boolean isExternalField();
+
     boolean isInput();
 
     /**

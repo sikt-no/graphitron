@@ -1105,6 +1105,68 @@ try {
 }
 ```
 
+### External field
+The `@externalField` directive indicates that the annotated field is
+retrieved using a static extension method implemented in Java.
+This is typically used when the field's value requires custom logic implemented in Java.
+
+Requirements:
+
+- Method has to include the table class it's extending as its single parameter - additional parameters is not supported.
+- Method needs to return the generic type `Field`
+- Parameter type of the generic type needs to match scalar type used in your field in the GraphQL schema, i.e: `Field<TYPE_MATCHING_SCALAR_TYPE>`
+- Code reference should be added to `externalReferenceImports` in your `pom.xml`. See [code references](#code-references) for details on configuration.
+- The `type` where `externalField` is used needs to have a table associated to it
+
+#### Example
+
+
+Say you have a GraphQL schema like this, where you have defined a type with a associated database table, which returns a one field:
+
+```graphql
+type Film @table(name: "FILM") {
+    isEnglish: Boolean @externalField
+}
+```
+
+You want to write custom logic for the `isEnglish`-field and therefore add the `externalField`-annotation.
+The example below show such custom logic can be implemented:
+
+```java
+public static Field<Boolean> isEnglish(Film film) {
+    return DSL.iif(
+            film.ORIGINAL_LANGUAGE_ID.eq(1),
+            inline(true),
+            inline(false)
+    );
+}
+```
+The static extension method is required to have the table class it's extending as a parameter, which is `Film` in this example.
+It also needs to return the generic type `Field`, with the actual type within matching the scalar type from the schema.
+In this example you see that the scalar type in the schema is `String`, which means that the generic type needs to look
+like this `Field<String>`.
+
+The file containing this method needs to be discoverable for Graphitron.
+You need to provide the path for the file within the tag `externalReferenceImports` in your `pom.xml`:
+```xml
+<externalReferenceImports>
+  <package>some.path.MyClass</package>
+</externalReferenceImports>
+```
+Graphitron will then use this custom logic in the select part of the database query, as shown below:
+
+```java
+public class QueryDBQueries {
+    public static Film queryForQuery(DSLContext ctx, SelectionSet select) {
+        var _film = FILM.as("film_2952383337");
+        return ctx
+                .select(DSL.row(some.path.MyClass.isEnglish(_film)).mapping(Functions.nullOnAllNull(Film::new)))
+                .from(_film)
+                .fetchOne(it -> it.into(Film.class));
+    }
+}
+```
+
 ## Interface queries
 
 Graphitron currently supports generating queries for two types of interfaces.

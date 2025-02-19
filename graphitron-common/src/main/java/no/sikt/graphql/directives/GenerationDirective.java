@@ -23,7 +23,8 @@ public enum GenerationDirective {
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE)),
     ORDER_BY("orderBy"),
     DISCRIMINATE("discriminate", EnumSet.of(GenerationDirectiveParam.ON)),
-    DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE));
+    DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE)),
+    EXTERNAL_FIELD("externalField");
 
     private final String name;
 

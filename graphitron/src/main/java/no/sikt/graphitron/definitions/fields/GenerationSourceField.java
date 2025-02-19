@@ -30,7 +30,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver, isGeneratedAsResolver;
+    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
@@ -62,6 +62,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         } else {
             mappingForRecordFieldOverride = getMappingFromFieldOverride();
         }
+
+        hasFieldDirective = field.hasDirective(FIELD.getName());
+        isExternalField = field.hasDirective(EXTERNAL_FIELD.getName());
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
                 || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
@@ -100,6 +103,14 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public boolean isResolver() {
         return isResolver;
+    }
+
+    public boolean isExternalField() {
+        return isExternalField;
+    }
+
+    public boolean hasFieldDirective() {
+        return hasFieldDirective;
     }
 
     @Override

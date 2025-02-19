@@ -4,6 +4,7 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -12,6 +13,7 @@ import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
@@ -38,6 +40,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMetho
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.TableReflection.getMethodFromReference;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -178,6 +181,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (processedSchema.isObject(field)) {
             var table = processedSchema.getObject(field.getTypeName()).getTable();
             innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field));
+        } else if (field.isExternalField()) {
+            JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
+
+            if (table == null) {
+                throw new IllegalArgumentException("No table found for field " + field.getName());
+            }
+
+            innerRowCode = CodeBlock.of(
+                    "$L.$L($L)",
+                    getImportReferenceOfValidExtensionMethod(field, table.getName()),
+                    field.getName(),
+                    context.getTargetAlias());
         }
         else if (field.hasFieldReferences()) {
             var fieldContext = context.nextContext(field);
@@ -189,7 +204,21 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return Pair.of(innerRowCode, fieldSource);
     }
 
-    protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements) {
+    private static String getImportReferenceOfValidExtensionMethod(GenerationField field, String tableName) {
+        var imports = GeneratorConfig.getExternalReferenceImports();
+
+        Optional<String> reference = imports.stream()
+                .filter(it -> getMethodFromReference(it, tableName, field.getName()).isPresent())
+                .findFirst();
+
+        if (reference.isEmpty()) {
+            throw new IllegalArgumentException("No method found for field " + field.getName() + " in table " + tableName);
+        }
+
+        return reference.get();
+    }
+
+     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()

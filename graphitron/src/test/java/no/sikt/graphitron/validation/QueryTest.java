@@ -77,4 +77,40 @@ public class QueryTest extends ValidationTest {
         getProcessedSchema("reverseJoin", Set.of(CUSTOMER_TABLE));
         assertNoWarnings();
     }
+
+    @Test
+    @DisplayName("Field cannot have both field and externalField directives")
+    void externalFieldAndFieldDirectives() {
+        assertErrorsContain("externalFieldAndFieldDirectives", "Field name in type Customer cannot have both the field and externalField directives.");
+    }
+
+    @Test
+    @DisplayName("External field must have one method associated to it")
+    void externalFieldMissingMethod() {
+        assertErrorsContain("externalFieldMissingMethod", "No method found for field somethingNotDefined");
+    }
+
+    @Test
+    @DisplayName("External field cannot be associated with multiple methods, only one")
+    void externalFieldDuplicatedMethod() {
+        assertErrorsContain("externalFieldDuplicatedMethod", "Multiple methods found for field duplicated");
+    }
+
+    @Test
+    @DisplayName("External field method needs to have generic return type Field")
+    void externalFieldMethodWrongType() {
+        assertErrorsContain("externalFieldMethodWrongGenericType", "Return type of method needs to be generic type Field");
+    }
+
+    @Test
+    @DisplayName("External field method needs to have a generic type parameter that matches scalar type in schema field")
+    void externalFieldMethodWrongGenericType() {
+        assertErrorsContain("externalFieldMethodWrongGenericTypeParameter", "Type parameter of generic type Field in method needs to match scalar type of field");
+    }
+
+    @Test
+    @DisplayName("External field in schema needs to have a container type with a table directly associated with it")
+    void externalFieldNoTable() {
+        assertErrorsContain("externalFieldNoTable", "No table found for field name");
+    }
 }

@@ -91,6 +91,14 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Field annotated with @externalField should use method extended on field's jooq table")
+    void externalField() {
+        assertGeneratedContentContains("externalField",
+                ".select(DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_customer))"
+        );
+    }
+
+    @Test
     @DisplayName("Query fetching two fields")
     void multipleFields() {
         assertGeneratedContentContains("multipleFields", ".row(_customer.getId(),_customer.EMAIL)");
