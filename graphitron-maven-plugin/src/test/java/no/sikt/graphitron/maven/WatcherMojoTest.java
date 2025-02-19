@@ -103,7 +103,6 @@ public class WatcherMojoTest extends GeneratorTest {
         mojo.setSchemaFiles(Set.of(targetSchemaFile));
         mojo.setOutputPath(tempDir.toString());
         mojo.setOutputPackage(DEFAULT_OUTPUT_PACKAGE);
-        mojo.setGeneratedSchemaCodePackage(DEFAULT_OUTPUT_PACKAGE);
         mojo.setJooqGeneratedPackage(DEFAULT_JOOQ_PACKAGE);
         return mojo;
     }

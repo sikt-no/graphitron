@@ -14,6 +14,8 @@
   <packaging>maven-plugin</packaging>
   <properties>
     <maven.build.cache.enabled>false</maven.build.cache.enabled>
+    <processedSchemaDirectory>${project.build.directory}/generated-resources/graphql_transformer</processedSchemaDirectory>
+    <outputDirectory>${project.build.directory}/generated-sources</outputDirectory>
   </properties>
 
   <dependencies>
@@ -53,6 +55,16 @@
       <groupId>org.apache.maven</groupId>
       <artifactId>maven-core</artifactId>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.kobylynskyi</groupId>
+      <artifactId>graphql-java-codegen</artifactId>
+      <version>5.10.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.freemarker</groupId>
+      <artifactId>freemarker</artifactId>
+      <version>2.3.32</version>
     </dependency>
   </dependencies>
 

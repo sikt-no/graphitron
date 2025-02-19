@@ -18,9 +18,6 @@
         <generatedCodePackage>no.sikt.graphitron.example.generated</generatedCodePackage>
         <generatedJooqPackage>${generatedCodePackage}.jooq</generatedJooqPackage>
         <generatedGraphitronPackage>${generatedCodePackage}.graphitron</generatedGraphitronPackage>
-        <generatedGraphqlDomainPackage>${generatedCodePackage}.grapqhl</generatedGraphqlDomainPackage>
-        <generatedGraphqlDomainAPIPackage>${generatedGraphqlDomainPackage}.api</generatedGraphqlDomainAPIPackage>
-        <generatedGraphqlDomainModelPackage>${generatedGraphqlDomainPackage}.model</generatedGraphqlDomainModelPackage>
     </properties>
 
     <dependencies>
@@ -71,60 +68,6 @@
                 </executions>
             </plugin>
 
-            <!-- GraphQL Codegen Maven plugin -->
-            <plugin>
-                <groupId>io.github.kobylynskyi</groupId>
-                <artifactId>graphql-codegen-maven-plugin</artifactId>
-                <version>5.10.0</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>generate</goal>
-                        </goals>
-                        <configuration>
-                            <graphqlSchemas>
-                                <rootDir>${schemaDirectory}</rootDir>
-                            </graphqlSchemas>
-                            <outputDir>${outputDirectory}/graphql-codegen</outputDir>
-                            <modelPackageName>${generatedGraphqlDomainModelPackage}</modelPackageName>
-                            <apiPackageName>${generatedGraphqlDomainAPIPackage}</apiPackageName>
-                            <apiReturnType>java.util.concurrent.CompletableFuture</apiReturnType>
-                            <generateDataFetchingEnvironmentArgumentInApis>true</generateDataFetchingEnvironmentArgumentInApis>
-                            <fieldsWithResolvers>@splitQuery</fieldsWithResolvers>
-                            <modelValidationAnnotation>jakarta.validation.constraints.NotNull</modelValidationAnnotation>
-                            <customTypesMapping>
-                                <Date>java.time.LocalDate</Date>
-                                <Time>java.time.OffsetTime</Time>
-                                <DateTime>java.time.OffsetDateTime</DateTime>
-                                <BigDecimal>java.math.BigDecimal</BigDecimal>
-                                <Duration>org.jooq.types.DayToSecond</Duration>
-                                <property>
-                                    <name>Int!</name>
-                                    <value>Integer</value>
-                                </property>
-                                <property>
-                                    <name>Boolean!</name>
-                                    <value>Boolean</value>
-                                </property>
-                            </customTypesMapping>
-                            <parentInterfaces>
-                                <queryResolver>graphql.kickstart.tools.GraphQLQueryResolver</queryResolver>
-                                <mutationResolver>graphql.kickstart.tools.GraphQLMutationResolver</mutationResolver>
-                                <subscriptionResolver>graphql.kickstart.tools.GraphQLSubscriptionResolver</subscriptionResolver>
-                                <resolver><![CDATA[graphql.kickstart.tools.GraphQLResolver<{{TYPE}}>]]></resolver>
-                            </parentInterfaces>
-
-                            <!-- This sets the relay config to look for a non-existent directive to disable the relay handling. -->
-                            <relayConfig>
-                                <directiveName>NONE</directiveName>
-                            </relayConfig>
-
-                            <generateEqualsAndHashCode>true</generateEqualsAndHashCode>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <plugin>
                 <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
@@ -133,7 +76,6 @@
                     <schemaFiles>
                         <schemaFile>${schemaDirectory}/schema.graphqls</schemaFile>
                     </schemaFiles>
-                    <generatedSchemaCodePackage>${generatedGraphqlDomainPackage}</generatedSchemaCodePackage>
                     <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                     <maxAllowedPageSize>1000</maxAllowedPageSize>
                     <resolverAnnotation>jakarta.enterprise.context.Dependent</resolverAnnotation>

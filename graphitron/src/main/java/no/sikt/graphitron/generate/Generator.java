@@ -13,7 +13,6 @@ public interface Generator {
 
     String getOutputPackage();
     Set<String> getSchemaFiles();
-    String getGeneratedSchemaCodePackage();
     String getJooqGeneratedPackage();
     String getResolverAnnotation();
 
@@ -30,4 +29,8 @@ public interface Generator {
     List<GlobalTransform> getGlobalTransforms();
 
     List<Extension> getExtensions();
+
+    String getApiPackageName();
+
+    String getModelPackageName();
 }

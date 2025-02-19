@@ -95,9 +95,8 @@ public class GeneratorConfig {
         outputDirectory = mojo.getOutputPath() + "/" + PLUGIN_OUTPUT_PATH;
         outputPackage = mojo.getOutputPackage();
 
-        var graphQLGeneratedPackage = mojo.getGeneratedSchemaCodePackage();
-        generatedSchemaResolversPackage = graphQLGeneratedPackage + DEFAULT_API_SUFFIX; // Once codegen is fully contained in this module, this will be redundant.
-        generatedSchemaModelsPackage = graphQLGeneratedPackage + DEFAULT_MODEL_SUFFIX;
+        generatedSchemaResolversPackage = mojo.getApiPackageName();
+        generatedSchemaModelsPackage = mojo.getModelPackageName();
         generatedJooqPackage = mojo.getJooqGeneratedPackage();
         resolverAnnotation = mojo.getResolverAnnotation();
         maxAllowedPageSize = mojo.getMaxAllowedPageSize();
