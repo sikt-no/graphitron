@@ -38,6 +38,26 @@ public class RecordTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Input name for a Java record type starts with a capital letter")
+    void wrongCapitalisationJavaRecord() {
+        assertGeneratedContentContains(
+                "operation/wrongCapitalisationJavaRecord",
+                Set.of(DUMMY_INPUT_RECORD),
+                "iN =", ".get(\"IN\")", "iNRecord", "(iN, \"IN\")", ", iNRecord,"
+        );
+    }
+
+    @Test
+    @DisplayName("Input name for a jOOQ record starts with a capital letter")
+    void wrongCapitalisationJOOQRecord() {
+        assertGeneratedContentContains(
+                "operation/wrongCapitalisationJOOQRecord",
+                Set.of(CUSTOMER_INPUT_TABLE),
+                "iN =", ".get(\"IN\")", "iNRecord", "(iN, \"IN\")", ", iNRecord,"
+        );
+    }
+
+    @Test
     @DisplayName("Root-level input Java records")
     void inputJavaRecord() {
         assertGeneratedContentContains(

@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -13,8 +12,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declareArgs;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
@@ -59,21 +57,6 @@ public class FetchMethodGenerator extends DataFetcherMethodGenerator {
         }
 
         return true;
-    }
-
-    /**
-     * @return CodeBlock for declaring the transformer class and calling it on each record input.
-     */
-    private CodeBlock transformInputs(ObjectField field, InputParser parser) {
-        if (!parser.hasRecords()) {
-            if (field.hasServiceReference()) {
-                return declareTransform();
-            }
-
-            return empty();
-        }
-
-        return inputTransform(field.getNonReservedArguments(), processedSchema);
     }
 
     @Override

@@ -43,6 +43,25 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Input name starts with a capital letter")
+    void wrongInputCapitalisation() {
+        assertGeneratedContentContains(
+                "operation/wrongInputCapitalisation",
+                "iN =", ".get(\"IN\")", ", iN,"
+        );
+    }
+
+    @Test
+    @DisplayName("Input name for an input type starts with a capital letter")
+    void wrongInputTypeCapitalisation() {
+        assertGeneratedContentContains(
+                "operation/wrongInputTypeCapitalisation",
+                Set.of(DUMMY_INPUT),
+                "iN =", ".get(\"IN\")", ", iN,"
+        );
+    }
+
+    @Test
     @DisplayName("Root resolver that returns a list")
     void returningList() {
         assertGeneratedContentContains("operation/returningList", "public static DataFetcher<CompletableFuture<List<DummyType>>> query()");

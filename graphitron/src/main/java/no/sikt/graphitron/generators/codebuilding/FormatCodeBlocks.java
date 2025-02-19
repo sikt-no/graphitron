@@ -132,7 +132,7 @@ public class FormatCodeBlocks {
     }
 
     private static CodeBlock recordTransformPart(String varName, String typeName, boolean isJava, boolean isInput) {
-        return CodeBlock.of("$N.$L($N, ", TRANSFORMER_NAME, recordTransformMethod(typeName, isJava, isInput), varName);
+        return CodeBlock.of("$N.$L($N, ", TRANSFORMER_NAME, recordTransformMethod(typeName, isJava, isInput), uncapitalize(varName));
     }
 
     /**

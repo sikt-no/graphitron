@@ -6,6 +6,8 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import java.util.LinkedHashSet;
 import java.util.stream.Collectors;
 
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
+
 
 public class InputCondition {
     private final InputField input;
@@ -68,7 +70,7 @@ public class InputCondition {
 
     public String getNameWithPathString() {
         return namePath.isEmpty()
-                ? (startName.isEmpty() ? input.getName() : startName)
+                ? uncapitalize(startName.isEmpty() ? input.getName() : startName)
                 : (namePath + (hasRecord ? input.getMappingForRecordFieldOverride().asGetCall()
                                          : input.getMappingFromSchemaName().asGetCall()).toString());
     }

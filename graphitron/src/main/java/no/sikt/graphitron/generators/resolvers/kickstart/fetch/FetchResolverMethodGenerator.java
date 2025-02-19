@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.resolvers.kickstart.fetch;
 
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -12,8 +11,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declarePageSize;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
@@ -64,26 +62,11 @@ public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerat
             spec.addParameter(localObject.getGraphClassName(), uncapitalize(localObject.getName()));
         }
 
-        target.getArguments().forEach(input -> spec.addParameter(iterableWrapType(input), input.getName()));
+        target.getArguments().forEach(input -> spec.addParameter(iterableWrapType(input), uncapitalize(input.getName())));
         if (target.hasForwardPagination()) {
             spec.addCode(declarePageSize(target.getFirstDefault()));
         }
         return spec;
-    }
-
-    /**
-     * @return CodeBlock for declaring the transformer class and calling it on each record input.
-     */
-    private CodeBlock transformInputs(ObjectField field, InputParser parser) {
-        if (!parser.hasRecords()) {
-            if (field.hasServiceReference()) {
-                return declareTransform();
-            }
-
-            return empty();
-        }
-
-        return inputTransform(field.getNonReservedArguments(), processedSchema);
     }
 
     @Override

@@ -148,6 +148,21 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     /**
      * @return CodeBlock for declaring the transformer class and calling it on each record input.
      */
+    protected CodeBlock transformInputs(ObjectField field, InputParser parser) {
+        if (!parser.hasRecords()) {
+            if (field.hasServiceReference()) {
+                return declareTransform();
+            }
+
+            return empty();
+        }
+
+        return inputTransform(field.getNonReservedArguments(), processedSchema);
+    }
+
+    /**
+     * @return CodeBlock for declaring the transformer class and calling it on each record input.
+     */
     protected CodeBlock transformInputs(List<? extends InputField> inputs, boolean hasRecords) {
         if (!hasRecords) {
             return declareTransform();

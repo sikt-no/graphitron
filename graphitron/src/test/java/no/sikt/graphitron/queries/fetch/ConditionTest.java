@@ -146,7 +146,7 @@ public class ConditionTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Overriding condition on a parameter of input type")
+    @DisplayName("Overriding condition on an input type parameter")
     void onInputParamOverride() {
         assertGeneratedContentContains(
                 "onInputParamOverride", Set.of(STAFF, NAME_INPUT),
@@ -391,6 +391,29 @@ public class ConditionTest extends GeneratorTest {
         assertGeneratedContentContains("onFieldReturningSingleTableInterface",
                 ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()",
                 ".and(no.sikt.graphitron.codereferences.conditions.QueryAddressInterfaceCondition.address(_address, filter.getPostalCode()"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on a capitalised parameter")
+    void onParamWithWrongCapitalisation() {
+        assertGeneratedContentContains(
+                "onParamWithWrongCapitalisation",
+                ", String sTRING,",
+                ".where(_customer.EMAIL.eq(sTRING))" +
+                        ".and(no.sikt.graphitron.codereferences.conditions.QueryCustomerCondition.email(_customer, sTRING)).fetch"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition on a capitalised input type parameter")
+    void onInputParamWithWrongCapitalisation() {
+        assertGeneratedContentContains(
+                "onInputParamWithWrongCapitalisation", Set.of(STAFF, NAME_INPUT),
+                ", NameInput nAME,",
+                "_staff.FIRST_NAME.eq(nAME.getFirstname())",
+                "_staff.LAST_NAME.eq(nAME.getLastname())",
+                ".name(_staff, nAME.getFirstname(), nAME.getLastname())"
         );
     }
 }

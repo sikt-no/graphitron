@@ -16,6 +16,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedReco
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.PAGE_SIZE_NAME;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
  * A helper class for handling input type data for services and mutations.
@@ -70,13 +71,13 @@ public class InputParser {
         for (var in : specInputs) {
             var inType = schema.getInputType(in);
             if (inType == null) {
-                serviceInputs.put(in.getName(), in);
+                serviceInputs.put(uncapitalize(in.getName()), in);
             } else if (inType.hasTable() && !inType.hasJavaRecordReference()) {
                 serviceInputs.putAll(parseInputs(in, schema, 0));
             } else if (inType.hasJavaRecordReference()) {
                 serviceInputs.put(asListedRecordNameIf(in.getName(), in.isIterableWrapped()), in);
             } else {
-                serviceInputs.put(in.getName(), in);
+                serviceInputs.put(uncapitalize(in.getName()), in);
             }
         }
         return serviceInputs;
