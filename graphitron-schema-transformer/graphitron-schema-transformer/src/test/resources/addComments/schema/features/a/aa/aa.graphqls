@@ -1,0 +1,7 @@
+extend input Input {
+  id2: ID
+}
+
+extend type InnerObject {
+  id2: ID
+}

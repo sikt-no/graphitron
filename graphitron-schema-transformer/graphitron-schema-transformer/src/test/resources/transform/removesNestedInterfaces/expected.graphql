@@ -1,0 +1,11 @@
+interface Inter3 {
+  f0: String
+}
+
+type Query {
+  q1: T1 # This one should be kept since it has another usage.
+}
+
+type T1 implements Inter3 {
+  f0: String
+}

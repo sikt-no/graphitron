@@ -27,6 +27,7 @@
         <module>graphitron-jakarta-servlet</module>
         <module>graphitron</module>
         <module>graphitron-maven-plugin</module>
+        <module>graphitron-schema-transformer</module>
     </modules>
 
     <properties>

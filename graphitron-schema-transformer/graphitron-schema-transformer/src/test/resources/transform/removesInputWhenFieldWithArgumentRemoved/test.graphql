@@ -1,0 +1,12 @@
+input I0 {
+  i1: I1
+}
+
+input I1 {
+  f0: String
+}
+
+type Query {
+  q0(i0: I0): ID @feature(flags: "F0")
+  q1(i1: I1): ID
+}

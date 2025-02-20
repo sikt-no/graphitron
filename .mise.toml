@@ -19,5 +19,5 @@ description = "Run maven install, including graphitron-example"
 run = "mvn install -Pinclude-graphitron-example"
 
 [tasks.start]
-description = "Start graphitron-example-server (quarkus:run)"
-run = "mvn quarkus:run -Pinclude-graphitron-example -pl :graphitron-example-server"
+description = "Start graphitron-example-server (quarkus:dev)"
+run = "mvn quarkus:dev -Pinclude-graphitron-example -pl :graphitron-example-server"

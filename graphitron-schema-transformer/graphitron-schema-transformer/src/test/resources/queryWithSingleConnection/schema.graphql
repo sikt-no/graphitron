@@ -1,0 +1,12 @@
+type Query {
+  someType(
+    param: String!,
+    first: Int = 100,
+    after: String
+  ): [SomeType] @asConnection
+}
+
+type SomeType implements Node {
+  id: ID!
+  field: String!
+}

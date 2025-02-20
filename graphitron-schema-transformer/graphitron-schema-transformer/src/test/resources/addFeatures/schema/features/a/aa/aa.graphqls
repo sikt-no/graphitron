@@ -1,0 +1,9 @@
+extend input Input {
+  double: ID
+  triple: ID @feature(flags: "FLAG")
+}
+
+extend type InnerObject {
+  double: ID
+  triple: ID @feature(flags: "FLAG")
+}
