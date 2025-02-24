@@ -244,7 +244,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.5.0</version>
+                    <version>3.5.2</version>
                     <configuration>
                         <useModulePath>false</useModulePath>
                     </configuration>
@@ -432,7 +432,7 @@
             </properties>
         </profile>
         <profile>
-            <!-- By default, we don't want to include the example project as this requires java 21 and impacts the overall build time -->
+            <!-- By default, we don't want to include the example project as this runs integration tests that impact the overall build time -->
             <id>include-graphitron-example</id>
             <activation>
                 <activeByDefault>false</activeByDefault>

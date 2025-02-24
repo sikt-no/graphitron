@@ -1,0 +1,15 @@
+{
+    "data": {
+        "customers": {
+            "totalCount": 599,
+            "nodes": [
+                {
+                    "id": "1"
+                },
+                {
+                    "id": "2"
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "data": {
+        "customers": {
+            "pageInfo": {
+                "endCursor": "WzEwMF0",
+                "hasNextPage": true,
+                "hasPreviousPage": false,
+                "startCursor": "WzFd"
+            }
+        }
+    }
+}

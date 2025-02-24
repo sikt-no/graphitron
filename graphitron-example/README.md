@@ -19,19 +19,19 @@ To quickly get started with the Graphitron example, follow these steps (requires
 1. **Start the Sakila Postgres database:**
 
     ```sh
-    docker compose up -d
+    mise r sakila
     ```
 
 2. **Build the project:**
 
     ```sh
-    mise run build
+    mise r build-all
     ```
 
 3. **Start the Graphitron example server:**
 
     ```sh
-    mise run start
+    mise r start
     ```
 
 ## Submodule structure
@@ -55,3 +55,13 @@ This module contains the server that will run the generated resolvers. It is bas
 GraphiQL is available at [http://localhost:8088/graphiql](http://localhost:8088/graphiql). This is a graphical interface that can be used to query the server.
 
 The server requires a running Postgres database with the Sakila schema, and will return data from this database based on the queries.
+
+## Tests
+The project includes integration tests to verify the functionality of the generated GraphQL resolvers. These tests are located in the [graphitron-example-server](graphitron-example-server/src/test/java) module.
+There are two types of tests:
+ - **Approval** - tests that verify queries against the server and compare the results to expected results. To add a new test, simply add a new query to the `src/test/resources/approval/queries` directory. 
+ - **Match** - these tests are more flexible and can be used to verify the results of a query against a custom matcher, e.g. hamcrest. 
+
+The tests use the Quarkus test framework and will be run when building the project with `mise r build-all`.
+
+The tests require the Sakila database to be running. See the [Quickstart](#quickstart) section for instructions on how to start the database.
