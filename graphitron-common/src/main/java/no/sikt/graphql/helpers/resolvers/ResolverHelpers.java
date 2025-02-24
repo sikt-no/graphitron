@@ -11,6 +11,11 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class ResolverHelpers {
+    private final static ObjectMapper MAPPER = new ObjectMapper();
+    static {
+        MAPPER.findAndRegisterModules(); // We really don't want to re-run this every time we map an object.
+    }
+
     public static int getPageSize(Integer first, int max, int defaultMax) {
         return Optional.ofNullable(first).map(it -> Math.min(max, it)).orElse(defaultMax);
     }
@@ -25,11 +30,18 @@ public class ResolverHelpers {
     }
 
     public static <T> T transformDTO(Object data, Class<T> targetClass) {
-        return new ObjectMapper().convertValue(data, targetClass);
+        if (data == null) {
+            return null;
+        }
+
+        return MAPPER.convertValue(data, targetClass);
     }
 
     public static <T> List<T> transformDTOList(Object data, Class<T> targetClass) {
-        var mapper = new ObjectMapper();
-        return ((List<Object>) data).stream().map(it -> mapper.convertValue(it, targetClass)).toList();
+        if (data == null) {
+            return null;
+        }
+
+        return ((List<Object>) data).stream().map(it -> MAPPER.convertValue(it, targetClass)).toList();
     }
 }
