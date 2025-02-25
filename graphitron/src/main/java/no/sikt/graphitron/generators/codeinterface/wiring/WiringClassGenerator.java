@@ -10,16 +10,19 @@ import java.util.List;
  * Class generator for the RuntimeWiring class.
  */
 public class WiringClassGenerator extends AbstractClassGenerator {
-    public final static String SAVE_DIRECTORY_NAME = "wiring", FILE_NAME = "Wiring";
-    private final WiringMethodGenerator generator;
+    public final static String SAVE_DIRECTORY_NAME = "wiring", CLASS_NAME = "Wiring";
+    private final List<? extends WiringBuilderMethodGenerator> generators;
 
     public WiringClassGenerator(List<ClassGenerator> generators, boolean includeNode) {
-        generator = new WiringMethodGenerator(generators, includeNode);
+        this.generators = List.of(
+                new WiringBuilderMethodGenerator(generators, includeNode),
+                new WiringMethodGenerator(includeNode)
+        );
     }
 
     @Override
     public List<TypeSpec> generateAll() {
-        return List.of(getSpec(FILE_NAME, generator).build());
+        return List.of(getSpec(CLASS_NAME, generators).build());
     }
 
     @Override

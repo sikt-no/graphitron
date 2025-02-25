@@ -2,7 +2,9 @@ package no.sikt.graphitron.generate;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.CodeInterfaceClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.TypeRegistryClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
@@ -16,7 +18,6 @@ import no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers.TypeRe
 import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.fetch.FetchResolverClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.update.UpdateResolverClassGenerator;
-import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,7 +68,8 @@ public class GraphQLGenerator {
                 new ExceptionToErrorMappingProviderGenerator(processedSchema),
                 new EntityFetcherClassGenerator(processedSchema),
                 new TypeResolverClassGenerator(processedSchema),
-                new TypeRegistryClassGenerator()
+                new TypeRegistryClassGenerator(),
+                new CodeInterfaceClassGenerator(processedSchema.nodeExists())
         );
         return Stream.concat(
                 generators.stream(),

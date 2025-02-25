@@ -8,10 +8,9 @@ import no.sikt.graphql.directives.GenerationDirectiveParam;
 
 import java.util.List;
 
-import static no.sikt.graphql.directives.DirectiveHelpers.*;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.CLASSNAME;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.METHOD;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
+import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentObjectFields;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 
 /**
  * Simple representation of a code reference input type.

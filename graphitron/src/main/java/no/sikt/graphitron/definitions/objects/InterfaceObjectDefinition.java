@@ -3,7 +3,6 @@ package no.sikt.graphitron.definitions.objects;
 import com.palantir.javapoet.ClassName;
 import graphql.language.InterfaceTypeDefinition;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.helpers.ClassReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.keys.EntityKeySet;

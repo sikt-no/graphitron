@@ -6,7 +6,6 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Virtual field for when we want to have a virtual source for code generation.

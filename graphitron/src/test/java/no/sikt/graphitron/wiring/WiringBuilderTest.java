@@ -14,8 +14,8 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
-@DisplayName("Wiring - Generation of the method returning a runtime wiring")
-public class WiringTest extends GeneratorTest {
+@DisplayName("Wiring - Generation of the method returning a runtime wiring builder")
+public class WiringBuilderTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
         return "wiring";
@@ -38,7 +38,7 @@ public class WiringTest extends GeneratorTest {
     void node() {
         assertGeneratedContentContains(
                 "node", Set.of(NODE),
-                "getRuntimeWiring(NodeIdHandler nodeIdHandler)",
+                "getRuntimeWiringBuilder(NodeIdHandler nodeIdHandler)",
                 ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdHandler)"
         );
     }
@@ -46,7 +46,7 @@ public class WiringTest extends GeneratorTest {
     @Test
     @DisplayName("No fetchers are generated")
     void noFetchers() {
-        assertGeneratedContentContains("noFetchers", ".newRuntimeWiring();return wiring.build();");
+        assertGeneratedContentContains("noFetchers", ".newRuntimeWiring();return wiring;");
     }
 
     @Test

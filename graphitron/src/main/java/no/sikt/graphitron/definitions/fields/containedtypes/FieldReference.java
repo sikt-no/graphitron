@@ -10,7 +10,8 @@ import no.sikt.graphitron.generators.context.JoinListSequence;
 
 import java.util.List;
 
-import static no.sikt.graphql.directives.DirectiveHelpers.*;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentObjectFields;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
 import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 

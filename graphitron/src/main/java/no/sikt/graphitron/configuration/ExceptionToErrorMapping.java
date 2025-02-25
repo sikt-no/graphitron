@@ -1,6 +1,7 @@
 package no.sikt.graphitron.configuration;
 
 import org.jetbrains.annotations.Nullable;
+
 import java.util.Objects;
 import java.util.Optional;
 

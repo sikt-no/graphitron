@@ -85,6 +85,7 @@ public enum JavaPoetClassName {
     ABSTRACT_TRANSFORMER(AbstractTransformer.class),
     JSON_JOOQ(JSON.class),
     RUNTIME_WIRING(RuntimeWiring.class),
+    RUNTIME_WIRING_BUILDER(RuntimeWiring.Builder.class),
     TYPE_RUNTIME_WIRING(TypeRuntimeWiring.class),
     TYPE_RESOLVER(TypeResolver.class),
     TYPE_DEFINITION_REGISTRY(TypeDefinitionRegistry.class),

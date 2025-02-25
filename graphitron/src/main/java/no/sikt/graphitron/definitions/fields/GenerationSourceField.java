@@ -19,7 +19,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
-import static no.sikt.graphql.directives.DirectiveHelpers.*;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentBoolean;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.sikt.graphql.directives.GenerationDirective.SERVICE;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;

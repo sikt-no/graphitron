@@ -3,12 +3,9 @@ package no.sikt.graphitron.generators.codeinterface;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.generators.abstractions.MethodGenerator;
-import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.generators.abstractions.SimpleMethodGenerator;
 
 import javax.lang.model.element.Modifier;
-import java.util.List;
-import java.util.Set;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SCHEMA_READER;
@@ -17,9 +14,10 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.TYPE_DEFINITION_REGI
 /**
  * This class generates code for the Type Registry fetching method.
  */
-public class TypeRegistryMethodGenerator implements MethodGenerator {
+public class TypeRegistryMethodGenerator extends SimpleMethodGenerator {
     public static final String METHOD_NAME = "getTypeRegistry";
 
+    @Override
     public MethodSpec generate() {
         var files = GeneratorConfig
                 .schemaFiles()
@@ -41,15 +39,5 @@ public class TypeRegistryMethodGenerator implements MethodGenerator {
                         )
                 )  // Note that this annoyingly produces too many indents. Blame faulty indent handling. Subsequent statements would have correct indent though.
                 .build();
-    }
-
-    @Override
-    public List<MethodSpec> generateAll() {
-        return List.of(generate());
-    }
-
-    @Override
-    public Set<Dependency> getDependencySet() {
-        return Set.of();
     }
 }
