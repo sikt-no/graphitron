@@ -38,7 +38,9 @@ public class GraphitronTest extends GeneratorTest {
                 "getRuntimeWiringBuilder(NodeIdHandler nodeIdHandler",
                 ".getRuntimeWiringBuilder(nodeIdHandler",
                 "getRuntimeWiring(NodeIdHandler nodeIdHandler",
-                "return getRuntimeWiringBuilder(nodeIdHandler"
+                "return getRuntimeWiringBuilder(nodeIdHandler",
+                "getSchema(NodeIdHandler nodeIdHandler)",
+                "= getRuntimeWiringBuilder(nodeIdHandler)"
         );
     }
 }

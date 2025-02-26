@@ -2,8 +2,10 @@ package no.sikt.graphitron.mappings;
 
 import com.palantir.javapoet.ClassName;
 import graphql.GraphQLError;
+import graphql.schema.GraphQLSchema;
 import graphql.schema.TypeResolver;
 import graphql.schema.idl.RuntimeWiring;
+import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.TypeRuntimeWiring;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
@@ -89,7 +91,9 @@ public enum JavaPoetClassName {
     TYPE_RUNTIME_WIRING(TypeRuntimeWiring.class),
     TYPE_RESOLVER(TypeResolver.class),
     TYPE_DEFINITION_REGISTRY(TypeDefinitionRegistry.class),
-    SCHEMA_READER(SchemaReadingHelper.class);
+    SCHEMA_READER(SchemaReadingHelper.class),
+    GRAPHQL_SCHEMA(GraphQLSchema.class),
+    SCHEMA_GENERATOR(SchemaGenerator.class);
 
     public final ClassName className;
 

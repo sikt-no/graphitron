@@ -25,7 +25,8 @@ public class CodeInterfaceClassGenerator extends AbstractClassGenerator {
                         List.of(
                                 new CodeInterfaceTypeRegistryMethodGenerator(),
                                 new CodeInterfaceBuilderMethodGenerator(includeNode),
-                                new WiringMethodGenerator(includeNode)
+                                new WiringMethodGenerator(includeNode),
+                                new CodeInterfaceSchemaMethodGenerator(includeNode)
                         )
                 ).build()
         );

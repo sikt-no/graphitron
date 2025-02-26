@@ -3,7 +3,7 @@ package no.sikt.graphitron.generate;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.CodeInterfaceClassGenerator;
-import no.sikt.graphitron.generators.codeinterface.TypeRegistryClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;

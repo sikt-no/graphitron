@@ -2,6 +2,8 @@ package no.sikt.graphitron.generators.codeinterface;
 
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.abstractions.SimpleMethodGenerator;
+import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryMethodGenerator;
 
 import javax.lang.model.element.Modifier;
 

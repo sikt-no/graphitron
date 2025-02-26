@@ -2,7 +2,7 @@ package no.sikt.graphitron.typeregistry;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.codeinterface.TypeRegistryClassGenerator;
+import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

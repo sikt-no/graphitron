@@ -1,4 +1,4 @@
-package no.sikt.graphitron.generators.codeinterface;
+package no.sikt.graphitron.generators.codeinterface.typeregistry;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;

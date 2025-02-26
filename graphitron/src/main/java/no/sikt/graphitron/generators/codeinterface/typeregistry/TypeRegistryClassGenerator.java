@@ -1,4 +1,4 @@
-package no.sikt.graphitron.generators.codeinterface;
+package no.sikt.graphitron.generators.codeinterface.typeregistry;
 
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
