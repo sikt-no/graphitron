@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: sakiladb/postgres:latest
+    image: sakiladb/postgres:15
     container_name: sakila_postgres
     environment:
       POSTGRES_USER: sakila

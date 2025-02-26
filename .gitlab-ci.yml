@@ -12,7 +12,10 @@ include:
   variables:
     DOCKER_REPO: artifactory.sikt.no/docker-common-local
     MAVEN_GOALS: "clean deploy"
-    MAVEN_OPTS: "-Dmaven.repo.local=$MAVEN_REPO -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN -Dorg.slf4j.simpleLogger.showDateTime=true"
+    MAVEN_OPTS: >
+      -Dmaven.repo.local=$MAVEN_REPO 
+      -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN 
+      -Dorg.slf4j.simpleLogger.showDateTime=true
     MAVEN_CLI_OPTS: "-s ../ci_settings.xml --batch-mode --errors --fail-at-end --show-version"
   script:
   - echo "$ARTIFACTORY_PASSWORD" | docker login -u "$ARTIFACTORY_USERNAME" --password-stdin $DOCKER_REPO
@@ -21,7 +24,7 @@ include:
     # Maven bygg
     # Vi må oppgi revision og changelist for at flatten-maven-plugin skal funke.
     REVISION=$(awk -F '[<>]' '/<revision>/ {print $3}' pom.xml)
-    mvn ${MAVEN_CLI_OPTS} -Dgitlab-build -Drevision=${REVISION} -Dchangelist=${CHANGELIST} ${MAVEN_GOALS}
+    mvn ${MAVEN_CLI_OPTS} -Dgitlab-build -Drevision=${REVISION} -Dchangelist=${CHANGELIST} -Dquarkus.test.profile=ci ${MAVEN_GOALS}
 
 mvn-build:
   extends: .mvn-build-base

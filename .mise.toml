@@ -2,22 +2,22 @@
 maven = "3.9.9"
 java = "17"
 
-[tasks.sakila]
-description = "Runs the sakila test database via docker compose"
-run = "docker compose -f ./graphitron-example/docker-compose.yml up"
-
 [tasks.clean]
 description = "Maven clean"
-run = "mvn clean -Pinclude-graphitron-example"
+run = "mvn clean"
 
 [tasks.build]
 description = "Run maven install"
 run = "mvn install"
 
-[tasks.build-all]
-description = "Run maven install, including graphitron-example"
-run = "mvn install -Pinclude-graphitron-example"
+[tasks.sakila]
+description = "Runs the sakila test database via docker compose"
+run = "docker compose -f ./graphitron-example/graphitron-example-db/docker-compose.yml up"
+
+[tasks.jooq]
+description = "Make jOOQ generate code from the sakila database schema"
+run = "mvn clean install -Pjooq-codegen -pl :graphitron-example-db"
 
 [tasks.start]
 description = "Start graphitron-example-server (quarkus:dev)"
-run = "mvn quarkus:dev -Pinclude-graphitron-example -pl :graphitron-example-server"
+run = "mvn quarkus:dev -pl :graphitron-example-server"

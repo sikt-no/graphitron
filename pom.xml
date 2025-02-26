@@ -21,13 +21,14 @@
     <version>${revision}${changelist}</version>
 
     <modules>
+        <module>graphitron</module>
         <module>graphitron-error-handling-javax</module>
         <module>graphitron-error-handling-jakarta</module>
         <module>graphitron-common</module>
         <module>graphitron-jakarta-servlet</module>
-        <module>graphitron</module>
         <module>graphitron-maven-plugin</module>
         <module>graphitron-schema-transformer</module>
+        <module>graphitron-example</module>
     </modules>
 
     <properties>
@@ -424,16 +425,6 @@
                 <maven.test.skip>true</maven.test.skip>
                 <maven.javadoc.skip>true</maven.javadoc.skip>
             </properties>
-        </profile>
-        <profile>
-            <!-- By default, we don't want to include the example project as this runs integration tests that impact the overall build time -->
-            <id>include-graphitron-example</id>
-            <activation>
-                <activeByDefault>false</activeByDefault>
-            </activation>
-            <modules>
-                <module>graphitron-example</module>
-            </modules>
         </profile>
     </profiles>
 </project>
