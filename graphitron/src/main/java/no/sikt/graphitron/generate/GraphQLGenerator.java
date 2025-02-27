@@ -46,7 +46,7 @@ public class GraphQLGenerator {
      * Execute the code generation on the default set of generators and logging settings.
      */
     public static void generate() {
-        var processedSchema = getProcessedSchema();
+        var processedSchema = getProcessedSchema(true);
         processedSchema.validate();
         generate(getGenerators(processedSchema));
     }
@@ -99,9 +99,18 @@ public class GraphQLGenerator {
      * @return A Graphitron-interpreted version of the schema files set in {@link GeneratorConfig}.
      */
     public static ProcessedSchema getProcessedSchema() {
-        // GeneratorConfig.loadProperties();
+        return getProcessedSchema(false);
+    }
+
+    /**
+     * @param verbose Should the files read be logged?
+     * @return A Graphitron-interpreted version of the schema files set in {@link GeneratorConfig}.
+     */
+    public static ProcessedSchema getProcessedSchema(boolean verbose) {
         var schemaLocations = GeneratorConfig.schemaFiles();
-        LOGGER.info("Reading graphql schemas {}", schemaLocations);
+        if (verbose) {
+            LOGGER.info("Reading graphql schemas {}", schemaLocations);
+        }
         return new ProcessedSchema(getTypeDefinitionRegistry(schemaLocations));
     }
 }
