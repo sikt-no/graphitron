@@ -6,17 +6,18 @@ workflow:
 include:
   - component: gitlab.sikt.no/platon/ci-components/artifactory-auth/artifactory-auth@1.3.2
 
-.mvn-build-base:
+mvn-build:
   extends: .artifactory-auth
   image: artifactory.sikt.no/docker/maven-docker:3.9-eclipse-temurin-17
   variables:
     DOCKER_REPO: artifactory.sikt.no/docker-common-local
     MAVEN_GOALS: "clean deploy"
     MAVEN_OPTS: >
-      -Dmaven.repo.local=$MAVEN_REPO 
-      -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN 
+      -Dmaven.repo.local=$MAVEN_REPO
+      -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN
       -Dorg.slf4j.simpleLogger.showDateTime=true
     MAVEN_CLI_OPTS: "-s ../ci_settings.xml --batch-mode --errors --fail-at-end --show-version"
+    CHANGELIST: "-SNAPSHOT"
   script:
   - echo "$ARTIFACTORY_PASSWORD" | docker login -u "$ARTIFACTORY_USERNAME" --password-stdin $DOCKER_REPO
   - |
@@ -25,17 +26,18 @@ include:
     # Vi må oppgi revision og changelist for at flatten-maven-plugin skal funke.
     REVISION=$(awk -F '[<>]' '/<revision>/ {print $3}' pom.xml)
     mvn ${MAVEN_CLI_OPTS} -Dgitlab-build -Drevision=${REVISION} -Dchangelist=${CHANGELIST} -Dquarkus.test.profile=ci ${MAVEN_GOALS}
-
-mvn-build:
-  extends: .mvn-build-base
+  artifacts:
+    when: always
+    paths:
+      # Resultat fra testkjøringer
+      - graphitron/**/target/*-reports/*.xml
+    expire_in: 1 week
+    reports:
+      junit:
+        # Resultat fra testkjøringer
+        - graphitron/**/*-reports/*.xml
   rules:
   - if: $CI_COMMIT_REF_NAME == "main"
     variables:
       CHANGELIST: ".r${CI_PIPELINE_IID}"
-
-mvn-build-branch:
-  extends: .mvn-build-base
-  rules:
-  - if: $CI_COMMIT_REF_NAME != "main"
-    variables:
-      CHANGELIST: "-SNAPSHOT"
+  - when: on_success
