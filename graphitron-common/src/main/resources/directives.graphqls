@@ -22,8 +22,10 @@ directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT
 
 """
 The @externalField directive indicates that the annotated field is
-retrieved using a static extension method implemented in Java.
+retrieved using a static method implemented in Java.
 This is typically used when the field's value requires custom logic implemented in Java."
+
+For more information, see documentation [here](https://gitlab.sikt.no/fs/fs-plattform/-/tree/main/graphitron/graphitron?ref_type=heads#external-field).
 """
 directive @externalField on FIELD_DEFINITION
 
