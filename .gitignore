@@ -1,2 +1,18 @@
+# JetBrains IDE
+.idea/
+*.iml
+
+# Compiled Java class files
+*.class
+
+# Maven
+target/
+dist/
+.flattened-pom.xml
+/pom.xml.versionsBackup
+
+# Local mise config
+.mise.local.toml
+
 src/test/java/no/sikt/graphitron/jooq/generated/
 /graphitron-example/graphitron-example-server/.approval_tests**
