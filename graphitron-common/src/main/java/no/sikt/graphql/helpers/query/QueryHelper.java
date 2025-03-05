@@ -4,10 +4,9 @@ import org.jooq.Record;
 import org.jooq.*;
 import org.jooq.impl.DSL;
 import org.jooq.impl.TableImpl;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
-import javax.json.Json;
-import javax.json.JsonString;
-import java.io.StringReader;
 import java.lang.constant.Constable;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -39,14 +38,7 @@ public class QueryHelper {
 
         try {
             var jsonText = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
-            var jsonReader = Json.createReader(new StringReader(jsonText));
-            Object[] array = jsonReader.readArray()
-                    .stream()
-                    .map(it -> it instanceof JsonString
-                            ? ((JsonString) it).getString()
-                            : it.toString())
-                    .toArray(String[]::new);
-            jsonReader.close();
+            Object[] array = new JSONArray(jsonText).toList().toArray();
 
             var record = ctx.newRecord(fields);
             record.fromArray(array);
@@ -83,19 +75,10 @@ public class QueryHelper {
 
         try {
             var jsonText = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
-            var jsonReader = Json.createReader(new StringReader(jsonText));
+            var jsonObject = new JSONObject(jsonText);
 
-            var val = jsonReader.readObject();
-
-            Object[] array = val.getJsonArray("fields")
-                    .stream()
-                    .map(it -> it instanceof JsonString
-                            ? ((JsonString) it).getString()
-                            : it.toString())
-                    .toArray(String[]::new);
-            jsonReader.close();
-
-            String typeName = val.getString("typeName");
+            Object[] array = jsonObject.getJSONArray("fields").toList().toArray();
+            String typeName = jsonObject.getString("typeName");
 
             var fields = Stream.of(orderByFields.get(typeName))
                     .map(it -> it instanceof Field ? (Field<?>) it : ((SortField<?>) it).$field())
