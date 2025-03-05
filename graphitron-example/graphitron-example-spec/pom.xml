@@ -14,7 +14,7 @@
     <properties>
         <outputDirectory>${project.build.directory}/generated-sources</outputDirectory>
         <schemaDirectory>${project.basedir}/src/main/resources/graphql/</schemaDirectory>
-        <graphitronDirectivesSchemaDirectory>${project.build.directory}/graphitron/schema</graphitronDirectivesSchemaDirectory>
+        <directivesDirectory>${project.build.directory}/graphitron/schema</directivesDirectory>
         <generatedCodePackage>no.sikt.graphitron.example.generated</generatedCodePackage>
         <generatedJooqPackage>${generatedCodePackage}.jooq</generatedJooqPackage>
         <generatedGraphitronPackage>${generatedCodePackage}.graphitron</generatedGraphitronPackage>
@@ -60,8 +60,8 @@
                             <goal>unpack-dependencies</goal>
                         </goals>
                         <configuration>
-                            <includeArtifactIds>graphitron</includeArtifactIds>
-                            <outputDirectory>${graphitronDirectivesSchemaDirectory}</outputDirectory>
+                            <includeArtifactIds>graphitron-common</includeArtifactIds>
+                            <outputDirectory>${directivesDirectory}</outputDirectory>
                             <includes>directives.graphqls</includes>
                         </configuration>
                     </execution>
@@ -75,6 +75,7 @@
                 <configuration>
                     <schemaFiles>
                         <schemaFile>${schemaDirectory}/schema.graphqls</schemaFile>
+                        <schemaFile>${directivesDirectory}/directives.graphqls</schemaFile>
                     </schemaFiles>
                     <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                     <maxAllowedPageSize>1000</maxAllowedPageSize>
