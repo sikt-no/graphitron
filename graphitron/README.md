@@ -1,25 +1,34 @@
 # Graphitron
+This is a code generation tool that implements GraphQL schemas by tying
+schemas to underlying database models. Graphitron creates complete or partial resolver implementations from GraphQL-schemas
+using Java and [jOOQ](https://www.jooq.org/).
 
-Graphitron is a code generation tool that implements GraphQL schemas by tying
-schemas to underlying database models
+## Features
+* Generate the GraphQL code and database queries needed to resolve a GraphQL schema with a set of directives
+  * In many cases, writing backend code can be skipped entirely!
+  * Need more advanced queries? Graphitron provides options for setting custom conditions, sorting, queries and more,
+  while still taking care of the GraphQL-side of things
+  * If needed, code generation can be skipped for individual resolvers
+* Supports Apollo Federation
+* Error handling
 
-**Requirement:**
-
+## Practical Requirements
 - Implement and configure NodeIdHandler
 
-## Implement and configure NodeIdHandler
+### Implement and configure NodeIdHandler
 
-We are in an early phase of implementing an Id handler that aims to ensure
+We are in an early phase of implementing an ID handler that aims to ensure
 global identification.
 
 As of now you are required to include an implementation of NodeIdHandler to be able
 to run Graphitron.
 
-We have provided a step by step guide below to show how you could configure and
+We have provided a step-by-step guide below to show how you could configure and
 implement global identification. The only requirement as of now is that you implement
 the interface NodeIdHandler. How you decide to do the implementation is up to you.
 
 ### For users of kjerneapi-codegen
+> TODO: Move this section somewhere else, FS-specific information does not belong here.
 
 The KjerneJooqGenerator from kjerneapi-codegen already implements this.
 If you're using it, then you only need to create a singleton class as follows:
@@ -34,21 +43,12 @@ public class MyNodeIdHandler implements NodeIdHandler {
 }
 ```
 
-## A GraphQL resolver implementation generator
-Graphitron creates complete or partial resolver implementations from GraphQL-schemas using Java and jOOQ.
-This is done with the provided set of directives for making the necessary connections between types and
-fields in the schema and their equivalents in the DB.
-
-## Special prerequisites
-Graphitron builds on other software for querying databases and doing the basic conversion of schema types to Java types.
-* jOOQ - Graphitron does not generate pure Java/SQL, and instead creates jOOQ implementations.
-* GraphQL-codegen - Graphitron assumes this plugin has been run on the schema beforehand.
-
 ## Maven Settings
 ### Goals
 The _generate_ Maven goal allows Graphitron to be called as part of the build pipeline. It generates all the classes
 that are set to generate in the schema. Additionally, the _watch_ goal can be used locally to watch GraphQL files
-for changes, and regenerate code without having to re-run generation manually each time. This feature is still experimental.
+for changes, and regenerate code without having to re-run generation manually each time.
+This feature is still experimental and may be outdated.
 
 ### Configuration
 In order to find the schema files and any custom methods, Graphitron also provides some configuration options.
@@ -68,6 +68,36 @@ The options are the same for both goals.
     _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
+
+#### Code interface
+Graphitron provides a static generated class for accessing the generated results in a user-friendly way.
+This will be available after the first run of Graphitron codegen.
+
+Note that Graphitron does not have the functionality for properly wiring scalars (yet).
+Until ID handling gets another rework on our end, a [nodeIdHandler](#implement-and-configure-nodeidhandler)
+must be passed to most of these methods.
+
+Here are a few examples of how one can retrieve schema-related code for further use:
+
+```java
+// Get the schema with all wiring included. Note: Only useful if you do not use custom scalars right now.
+GraphQLSchema schema = Graphitron.getSchema(nodeIdHandler);
+```
+
+```java
+// Get the wiring for the generated code.
+RuntimeWiring runtimeWiring = Graphitron.getRuntimeWiring(nodeIdHandler);
+```
+
+```java
+// Get the wiring for the generated code as a builder. Equivalent to the getRuntimeWiring, but skips the .build() call at the end. Add your scalars to this.
+RuntimeWiring.Builder runtimeWiringBuilder = Graphitron.getRuntimeWiringBuilder(nodeIdHandler);
+```
+
+```java
+// Get the type registry. You need this to build a GraphQLSchema.
+TypeDefinitionRegistry registry = Graphitron.getTypeRegistry();
+```
 
 #### Code references
 * _externalReferences_ - List of references to classes that can be applied through certain directives. Note that this is being deprecated in favor of using the actual className in the directives.
@@ -91,7 +121,7 @@ Example of importing a package through the configuration:
 ```xml
 <externalReferenceImports>
     <package>some.path</package>
-<externalReferenceImports>
+</externalReferenceImports>
 ```
 
 Example of applying a global transform in the POM:
@@ -127,14 +157,12 @@ Example of extending/customizing certain classes:
 #### splitQuery directive
 Applying this to a type reference denotes a split in the generated query/resolver.
 In other words, this will require the specification of a resolver for the annotated field.
-Should match the splitting directive used by the graphql-codegen-plugin(TODO: link readme) so that the generated
-interfaces match the classes produced by Graphitron. Fields in the Query and Mutation types, as well as fields with arguments, do not require this directive, as
+Fields in the Query and Mutation types, as well as fields with arguments, do not require this directive, as
 they are always considered start points for resolvers.
 
 In this example, the code generation would create the classes _ATypeDBQueries_ and _ATypeGeneratedResolver_, containing
-the resolver code required to fetch _OtherType_ given _AType_. _ATypeGeneratedResolver_ will be an implementation of
-_ATypeResolver_(created by graphql-codegen). Note that this example would not result in working code as we have not
-specified any tables to map to yet.
+the resolver code required to fetch _OtherType_ given _AType_.
+Note that this example would not work in practice as we have not specified any tables to map to yet.
 ```graphql
 type AType {
   otherType: OtherType @splitQuery # Build new resolver/query for this field.
@@ -148,9 +176,8 @@ type OtherType {
 #### notGenerated directive
 Set this on any query or mutation type reference that should result in a new resolver in order to
 cancel generation of it.
-Since graphql-codegen still creates interfaces for these, they will have to be implemented manually.
-If a class generated by Graphitron has missing implementations, an abstract class will be generated instead which can be
-further extended with the missing methods.
+Since graphql still requires the datafetchers, they will have to be implemented and wired manually.
+If one is not specified the field will always return null.
 
 ```graphql
 type Query {
@@ -572,9 +599,9 @@ _Resulting code_:
 
 #### Example: Schema with listed input types and condition set _on_ listed input field
 Graphitron does not support more than one level of listed input types, so to be able to generate code for the cases
-where we initially would generate several levels of lists, we instead must declare a override condition before the
+where we initially would generate several levels of lists, we instead must declare an override condition before the
 second listed input in the hierarchy, and then ourselves write subsequent checks in the method we specify for the
-condition. In this case we specify a override condition _on_ a field holding a list of input types. The condition method
+condition. In this case we specify an override condition _on_ a field holding a list of input types. The condition method
 will then be passed this list of input types and further checks on this list will be done in the method.
 
 ```graphql
@@ -602,8 +629,8 @@ _Resulting_code_:
 
 #### Example: Schema with listed input types and condition set on input field _inside_ a list input
 Here we have a schema of several levels of type input, and several of these are contained in lists. As said in previous
-example, Graphitron does not support more than one level of listed input, so we must specify a override condition before
-the second listed input in the hiearchy. Unlike the previous example where the condition was set _on_ a field of listed
+example, Graphitron does not support more than one level of listed input, so we must specify an override condition before
+the second listed input in the hierarchy. Unlike the previous example where the condition was set _on_ a field of listed
 input, we will here show that you also can set the condition on a field _inside_ a list of input type and before the
 second listed input. In this case, each item of the listed input type will be sent separately to the condition method
 for further checks.
@@ -1119,7 +1146,6 @@ Requirements:
 - The `type` where `externalField` is used needs to have a table associated to it
 
 #### Example
-
 
 Say you have a GraphQL schema like this, where you have defined a type with a associated database table, which returns a one field:
 
