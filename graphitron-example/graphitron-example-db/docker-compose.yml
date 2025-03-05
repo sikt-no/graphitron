@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: sakiladb/postgres:15
+    container_name: sakila_postgres
+    environment:
+      POSTGRES_USER: sakila
+      POSTGRES_PASSWORD: p_ssW0rd
+      POSTGRES_DB: sakila
+    ports:
+    - "5433:5432"

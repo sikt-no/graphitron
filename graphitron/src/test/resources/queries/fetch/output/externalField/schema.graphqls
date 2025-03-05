@@ -1,0 +1,9 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  # The field name and table name refers to this method:
+  # no.sikt.graphitron.codereferences.extensionmethods.FirstClass.name(no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer)
+  name: String @externalField
+}

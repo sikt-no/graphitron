@@ -1,0 +1,6 @@
+type Query {
+  query(
+    district1: String! @reference(references: [{table: "ADDRESS"}]) @field(name: "DISTRICT")
+    district2: String! @reference(references: [{table: "ADDRESS"}]) @field(name: "DISTRICT")
+  ): CustomerTable
+}

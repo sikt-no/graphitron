@@ -1,0 +1,23 @@
+type Query {
+  condition1(cityInput: CityInput1): ID @condition(condition: {name: "DUMMY_CONDITION"})
+
+  # Nested case, condition in a resolver.
+  conditionResolver: Store
+}
+
+input CityInput1 {
+  cityId: String! @field(name: "CITY_ID")
+}
+
+type Store @table {
+  id: ID!
+  address(input: AddressInput): Address @splitQuery @condition(condition: {name: "DUMMY_CONDITION"})
+}
+
+input AddressInput {
+  id: ID!
+}
+
+type Address @table {
+  id: ID!
+}

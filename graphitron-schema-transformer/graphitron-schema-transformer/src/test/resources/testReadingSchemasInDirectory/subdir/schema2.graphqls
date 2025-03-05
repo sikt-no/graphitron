@@ -1,0 +1,4 @@
+type SomeType {
+  field: String
+  otherType: OtherType
+}

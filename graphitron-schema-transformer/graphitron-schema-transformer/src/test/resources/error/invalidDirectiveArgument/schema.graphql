@@ -1,0 +1,10 @@
+directive @directiveWithParam(param: String) on FIELD_DEFINITION
+
+type Query {
+    someType: SomeType
+}
+
+type SomeType {
+    fieldWithDirective: String! @directiveWithParam(param: SOMETHING_WRONG)  #param should be string, "SOMETHING_WRONG", not EnumValue
+    otherField: ID!
+}

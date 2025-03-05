@@ -1,0 +1,5 @@
+type Wrapper {
+  id: ID
+
+  query(id: ID): Customer @service(service: {name: "RESOLVER_FETCH_SERVICE"}) @splitQuery
+}

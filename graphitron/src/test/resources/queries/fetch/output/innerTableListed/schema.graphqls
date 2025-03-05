@@ -1,0 +1,11 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  address: [Address]
+}
+
+type Address @table {
+  id: ID
+}

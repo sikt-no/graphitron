@@ -1,0 +1,7 @@
+type Query {
+  query: Film
+}
+
+type Film @table {
+  customer: CustomerTable
+}

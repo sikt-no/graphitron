@@ -1,0 +1,10 @@
+union _Entity = Dummy
+
+type Query {
+  _entities(representations: [_Any!]!): [_Entity]!
+  dummy: Dummy
+}
+
+type Dummy @key(fields: "id") {
+  id: ID
+}

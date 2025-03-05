@@ -1,0 +1,7 @@
+type Query {
+  query(length: Int!): Film
+}
+
+type Film @table {
+  id: ID
+}

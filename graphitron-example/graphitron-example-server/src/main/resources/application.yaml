@@ -1,0 +1,27 @@
+quarkus:
+  http:
+    port: 8088
+  datasource:
+    db-kind: postgresql
+    username: ${quarkus.datasource.devservices.properties.POSTGRES_USER}
+    password: ${quarkus.datasource.devservices.properties.POSTGRES_PASSWORD}
+    jdbc:
+      url: jdbc:postgresql://localhost:${quarkus.datasource.devservices.port}/${quarkus.datasource.devservices.properties.POSTGRES_DB}
+    devservices:
+      enabled: true
+      image-name: sakiladb/postgres:15
+      port: 53143
+      properties:
+        POSTGRES_DB: sakila
+        POSTGRES_USER: sakila
+        POSTGRES_PASSWORD: p_ssW0rd
+
+application:
+  authentication-required: false
+
+# This configuration is used when running tests on CI (GitLab)
+"%ci":
+  quarkus:
+    datasource:
+      jdbc:
+        url: jdbc:postgresql://docker:${quarkus.datasource.devservices.port}/${quarkus.datasource.devservices.properties.POSTGRES_DB}

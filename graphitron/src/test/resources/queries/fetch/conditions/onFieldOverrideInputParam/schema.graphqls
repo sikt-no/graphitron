@@ -1,0 +1,6 @@
+type Query {
+  query(
+    name: NameInput!
+    active: Boolean
+  ) : [Staff] @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "field"}, override: true)
+}

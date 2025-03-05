@@ -1,0 +1,7 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+}

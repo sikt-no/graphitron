@@ -1,0 +1,12 @@
+type Query {
+    query: SomeInterface
+}
+
+interface SomeInterface {
+    customer: CustomerTable
+}
+
+type Payment implements SomeInterface @table {
+    id: ID!
+    customer: CustomerTable
+}

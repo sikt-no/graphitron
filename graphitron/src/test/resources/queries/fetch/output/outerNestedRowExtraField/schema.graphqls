@@ -1,0 +1,8 @@
+type Query {
+  query: Wrapper
+}
+
+type Wrapper {
+  email: String
+  customer: CustomerTable
+}

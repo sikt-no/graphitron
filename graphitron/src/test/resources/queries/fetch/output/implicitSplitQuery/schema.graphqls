@@ -1,0 +1,5 @@
+type Wrapper {
+  id: ID
+
+  query(lastName: String @field(name: "LAST_NAME")): CustomerTable
+}

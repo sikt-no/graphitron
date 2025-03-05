@@ -1,0 +1,6 @@
+<!--
+Dette skrur på automatisk bean discovery mode i denne modulen. Uten dette klarer ikke
+Quarkus å gjøre dependency injection av den genererte graphql-implementasjonen.
+-->
+
+<beans />

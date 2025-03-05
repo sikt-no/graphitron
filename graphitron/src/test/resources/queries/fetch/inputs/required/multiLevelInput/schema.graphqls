@@ -1,0 +1,19 @@
+type Query {
+  multiLevelInput(
+    staff: StaffInput!
+  ) : [Staff]
+}
+
+input StaffInput {
+  info: ContactInfoInput!
+  active: Boolean!
+}
+
+input ContactInfoInput {
+  name: NameInput!
+  jobEmail: EmailInput!
+}
+
+input EmailInput {
+  email: String
+}

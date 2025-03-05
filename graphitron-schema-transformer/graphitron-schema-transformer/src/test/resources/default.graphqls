@@ -1,0 +1,7 @@
+directive @splitQuery on FIELD_DEFINITION
+
+scalar Date
+
+interface Node {
+  id: ID!
+}

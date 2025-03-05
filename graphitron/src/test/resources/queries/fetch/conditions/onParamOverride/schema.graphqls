@@ -1,0 +1,3 @@
+type Query {
+  query(email: String @condition(condition: {name: "QUERY_FETCH_CONDITION"}, override: true)): CustomerTable
+}

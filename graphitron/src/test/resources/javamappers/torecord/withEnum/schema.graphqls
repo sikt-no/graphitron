@@ -1,0 +1,7 @@
+type Query {
+  query(in: Dummy): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input Dummy @record(record: {name: "MAPPER_RECORD_ENUM"}) {
+  e: DummyEnum! @field(name: "enum1")
+}

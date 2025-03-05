@@ -1,0 +1,20 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+  wrapper: Wrapper
+  addresses: [Address!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Wrapper {
+  addressesWrapped: [AddressWrapped!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Address @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID!
+
+  city: AddressCity0
+  cityRecord: AddressCity1
+}

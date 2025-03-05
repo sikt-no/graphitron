@@ -1,0 +1,6 @@
+# With jOOQ converter.
+enum DummyEnumConverted @enum(enumReference: {name: "DUMMY_JOOQ_ENUM"}) {
+    A
+    B
+    C
+}

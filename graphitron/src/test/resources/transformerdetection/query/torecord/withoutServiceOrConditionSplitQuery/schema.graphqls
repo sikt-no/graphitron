@@ -1,0 +1,6 @@
+type Wrapper {
+  id: ID
+
+  customer1(in1: CustomerInputTable): DummyType @splitQuery
+  customer2(in2: DummyInputRecord): DummyType @splitQuery
+}

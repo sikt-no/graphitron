@@ -1,0 +1,29 @@
+interface Inter0 implements Inter1 & Inter2 & Inter3 {
+  f0: String
+}
+
+interface Inter1 implements Inter2 & Inter3 {
+  f0: String
+}
+
+interface Inter2 {
+  f0: String
+}
+
+interface Inter3 {
+  f0: String
+}
+
+type Query {
+  q0: T0 @feature(flags: "F0")
+  q1: T1 # This one should be kept since it has another usage.
+}
+
+type T0 implements Inter0 & Inter1 & Inter2 & Inter3 {
+  f0: String
+}
+
+type T1 implements Inter3 {
+  f0: String
+}
+

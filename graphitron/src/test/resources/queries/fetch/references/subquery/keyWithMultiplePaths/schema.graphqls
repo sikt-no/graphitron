@@ -1,0 +1,11 @@
+type Query {
+  query: Film
+}
+
+type Film @table {
+  language: Language! @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+}
+
+type Language @table {
+  id: ID!
+}

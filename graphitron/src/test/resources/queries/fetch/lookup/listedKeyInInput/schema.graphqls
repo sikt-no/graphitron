@@ -1,0 +1,7 @@
+type Query {
+  query(in: Input): CustomerTable
+}
+
+input Input {
+  id: [ID] @lookupKey
+}

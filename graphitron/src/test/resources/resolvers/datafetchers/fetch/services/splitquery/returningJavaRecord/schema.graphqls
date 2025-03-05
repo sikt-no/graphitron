@@ -1,0 +1,5 @@
+type Wrapper {
+  id: ID
+
+  query: DummyTypeRecord @service(service: {name: "RESOLVER_FETCH_SERVICE", method: "queryJavaRecord"}) @splitQuery
+}

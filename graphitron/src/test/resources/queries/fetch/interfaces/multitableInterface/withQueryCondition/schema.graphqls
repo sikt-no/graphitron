@@ -1,0 +1,15 @@
+type Query {
+  payments(customerId: String): [Payment] @condition(condition: {name: "QUERY_FETCH_PAYMENT_INTERFACE_CONDITION"}, override: true)
+}
+
+interface Payment {
+  amount: Int
+}
+
+type PaymentTypeOne implements Payment @table(name: "PAYMENT_P2007_01") {
+  amount: Int
+}
+
+type PaymentTypeTwo implements Payment @table(name: "PAYMENT_P2007_02") {
+  amount: Int
+}

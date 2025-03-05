@@ -1,0 +1,10 @@
+type Mutation {
+  mutation: Wrapper
+}
+
+type Wrapper @table(name: "Store") {
+  id: ID
+
+  mutation1(input1: DummyInputRecord): DummyTypeRecord @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+  mutation2(input2: CustomerInputTable): CustomerTable @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+}

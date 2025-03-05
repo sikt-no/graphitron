@@ -1,0 +1,13 @@
+type Query {
+  filmC(id: ID!): FilmC
+  filmD(id: ID!): FilmD
+  node(id: ID!): Node
+}
+
+type FilmC implements Node @table(name: "FILM") {
+  id: ID!
+}
+
+type FilmD @table(name: "FILM") {
+  id: ID!
+}

@@ -1,0 +1,12 @@
+type Query {
+  query: [City]
+}
+
+
+type City @table {
+  addesses: [Address]
+}
+
+type Address @table {
+  customers: [CustomerTable]
+}

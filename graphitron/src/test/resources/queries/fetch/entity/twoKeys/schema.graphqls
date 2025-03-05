@@ -1,0 +1,6 @@
+union _Entity = Customer
+
+type Customer @table @key(fields: "id") @key(fields: "first") {
+  id: ID
+  first: String! @field(name: "FIRST_NAME")
+}

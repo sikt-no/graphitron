@@ -1,0 +1,13 @@
+union U = CustomerUnion0 | CustomerUnion1 | CustomerUnion2
+
+type CustomerUnion0 {
+  email: String
+}
+
+type CustomerUnion1 {
+  email: String
+}
+
+type CustomerUnion2 {
+  email: String
+}

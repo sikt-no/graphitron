@@ -1,0 +1,3 @@
+type Query {
+  nodes(ids: [ID!]): [Node]
+}

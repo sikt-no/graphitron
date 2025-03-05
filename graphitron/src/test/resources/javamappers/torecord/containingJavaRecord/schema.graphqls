@@ -1,0 +1,7 @@
+type Query {
+  query(in: Address): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input Address @record(record: {name: "NESTED_RECORD"}) {
+  dummyRecord: DummyInputRecord
+}

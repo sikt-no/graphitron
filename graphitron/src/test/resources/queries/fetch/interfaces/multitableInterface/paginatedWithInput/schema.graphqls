@@ -1,0 +1,25 @@
+type Query {
+  payments(first: Int = 100, after: String, customerId: String @field(name: "CUSTOMER_ID")): PaymentConnection
+}
+
+interface Payment {
+  amount: Int
+}
+
+type PaymentTypeOne implements Payment @table(name: "PAYMENT_P2007_01") {
+  amount: Int
+}
+
+type PaymentTypeTwo implements Payment @table(name: "PAYMENT_P2007_02") {
+  amount: Int
+}
+
+type PaymentConnection {
+  edges: [PaymentConnectionEdge]
+  nodes: [Payment!]!
+}
+
+type PaymentConnectionEdge {
+  cursor: String
+  node: Payment
+}

@@ -1,0 +1,5 @@
+type Wrapper {
+  id: ID
+  query1(input1: DummyInputRecord): DummyTypeRecord @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+  query2(input2: CustomerInputTable): CustomerTable @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+}

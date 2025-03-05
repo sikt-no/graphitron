@@ -1,0 +1,19 @@
+type Query {
+  node(id: ID!): Node # Node interface
+
+  customer: Customer @notGenerated
+  film: Film @notGenerated
+  address: Address @notGenerated
+}
+
+type Customer implements Node @table {
+  id: ID!
+}
+
+type Film implements Node @table {
+  id: ID!
+}
+
+type Address implements Node @table {
+  id: ID!
+}

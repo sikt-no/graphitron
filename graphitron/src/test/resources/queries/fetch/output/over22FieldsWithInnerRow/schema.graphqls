@@ -1,0 +1,34 @@
+type Query {
+  query: Film
+}
+
+type Film @table {
+  title0: String! @field(name: "TITLE")
+  title1: String! @field(name: "TITLE")
+  title2: String! @field(name: "TITLE")
+  title3: String! @field(name: "TITLE")
+  title4: String! @field(name: "TITLE")
+  title5: String! @field(name: "TITLE")
+  title6: String! @field(name: "TITLE")
+  title7: String! @field(name: "TITLE")
+  title8: String! @field(name: "TITLE")
+  title9: String! @field(name: "TITLE")
+  title10: String! @field(name: "TITLE")
+  title11: String! @field(name: "TITLE")
+  title12: String! @field(name: "TITLE")
+  title13: String! @field(name: "TITLE")
+  title14: String! @field(name: "TITLE")
+  title15: String! @field(name: "TITLE")
+  title16: String! @field(name: "TITLE")
+  title17: String! @field(name: "TITLE")
+  title18: String! @field(name: "TITLE")
+  title19: String! @field(name: "TITLE")
+  title20: String! @field(name: "TITLE")
+  title21: String! @field(name: "TITLE")
+
+  wrapper: Wrapper
+}
+
+type Wrapper {
+  id: ID
+}

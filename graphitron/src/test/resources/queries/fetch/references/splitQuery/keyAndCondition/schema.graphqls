@@ -1,0 +1,7 @@
+type Customer @table {
+  address: Address! @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY", condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
+}
+
+type Address @table {
+  id: ID!
+}

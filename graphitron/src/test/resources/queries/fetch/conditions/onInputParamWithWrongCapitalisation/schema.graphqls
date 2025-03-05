@@ -1,0 +1,5 @@
+type Query {
+  query(
+    NAME: NameInput! @field(name: "name") @condition(condition: {name: "QUERY_FETCH_STAFF_CONDITION", method: "name"})
+  ) : [Staff]
+}

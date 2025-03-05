@@ -1,0 +1,9 @@
+type Query {
+  node(id: ID!): Node # Node interface
+
+  query: Customer @notGenerated
+}
+
+type Customer implements Node @table {
+  id: ID!
+}

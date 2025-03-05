@@ -1,0 +1,8 @@
+type Query {
+  film: Film @notGenerated
+}
+
+type Film @table {
+  id: ID!
+  sequel: Film @splitQuery
+}

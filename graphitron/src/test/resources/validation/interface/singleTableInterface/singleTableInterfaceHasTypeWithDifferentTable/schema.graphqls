@@ -1,0 +1,7 @@
+interface AddressByDistrict @discriminate(on: "DISTRICT") @table(name: "ADDRESS") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type Address implements AddressByDistrict @discriminator(value: "ONE") @table(name: "SOME_OTHER_TABLE"){
+  postalCode: String @field(name: "POSTAL_CODE")
+}

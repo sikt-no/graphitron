@@ -1,0 +1,12 @@
+type Query {
+  query: Customer
+}
+
+type Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  c1: CustomerJava # Wrong.
+  c2: CustomerJava @field(name: "WRONG_NAME") # Even more wrong.
+}
+
+type CustomerJava @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  id: ID @notGenerated
+}

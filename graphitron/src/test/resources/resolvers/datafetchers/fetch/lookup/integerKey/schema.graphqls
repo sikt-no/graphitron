@@ -1,0 +1,3 @@
+type Query {
+  query(i: [Int] @lookupKey): DummyType
+}

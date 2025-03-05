@@ -1,0 +1,8 @@
+type Query {
+  films: Film @notGenerated
+}
+
+type Film @table {
+  id: ID!
+  sequel: Film @splitQuery @reference(references: [{key: "FILM__SEQUEL_FKEY"}])
+}

@@ -1,0 +1,15 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  wrapper: Wrapper1
+}
+
+type Wrapper1 {
+  wrapper: Wrapper2
+}
+
+type Wrapper2 {
+  id: ID
+}

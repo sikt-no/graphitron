@@ -1,0 +1,10 @@
+type Customer @table {
+  id: ID!
+  union: U
+}
+
+union U = CustomerUnion
+
+type CustomerUnion {
+  email: String
+}

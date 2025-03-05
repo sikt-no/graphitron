@@ -1,0 +1,18 @@
+{
+    "data": {
+        "customers": {
+            "nodes": [
+                {
+                    "id": "101"
+                },
+                {
+                    "id": "102"
+                }
+            ],
+            "pageInfo": {
+                "endCursor": "WzEwMl0",
+                "startCursor": "WzEwMV0"
+            }
+        }
+    }
+}

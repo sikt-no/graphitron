@@ -1,0 +1,9 @@
+type Query {
+  queryJOOQ(inQueryJOOQ: CustomerInputTable): CustomerTable @service(service: {name: "DUMMY_SERVICE"})
+  queryJava(inQueryJava: DummyInputRecord): DummyTypeRecord @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Mutation {
+  mutationJOOQ(inQueryJOOQ: CustomerInputTable): CustomerTable @service(service: {name: "DUMMY_SERVICE"})
+  mutationJava(inQueryJava: DummyInputRecord): DummyTypeRecord @service(service: {name: "DUMMY_SERVICE"})
+}

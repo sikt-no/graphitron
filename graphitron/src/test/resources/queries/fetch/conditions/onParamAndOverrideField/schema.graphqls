@@ -1,0 +1,6 @@
+type Query {
+  query(
+    email: String! @condition(condition: {name: "QUERY_FETCH_CONDITION"})
+    name: String! @field(name: "FIRST_NAME")
+  ): CustomerTable @condition(condition: {name: "QUERY_FETCH_CONDITION"}, override: true)
+}

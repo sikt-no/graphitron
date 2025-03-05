@@ -1,0 +1,7 @@
+type Address @table {
+  inner: Wrapper
+}
+
+type Wrapper {
+  postalCode: String!
+}

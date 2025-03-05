@@ -1,0 +1,12 @@
+type Address @table {
+  inner1: Wrapper1
+  inner2: Wrapper2 @field(name: "POSTAL_CODE")
+}
+
+type Wrapper1 {
+  code: String! @field(name: "POSTAL_CODE")
+}
+
+type Wrapper2 {
+  code: String!
+}

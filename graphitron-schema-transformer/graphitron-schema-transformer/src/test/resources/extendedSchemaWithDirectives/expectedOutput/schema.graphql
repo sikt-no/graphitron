@@ -1,0 +1,65 @@
+"An RFC-3339 compliant Full Date Scalar"
+scalar Date
+
+interface Interface {
+    value: String!
+    listValue: [String!]!
+}
+
+type UnionType1 implements Interface {
+    value: String!
+    listValue: [String!]!
+}
+
+type UnionType2 implements Interface {
+    value: String!
+    listValue: [String!]!
+}
+
+union SomeUnion = UnionType1 | UnionType2
+
+interface Node {
+    id: ID!
+}
+
+type Query {
+    """Query comment."""
+    someType(param: String! @paramDirective(param: "PARAM_DIRECTIVE")): SomeType
+
+    node(id: ID!): Node
+    someUnion: [SomeUnion!] @simpleDirective
+}
+
+"""Type comment."""
+type SomeType implements Node @paramDirective {
+    """Field comment."""
+    id: ID!
+    string: String
+    withDirectiveRequired: String! @simpleDirective
+    withDirective: String @paramDirective(param: "STONKS")
+
+    otherTypeWithDirective: OtherType @splitQuery
+    otherType: OtherType
+    unionType: SomeUnion
+}
+
+type OtherType {
+    string: String @simpleDirective
+}
+
+enum SomeEnum @paramDirective(param: "SOMETHING") {
+    """Enum comment."""
+    E0 @paramDirective(param: "SOMETHING_ELSE")
+    E1
+    E2
+}
+
+directive @splitQuery on FIELD_DEFINITION
+
+directive @simpleDirective on FIELD_DEFINITION
+directive @paramDirective(param: String) on FIELD_DEFINITION | ENUM | OBJECT | INPUT_OBJECT | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+directive @specifiedBy(url: String!) on SCALAR

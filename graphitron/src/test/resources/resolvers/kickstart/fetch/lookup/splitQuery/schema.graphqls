@@ -1,0 +1,5 @@
+type Wrapper {
+  id: ID
+
+  query(id: [ID] @lookupKey): DummyType @splitQuery
+}

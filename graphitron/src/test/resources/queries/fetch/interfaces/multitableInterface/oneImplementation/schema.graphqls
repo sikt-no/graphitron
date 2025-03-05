@@ -1,0 +1,12 @@
+type Query {
+  someInterface: [SomeInterface]
+}
+
+interface SomeInterface {
+  id: ID
+}
+
+type Customer implements SomeInterface @table {
+  id: ID
+  lastName: String @field(name: "LAST_NAME")
+}

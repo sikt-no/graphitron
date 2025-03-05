@@ -1,0 +1,151 @@
+package no.sikt.graphitron.resolvers.kickstart.standard.fetch;
+
+import no.sikt.graphitron.common.GeneratorTest;
+import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.generators.resolvers.kickstart.fetch.FetchResolverClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Set;
+
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+
+@DisplayName("Fetch resolvers - Resolvers for queries")
+public class ResolverTest extends GeneratorTest {
+    @Override
+    protected String getSubpath() {
+        return "resolvers/kickstart/fetch/standard";
+    }
+
+    @Override
+    protected Set<SchemaComponent> getComponents() {
+        return makeComponents(DUMMY_TYPE);
+    }
+
+    @Override
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
+        return List.of(new FetchResolverClassGenerator(schema));
+    }
+
+    @Test
+    @DisplayName("Basic root resolver with no parameters")
+    void defaultCase() {
+        assertGeneratedContentMatches("operation/default");
+    }
+
+    @Test
+    @DisplayName("Root resolvers with various input data types")
+    void inputDatatypes() {
+        assertGeneratedContentMatches("operation/inputDatatypes", DUMMY_INPUT, DUMMY_ENUM);
+    }
+
+    @Test
+    @DisplayName("Input name starts with a capital letter")
+    void wrongInputCapitalisation() {
+        assertGeneratedContentContains("operation/wrongInputCapitalisation", "(String iN,", ", iN,");
+    }
+
+    @Test
+    @DisplayName("Input name for an input type starts with a capital letter")
+    void wrongInputTypeCapitalisation() {
+        assertGeneratedContentContains("operation/wrongInputTypeCapitalisation", Set.of(DUMMY_INPUT), "(DummyInput iN,", ", iN,");
+    }
+
+    @Test
+    @DisplayName("Root resolver that returns a list")
+    void returningList() {
+        assertGeneratedContentContains("operation/returningList", "public CompletableFuture<List<DummyType>> query(");
+    }
+
+    @Test
+    @DisplayName("Root resolver that returns an optional list")
+    void returningOptionalList() {
+        assertGeneratedContentContains("operation/returningOptionalList", "public CompletableFuture<List<DummyType>> query(");
+    }
+
+    @Test
+    @DisplayName("Root resolver that is not generated")
+    void notGenerated() {
+        assertGeneratedContentMatches("operation/notGenerated");
+    }
+
+    @Test
+    @DisplayName("Root resolver that is generated as abstract")
+    void notGeneratedAbstractResolver() {
+        assertGeneratedContentContains("operation/notGeneratedAbstractResolver", "abstract class");
+    }
+
+    @Test
+    @DisplayName("Basic resolver with no parameters")
+    void splitQuery() {
+        assertGeneratedContentMatches("splitquery/default", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Resolvers with various input data types")
+    void splitQueryInputDatatypes() {
+        assertGeneratedContentMatches("splitquery/inputDatatypes", DUMMY_INPUT, DUMMY_ENUM, SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Resolver that returns a list")
+    void splitQueryReturningList() {
+        assertGeneratedContentContains("splitquery/returningList", Set.of(SPLIT_QUERY_WRAPPER), "public CompletableFuture<List<DummyType>> query(");
+    }
+
+    @Test
+    @DisplayName("Resolver that returns an optional list")
+    void splitQueryReturningOptionalList() {
+        assertGeneratedContentContains("splitquery/returningOptionalList", Set.of(SPLIT_QUERY_WRAPPER), "public CompletableFuture<List<DummyType>> query(");
+    }
+
+    @Test
+    @DisplayName("Resolver created from a type that inherits the table from another type")
+    void splitQueryFromTypeWithoutTable() {
+        assertGeneratedContentMatches("splitquery/fromTypeWithoutTable", CUSTOMER_TABLE);
+    }
+
+    @Test
+    @DisplayName("Resolver that is not generated")
+    void splitQueryNotGenerated() {
+        assertGeneratedContentMatches("splitquery/notGenerated", SPLIT_QUERY_WRAPPER);
+    }
+
+    @Test
+    @DisplayName("Resolver that is generated as abstract")
+    void splitQueryNotGeneratedAbstractResolver() {
+        assertGeneratedContentContains("splitquery/notGeneratedAbstractResolver", Set.of(SPLIT_QUERY_WRAPPER), "abstract class");
+    }
+
+    @Test
+    @DisplayName("Root resolver returning multi-table interface")
+    void multitableInterface() {
+        assertGeneratedContentContains("operation/multitableInterface",
+                "CompletableFuture<List<Titled>>",
+                "QueryDBQueries.titledForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("Root resolver returning single table interface")
+    void singleTableInterface() {
+        assertGeneratedContentContains("operation/singleTableInterface",
+                "CompletableFuture<List<Address>>",
+                "QueryDBQueries.addressForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("Resolver with annotation configured")
+    void resolverAnnotaion() {
+        GeneratorConfig.setResolverAnnotation("example.org.cdi.Bean");
+        assertGeneratedContentContains("operation/default", "@Bean" +
+                "public class QueryGeneratedResolver implements QueryResolver ");
+
+    }
+
+}

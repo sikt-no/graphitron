@@ -1,0 +1,3 @@
+type Query {
+  query(first: Int = 100, after: String): CustomerConnection @service(service: {name: "RESOLVER_FETCH_SERVICE", method: "queryList"})
+}

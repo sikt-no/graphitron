@@ -1,0 +1,11 @@
+type Query {
+  otherType: OtherType
+}
+
+type OtherType {
+  string: String
+}
+
+type SomeType {
+  string: String
+}

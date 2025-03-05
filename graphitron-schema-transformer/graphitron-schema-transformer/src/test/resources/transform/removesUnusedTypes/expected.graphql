@@ -1,0 +1,9 @@
+type Query {
+  q1: Boolean
+}
+
+union U0 = T1
+
+type T1 {
+  f0: [String]
+}

@@ -1,0 +1,17 @@
+type Query {
+  getObject(a0: String!): SomeObject
+  getObjectWithInputs(a0: Input!, a1: [Input!]): SomeObject
+}
+
+type SomeObject {
+  id: ID!
+  inner: [InnerObject!]!
+}
+
+type InnerObject {
+  id: ID!
+}
+
+input Input {
+  id: ID!
+}

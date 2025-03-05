@@ -1,0 +1,11 @@
+type Customer @table {
+  wrapper: Wrapper!
+}
+
+type Wrapper {
+  address: Address! @splitQuery @reference(references: [{table: "ADDRESS"}])
+}
+
+type Address @table {
+  id: ID!
+}

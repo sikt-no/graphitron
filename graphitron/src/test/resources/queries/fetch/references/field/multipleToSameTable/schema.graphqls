@@ -1,0 +1,4 @@
+type Customer @table {
+  district1: String! @reference(references: [{table: "ADDRESS"}]) @field(name: "DISTRICT")
+  district2: String! @reference(references: [{table: "ADDRESS"}]) @field(name: "DISTRICT")
+}
