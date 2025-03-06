@@ -743,9 +743,9 @@ public class FormatCodeBlocks {
         var fromBlocks = new ArrayList<CodeBlock>();
         var toBlocks = new ArrayList<CodeBlock>();
         for (var enumValue : enumEntry.getFields()) {
-            var upperName = enumValue.getUpperCaseName();
+            var name = enumValue.getUnprocessedFieldOverrideInput();
             var key = CodeBlock.of("$T.$L", entryClassName, enumValue.getName());
-            var value = hasEnumReference ? CodeBlock.of("$T.$L", referenceClassName, upperName) : CodeBlock.of("$S", upperName);
+            var value = hasEnumReference ? CodeBlock.of("$T.$L", referenceClassName, name) : CodeBlock.of("$S", name);
             fromBlocks.add(flipDirection ? value : key);
             toBlocks.add(flipDirection ? key : value);
         }

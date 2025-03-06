@@ -27,6 +27,13 @@ public class InputEnumConversionFunctionTest extends CodeBlockTest {
             "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
             "java.util.List.of(fake.graphql.example.model.DummyEnum.A, fake.graphql.example.model.DummyEnum.B, fake.graphql.example.model.DummyEnum.C), " +
             "java.util.List.of(\"A\", \"B\", \"C\")))";
+    public static final String EXPECTED_STRING_MIXED_CASE = ".convert(fake.graphql.example.model.MixedCaseEnum.class," +
+            "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
+            "java.util.List.of(\"UPPER\", \"lower\", \"mIxEd\"), " +
+            "java.util.List.of(fake.graphql.example.model.MixedCaseEnum.UPPER, fake.graphql.example.model.MixedCaseEnum.LOWER, fake.graphql.example.model.MixedCaseEnum.MIXED))," +
+            "s -> no.sikt.graphql.helpers.query.QueryHelper.makeEnumMap(s, " +
+            "java.util.List.of(fake.graphql.example.model.MixedCaseEnum.UPPER, fake.graphql.example.model.MixedCaseEnum.LOWER, fake.graphql.example.model.MixedCaseEnum.MIXED), " +
+            "java.util.List.of(\"UPPER\", \"lower\", \"mIxEd\")))";
 
     @Override
     protected String getSubpath() {
@@ -60,5 +67,11 @@ public class InputEnumConversionFunctionTest extends CodeBlockTest {
     @DisplayName("String enum converter")
     public void string() {
         compareCodeBlockResult("string", EXPECTED_STRING, DUMMY_ENUM);
+    }
+
+    @Test
+    @DisplayName("String enum converter with mixed case")
+    public void stringMixedCase() {
+        compareCodeBlockResult("stringMixedCase", EXPECTED_STRING_MIXED_CASE);
     }
 }

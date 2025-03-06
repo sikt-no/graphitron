@@ -1,0 +1,14 @@
+type Query {
+  query: FilmTable
+}
+
+type FilmTable @table(name: "FILM") {
+  id: ID
+  e: MixedCaseEnum @field(name: "RATING")
+}
+
+enum MixedCaseEnum {
+  UPPER @field(name: "UPPER")
+  LOWER @field(name: "lower")
+  MIXED @field(name: "mIxEd")
+}

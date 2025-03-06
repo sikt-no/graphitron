@@ -6,8 +6,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static no.sikt.graphitron.code.InputEnumConversionFunctionTest.EXPECTED_JOOQ;
-import static no.sikt.graphitron.code.InputEnumConversionFunctionTest.EXPECTED_STRING;
+import static no.sikt.graphitron.code.InputEnumConversionFunctionTest.*;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM_CONVERTED;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
@@ -47,5 +46,11 @@ public class OutputEnumConversionFunctionTest extends CodeBlockTest {
     @DisplayName("String enum converter")
     public void string() {
         compareCodeBlockResult("string", EXPECTED_STRING, DUMMY_ENUM);
+    }
+
+    @Test
+    @DisplayName("String enum converter with mixed case")
+    public void stringMixedCase() {
+        compareCodeBlockResult("stringMixedCase", EXPECTED_STRING_MIXED_CASE);
     }
 }
