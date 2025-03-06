@@ -32,7 +32,7 @@
     </modules>
 
     <properties>
-        <revision>3.2</revision>
+        <revision>3.3</revision>
         <!-- is overwritten by CI. Default is 999999-SNAPSHOT to ensure that the version is higher than the last release, when developing locally -->
         <changelist>.999999-SNAPSHOT</changelist>
 
@@ -185,8 +185,8 @@
         </snapshotRepository>
     </distributionManagement>
     <scm>
-        <url>https://gitlab.sikt.no/fs/fs-plattform.git</url>
-        <developerConnection>scm:git:git@gitlab.sikt.no:fs/fs-plattform.git</developerConnection>
+        <url>https://gitlab.sikt.no/graphitron/graphitron.git</url>
+        <developerConnection>scm:git:git@gitlab.sikt.no:graphitron/graphitron.git</developerConnection>
     </scm>
 
     <build>
