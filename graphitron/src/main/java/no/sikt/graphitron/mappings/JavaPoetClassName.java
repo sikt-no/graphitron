@@ -61,6 +61,8 @@ public enum JavaPoetClassName {
     IMMUTABLE_PAIR(ImmutablePair.class),
     INJECT(javax.inject.Inject.class),
     INTEGER(java.lang.Integer.class),
+    FLOAT(java.lang.Float.class),
+    BOOLEAN(java.lang.Boolean.class),
     LIST(java.util.List.class),
     STREAM(java.util.stream.Stream.class),
     MAP(java.util.Map.class),

@@ -2,13 +2,10 @@ package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.ParameterizedTypeName;
-import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -16,8 +13,7 @@ import java.util.List;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
@@ -27,9 +23,6 @@ import static no.sikt.graphql.naming.GraphQLReservedName.*;
  */
 public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
     public static final String METHOD_NAME = "entityFetcher";
-    private static final String VARIABLE_TYPENAME = "_typeName";
-    protected static final TypeName LIST_MAP_TYPE = ParameterizedTypeName.get(LIST.className, getObjectMapTypeName()),
-    DATA_FETCHER_TYPE = ParameterizedTypeName.get(DATA_FETCHER.className, LIST_MAP_TYPE);
 
     public EntityFetcherMethodGenerator(ProcessedSchema processedSchema) {
         super(null, processedSchema);
@@ -39,44 +32,45 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     @Override
-    public MethodSpec generate(ObjectField dummy) {
+    public MethodSpec generate(ObjectField target) {
         var cases = CodeBlock.builder();
         var entities = processedSchema.getEntities().values();
         for (var entity : entities) {
-            var caseContent = CodeBlock.of(
-                    "$N.putAll($T.$L($N, $N))",
-                    VARIABLE_OBJECT,
-                    getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, asQueryClass(entity.getName())),
+            var fetchBlock = CodeBlock.of(
+                    "$T.$L($N, $N)",
+                    getQueryClassName(asQueryClass(entity.getName())),
                     asEntityQueryMethodName(entity.getName()),
                     CONTEXT_NAME,
                     VARIABLE_INTERNAL_ITERATION
             );
-            cases.add(breakCaseWrap(entity.getName(), caseContent));
+            cases
+                    .add("case $S: ", entity.getName())
+                    .add(returnWrap(transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock)));
         }
 
-        return getDefaultSpecBuilder(METHOD_NAME, DATA_FETCHER_TYPE)
-                .beginControlFlow("return $N -> (($T) $N.getArgument($S)).stream().map($L ->", VARIABLE_ENV, LIST_MAP_TYPE, VARIABLE_ENV, FEDERATION_REPRESENTATIONS_ARGUMENT.getName(), VARIABLE_INTERNAL_ITERATION)
+        return getDefaultSpecBuilder(METHOD_NAME, wrapFetcher(wrapList(processedSchema.getUnion(target.getTypeName()).getGraphClassName())))
+                .beginControlFlow(
+                        "return $N -> (($T) $N.getArgument($S)).stream().map($L ->",
+                        VARIABLE_ENV,
+                        wrapList(getObjectMapTypeName()),
+                        VARIABLE_ENV,
+                        FEDERATION_REPRESENTATIONS_ARGUMENT.getName(),
+                        VARIABLE_INTERNAL_ITERATION
+                )
                 .addCode(declare(CONTEXT_NAME, CodeBlock.of("($T) $N.getLocalContext()", DSL_CONTEXT.className, VARIABLE_ENV)))
-                .addCode(declare(VARIABLE_TYPENAME, CodeBlock.of("($T) $N.get($S)", STRING.className, VARIABLE_INTERNAL_ITERATION, TYPE_NAME.getName())))
-                .addCode(declare(VARIABLE_OBJECT, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, OBJECT.className)))
-                .addStatement("$N.put($S, $N)", VARIABLE_OBJECT, TYPE_NAME.getName(), VARIABLE_TYPENAME)
-                .beginControlFlow("switch ($N)", VARIABLE_TYPENAME)
+                .beginControlFlow("switch (($T) $N.get($S))", STRING.className, VARIABLE_INTERNAL_ITERATION, TYPE_NAME.getName())
                 .addCode(cases.build())
                 .addCode("default: $L", returnWrap("null"))
                 .endControlFlow()
-                .addCode(returnWrap(VARIABLE_OBJECT))
                 .endControlFlow(")$L", collectToList())
                 .build();
     }
 
     @Override
     public List<MethodSpec> generateAll() {
-        // With the current setup, we do not actually have the field in our schema on generation time!
-        // var field = processedSchema.getEntitiesField();
-        // if (field == null || field.isExplicitlyNotGenerated()) {
         if (!processedSchema.hasEntitiesField()) {
             return List.of();
         }
-        return List.of(generate(null));  // Does not currently require access to the field here.
+        return List.of(generate(processedSchema.getEntitiesField()));
     }
 }

@@ -49,6 +49,15 @@ class ExtendedSchemaTest {
     }
 
     @Test
+    void transform_addFederation() throws IOException {
+        var generatedFiles = generateFiles("federation", false, true, false);
+
+        var generatedFileContent = generatedFiles.values().stream().findFirst().orElseThrow();
+        assertThat(generatedFileContent).contains("union _Entity = A", "_entities(representations: [_Any!]!): [_Entity]!");
+    }
+
+
+    @Test
     void transform_whenMissingRequiredDirectiveArgument_shouldThrowException() {
         assertThatThrownBy(() -> generateFiles("error/missingDirectiveArgument"))
                 .isInstanceOf(SchemaProblem.class)
@@ -77,13 +86,13 @@ class ExtendedSchemaTest {
     }
 
     private void assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(String schemaFolder, String expectedOutputFolder, boolean setAsRootDir, boolean validateGeneratorSchema) throws IOException {
-        Map<String, String> generatedFiles = generateFiles(schemaFolder, setAsRootDir);
+        Map<String, String> generatedFiles = generateFiles(schemaFolder, setAsRootDir, false, true);
         var expectedFileNames = new HashSet<String>();
 
         Files.walkFileTree(Paths.get(SRC_TEST_RESOURCES + expectedOutputFolder + "/expectedOutput"), new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) throws IOException {
-                String expectedFileName = expectedOutputFile.getFileName().toString().replace(".txt", "");
+                String expectedFileName = expectedOutputFile.getFileName().toString();
 
                 if (!validateGeneratorSchema && expectedFileName.equals(SchemaTransformer.GENERATOR_SCHEMA_NAME)) {
                     return FileVisitResult.CONTINUE;
@@ -158,7 +167,7 @@ class ExtendedSchemaTest {
         assertThatGeneratedFilesMatchesExpectedFilesInOutputFolder(resourceRootFolder, resourceRootFolder);
     }
 
-    private Map<String, String> generateFiles(String schemaParentFolder, boolean setAsRootDir) throws IOException {
+    private Map<String, String> generateFiles(String schemaParentFolder, boolean setAsRootDir, boolean makeFederation, boolean includeDefault) throws IOException {
         var actualParentFolder = SRC_TEST_RESOURCES + schemaParentFolder;
         Set<String> actualParentFolders = Set.of(actualParentFolder);
 
@@ -166,13 +175,12 @@ class ExtendedSchemaTest {
         if (setAsRootDir) {
             schemaLocations = SchemaConfig.findSchemaFilesRecursivelyInDirectory(actualParentFolders);
         } else {
-            schemaLocations = List.of(
-                    actualParentFolder + "/schema.graphql",
-                    SRC_TEST_RESOURCES + "default.graphqls");
+            var testFile = actualParentFolder + "/schema.graphql";
+            schemaLocations = includeDefault ? List.of(testFile, SRC_TEST_RESOURCES + "default.graphqls") : List.of(testFile);
         }
         var mapping = SchemaConfig.createDescriptionSuffixForFeatureMap(actualParentFolders, "description-suffix.md");
 
-        SchemaTransformer.transformFeatures(schemaLocations, mapping, tempOutputDirectory.toString(), false);
+        SchemaTransformer.transformSchema(schemaLocations, mapping, tempOutputDirectory.toString(), makeFederation, false);
         Map<String, String> generatedFiles = new HashMap<>();
         Files.walkFileTree(tempOutputDirectory, new SimpleFileVisitor<>() {
             @Override
@@ -187,7 +195,7 @@ class ExtendedSchemaTest {
     }
 
     private Map<String, String> generateFiles(String schemaParentFolder) throws IOException {
-        return generateFiles(schemaParentFolder, false);
+        return generateFiles(schemaParentFolder, false, false ,true);
     }
 
     private static String readFileAsString(Path file) throws IOException {

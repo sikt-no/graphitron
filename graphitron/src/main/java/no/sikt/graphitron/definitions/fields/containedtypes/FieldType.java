@@ -8,6 +8,8 @@ import graphql.language.TypeName;
 import java.util.ArrayList;
 import java.util.Map;
 
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+
 /**
  * Class that contains all the necessary information about a field's type and nullability.
  */
@@ -18,12 +20,15 @@ public class FieldType {
     private boolean isIterableNonNullable = false;
     private boolean isIterableWrapped = false;
     private boolean isID = false;
+
+    // TODO: This needs to be reworked, as this limits the possible scalars that can be used in function returns.
     private final static Map<String, com.palantir.javapoet.TypeName> TYPE_NAME_MAPPER = Map.of(
-            "ID", com.palantir.javapoet.TypeName.get(String.class),
-            "String", com.palantir.javapoet.TypeName.get(String.class),
-            "Int", com.palantir.javapoet.TypeName.get(Integer.class),
-            "Float", com.palantir.javapoet.TypeName.get(Float.class),
-            "Boolean", com.palantir.javapoet.TypeName.get(Boolean.class)
+            "ID", STRING.className,
+            "String", STRING.className,
+            "Int", INTEGER.className,
+            "Float", FLOAT.className,
+            "Boolean", BOOLEAN.className,
+            "_Any", OBJECT.className
     );
 
     public FieldType(Type<?> fieldType) {

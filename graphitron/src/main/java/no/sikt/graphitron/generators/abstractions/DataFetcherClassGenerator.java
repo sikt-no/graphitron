@@ -13,7 +13,7 @@ import java.util.List;
 import static no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer.asClassWiring;
 
 abstract public class DataFetcherClassGenerator<T extends GenerationTarget> extends ResolverClassGenerator<T> {
-    public static final String DEFAULT_SAVE_DIRECTORY_NAME = "datafetchers", FILE_NAME_SUFFIX = "GeneratedDataFetcher";
+    public static final String DEFAULT_SAVE_DIRECTORY_NAME = "resolvers", FILE_NAME_SUFFIX = "GeneratedDataFetcher";
     protected final List<ClassWiringContainer> fetcherWiringContainer = new ArrayList<>();
 
     public DataFetcherClassGenerator(ProcessedSchema processedSchema) {

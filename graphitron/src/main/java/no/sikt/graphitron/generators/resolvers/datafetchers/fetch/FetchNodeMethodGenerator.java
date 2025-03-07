@@ -5,10 +5,8 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.Comparator;
@@ -18,7 +16,8 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ILLEGAL_ARGUMENT_EXCEPTION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
@@ -97,14 +96,12 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     private CodeBlock codeForImplementation(String implementationTypeName, String inputFieldName) {
-        var queryLocation = asQueryClass(implementationTypeName);
-        var queryClass = getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
         var dbFunction = CodeBlock.of(
                 "($L, $L, $L) -> $T.$L($N, $N, $N)",
                 CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME,
-                queryClass,
+                getQueryClassName(asQueryClass(implementationTypeName)),
                 asNodeQueryName(implementationTypeName),
                 CONTEXT_NAME,
                 IDS_NAME,

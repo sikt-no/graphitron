@@ -1,5 +1,9 @@
 package no.sikt.graphql.naming;
 
+import com.apollographql.federation.graphqljava.FederationDirectives;
+import com.apollographql.federation.graphqljava._Entity;
+import com.apollographql.federation.graphqljava._Service;
+
 import static graphql.relay.Relay.NODE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -35,11 +39,13 @@ public enum GraphQLReservedName {
     OPERATION_QUERY(uncapitalize(SCHEMA_QUERY.getName())),
     OPERATION_MUTATION(uncapitalize(SCHEMA_MUTATION.getName())),
 
-    FEDERATION_KEY("key"),
-    FEDERATION_KEY_ARGUMENT("fields"),
-    FEDERATION_ENTITIES_FIELD("_entities"),
-    FEDERATION_ENTITY_UNION("_Entity"),
-    FEDERATION_REPRESENTATIONS_ARGUMENT("representations");
+    FEDERATION_KEY(FederationDirectives.keyName),
+    FEDERATION_KEY_ARGUMENT(FederationDirectives.fieldsArgumentName),
+    FEDERATION_SERVICE_FIELD(_Service.fieldName),
+    FEDERATION_SERVICE_TYPE(_Service.typeName),
+    FEDERATION_ENTITIES_FIELD(_Entity.fieldName),
+    FEDERATION_ENTITY_UNION(_Entity.typeName),
+    FEDERATION_REPRESENTATIONS_ARGUMENT(_Entity.argumentName);
 
     private final String name;
 

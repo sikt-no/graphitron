@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.resolvers.kickstart.fetch;
 
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -12,10 +13,10 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declarePageSize;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -31,11 +32,19 @@ public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerat
         if (!generationCondition(target)) {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
+        var spec = getSpecWithParams(target).addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV);
+        // _service temporary special case. Omitting this will cause compilation errors.
+        if (processedSchema.isFederationService(target)) {
+            return spec.addCode(returnWrap(CodeBlock.of("null"))).build();
+        }
+        // _entities temporary special case. Omitting this will cause compilation errors.
+        if (target.getName().equals(FEDERATION_ENTITIES_FIELD.getName())) {
+            return spec.addCode(returnWrap(CodeBlock.of("null"))).build();
+        }
 
         var parser = new InputParser(target, processedSchema);
         var methodCall = queryMethodCall(target, parser); // Note, do this before declaring services.
-        return getSpecWithParams(target)
-                .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
+        return spec
                 .addCode(transformInputs(target, parser))
                 .addCode(declareAllServiceClasses())
                 .addCode(methodCall)
@@ -75,7 +84,6 @@ public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerat
                 .getFields()
                 .stream()
                 .filter(GenerationField::isGeneratedWithResolver)
-                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(this::generationCondition)
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())

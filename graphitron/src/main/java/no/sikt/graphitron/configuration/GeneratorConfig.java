@@ -35,7 +35,6 @@ public class GeneratorConfig {
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
-    private static boolean includeApolloFederation = false;
 
     private static ExternalReferences externalReferences;
     private static Set<String> externalReferenceImports;
@@ -103,7 +102,6 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
-        includeApolloFederation = mojo.federationEnabled();
     }
 
     /**
@@ -121,7 +119,6 @@ public class GeneratorConfig {
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
         resolverAnnotation = null;
-        includeApolloFederation = false;
     }
 
     public static Set<String> schemaFiles() {
@@ -175,10 +172,6 @@ public class GeneratorConfig {
         return recordValidation != null && recordValidation.isEnabled();
     }
 
-    public static boolean federationEnabled() {
-        return includeApolloFederation;
-    }
-
     public static void setRecordValidation(RecordValidation recordValidation) {
         GeneratorConfig.recordValidation = recordValidation;
     }
@@ -205,10 +198,6 @@ public class GeneratorConfig {
 
     public static boolean useOptionalSelects() {
         return USE_OPTIONAL_SELECTS;
-    }
-
-    public static void setIncludeApolloFederation(boolean value) {
-        includeApolloFederation = value;
     }
 
     public static void setResolverAnnotation(String resolverAnnotation) {

@@ -22,7 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indent
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 /**
  * Generator that creates the default data fetching methods
@@ -171,6 +171,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .stream()
                 .filter(it -> !processedSchema.isInterface(it))
                 .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
+                .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
