@@ -1,8 +1,10 @@
 package no.fellesstudentsystem.schema_transformer;
 
+import com.apollographql.federation.graphqljava.Federation;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.idl.SchemaParser;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.UnExecutableSchemaGenerator;
 import no.fellesstudentsystem.schema_transformer.transform.FeatureFlagConfiguration;
 import no.fellesstudentsystem.schema_transformer.transform.GeneratorDirectivesFilter;
@@ -15,10 +17,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaReader.getTypeDefinitionRegistry;
-import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.assembleSchema;
-import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeFederationSchemaToDirectory;
-import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToDirectory;
-import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToString;
+import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.*;
 
 public class SchemaTransformer {
     public final static String
@@ -26,17 +25,17 @@ public class SchemaTransformer {
             SCHEMA_NAME = "schema.graphql",
             FEDERATION_SCHEMA_NAME = "federation-schema.graphql";
 
-    public static void transformFeatures(List<String> schemaLocations, Map<String, String> descriptionSuffixForFeature, String outputDirectory) throws IOException {
-        transformFeatures(schemaLocations, descriptionSuffixForFeature, outputDirectory, true);
+    public static void transformSchema(List<String> schemaLocations, Map<String, String> descriptionSuffixForFeature, String outputDirectory, boolean makeFederation) throws IOException {
+        transformSchema(schemaLocations, descriptionSuffixForFeature, outputDirectory, makeFederation, true);
     }
 
-    public static void transformFeatures(List<String> schemaLocations, Map<String, String> descriptionSuffixForFeature, String outputDirectory, boolean reifyContracts) throws IOException {
+    public static void transformSchema(List<String> schemaLocations, Map<String, String> descriptionSuffixForFeature, String outputDirectory, boolean makeFederation, boolean reifyContracts) throws IOException {
         var typeRegistry = getTypeDefinitionRegistry(schemaLocations);
-        var schema = assembleSchema(typeRegistry);
 
-        writeSchemaToDirectory(schema, GENERATOR_SCHEMA_NAME, outputDirectory, true);
+        var federationSchema = makeFederation ? addFederation(typeRegistry) : assembleSchema(typeRegistry);
+        writeSchemaToDirectory(federationSchema, GENERATOR_SCHEMA_NAME, outputDirectory, true);
 
-        var schemaWithFeatureFlags = new FeatureFlagConfiguration(schema, descriptionSuffixForFeature).getModifiedGraphQLSchema();
+        var schemaWithFeatureFlags = new FeatureFlagConfiguration(federationSchema, descriptionSuffixForFeature).getModifiedGraphQLSchema();
         var schemaWithoutGeneratorDirectives = new GeneratorDirectivesFilter(schemaWithFeatureFlags).getModifiedGraphQLSchema();
 
         writeSchemaToDirectory(schemaWithoutGeneratorDirectives, SCHEMA_NAME, outputDirectory);
@@ -57,7 +56,16 @@ public class SchemaTransformer {
         }
     }
 
-    private static GraphQLSchema loadSchema(String schemaString) throws IOException {
+    private static GraphQLSchema addFederation(TypeDefinitionRegistry registry) {
+        return Federation
+                .transform(UnExecutableSchemaGenerator.makeUnExecutableSchema(registry))
+                .setFederation2(true)
+                .resolveEntityType((env) -> null) // Hack because the transform demands these to be present.
+                .fetchEntities((env) -> null)
+                .build();
+    }
+
+    private static GraphQLSchema loadSchema(String schemaString) {
         var typeDefinitionRegistry = new SchemaParser().parse(schemaString);
         var parsedSchema = UnExecutableSchemaGenerator.makeUnExecutableSchema(typeDefinitionRegistry);
         return flattenSchema(parsedSchema);

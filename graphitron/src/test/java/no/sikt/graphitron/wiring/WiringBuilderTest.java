@@ -5,7 +5,6 @@ import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -68,12 +67,5 @@ public class WiringBuilderTest extends GeneratorTest {
                         ".newTypeWiring(\"Query\").dataFetcher(\"customer\",",
                         ".newTypeWiring(\"Customer\").dataFetcher(\"address\","
         );
-    }
-
-    @Test
-    @Disabled("Not supported yet.")
-    @DisplayName("Unreferenced types exist")
-    void unreferencedTypes() {
-        assertGeneratedContentContains("unreferencedTypes", ".newTypeWiring(\"SomeType\")");
     }
 }

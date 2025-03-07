@@ -5,9 +5,7 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.abstractions.KickstartResolverMethodGenerator;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.dependencies.IdHandlerDependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -15,11 +13,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.newDataFetcher;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ILLEGAL_ARGUMENT_EXCEPTION;
@@ -94,7 +90,7 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
 
     private CodeBlock codeForImplementation(String implementationTypeName, String inputFieldName) {
         var queryLocation = asQueryClass(implementationTypeName);
-        var queryClass = getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
+        var queryClass = getQueryClassName(queryLocation);
         var dbFunction = CodeBlock.of(
                 "($L, $L, $L) -> $T.$L($N, $N, $N)",
                 CONTEXT_NAME,

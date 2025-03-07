@@ -1,7 +1,6 @@
 package no.sikt.graphitron.resolvers.type;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers.TypeResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -57,7 +56,6 @@ public class TypeResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Federation Entity union")
     void entity() {
-        GeneratorConfig.setIncludeApolloFederation(true);
         assertGeneratedContentMatches("entity", FEDERATION_QUERY);
     }
 }

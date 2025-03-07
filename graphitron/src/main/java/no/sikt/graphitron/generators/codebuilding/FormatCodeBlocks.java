@@ -454,7 +454,7 @@ public class FormatCodeBlocks {
         );
     }
 
-    private static ClassName getQueryClassName(String queryLocation) {
+    public static ClassName getQueryClassName(String queryLocation) {
         return getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
     }
 
@@ -934,24 +934,6 @@ public class FormatCodeBlocks {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
                 .getValue(); // In practice this supports only one record type at once.
-    }
-
-    /**
-     * @return CodeBlock containing a switch case for the provided variables.
-     */
-    public static CodeBlock breakCaseWrap(CodeBlock condition, CodeBlock code) {
-        return CodeBlock.of("case $L: $L", condition, breakCaseBody(code));
-    }
-
-    /**
-     * @return CodeBlock containing a switch case for the provided variables.
-     */
-    public static CodeBlock breakCaseWrap(String condition, CodeBlock code) {
-        return CodeBlock.of("case $S: $L", condition, breakCaseBody(code));
-    }
-
-    private static CodeBlock breakCaseBody(CodeBlock code) {
-        return CodeBlock.builder().add("\n").indent().indent().add("$L;", code).addStatement("break").unindent().unindent().build();
     }
 
     public static CodeBlock fetchMapping(boolean iterable) {

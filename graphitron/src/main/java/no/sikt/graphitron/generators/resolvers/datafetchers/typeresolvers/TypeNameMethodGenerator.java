@@ -17,7 +17,6 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_OBJECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
 
 /**
  * Class for generating the helper method for type resolvers.
@@ -65,6 +64,6 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
 
     public List<MethodSpec> generateAll() {
         var localObject = getLocalObject();
-        return localObject == null || FEDERATION_ENTITY_UNION.getName().equals(localObject.getName()) ? List.of() : List.of(generate(localObject));
+        return localObject == null ? List.of() : List.of(generate(localObject));
     }
 }

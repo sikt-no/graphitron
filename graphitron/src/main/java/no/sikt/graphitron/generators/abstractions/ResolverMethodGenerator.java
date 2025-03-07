@@ -37,15 +37,26 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     }
 
     protected TypeName getReturnTypeName(ObjectField referenceField) {
-        if (!referenceField.hasForwardPagination()) { // TODO: This is actually wrong for cases where a single class is returned!
-            return wrapListIf(
-                    processedSchema.isObject(referenceField)
-                            ? processedSchema.getObject(referenceField).getGraphClassName()
-                            : processedSchema.getInterface(referenceField).getGraphClassName(),
-                    referenceField.isIterableWrapped()
-            ); // Throws nullpointer if return type is not a schema type.
+        if (!referenceField.hasForwardPagination()) {
+            return wrapListIf(getTypeName(referenceField), referenceField.isIterableWrapped());
         }
         return processedSchema.getConnectionObject(referenceField).getGraphClassName();
+    }
+
+    private TypeName getTypeName(GenerationField field) {
+        if (processedSchema.isRecordType(field)) {
+            return processedSchema.getRecordType(field).getGraphClassName();
+        }
+        if (processedSchema.isInterface(field)) {
+            return processedSchema.getInterface(field).getGraphClassName();
+        }
+        if (processedSchema.isUnion(field)) {
+            return processedSchema.getUnion(field).getGraphClassName();
+        }
+        if (processedSchema.isEnum(field)) {
+            return processedSchema.getEnum(field).getGraphClassName();
+        }
+        return field.getTypeClass();
     }
 
     protected ServiceDependency createServiceDependency(GenerationField target) {

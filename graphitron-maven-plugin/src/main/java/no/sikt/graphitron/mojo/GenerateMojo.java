@@ -99,13 +99,12 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     private List<Extension> extensions;
 
     @Parameter(property = "generate.recordValidation")
+    @SuppressWarnings("unused")
     private RecordValidation recordValidation;
 
     @Parameter(property = "generate.maxAllowedPageSize", defaultValue = "1000")
+    @SuppressWarnings("unused")
     private int maxAllowedPageSize;
-
-    @Parameter(property = "generate.includeApolloFederation", defaultValue = "false")
-    private boolean includeApolloFederation;
 
     @Override
     public void execute() throws MojoExecutionException {
@@ -176,6 +175,7 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         customTypesMapping.put("Int!", "Integer");
         customTypesMapping.put("Boolean!", "Boolean");
         customTypesMapping.put("UUID", "java.util.UUID");
+        customTypesMapping.put("_Any", "java.lang.Object");
         return customTypesMapping;
     }
 
@@ -214,10 +214,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
 
     public int getMaxAllowedPageSize() {
         return maxAllowedPageSize;
-    }
-
-    public boolean federationEnabled() {
-        return includeApolloFederation;
     }
 
     public void setOutputPath(String outputPath) {

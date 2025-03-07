@@ -28,6 +28,9 @@ public class Plugin extends AbstractMojo {
     @Parameter(required = true, readonly = false)
     private String descriptionSuffixFilename;
 
+    @Parameter(property = "generate.makeApolloFederation", defaultValue = "false")
+    private boolean makeApolloFederation;
+
     @Override
     public void execute() throws MojoExecutionException {
         try {
@@ -36,7 +39,7 @@ public class Plugin extends AbstractMojo {
 
             var actualTarget = project.getBasedir().toPath().resolve(TARGET_PATH);
             Files.createDirectories(actualTarget);
-            SchemaTransformer.transformFeatures(schemaFiles, descriptionSuffixForFeatures, actualTarget.toString());
+            SchemaTransformer.transformSchema(schemaFiles, descriptionSuffixForFeatures, actualTarget.toString(), makeApolloFederation);
 
             var resource = new Resource();
             resource.setDirectory(actualTarget.toString());

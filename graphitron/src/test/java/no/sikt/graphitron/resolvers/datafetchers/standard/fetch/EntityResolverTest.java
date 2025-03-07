@@ -2,11 +2,9 @@ package no.sikt.graphitron.resolvers.datafetchers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.EntityFetcherClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -32,11 +30,6 @@ public class EntityResolverTest extends GeneratorTest {
         return List.of(new EntityFetcherClassGenerator(schema));
     }
 
-    @BeforeEach
-    void before() {
-        GeneratorConfig.setIncludeApolloFederation(true);
-    }
-
     @Test
     @DisplayName("One entity exists")
     void defaultCase() {
@@ -46,7 +39,7 @@ public class EntityResolverTest extends GeneratorTest {
     @Test
     @DisplayName("No entities defined in schema")
     void noEntities() {
-        assertGeneratedContentContains("noEntities", "switch (_typeName) {default: return null;}");
+        assertGeneratedContentContains("noEntities", ".get(\"__typename\")) {default: return null;}");
     }
 
     @Test
@@ -54,8 +47,8 @@ public class EntityResolverTest extends GeneratorTest {
     void twoTypes() {
         assertGeneratedContentContains(
                 "twoTypes",
-                "\"Address\": _obj.putAll(AddressDBQueries.addressAsEntity(",
-                "\"Customer\": _obj.putAll(CustomerDBQueries.customerAsEntity("
+                "transformDTO(AddressDBQueries.addressAsEntity(",
+                "transformDTO(CustomerDBQueries.customerAsEntity("
         );
     }
 }

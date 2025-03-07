@@ -5,6 +5,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -50,16 +51,18 @@ abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator
 
     private CodeBlock declareArgument(ArgumentField field) {
         var getBlock = CodeBlock.of("$N.get($S)", VARIABLE_ARGS, field.getName());
-        var transformBlock = !processedSchema.isRecordType(field)
-                ? asCast(iterableWrapType(field), getBlock)
-                : CodeBlock.of(
+        var transformBlock = !processedSchema.isRecordType(field) ? asCast(iterableWrapType(field), getBlock) : transformDTOBlock(field, getBlock);
+        return declare(field.getName(), transformBlock);
+    }
+
+    protected CodeBlock transformDTOBlock(GenerationField field, CodeBlock source) {
+        return CodeBlock.of(
                 "$T.$L($L, $T.class)",
                 RESOLVER_HELPERS.className,
                 field.isIterableWrapped() ? "transformDTOList" : "transformDTO",
-                getBlock,
+                source,
                 processedSchema.getRecordType(field).getGraphClassName()
         );
-        return declare(field.getName(), transformBlock);
     }
 
     @Override

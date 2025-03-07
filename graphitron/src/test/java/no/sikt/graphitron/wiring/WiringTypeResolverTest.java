@@ -1,7 +1,6 @@
 package no.sikt.graphitron.wiring;
 
 import no.sikt.graphitron.common.GeneratorTest;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers.TypeResolverClassGenerator;
@@ -42,7 +41,6 @@ public class WiringTypeResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Entity type resolver exists")
     void entity() {
-        GeneratorConfig.setIncludeApolloFederation(true);
         assertGeneratedContentContains(
                 "entity",
                 Set.of(FEDERATION),

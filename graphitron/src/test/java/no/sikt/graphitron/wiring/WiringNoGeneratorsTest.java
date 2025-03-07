@@ -2,11 +2,9 @@ package no.sikt.graphitron.wiring;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,11 +28,6 @@ public class WiringNoGeneratorsTest extends GeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new WiringClassGenerator(List.of(), schema.nodeExists()));
-    }
-
-    @BeforeEach
-    void before() {
-        GeneratorConfig.setIncludeApolloFederation(true);
     }
 
     @Test

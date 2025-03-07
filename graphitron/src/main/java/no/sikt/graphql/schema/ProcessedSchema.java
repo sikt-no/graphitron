@@ -658,7 +658,7 @@ public class ProcessedSchema {
      * @return Does this schema use the _entities field?
      */
     public boolean hasEntitiesField() {
-        return GeneratorConfig.federationEnabled() && queryType != null; //  && queryType.hasField(FEDERATION_ENTITIES_FIELD.getName());
+        return queryType != null && queryType.hasField(FEDERATION_ENTITIES_FIELD.getName());
     }
 
     /**
@@ -673,6 +673,15 @@ public class ProcessedSchema {
      */
     public Map<String, RecordObjectSpecification<? extends GenerationField>> getRecordTypes() {
         return recordTypes;
+    }
+
+    /**
+     * @return Is this field the federation _service field?
+     */
+    public boolean isFederationService(GenerationField target) {
+        return target.getName().equals(FEDERATION_SERVICE_FIELD.getName())
+                && target.getTypeName().equals(FEDERATION_SERVICE_TYPE.getName())
+                && target.getContainerTypeName().equals(SCHEMA_QUERY.getName());
     }
 
     /**
