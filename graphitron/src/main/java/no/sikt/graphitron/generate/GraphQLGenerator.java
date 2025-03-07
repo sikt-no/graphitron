@@ -54,11 +54,9 @@ public class GraphQLGenerator {
     public static List<ClassGenerator> getGenerators(ProcessedSchema processedSchema) {
         List<ClassGenerator> generators = List.of(
                 new FetchDBClassGenerator(processedSchema),
-                new FetchResolverClassGenerator(processedSchema),
-                new UpdateResolverClassGenerator(processedSchema),
                 new FetchClassGenerator(processedSchema),
-                new UpdateClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
+                new UpdateClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
                 new RecordMapperClassGenerator(processedSchema, true),
                 new RecordMapperClassGenerator(processedSchema, false),
@@ -71,8 +69,13 @@ public class GraphQLGenerator {
                 new TypeRegistryClassGenerator(),
                 new CodeInterfaceClassGenerator(processedSchema.nodeExists())
         );
+        List<ClassGenerator> kickstartGenerators = GeneratorConfig.shouldMakeKickstart() ? List.of(
+                new FetchResolverClassGenerator(processedSchema),
+                new UpdateResolverClassGenerator(processedSchema)
+        ) : List.of();
+        var allGenerators = Stream.concat(generators.stream(), kickstartGenerators.stream());
         return Stream.concat(
-                generators.stream(),
+                allGenerators,
                 Stream.of(new WiringClassGenerator(generators, processedSchema.nodeExists()))  // This one must be the last generator.
         ).toList();
     }
