@@ -33,6 +33,8 @@ public class GeneratorConfig {
             generatedJooqPackage,
             resolverAnnotation;
 
+    private static boolean makeKickstart = false;
+
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
 
@@ -102,6 +104,7 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
+        makeKickstart = mojo.makeKickstart();
     }
 
     /**
@@ -170,6 +173,10 @@ public class GeneratorConfig {
 
     public static boolean recordValidationEnabled() {
         return recordValidation != null && recordValidation.isEnabled();
+    }
+
+    public static boolean shouldMakeKickstart() {
+        return makeKickstart;
     }
 
     public static void setRecordValidation(RecordValidation recordValidation) {

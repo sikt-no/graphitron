@@ -31,4 +31,6 @@ public interface Generator {
     String getApiPackageName();
 
     String getModelPackageName();
+
+    boolean makeKickstart();
 }

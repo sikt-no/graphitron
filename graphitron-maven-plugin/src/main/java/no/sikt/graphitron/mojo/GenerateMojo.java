@@ -1,6 +1,8 @@
 package no.sikt.graphitron.mojo;
 
 import com.kobylynskyi.graphql.codegen.java.JavaGraphQLCodegen;
+import com.kobylynskyi.graphql.codegen.model.ApiInterfaceStrategy;
+import com.kobylynskyi.graphql.codegen.model.ApiRootInterfaceStrategy;
 import com.kobylynskyi.graphql.codegen.model.MappingConfig;
 import com.kobylynskyi.graphql.codegen.model.RelayConfig;
 import graphql.parser.ParserOptions;
@@ -106,6 +108,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private int maxAllowedPageSize;
 
+    @Parameter(property = "generate.makeKickstart", defaultValue = "false")
+    @SuppressWarnings("unused")
+    private boolean makeKickstart;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -148,19 +154,24 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         config.setModelPackageName(getModelPackageName());
         config.setModelValidationAnnotation("jakarta.validation.constraints.NotNull");
         config.setGenerateEqualsAndHashCode(true);
-        config.setApiReturnType("java.util.concurrent.CompletableFuture");
-        config.setGenerateDataFetchingEnvironmentArgumentInApis(true);
-        config.setFieldsWithResolvers(Set.of("@splitQuery"));
 
         // This sets the relay config to look for a non-existent directive to disable the relay handling.
         var relayConfig = new RelayConfig();
         relayConfig.setDirectiveName("NONE");
         config.setRelayConfig(relayConfig);
 
-        config.setResolverParentInterface("graphql.kickstart.tools.GraphQLResolver<{{TYPE}}>");
-        config.setQueryResolverParentInterface("graphql.kickstart.tools.GraphQLQueryResolver");
-        config.setMutationResolverParentInterface("graphql.kickstart.tools.GraphQLMutationResolver");
-        config.setSubscriptionResolverParentInterface("graphql.kickstart.tools.GraphQLSubscriptionResolver");
+        if (makeKickstart) {
+            config.setFieldsWithResolvers(Set.of("@splitQuery"));
+            config.setApiReturnType("java.util.concurrent.CompletableFuture");
+            config.setGenerateDataFetchingEnvironmentArgumentInApis(true);
+            config.setResolverParentInterface("graphql.kickstart.tools.GraphQLResolver<{{TYPE}}>");
+            config.setQueryResolverParentInterface("graphql.kickstart.tools.GraphQLQueryResolver");
+            config.setMutationResolverParentInterface("graphql.kickstart.tools.GraphQLMutationResolver");
+            config.setSubscriptionResolverParentInterface("graphql.kickstart.tools.GraphQLSubscriptionResolver");
+        } else {
+            config.setApiInterfaceStrategy(ApiInterfaceStrategy.DO_NOT_GENERATE);
+            config.setApiRootInterfaceStrategy(ApiRootInterfaceStrategy.DO_NOT_GENERATE);
+        }
 
         return config;
     }
@@ -179,39 +190,48 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         return customTypesMapping;
     }
 
+    @Override
     public String getOutputPath() {
         return outputPath;
     }
 
+    @Override
     public String getOutputPackage() {
         return outputPackage;
     }
 
+    @Override
     public String getApiPackageName() {
         return outputPackage + ".api";
     }
 
+    @Override
     public String getModelPackageName() {
         return outputPackage + ".model";
     }
 
+    @Override
     public Set<String> getSchemaFiles() {
         return schemaFiles;
     }
 
 
+    @Override
     public String getJooqGeneratedPackage() {
         return jooqGeneratedPackage;
     }
 
+    @Override
     public String getResolverAnnotation() {
         return resolverAnnotation;
     }
 
+    @Override
     public RecordValidation getRecordValidation() {
         return recordValidation;
     }
 
+    @Override
     public int getMaxAllowedPageSize() {
         return maxAllowedPageSize;
     }
@@ -228,16 +248,24 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         this.schemaFiles = schemaFiles;
     }
 
+    @Override
     public List<? extends ExternalReference> getExternalReferences() {
         return externalReferences;
     }
 
+    @Override
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
     }
 
+    @Override
     public List<Extension> getExtensions() {
         return extensions;
+    }
+
+    @Override
+    public boolean makeKickstart() {
+        return makeKickstart;
     }
 
 
@@ -245,6 +273,7 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         this.jooqGeneratedPackage = jooqGeneratedPackage;
     }
 
+    @Override
     public Set<String> getExternalReferenceImports() {
         return externalReferenceImports;
     }
