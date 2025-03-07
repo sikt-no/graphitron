@@ -14,6 +14,7 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -61,7 +62,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
 
     protected ServiceDependency createServiceDependency(GenerationField target) {
         var dependency = new ServiceDependency(new ServiceWrapper(target, processedSchema.getObject(target)));
-        dependencySet.add(dependency);
+        dependencyMap.computeIfAbsent(target.getName(), (s) -> new ArrayList<>()).add(dependency);
         return dependency;
     }
 
@@ -144,9 +145,10 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     /**
      * @return Code that declares any service dependencies set for this generator.
      */
-    protected CodeBlock declareAllServiceClasses() {
+    protected CodeBlock declareAllServiceClasses(String methodName) {
         var code = CodeBlock.builder();
-        dependencySet
+        dependencyMap
+                .getOrDefault(methodName, List.of())
                 .stream()
                 .filter(dep -> dep instanceof ServiceDependency) // Inelegant solution, but it should work for now.
                 .distinct()

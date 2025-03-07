@@ -37,7 +37,7 @@ public abstract class UpdateMethodGenerator extends DataFetcherMethodGenerator {
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
                 .addCode(transformInputs(target.getArguments(), parser.hasRecords()))
-                .addCode(declareAllServiceClasses())
+                .addCode(declareAllServiceClasses(target.getName()))
                 .addCode(methodCall)
                 .addCode("\n")
                 .addCode(generateSchemaOutputs(target))

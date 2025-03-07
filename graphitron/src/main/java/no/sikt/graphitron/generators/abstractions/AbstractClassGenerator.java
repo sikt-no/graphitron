@@ -9,6 +9,7 @@ import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 import javax.lang.model.element.Modifier;
 import java.io.File;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -39,7 +40,7 @@ abstract public class AbstractClassGenerator implements ClassGenerator {
     protected void setDependencies(List<? extends MethodGenerator> generators, TypeSpec.Builder spec) {
         generators
                 .stream()
-                .flatMap(gen -> gen.getDependencySet().stream())
+                .flatMap(gen -> gen.getDependencyMap().values().stream().flatMap(Collection::stream))
                 .distinct()
                 .sorted()
                 .filter(dep -> !(dep instanceof ServiceDependency)) // Inelegant solution, but it should work for now.

@@ -4,7 +4,7 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.dependencies.Dependency;
 
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * A method generator generates a set of methods for any purpose.
@@ -16,7 +16,7 @@ public interface MethodGenerator {
     List<MethodSpec> generateAll();
 
     /**
-     * @return A set containing all dependencies necessary for these generated methods.
+     * @return A set containing all dependencies necessary for these generated methods. Key is the method name where the dependency is needed.
      */
-    Set<Dependency> getDependencySet();
+    Map<String, List<Dependency>> getDependencyMap();
 }

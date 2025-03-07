@@ -46,7 +46,7 @@ public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerat
         var methodCall = queryMethodCall(target, parser); // Note, do this before declaring services.
         return spec
                 .addCode(transformInputs(target, parser))
-                .addCode(declareAllServiceClasses())
+                .addCode(declareAllServiceClasses(target.getName()))
                 .addCode(methodCall)
                 .build();
     }

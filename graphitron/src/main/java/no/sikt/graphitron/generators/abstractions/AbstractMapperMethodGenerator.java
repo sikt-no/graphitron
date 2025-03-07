@@ -60,7 +60,7 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
                 .addCode(toRecord && context.hasTable() && !context.hasJavaRecordReference() ? declare(CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)) : empty())
                 .addCode(declare(context.getOutputName(), context.getReturnType(), context.hasSourceName() || noRecordIterability))
                 .addCode("\n")
-                .addCode(declareDependencyClasses())
+                .addCode(declareDependencyClasses(methodName))
                 .addCode(fillCode)
                 .addCode("\n")
                 .addCode(context.getReturnBlock());
@@ -86,11 +86,12 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
     public abstract boolean mapsJavaRecord();
 
     /**
-     * @return Code that declares any dependencies set for this generator.
+     * @return Code that declares any dependencies set for this method.
      */
-    private CodeBlock declareDependencyClasses() {
+    private CodeBlock declareDependencyClasses(String methodName) {
         var code = CodeBlock.builder();
-        dependencySet
+        dependencyMap
+                .getOrDefault(methodName, List.of())
                 .stream()
                 .distinct()
                 .sorted()

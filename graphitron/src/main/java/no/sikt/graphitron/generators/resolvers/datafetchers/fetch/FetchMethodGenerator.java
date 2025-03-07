@@ -50,7 +50,7 @@ public class FetchMethodGenerator extends DataFetcherMethodGenerator {
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
                 .addCode(transformInputs(target, parser))
-                .addCode(declareAllServiceClasses())
+                .addCode(declareAllServiceClasses(target.getName()))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
