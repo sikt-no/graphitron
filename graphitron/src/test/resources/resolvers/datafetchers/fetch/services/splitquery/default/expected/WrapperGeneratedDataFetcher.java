@@ -17,7 +17,7 @@ public class WrapperGeneratedDataFetcher {
             return new ServiceDataFetcherHelper<>(transform).load(
                     "queryForWrapper", wrapper.getId(),
                     (ids) -> resolverFetchService.query(ids),
-                    (transform, response) -> transform.customerRecordToGraphType(response, ""));
+                    (recordTransform, response) -> recordTransform.customerRecordToGraphType(response, ""));
         };
     }
 }

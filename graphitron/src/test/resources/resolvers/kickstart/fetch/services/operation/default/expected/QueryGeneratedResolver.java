@@ -17,6 +17,6 @@ public class QueryGeneratedResolver implements QueryResolver {
         var resolverFetchService = new ResolverFetchService(transform.getCtx());
         return new ServiceDataFetcherHelper<>(transform).load(
                 () -> resolverFetchService.query(),
-                (transform, response) -> transform.customerRecordToGraphType(response, ""));
+                (recordTransform, response) -> recordTransform.customerRecordToGraphType(response, ""));
     }
 }

@@ -46,7 +46,7 @@ public class OutputRecordTest extends GeneratorTest {
                 "operation/returningJavaRecord",
                 "public CompletableFuture<DummyTypeRecord>",
                 "resolverFetchService.queryJavaRecord(),",
-                "transform.dummyTypeRecordToGraphType(response, \"\")"
+                "recordTransform.dummyTypeRecordToGraphType(response, \"\")"
         );
     }
 
@@ -57,7 +57,7 @@ public class OutputRecordTest extends GeneratorTest {
                 "operation/returningWrappedJavaRecord",
                 "public CompletableFuture<Wrapper>",
                 "resolverFetchService.queryJavaRecord(),",
-                "transform.wrapperRecordToGraphType(response, \"\")"
+                "recordTransform.wrapperRecordToGraphType(response, \"\")"
         );
     }
 
@@ -68,7 +68,7 @@ public class OutputRecordTest extends GeneratorTest {
                 "splitquery/returningJavaRecord", Set.of(SPLIT_QUERY_WRAPPER),
                 "public CompletableFuture<DummyTypeRecord>",
                 "resolverFetchService.queryJavaRecord(ids)",
-                "transform.dummyTypeRecordToGraphType(response, \"\")"
+                "recordTransform.dummyTypeRecordToGraphType(response, \"\")"
         );
     }
 }

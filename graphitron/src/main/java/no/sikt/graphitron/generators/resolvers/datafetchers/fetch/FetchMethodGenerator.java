@@ -18,7 +18,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.return
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
-import static no.sikt.graphql.naming.GraphQLReservedName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
+import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
  * This class generates the fetchers for default fetch queries with potential arguments or pagination.

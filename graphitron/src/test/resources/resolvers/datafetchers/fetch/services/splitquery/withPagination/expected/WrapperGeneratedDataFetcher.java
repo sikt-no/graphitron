@@ -28,7 +28,7 @@ public class WrapperGeneratedDataFetcher {
                     "queryForWrapper", wrapper.getId(), pageSize, 1000,
                     (ids) -> resolverFetchService.queryMap(ids, pageSize, after),
                     (ids) -> resolverFetchService.countQueryMap(ids),
-                    (transform, response) -> transform.customerTableRecordToGraphType(response, ""),
+                    (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, ""),
                     (connection) ->  {
                         var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
                         var page = connection.getPageInfo();

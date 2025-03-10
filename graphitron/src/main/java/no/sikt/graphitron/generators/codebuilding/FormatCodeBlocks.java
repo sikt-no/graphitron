@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
@@ -62,16 +61,6 @@ public class FormatCodeBlocks {
      * @param name Name of a field that should be declared as a record. This will be the name of the variable.
      * @param input Input type that should be declared as a record.
      * @param isIterable Is this record wrapped in a list?
-     * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
-     */
-    public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable) {
-        return declareRecord(name, input, isIterable, false);
-    }
-
-    /**
-     * @param name Name of a field that should be declared as a record. This will be the name of the variable.
-     * @param input Input type that should be declared as a record.
-     * @param isIterable Is this record wrapped in a list?
      * @param isResolver Is this declaration to be used in a resolver?
      * @return CodeBlock that declares a new record variable and that attaches context configuration if needed.
      */
@@ -87,52 +76,8 @@ public class FormatCodeBlocks {
         return code.build();
     }
 
-    /**
-     * @return CodeBlock for the mapping of a record.
-     */
-    public static CodeBlock transformRecord(String initialName, String typeName, boolean isJava) {
-        return CodeBlock.of(
-                "$L\"$L\"$L)",
-                recordTransformPart(initialName, typeName, isJava, true),
-                initialName,
-                recordValidationEnabled() && !isJava ? CodeBlock.of(", \"$L\"", initialName) : empty()
-        );
-    }
-
-    /**
-     * @return CodeBlock for the mapping of a record. Includes path for validation.
-     */
-    public static CodeBlock transformRecord(String varName, String typeName, String path, String pathWithIndex, boolean isJava) {
-        return CodeBlock.of(
-                "$L\"$L\"$L)",
-                recordTransformPart(varName, typeName, isJava, true),
-                path,
-                recordValidationEnabled() && !isJava ? CodeBlock.of(", \"$L\"", pathWithIndex) : empty()
-        );
-    }
-
-    /**
-     * @return CodeBlock for the mapping of a record.
-     */
-    public static CodeBlock transformRecord(String varName, String typeName, String path, boolean isJava, boolean isInput) {
-        return CodeBlock.of(
-                "$L$N + $S$L)",
-                recordTransformPart(varName, typeName, isJava, isInput),
-                PATH_HERE_NAME,
-                path,
-                recordValidationEnabled() && !isJava && isInput ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
-        );
-    }
-
-    /**
-     * @return CodeBlock for the mapping of a record.
-     */
-    public static CodeBlock transformRecord(String varName, String typeName, String path, boolean isJava) {
-        return CodeBlock.of("$L$S)", recordTransformPart(varName, typeName, isJava, false), path);
-    }
-
-    private static CodeBlock recordTransformPart(String varName, String typeName, boolean isJava, boolean isInput) {
-        return CodeBlock.of("$N.$L($N, ", TRANSFORMER_NAME, recordTransformMethod(typeName, isJava, isInput), uncapitalize(varName));
+    public static CodeBlock recordTransformPart(String transformerName, String varName, String typeName, boolean isJava, boolean isInput) {
+        return CodeBlock.of("$N.$L($N, ", transformerName, recordTransformMethod(typeName, isJava, isInput), uncapitalize(varName));
     }
 
     /**

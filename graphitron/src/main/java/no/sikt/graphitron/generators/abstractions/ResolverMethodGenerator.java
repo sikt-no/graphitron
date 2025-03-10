@@ -11,17 +11,19 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
+import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.inputTransform;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
@@ -31,7 +33,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * This class contains common information and operations shared by resolver method generators.
  */
 abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenerator<ObjectField, ObjectDefinition> {
-    protected static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response";
+    protected static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response", TRANSFORMER_LAMBDA_NAME = "recordTransform";
 
     public ResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -95,7 +97,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
 
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = isService && object != null
-                ? CodeBlock.of("($L, $L) -> $L", TRANSFORMER_NAME, RESPONSE_NAME, transformRecord(RESPONSE_NAME, object.getName(), "", object.hasJavaRecordReference()))
+                ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
                 : empty();
         var transformWrap = transformFunction.isEmpty() ? empty() : CodeBlock.of(",\n$L", transformFunction);
         if (!target.hasRequiredPaginationFields()) {
@@ -125,6 +127,13 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 .unindent()
                 .addStatement(")")
                 .build();
+    }
+
+    /**
+     * @return CodeBlock for the mapping of a record.
+     */
+    private static CodeBlock transformOutputRecord(String typeName, boolean isJava) {
+        return CodeBlock.of("($L, $L) -> $L$S)", TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false), "");
     }
 
     private static CodeBlock fetcherCodeInit(ObjectField target, String queryMethodName, RecordObjectSpecification<?> localObject, CodeBlock fetcher) {
@@ -170,7 +179,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
             return empty();
         }
 
-        return inputTransform(field.getNonReservedArguments(), processedSchema);
+        return inputTransform(field.getNonReservedArguments());
     }
 
     /**
@@ -181,6 +190,111 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
             return declareTransform();
         }
 
-        return inputTransform(inputs, processedSchema);
+        return inputTransform(inputs);
+    }
+
+    private CodeBlock inputTransform(List<? extends InputField> specInputs) {
+        var code = CodeBlock
+                .builder()
+                .add(declareTransform())
+                .add("\n");
+        var recordCode = CodeBlock.builder();
+
+        var inputObjects = specInputs.stream().filter(processedSchema::isInputType).toList();
+        for (var in : inputObjects) {
+            var context = MapperContext.createResolverContext(in, true, processedSchema);
+            code.add(declareRecords(context, 0));
+            recordCode.add(unwrapRecords(context));
+        }
+
+        if (code.isEmpty() && recordCode.isEmpty()) {
+            return empty();
+        }
+
+        code.add("\n").add(recordCode.build());
+
+        if (recordValidationEnabled()) {
+            code.add("\n").addStatement(asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_VALIDATE_NAME));
+        }
+
+        return code.build();
+    }
+
+    private CodeBlock declareRecords(MapperContext context, int recursion) {
+        recursionCheck(recursion);
+        if (!context.targetIsType()) {
+            return empty();
+        }
+
+        var target = context.getTarget();
+        var targetName = target.getName();
+        var code = CodeBlock.builder();
+        var declareBlock = declare(asListedRecordNameIf(targetName, context.isIterable()), context.transformInputRecord());
+        if (context.hasJavaRecordReference()) {
+            return declareBlock; // If the input type is a Java record, no further records should be declared.
+        }
+
+        if (context.hasTable() && recursion == 0) {
+            code.add(declareBlock);
+        } else {
+            code.add(declareRecord(asRecordName(target.getName()), context.getTargetType(), context.isIterable(), true));
+        }
+
+        context
+                .getTargetType()
+                .getFields()
+                .stream()
+                .filter(processedSchema::isInputType)
+                .forEach(in -> code.add(declareRecords(context.iterateContext(in), recursion + 1)));
+
+        return code.build();
+    }
+
+    /**
+     * @return Code for setting the record data of previously defined records.
+     */
+    private CodeBlock unwrapRecords(MapperContext context) {
+        if (context.hasJavaRecordReference()) {
+            return empty();
+        }
+
+        var schema = context.getSchema();
+
+        var containedInputTypes = context.getTargetType()
+                .getInputsSortedByNullability()
+                .stream()
+                .filter(schema::isInputType)
+                .filter(it -> schema.hasRecord(it) || schema.getInputType(it).getFields().stream().anyMatch(schema::isInputType))
+                .toList();
+
+        var fieldCode = CodeBlock.builder();
+        for (var in : containedInputTypes) {
+            var innerContext = context.iterateContext(in);
+            fieldCode
+                    .add(declare(in.getName(), innerContext.getSourceGetCallBlock()))
+                    .add(unwrapRecords(innerContext));
+        }
+
+        var code = CodeBlock.builder();
+        var sourceName = context.getSourceName();
+        if (context.hasTable() && !context.isTopLevelContext()) {
+            var record = context.transformInputRecord();
+            if (!context.getPreviousContext().wasIterable()) {
+                code.addStatement("$L = $L", asListedRecordNameIf(sourceName, context.isIterable()), record);
+            } else {
+                code.addStatement("$N.add$L($L)", asListedRecordName(sourceName), context.isIterable() ? "All" : "", record);
+            }
+        }
+
+        var fields = context.getTargetType().getFields();
+        if (fieldCode.isEmpty() || fields.stream().noneMatch(schema::isInputType)) {
+            return code.build();
+        }
+
+        if (context.isIterable() && !(context.hasTable() && fields.stream().anyMatch(it -> it.isIterableWrapped() && schema.isInputType(it)))) {
+            return code.build();
+        }
+
+        return wrapNotNull(sourceName, code.add(context.wrapFields(fieldCode.build())).build());
     }
 }
