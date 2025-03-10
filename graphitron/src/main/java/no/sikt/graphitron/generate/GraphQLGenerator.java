@@ -110,7 +110,7 @@ public class GraphQLGenerator {
      * @return A Graphitron-interpreted version of the schema files set in {@link GeneratorConfig}.
      */
     public static ProcessedSchema getProcessedSchema(boolean verbose) {
-        var schemaLocations = GeneratorConfig.schemaFiles();
+        var schemaLocations = GeneratorConfig.generatorSchemaFiles();
         if (verbose) {
             LOGGER.info("Reading graphql schemas {}", schemaLocations);
         }

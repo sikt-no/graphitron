@@ -64,7 +64,7 @@ public class WatcherMojo extends GenerateMojo {
 
         // Group the files and find their immediate directories.
         var fileWatchMap = GeneratorConfig
-                .schemaFiles()
+                .generatorSchemaFiles()
                 .stream()
                 .collect(Collectors.groupingBy(it -> new File(it).getParentFile().toPath(), Collectors.toCollection(HashSet::new)));
         getLog().info("Initiating watching of directories:");
@@ -159,7 +159,7 @@ public class WatcherMojo extends GenerateMojo {
                 var kind = event.kind();
                 getLog().debug("Event kind: " + kind);
                 if (kind == ENTRY_CREATE) {
-                    GeneratorConfig.setSchemaFiles();
+                    GeneratorConfig.setGeneratorSchemaFiles();
                     runUpdate = runUpdate || fileSet.add(modifiedPath);
                 } else if (kind == ENTRY_DELETE) {
                     runUpdate = runUpdate || fileSet.remove(modifiedPath);
@@ -176,7 +176,7 @@ public class WatcherMojo extends GenerateMojo {
      */
     private void regenerateFiles(Map<Path, HashSet<String>> fileWatchMap) {
         getLog().info("Schema changes detected, generating code...");
-        GeneratorConfig.setSchemaFiles(fileWatchMap.values().stream().flatMap(Collection::stream).collect(Collectors.toSet()));
+        GeneratorConfig.setGeneratorSchemaFiles(fileWatchMap.values().stream().flatMap(Collection::stream).collect(Collectors.toSet()));
         generate();
     }
 

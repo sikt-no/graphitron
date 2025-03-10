@@ -63,6 +63,12 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     private Set<String> schemaFiles;
 
     /**
+     * The comma-separated locations of the schema files to provide to the user.
+     */
+    @Parameter(property = "generate.userSchemaFiles")
+    private Set<String> userSchemaFiles;
+
+    /**
      * The output folder for jOOQ generated code.
      */
     @Parameter(property = "generate.jooqGeneratedPackage")
@@ -216,6 +222,13 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         return schemaFiles;
     }
 
+    @Override
+    public Set<String> getUserSchemaFiles() {
+        if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
+            return schemaFiles;
+        }
+        return userSchemaFiles;
+    }
 
     @Override
     public String getJooqGeneratedPackage() {
