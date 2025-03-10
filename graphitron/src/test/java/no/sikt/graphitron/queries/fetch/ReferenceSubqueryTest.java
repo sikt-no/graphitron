@@ -50,7 +50,7 @@ public class ReferenceSubqueryTest extends ReferenceTest {
                 "condition", Set.of(CUSTOMER_QUERY),
                 "join(customer_address_addresscustomer_address).on(",
                 ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
-                ".where(_customer.customer_id.eq(customer_address.customer_id"
+                ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"
         );
     }
 
@@ -81,7 +81,7 @@ public class ReferenceSubqueryTest extends ReferenceTest {
                 "throughCondition", Set.of(CUSTOMER_QUERY),
                 ".join(customer_city_citycustomer_city).on(",
                 ".cityCustomer(customer_city, customer_city_citycustomer_city)",
-                ".where(_customer.customer_id.eq(customer_city.customer_id"
+                ".where(_customer.CUSTOMER_ID.eq(customer_city.CUSTOMER_ID"
         );
     }
 

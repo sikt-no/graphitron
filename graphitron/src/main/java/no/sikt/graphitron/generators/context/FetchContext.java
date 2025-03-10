@@ -403,9 +403,13 @@ public class FetchContext {
 
                 var primaryKey = getTable(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
                         .orElseThrow(() -> new IllegalArgumentException(String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.", referenceObjectField.getContainerTypeName(), referenceObjectField.getName(), previous.getName())));
+                var primaryKeyFields = getJavaFieldNamesForTable(previous.getName())
+                        .stream()
+                        .filter(field -> primaryKey.getFields().stream().anyMatch(pkField -> pkField.getName().equalsIgnoreCase(field)))
+                        .toList();
 
-                for (var field : primaryKey.getFields()) {
-                    this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousContext.getCurrentJoinSequence().getLast().getMappingName(), field.getName(), alias.getMappingName(), field.getName()));
+                for (var fieldName : primaryKeyFields) {
+                    this.conditionList.add(CodeBlock.of("$L.$L.eq($L.$L)", previousContext.getCurrentJoinSequence().getLast().getMappingName(), fieldName, alias.getMappingName(), fieldName));
                 }
             }
             var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);

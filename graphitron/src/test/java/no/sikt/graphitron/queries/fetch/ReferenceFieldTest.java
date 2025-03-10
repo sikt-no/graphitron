@@ -58,7 +58,7 @@ public class ReferenceFieldTest extends ReferenceTest {
                 "condition", Set.of(CUSTOMER_QUERY),
                 ".join(customer_district_district_customer).on(",
                 ".district(customer_district, customer_district_district_customer)",
-                ".where(_customer.customer_id.eq(customer_district.customer_id"
+                ".where(_customer.CUSTOMER_ID.eq(customer_district.CUSTOMER_ID"
         );
     }
 

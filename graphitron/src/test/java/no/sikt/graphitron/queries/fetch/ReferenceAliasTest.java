@@ -63,7 +63,7 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer_district_district_customer = CUSTOMER.as(",
                 "customer_district_district_customer.DISTRICT",
                 ".from(customer_district",
-                ".where(_customer.customer_id.eq(customer_district.customer_id"
+                ".where(_customer.CUSTOMER_ID.eq(customer_district.CUSTOMER_ID"
         );
     }
 
