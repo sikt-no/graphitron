@@ -8,9 +8,11 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
+import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -319,7 +321,7 @@ public class MapperContext {
                 code.add(continueCheck(asIterable(sourceName)));
 
                 if (!isResolver && !mapsJavaRecord && !targetEqualsPrevious) {
-                    code.add(select(declareRecord(targetName, targetType, false), declare(targetName, targetType.getGraphClassName())));
+                    code.add(select(declareRecord(targetName, targetType, false, false), declare(targetName, targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
                 code.add(declare(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className)));
@@ -373,23 +375,15 @@ public class MapperContext {
     }
 
     public CodeBlock getRecordSetMappingBlock() {
-        return getSetMappingBlock(
-                transformRecord(
-                        previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
-                        uncapitalize(target.getTypeName()),
-                        path,
-                        hasJavaRecordReference,
-                        toRecord
-                )
-        );
+        return getSetMappingBlock(transformRecord());
     }
 
     public CodeBlock getRecordSetMappingBlock(String variableName) {
-        return getSetMappingBlock(getRecordTransform(variableName));
+        return getSetMappingBlock(transformOutputRecord(variableName));
     }
 
-    public CodeBlock getRecordTransform(String variableName) {
-        return transformRecord(variableName, targetName, path, hasJavaRecordReference);
+    public CodeBlock transformOutputRecord(String variableName) {
+        return CodeBlock.of("$L$S)", recordTransformPart(variableName, targetName), path);
     }
 
     public CodeBlock applyEnumConversion(String typeName, CodeBlock getCall) {
@@ -398,6 +392,38 @@ public class MapperContext {
 
     public CodeBlock getReturnBlock() {
         return returnWrap(asListedNameIf(select(targetType.getRecordReferenceName(), targetType.getName()), hasSourceName() || noRecordIterability));
+    }
+
+    /**
+     * @return CodeBlock for the mapping of a record. Includes path for validation.
+     */
+    public CodeBlock transformInputRecord() {
+        return CodeBlock.of(
+                "$L\"$L\"$L)",
+                recordTransformPart(sourceName, targetType.getName()),
+                path,
+                recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : empty()
+        );
+    }
+
+    /**
+     * @return CodeBlock for the mapping of a record.
+     */
+    private CodeBlock transformRecord() {
+        return CodeBlock.of(
+                "$L$N + $S$L)",
+                recordTransformPart(
+                        previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
+                        uncapitalize(targetType.getName())
+                ),
+                PATH_HERE_NAME,
+                path,
+                recordValidationEnabled() && !hasJavaRecordReference && toRecord ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
+        );
+    }
+
+    private CodeBlock recordTransformPart(String varName, String typeName) {
+        return FormatCodeBlocks.recordTransformPart(TRANSFORMER_NAME, varName, typeName, hasJavaRecordReference, toRecord);
     }
 
     private boolean isMappingPossible() {
