@@ -4,6 +4,7 @@ import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.dependencies.Dependency;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -16,8 +17,8 @@ abstract public class SimpleMethodGenerator implements MethodGenerator {
     }
 
     @Override
-    public Set<Dependency> getDependencySet() {
-        return Set.of();
+    public Map<String, List<Dependency>> getDependencyMap() {
+        return Map.of();
     }
 
     /**

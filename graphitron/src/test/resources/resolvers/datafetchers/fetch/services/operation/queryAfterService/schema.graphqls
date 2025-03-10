@@ -1,0 +1,4 @@
+type Query {
+  query: Customer @service(service: {name: "RESOLVER_FETCH_SERVICE"})
+  queryNormal: Customer
+}

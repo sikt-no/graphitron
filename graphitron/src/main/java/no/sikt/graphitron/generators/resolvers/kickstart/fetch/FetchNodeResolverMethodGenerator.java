@@ -9,6 +9,7 @@ import no.sikt.graphitron.generators.abstractions.KickstartResolverMethodGenerat
 import no.sikt.graphitron.generators.dependencies.IdHandlerDependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -50,7 +51,7 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
         var anyImplementation = implementations.stream().findFirst();
         var targetBlock = CodeBlock.builder();
         if (anyImplementation.isPresent() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {  // Node special case.
-            dependencySet.add(IdHandlerDependency.getInstance());
+            dependencyMap.computeIfAbsent(target.getName(), s -> new ArrayList<>()).add(IdHandlerDependency.getInstance());
             targetBlock.add("$N.get($N.getTable($N).getName())", NODE_MAP_NAME, NODE_ID_HANDLER_NAME, inputFieldName);
         } else {
             targetBlock.add("null");

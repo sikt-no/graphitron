@@ -11,10 +11,7 @@ import no.sikt.graphitron.generators.dependencies.Dependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 
@@ -24,7 +21,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList
 abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, U extends GenerationTarget> implements MethodGenerator {
     protected final U localObject;
     protected final ProcessedSchema processedSchema;
-    protected Set<Dependency> dependencySet = new HashSet<>();
+    protected Map<String, List<Dependency>> dependencyMap = new HashMap<>();
 
     public AbstractSchemaMethodGenerator(U localObject, ProcessedSchema processedSchema) {
         this.localObject = localObject;
@@ -64,12 +61,9 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
                 .returns(returnType);
     }
 
-    /**
-     * @return Set of dependencies found during generation up to this point.
-     */
     @Override
-    public Set<Dependency> getDependencySet() {
-        return dependencySet;
+    public Map<String, List<Dependency>> getDependencyMap() {
+        return dependencyMap;
     }
 
     /**

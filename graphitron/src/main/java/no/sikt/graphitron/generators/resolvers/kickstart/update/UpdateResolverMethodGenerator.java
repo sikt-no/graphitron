@@ -36,7 +36,7 @@ public abstract class UpdateResolverMethodGenerator extends KickstartResolverMet
         var code = CodeBlock
                 .builder()
                 .add(transformInputs(specInputs, parser.hasRecords()))
-                .add(declareAllServiceClasses())
+                .add(declareAllServiceClasses(target.getName()))
                 .add(methodCall)
                 .add("\n")
                 .add(generateSchemaOutputs(target));
