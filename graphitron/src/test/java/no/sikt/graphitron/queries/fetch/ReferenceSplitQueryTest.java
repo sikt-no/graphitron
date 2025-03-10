@@ -75,7 +75,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
                 "join(customer_address_addresscustomer_address).on(",
                 ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
-                ".where(_customer.customer_id.eq(customer_address.customer_id"
+                ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"
         );
     }
 
