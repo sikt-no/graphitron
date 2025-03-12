@@ -15,6 +15,7 @@
 
     <modules>
         <module>graphitron-example-db</module>
+        <module>graphitron-example-service</module>
         <module>graphitron-example-spec</module>
         <module>graphitron-example-server</module>
     </modules>

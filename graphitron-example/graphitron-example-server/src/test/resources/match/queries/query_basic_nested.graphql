@@ -3,7 +3,9 @@
     customers {
         nodes {
             id
-            lastName
+            name {
+                lastName
+            }
             address {
                 addressLine1
                 city {

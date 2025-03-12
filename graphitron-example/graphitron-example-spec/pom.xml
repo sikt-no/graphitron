@@ -36,6 +36,11 @@
             <version>${revision}${changelist}</version>
         </dependency>
         <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-example-service</artifactId>
+            <version>${revision}${changelist}</version>
+        </dependency>
+        <dependency>
             <groupId>org.hibernate.validator</groupId>
             <artifactId>hibernate-validator</artifactId>
             <version>8.0.2.Final</version>
@@ -70,12 +75,34 @@
 
             <plugin>
                 <groupId>no.sikt</groupId>
+                <artifactId>graphitron-schema-transformer-maven-plugin</artifactId>
+                <version>${revision}${changelist}</version>
+                <configuration>
+                    <schemaRootDirectories>
+                        <directory>${project.basedir}/src/main/resources/graphql</directory>
+                        <directory>${directivesDirectory}</directory>
+                    </schemaRootDirectories>
+                    <descriptionSuffixFilename>description-suffix.md</descriptionSuffixFilename>
+                </configuration>
+
+                <executions>
+                    <execution>
+                        <id>transform-graphql-schema</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>no.sikt</groupId>
                 <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
                 <configuration>
                     <schemaFiles>
-                        <schemaFile>${schemaDirectory}/schema.graphqls</schemaFile>
-                        <schemaFile>${directivesDirectory}/directives.graphqls</schemaFile>
+                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
                     </schemaFiles>
                     <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                     <maxAllowedPageSize>1000</maxAllowedPageSize>
@@ -85,6 +112,9 @@
                         <schemaErrorType>UgyldigInput</schemaErrorType>
                     </recordValidation>
                     <outputPackage>${generatedGraphitronPackage}</outputPackage>
+                    <externalReferenceImports>
+                        <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
+                    </externalReferenceImports>
                 </configuration>
                 <executions>
                     <execution>
@@ -99,6 +129,11 @@
                     <dependency>
                         <groupId>no.sikt</groupId>
                         <artifactId>graphitron-error-handling-jakarta</artifactId>
+                        <version>${revision}${changelist}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>no.sikt</groupId>
+                        <artifactId>graphitron-example-service</artifactId>
                         <version>${revision}${changelist}</version>
                     </dependency>
                     <dependency>

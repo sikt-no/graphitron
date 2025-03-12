@@ -169,6 +169,7 @@ public class GenerateMojo extends AbstractMojo implements Generator {
             config.setMutationResolverParentInterface("graphql.kickstart.tools.GraphQLMutationResolver");
             config.setSubscriptionResolverParentInterface("graphql.kickstart.tools.GraphQLSubscriptionResolver");
         } else {
+            config.setFieldsWithResolvers(Set.of("@splitQuery"));
             config.setApiInterfaceStrategy(ApiInterfaceStrategy.DO_NOT_GENERATE);
             config.setApiRootInterfaceStrategy(ApiRootInterfaceStrategy.DO_NOT_GENERATE);
         }

@@ -19,7 +19,7 @@ public class QueryMatchTest extends MatchTestBase {
         getValidatableResponse(queryFile)
                 .rootPath("data.customers.nodes[0]")
                 .body("id", is(notNullValue()))
-                .body("lastName", is(notNullValue()))
+                .body("name.lastName", is(notNullValue()))
                 .body("address.addressLine1", is(notNullValue()))
                 .body("address.city.name", is(notNullValue()));
     }
