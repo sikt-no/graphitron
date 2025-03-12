@@ -1,0 +1,16 @@
+extend type Query {
+    reachableByEmail: [PersonWithEmail] @asConnection #TODO: throws json-error (GGG-132)
+}
+
+interface PersonWithEmail {
+    email: String
+}
+
+type StaffWithEmail implements PersonWithEmail @table(name: "STAFF") {
+    email: String
+}
+
+type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
+    name: CustomerName
+    email: String
+}

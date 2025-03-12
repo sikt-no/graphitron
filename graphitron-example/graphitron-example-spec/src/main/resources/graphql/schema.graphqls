@@ -1,5 +1,21 @@
+scalar BigDecimal
+
 type Query {
-  customers(first: Int = 100, after: String): CustomerConnection
+    helloWorld: String @notGenerated
+    helloWorldAgain(name: String): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+
+    customers(first: Int = 100, after: String): CustomerConnection
+    activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
+#    customerFromService: CustomerRecord @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"}) # TODO: GGG-41
+
+    filmLists: [FilmList]
+    films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    languages: [Language] @asConnection
+    payments: [Payment] @asConnection
+}
+
+type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
+    greeting: String
 }
 
 type CustomerConnection {
@@ -9,6 +25,13 @@ type CustomerConnection {
     totalCount: Int
 }
 
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
 type CustomerConnectionEdge {
     cursor: String
     node: Customer
@@ -16,13 +39,17 @@ type CustomerConnectionEdge {
 
 type Customer @table {
     id: ID
-    firstName: String! @field(name: "FIRST_NAME")
-    lastName: String! @field(name: "LAST_NAME")
+    name: CustomerName
     email: String
     address: Address!
 }
 
-type Address @table {
+type CustomerName {
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+}
+
+type Address @table @key(fields: "id", resolvable: false) {
     id: ID
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")
@@ -32,14 +59,54 @@ type Address @table {
 }
 
 type City @table {
-    id: ID
+    id: ID!
     name: String! @field(name: "CITY_")
     countryName: String! @field(name: "COUNTRY_") @reference(references: [{table: "COUNTRY"}])
+    addressExample: Address @splitQuery @notGenerated
+#    addresses: [Address] @splitQuery @asConnection
+    payments: [Payment] @reference(references: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
 }
 
-type PageInfo {
-    hasPreviousPage: Boolean!
-    hasNextPage: Boolean!
-    startCursor: String
-    endCursor: String
+type FilmList @table(name: "FILM_LIST") {
+    description: String
+    category: FilmCategory @field(name: "CATEGORY")
+}
+
+enum FilmCategory { # Note that this enum is not complete, and other values are also present in the database
+    SPORTS @field(name: "Sports")
+    CLASSICS @field(name: "Classics")
+    COMEDY @field(name: "Comedy")
+    ANIMATION @field(name: "Animation")
+}
+
+type Language @table {
+    name: String
+}
+
+type Film @table {
+    title: String
+}
+
+input FilmsOrderByInput {
+    orderByField: FilmsOrderByFields!
+    direction: OrderDirection!
+}
+
+enum FilmsOrderByFields {
+    TITLE @index(name: "IDX_TITLE")
+    LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
+}
+
+enum OrderDirection {
+    ASC
+    DESC
+}
+
+type Payment @table {
+    amount: BigDecimal
+#    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
+}
+
+type CustomerRecord @table(name: "CUSTOMER") {
+    id: ID
 }
