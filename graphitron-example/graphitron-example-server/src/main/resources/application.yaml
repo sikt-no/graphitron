@@ -15,13 +15,27 @@ quarkus:
         POSTGRES_DB: sakila
         POSTGRES_USER: sakila
         POSTGRES_PASSWORD: p_ssW0rd
+  log:
+    category:
+      "org.jooq":
+        level: DEBUG
 
 application:
   authentication-required: false
 
+# This configuration is used when running tests
+"%test":
+  quarkus:
+    log:
+      category:
+        "org.jooq":
+          level: WARN
+
 # This configuration is used when running tests on CI (GitLab)
 "%ci":
   quarkus:
+    profile:
+      parent: test
     datasource:
       jdbc:
         url: jdbc:postgresql://docker:${quarkus.datasource.devservices.port}/${quarkus.datasource.devservices.properties.POSTGRES_DB}
