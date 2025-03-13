@@ -49,6 +49,9 @@
                                 </goals>
 
                                 <configuration>
+                                    <configurationFiles>
+                                        <configurationFile>jooq-configuration.xml</configurationFile>
+                                    </configurationFiles>
                                     <jdbc>
                                         <driver>org.postgresql.Driver</driver>
                                         <url>${db.url}</url>

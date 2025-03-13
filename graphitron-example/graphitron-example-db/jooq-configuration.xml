@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<configuration xmlns="http://www.jooq.org/xsd/jooq-codegen-3.19.0.xsd">
+    <onError>FAIL</onError>
+    <generator>
+        <database>
+            <forcedTypes>
+                <forcedType>
+                    <userType>java.lang.String</userType>
+                    <includeTypes>integer</includeTypes>
+                    <includeExpression>
+                        .*\.film_id
+                    </includeExpression>
+                    <lambdaConverter>
+                        <from>t -> Integer.toString(t)</from>
+                        <to>u -> Integer.valueOf(u)</to>
+                    </lambdaConverter>
+                </forcedType>
+            </forcedTypes>
+        </database>
+    </generator>
+</configuration>
