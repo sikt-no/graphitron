@@ -27,6 +27,7 @@ import no.sikt.graphitron.example.generated.jooq.tables.Language.LanguagePath;
 import no.sikt.graphitron.example.generated.jooq.tables.records.FilmRecord;
 
 import org.jooq.Condition;
+import org.jooq.Converter;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
 import org.jooq.Identity;
@@ -84,7 +85,7 @@ public class Film extends TableImpl<FilmRecord> {
     /**
      * The column <code>public.film.film_id</code>.
      */
-    public final TableField<FilmRecord, Integer> FILM_ID = createField(DSL.name("film_id"), SQLDataType.INTEGER.nullable(false).identity(true), this, "");
+    public final TableField<FilmRecord, String> FILM_ID = createField(DSL.name("film_id"), SQLDataType.INTEGER.nullable(false).identity(true), this, "", Converter.ofNullable(Integer.class, String.class, t -> Integer.toString(t), u -> Integer.valueOf(u)));
 
     /**
      * The column <code>public.film.title</code>.
@@ -230,8 +231,8 @@ public class Film extends TableImpl<FilmRecord> {
     }
 
     @Override
-    public Identity<FilmRecord, Integer> getIdentity() {
-        return (Identity<FilmRecord, Integer>) super.getIdentity();
+    public Identity<FilmRecord, String> getIdentity() {
+        return (Identity<FilmRecord, String>) super.getIdentity();
     }
 
     @Override

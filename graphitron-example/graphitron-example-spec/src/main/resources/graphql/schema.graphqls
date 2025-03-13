@@ -2,16 +2,24 @@ scalar BigDecimal
 
 type Query {
     helloWorld: String @notGenerated
-    helloWorldAgain(name: String): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldAgain(name: String!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
 
     customers(first: Int = 100, after: String): CustomerConnection
     activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
 #    customerFromService: CustomerRecord @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"}) # TODO: GGG-41
 
-    filmLists: [FilmList]
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
+    filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
+    filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
+    filmLists(category: String): [FilmList]
+
     languages: [Language] @asConnection
+
     payments: [Payment] @asConnection
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
+
+    staff(input: StaffInput!): [Staff] @asConnection
 }
 
 type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
@@ -81,10 +89,16 @@ enum FilmCategory { # Note that this enum is not complete, and other values are 
 
 type Language @table {
     name: String
+#    films(releaseYear: Int! @field(name: "RELEASE_YEAR")): [Film] @splitQuery
 }
 
 type Film @table {
     title: String
+}
+
+input FilmLookupInput {
+    filmId: String! @field(name: "FILM_ID")
+    title: String!
 }
 
 input FilmsOrderByInput {
@@ -109,4 +123,17 @@ type Payment @table {
 
 type CustomerRecord @table(name: "CUSTOMER") {
     id: ID
+}
+
+input StaffInput {
+    username: String
+    isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
+    addressId: Int @field(name: "ADDRESS_ID") @reference(references: [{table: "ADDRESS"}])
+    withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(references: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
+}
+
+type Staff @table(name: "STAFF") {
+    id: ID
+    email: String
+    username: String
 }
