@@ -1,0 +1,8 @@
+# query with orderby should return nodes in correct order
+query OrderingQuery ($orderBy: FilmsOrderByInput){
+    films(first: 2, orderBy: $orderBy) {
+        nodes {
+            id
+        }
+    }
+}

@@ -93,6 +93,7 @@ type Language @table {
 }
 
 type Film @table {
+    id: ID
     title: String
 }
 
