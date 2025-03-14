@@ -25,7 +25,7 @@ public class QueryDBQueries {
         var _customer = CUSTOMER.as("customer_2952383337");
         var orderFields = orderBy == null
                 ? _customer.fields(_customer.getPrimaryKey().getFieldsArray())
-                : QueryHelper.getSortFields(_customer.getIndexes(), Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
+                : QueryHelper.getSortFields(_customer, Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
                 .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString());
         return ctx
                 .select(

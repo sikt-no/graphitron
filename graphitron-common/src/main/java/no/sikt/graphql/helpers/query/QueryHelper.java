@@ -16,13 +16,15 @@ import static org.jooq.impl.DSL.*;
 
 public class QueryHelper {
 
-    public static SortField<?>[] getSortFields(List<Index> indexes, String selectedIndexName, String sortOrder) {
+    public static SortField<?>[] getSortFields(TableImpl<?> table, String selectedIndexName, String sortOrder) {
+        var indexes = table.getIndexes();
         return indexes.stream()
-                .filter(it -> it.getName().equals(selectedIndexName))
+                .filter(it -> it.getName().equalsIgnoreCase(selectedIndexName))
                 .findFirst()
                 .orElseThrow()
                 .getFields().stream()
                 .map(field -> field.$sortOrder(sortOrder.equalsIgnoreCase("ASC") ? SortOrder.ASC : SortOrder.DESC))
+                .map(it -> it.$field(table.field(it.$field())))
                 .toArray(SortField<?>[]::new);
     }
 

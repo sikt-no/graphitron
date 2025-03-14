@@ -870,7 +870,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add("$N == null\n", orderInputFieldName)
                 .indent().indent()
                 .add("? $L\n", primaryKeyFieldsBlock)
-                .add(": $T.getSortFields($N.getIndexes(), $L.get($N.get$L().toString()), $N.getDirection().toString())",
+                .add(": $T.getSortFields($N, $L.get($N.get$L().toString()), $N.getDirection().toString())",
                         QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
                 .unindent().unindent()
                 .build();
