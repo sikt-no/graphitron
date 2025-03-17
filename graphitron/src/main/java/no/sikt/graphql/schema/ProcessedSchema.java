@@ -337,6 +337,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Set of all the scalar types in the schema.
+     */
+    public Set<String> getScalarTypes() {
+        return scalarTypes;
+    }
+
+    /**
      * @return Does this name belong to an object type in the schema?
      */
     public boolean isObject(String name) {

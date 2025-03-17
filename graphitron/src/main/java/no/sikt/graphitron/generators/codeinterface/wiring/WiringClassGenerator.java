@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.codeinterface.wiring;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
@@ -13,10 +14,10 @@ public class WiringClassGenerator extends AbstractClassGenerator {
     public final static String SAVE_DIRECTORY_NAME = "wiring", CLASS_NAME = "Wiring";
     private final List<? extends WiringBuilderMethodGenerator> generators;
 
-    public WiringClassGenerator(List<ClassGenerator> generators, boolean includeNode) {
+    public WiringClassGenerator(List<ClassGenerator> generators, ProcessedSchema processedSchema) {
         this.generators = List.of(
-                new WiringBuilderMethodGenerator(generators, includeNode),
-                new WiringMethodGenerator(includeNode)
+                new WiringBuilderMethodGenerator(generators, processedSchema),
+                new WiringMethodGenerator(processedSchema)
         );
     }
 

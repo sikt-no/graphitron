@@ -12,6 +12,7 @@ import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
+import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generate.Generator;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import org.apache.maven.plugin.AbstractMojo;
@@ -185,15 +186,14 @@ public class GenerateMojo extends AbstractMojo implements Generator {
 
     private static @NotNull HashMap<String, String> getGraphqlCodegenCustomTypeMapping() {
         var customTypesMapping = new HashMap<String, String>();
-        customTypesMapping.put("Date", "java.time.LocalDate");
-        customTypesMapping.put("Time", "java.time.OffsetTime");
-        customTypesMapping.put("DateTime", "java.time.OffsetDateTime");
-        customTypesMapping.put("BigDecimal", "java.math.BigDecimal");
         customTypesMapping.put("Duration", "org.jooq.types.DayToSecond");
         customTypesMapping.put("Int!", "Integer");
         customTypesMapping.put("Boolean!", "Boolean");
-        customTypesMapping.put("UUID", "java.util.UUID");
         customTypesMapping.put("_Any", "java.lang.Object");
+
+        // Populate customTypesMapping with all ExtendedScalars
+        customTypesMapping.putAll(ScalarUtils.getExtendedScalarsTypeMapping());
+
         return customTypesMapping;
     }
 

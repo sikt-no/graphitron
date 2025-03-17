@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.codeinterface.wiring;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
@@ -15,8 +16,8 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.RUNTIME_WIRING;
 public class WiringMethodGenerator extends WiringBuilderMethodGenerator {
     public static final String METHOD_NAME = "getRuntimeWiring";
 
-    public WiringMethodGenerator(boolean includeNode) {
-        super(List.of(), includeNode);
+    public WiringMethodGenerator(ProcessedSchema processedSchema) {
+        super(List.of(), processedSchema);
     }
 
     @Override
