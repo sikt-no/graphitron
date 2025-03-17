@@ -22,10 +22,6 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.graphql-java-kickstart</groupId>
-            <artifactId>graphql-java-tools</artifactId>
-        </dependency>
-        <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-common</artifactId>
             <version>${revision}${changelist}</version>
