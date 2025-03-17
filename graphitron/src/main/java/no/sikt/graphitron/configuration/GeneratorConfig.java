@@ -23,7 +23,7 @@ public class GeneratorConfig {
 
     private static final URL GENERATOR_DIRECTIVES_PATH = GeneratorConfig.class.getResource("schema/directives.graphqls");
 
-    private static Set<String> schemaFiles;
+    private static Set<String> generatorSchemaFiles, userSchema;
 
     private static String
             outputDirectory,
@@ -59,7 +59,8 @@ public class GeneratorConfig {
             List<GlobalTransform> globalTransforms,
             List<Extension> extendedClasses
     ) {
-        schemaFiles = files;
+        generatorSchemaFiles = files;
+        userSchema = files;
         outputDirectory = outputDir;
         outputPackage = outputPkg;
 
@@ -88,7 +89,8 @@ public class GeneratorConfig {
             }
         }
 
-        schemaFiles = inputFiles;
+        generatorSchemaFiles = inputFiles;
+        userSchema = mojo.getUserSchemaFiles();
         outputDirectory = mojo.getOutputPath() + "/" + PLUGIN_OUTPUT_PATH;
         outputPackage = mojo.getOutputPackage();
 
@@ -111,7 +113,8 @@ public class GeneratorConfig {
      * Clear all configurations. Intended for tests.
      */
     public static void clear() {
-        schemaFiles = null;
+        generatorSchemaFiles = null;
+        userSchema = null;
         outputDirectory = null;
         outputPackage = null;
         generatedSchemaResolversPackage = null;
@@ -124,8 +127,12 @@ public class GeneratorConfig {
         resolverAnnotation = null;
     }
 
+    public static Set<String> generatorSchemaFiles() {
+        return generatorSchemaFiles;
+    }
+
     public static Set<String> schemaFiles() {
-        return schemaFiles;
+        return userSchema;
     }
 
     public static String outputDirectory() {
@@ -183,12 +190,16 @@ public class GeneratorConfig {
         GeneratorConfig.recordValidation = recordValidation;
     }
 
-    public static void setSchemaFiles(String... files) {
-        schemaFiles = Arrays.stream(files).filter(it -> new File(it).exists()).collect(Collectors.toSet());
+    public static void setGeneratorSchemaFiles(String... files) {
+        generatorSchemaFiles = Arrays.stream(files).filter(it -> new File(it).exists()).collect(Collectors.toSet());
     }
 
-    public static void setSchemaFiles(Set<String> files) {
-        schemaFiles = files;
+    public static void setGeneratorSchemaFiles(Set<String> files) {
+        generatorSchemaFiles = files;
+    }
+
+    public static void setUserSchemaFiles(Set<String> files) {
+        userSchema = files;
     }
 
     public static void setOutputDirectory(String path) {

@@ -13,7 +13,7 @@
 
     <properties>
         <outputDirectory>${project.build.directory}/generated-sources</outputDirectory>
-        <schemaDirectory>${project.basedir}/src/main/resources/graphql/</schemaDirectory>
+        <schemaDirectory>${project.basedir}/src/main/resources/graphql</schemaDirectory>
         <directivesDirectory>${project.build.directory}/graphitron/schema</directivesDirectory>
         <generatedCodePackage>no.sikt.graphitron.example.generated</generatedCodePackage>
         <generatedJooqPackage>${generatedCodePackage}.jooq</generatedJooqPackage>

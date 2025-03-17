@@ -22,7 +22,7 @@ public class ReadingTest extends ValidationTest {
     void logReadSchemaFiles() {
         setProperties();
         var testDirectory = getSourceTestPath() + "logReadSchemaFiles";
-        GeneratorConfig.setSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
+        GeneratorConfig.setGeneratorSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
 
         GraphQLGenerator.getProcessedSchema(true).validate();
         assertThat(getInfo())

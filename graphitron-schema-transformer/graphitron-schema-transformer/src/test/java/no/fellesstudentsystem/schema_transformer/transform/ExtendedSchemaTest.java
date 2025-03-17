@@ -52,8 +52,12 @@ class ExtendedSchemaTest {
     void transform_addFederation() throws IOException {
         var generatedFiles = generateFiles("federation", false, true, false);
 
-        var generatedFileContent = generatedFiles.values().stream().findFirst().orElseThrow();
-        assertThat(generatedFileContent).contains("union _Entity = A", "_entities(representations: [_Any!]!): [_Entity]!");
+        var generatorSchema = generatedFiles.getOrDefault("generator-schema.graphql", "");
+        assertThat(generatorSchema).contains("union _Entity = A", "_entities(representations: [_Any!]!): [_Entity]!");
+        var schema = generatedFiles.getOrDefault("schema.graphql", "");
+        assertThat(schema)
+                .isNotEmpty()
+                .doesNotContain("union _Entity = A", "_entities(representations: [_Any!]!): [_Entity]!");
     }
 
 

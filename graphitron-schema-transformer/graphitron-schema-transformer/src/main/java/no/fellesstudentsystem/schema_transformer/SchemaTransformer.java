@@ -32,10 +32,11 @@ public class SchemaTransformer {
     public static void transformSchema(List<String> schemaLocations, Map<String, String> descriptionSuffixForFeature, String outputDirectory, boolean makeFederation, boolean reifyContracts) throws IOException {
         var typeRegistry = getTypeDefinitionRegistry(schemaLocations);
 
-        var federationSchema = makeFederation ? addFederation(typeRegistry) : assembleSchema(typeRegistry);
+        var defaultSchema = assembleSchema(typeRegistry);
+        var federationSchema = makeFederation ? addFederation(typeRegistry) : defaultSchema;
         writeSchemaToDirectory(federationSchema, GENERATOR_SCHEMA_NAME, outputDirectory, true);
 
-        var schemaWithFeatureFlags = new FeatureFlagConfiguration(federationSchema, descriptionSuffixForFeature).getModifiedGraphQLSchema();
+        var schemaWithFeatureFlags = new FeatureFlagConfiguration(defaultSchema, descriptionSuffixForFeature).getModifiedGraphQLSchema();
         var schemaWithoutGeneratorDirectives = new GeneratorDirectivesFilter(schemaWithFeatureFlags).getModifiedGraphQLSchema();
 
         writeSchemaToDirectory(schemaWithoutGeneratorDirectives, SCHEMA_NAME, outputDirectory);
@@ -52,6 +53,7 @@ public class SchemaTransformer {
             var expSchema = new SchemaFeatureFilter(Set.of("beta", "experimental")).getFilteredGraphQLSchema(s);
             writeSchemaToDirectory(expSchema, "schema-exp.graphql", outputDirectory);
 
+            // This name is misleading, but this whole thing needs a new interface anyway so we can change it later.
             writeFederationSchemaToDirectory(s, FEDERATION_SCHEMA_NAME, outputDirectory);
         }
     }

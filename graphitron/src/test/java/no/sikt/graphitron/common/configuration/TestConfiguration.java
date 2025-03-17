@@ -26,7 +26,9 @@ public class TestConfiguration {
 
     @NotNull
     public static ProcessedSchema getProcessedSchema(String schemaPath, Set<String> components, boolean checkTypes) {
-        GeneratorConfig.setSchemaFiles(Stream.concat(Stream.of(SRC_DIRECTIVES, schemaPath + "/" + COMMON_TEST_SCHEMA_NAME), components.stream()).collect(Collectors.toSet()));
+        var files = Stream.concat(Stream.of(SRC_DIRECTIVES, schemaPath + "/" + COMMON_TEST_SCHEMA_NAME), components.stream()).collect(Collectors.toSet());
+        GeneratorConfig.setGeneratorSchemaFiles(files);
+        GeneratorConfig.setUserSchemaFiles(files);
 
         var processedSchema = GraphQLGenerator.getProcessedSchema();
         processedSchema.validate(checkTypes);

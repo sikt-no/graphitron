@@ -13,6 +13,7 @@ public interface Generator {
 
     String getOutputPackage();
     Set<String> getSchemaFiles();
+    Set<String> getUserSchemaFiles();
     String getJooqGeneratedPackage();
     String getResolverAnnotation();
 

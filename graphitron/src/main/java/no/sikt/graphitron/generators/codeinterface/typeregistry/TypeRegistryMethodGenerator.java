@@ -19,11 +19,8 @@ public class TypeRegistryMethodGenerator extends SimpleMethodGenerator {
 
     @Override
     public MethodSpec generate() {
-        var files = GeneratorConfig
-                .schemaFiles()
-                .stream()
-                .map(it -> CodeBlock.of("$S", it))
-                .collect(CodeBlock.joining(",\n"));
+        // Replaced from GeneratorConfig.generatorSchemaFiles() because the generator schema is not compatible with the user schema.
+        var files = GeneratorConfig.schemaFiles().stream().map(it -> CodeBlock.of("$S", it)).collect(CodeBlock.joining(",\n"));
         return MethodSpec
                 .methodBuilder(METHOD_NAME)
                 .addModifiers(Modifier.PUBLIC)
@@ -37,7 +34,7 @@ public class TypeRegistryMethodGenerator extends SimpleMethodGenerator {
                                         indentIfMultiline(setOf(files))
                                 )
                         )
-                )  // Note that this annoyingly produces too many indents. Blame faulty indent handling. Subsequent statements would have correct indent though.
+                )  // Note that this annoyingly produces too many indents. Blame faulty indent handling. Subsequent statements have correct indent though.
                 .build();
     }
 }

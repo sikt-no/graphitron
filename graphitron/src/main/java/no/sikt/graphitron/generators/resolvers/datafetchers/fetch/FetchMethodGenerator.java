@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -14,7 +13,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declareArgs;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
@@ -34,20 +32,11 @@ public class FetchMethodGenerator extends DataFetcherMethodGenerator {
         if (!generationCondition(target)) {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
-        var spec = getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
-                .beginControlFlow("return $N ->", VARIABLE_ENV);
-        // _service temporary special case. Omitting this will make the schema complain that the data fetcher for this field is missing.
-        if (processedSchema.isFederationService(target)) {
-            return spec
-                    .addCode(returnWrap(CodeBlock.of("null")))
-                    .endControlFlow("")
-                    .build();
-        }
-
         var parser = new InputParser(target, processedSchema);
         var methodCall = queryMethodCall(target, parser); // Note, do this before declaring services.
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
-        return spec
+        return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
+                .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
                 .addCode(transformInputs(target, parser))
@@ -58,7 +47,12 @@ public class FetchMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     protected boolean generationCondition(GenerationField target) {
-        if (processedSchema.isInterface(target) && target.getTypeName().equals(NODE_TYPE.getName()) || target.getName().equals(FEDERATION_ENTITIES_FIELD.getName())) {
+        if (
+                processedSchema.isInterface(target)
+                        && target.getTypeName().equals(NODE_TYPE.getName())
+                        || target.getName().equals(FEDERATION_ENTITIES_FIELD.getName())
+                        || processedSchema.isFederationService(target)
+        ) {
             return false;
         }
 
