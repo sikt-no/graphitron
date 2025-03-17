@@ -21,7 +21,7 @@ public class GraphitronTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new CodeInterfaceClassGenerator(schema.nodeExists()));
+        return List.of(new CodeInterfaceClassGenerator(schema));
     }
 
     @Test

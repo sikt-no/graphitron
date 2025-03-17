@@ -4,6 +4,7 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringBuilderMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
@@ -16,8 +17,8 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.RUNTIME_WIRING_BUILD
  * This class generates a simple method for getting a RuntimeWiring Builder.
  */
 public class CodeInterfaceBuilderMethodGenerator extends WiringBuilderMethodGenerator {
-    public CodeInterfaceBuilderMethodGenerator(boolean includeNode) {
-        super(List.of(), includeNode);
+    public CodeInterfaceBuilderMethodGenerator(ProcessedSchema processedSchema) {
+        super(List.of(), processedSchema);
     }
 
     @Override

@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.codeinterface;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringMethodGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
@@ -12,9 +13,11 @@ import java.util.List;
 public class CodeInterfaceClassGenerator extends AbstractClassGenerator {
     public final static String SAVE_DIRECTORY_NAME = "graphitron", CLASS_NAME = "Graphitron";
     private final boolean includeNode;
+    private final ProcessedSchema processedSchema;
 
-    public CodeInterfaceClassGenerator(boolean includeNode) {
-        this.includeNode = includeNode;
+    public CodeInterfaceClassGenerator(ProcessedSchema processedSchema) {
+        this.includeNode = processedSchema.nodeExists();
+        this.processedSchema = processedSchema;
     }
 
     @Override
@@ -24,8 +27,8 @@ public class CodeInterfaceClassGenerator extends AbstractClassGenerator {
                         CLASS_NAME,
                         List.of(
                                 new CodeInterfaceTypeRegistryMethodGenerator(),
-                                new CodeInterfaceBuilderMethodGenerator(includeNode),
-                                new WiringMethodGenerator(includeNode),
+                                new CodeInterfaceBuilderMethodGenerator(processedSchema),
+                                new WiringMethodGenerator(processedSchema),
                                 new CodeInterfaceSchemaMethodGenerator(includeNode)
                         )
                 ).build()

@@ -27,7 +27,7 @@ public class WiringNoGeneratorsTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new WiringClassGenerator(List.of(), schema.nodeExists()));
+        return List.of(new WiringClassGenerator(List.of(), schema));
     }
 
     @Test

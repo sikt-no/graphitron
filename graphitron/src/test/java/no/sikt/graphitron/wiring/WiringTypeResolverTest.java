@@ -23,7 +23,7 @@ public class WiringTypeResolverTest extends GeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         var generator = new TypeResolverClassGenerator(schema);
-        return List.of(generator, new WiringClassGenerator(List.of(generator), schema.nodeExists()));
+        return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
     }
 
     @Test

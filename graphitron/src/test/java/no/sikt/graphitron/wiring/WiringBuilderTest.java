@@ -23,7 +23,7 @@ public class WiringBuilderTest extends GeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         var generator = new FetchClassGenerator(schema);
-        return List.of(generator, new WiringClassGenerator(List.of(generator), schema.nodeExists()));
+        return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
     }
 
     @Test
@@ -66,6 +66,16 @@ public class WiringBuilderTest extends GeneratorTest {
                 "twoTypes",
                         ".newTypeWiring(\"Query\").dataFetcher(\"customer\",",
                         ".newTypeWiring(\"Customer\").dataFetcher(\"address\","
+        );
+    }
+
+    @Test
+    @DisplayName("Extended scalars present in the schema are added to the wiring")
+    void extendedScalars() {
+        assertGeneratedContentContains(
+                "scalars",
+                "wiring.scalar(ExtendedScalars.LocalTime);",
+                "wiring.scalar(ExtendedScalars.GraphQLBigInteger);"
         );
     }
 }

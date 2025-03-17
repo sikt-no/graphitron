@@ -29,7 +29,7 @@ public class WiringEntityFetcherTest extends GeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         var generator = new EntityFetcherClassGenerator(schema);
-        return List.of(generator, new WiringClassGenerator(List.of(generator), schema.nodeExists()));
+        return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
     }
 
     @Test

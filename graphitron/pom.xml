@@ -22,10 +22,6 @@
       <artifactId>java-dataloader</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.graphql-java</groupId>
-      <artifactId>graphql-java-extended-scalars</artifactId>
-    </dependency>
-    <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
     </dependency>

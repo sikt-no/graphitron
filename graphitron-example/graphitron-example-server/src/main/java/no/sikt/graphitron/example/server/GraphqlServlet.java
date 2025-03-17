@@ -25,7 +25,6 @@ import java.util.List;
 public class GraphqlServlet extends GraphitronServlet {
     private final AgroalDataSource dataSource;
     private final List<GraphQLScalarType> scalars = List.of(
-            ExtendedScalars.GraphQLBigDecimal,
             _FieldSet.type,
             _Any.type
     );
