@@ -107,13 +107,6 @@
                 <version>3.3.0</version>
             </dependency>
 
-            <!-- GraphQL Java Kickstart -->
-            <dependency>
-                <groupId>com.graphql-java-kickstart</groupId>
-                <artifactId>graphql-java-tools</artifactId>
-                <version>14.0.0</version>
-            </dependency>
-
             <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
