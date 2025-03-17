@@ -9,6 +9,14 @@ variables:
   ## ryuk stops containers after testcontainers is done, but does not work on gitlab.sikt.no
   TESTCONTAINERS_RYUK_DISABLED: "true"
 
+workflow:
+  rules:
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  # Prevent duplicate pipelines for branches with open merge requests
+  - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+    when: never
+  - if: $CI_COMMIT_REF_NAME == "main"
+
 mvn-build:
   extends: .artifactory-auth
   image: artifactory.sikt.no/docker/maven-docker:3.9-eclipse-temurin-17
