@@ -57,7 +57,7 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                         FEDERATION_REPRESENTATIONS_ARGUMENT.getName(),
                         VARIABLE_INTERNAL_ITERATION
                 )
-                .addCode(declare(CONTEXT_NAME, CodeBlock.of("($T) $N.getLocalContext()", DSL_CONTEXT.className, VARIABLE_ENV)))
+                .addCode(declare(CONTEXT_NAME, CodeBlock.of("new $T($N)$L", ENVIRONMENT_HANDLER.className, VARIABLE_ENV, asMethodCall(METHOD_CONTEXT_NAME))))
                 .beginControlFlow("switch (($T) $N.get($S))", STRING.className, VARIABLE_INTERNAL_ITERATION, TYPE_NAME.getName())
                 .addCode(cases.build())
                 .addCode("default: $L", returnWrap("null"))

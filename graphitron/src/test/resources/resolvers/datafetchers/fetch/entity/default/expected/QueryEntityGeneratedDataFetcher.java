@@ -9,13 +9,14 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
-import org.jooq.DSLContext;
 
 public class QueryEntityGeneratedDataFetcher {
     public static DataFetcher<List<_Entity>> entityFetcher() {
         return env -> ((List<Map<String, Object>>) env.getArgument("representations")).stream().map(internal_it_ -> {
-            var ctx = (DSLContext) env.getLocalContext();
+            var ctx = new EnvironmentHandler(env).getCtx();
             switch ((String) internal_it_.get("__typename")) {
                 case "Customer": return ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
                 default: return null;

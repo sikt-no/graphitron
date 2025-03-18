@@ -1,5 +1,9 @@
 package no.sikt.graphitron.generators.codebuilding;
 
+import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
+
+import static org.apache.commons.lang3.StringUtils.capitalize;
+
 public class VariableNames {
     public final static String
             SELECTION_SET_NAME = "selectionSet",
@@ -13,10 +17,14 @@ public class VariableNames {
             PATH_INDEX_NAME = "indexPath",
             PATH_HERE_NAME = "pathHere",
             VARIABLE_ARGS = "_args",
-            METHOD_ARGS_NAME = "getArguments",
-            METHOD_SOURCE_NAME = "getSource",
             VARIABLE_ENV = "env",
             VARIABLE_SELECT = "select",
+            METHOD_ARGS_NAME = "getArguments",
+            METHOD_CONTEXT_NAME = "get" + capitalize(CONTEXT_NAME),
+            METHOD_VALIDATE_NAME = "validate",
+            METHOD_ENV_NAME = "get" + capitalize(VARIABLE_ENV),
+            METHOD_SELECT_NAME = "get" + capitalize(VARIABLE_SELECT),
+            METHOD_SOURCE_NAME = "getSource",
             VARIABLE_VALIDATION_ERRORS = "validationErrors",
             VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties",
             VARIABLE_TYPE_NAME = "_targetType",

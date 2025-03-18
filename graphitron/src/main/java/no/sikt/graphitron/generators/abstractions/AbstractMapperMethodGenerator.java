@@ -17,8 +17,6 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
-import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_SELECT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;

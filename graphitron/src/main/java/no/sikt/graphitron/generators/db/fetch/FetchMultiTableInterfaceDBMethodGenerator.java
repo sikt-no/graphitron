@@ -312,9 +312,9 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
 
         if (isConnection) {
             code.add(".$L", whereBlock.isEmpty() ? "where" : "and")
-                .add("($N == null ? $T.noCondition() : $T.inline($S).greaterOrEqual($N.getTypeName()))",
+                .add("($N == null ? $T.noCondition() : $T.inline($S).greaterOrEqual($N.typeName()))",
                         TOKEN, DSL.className, DSL.className, implementation.getName(), TOKEN)
-                .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.getFields())) : $T.noCondition())",
+                .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $T.noCondition())",
                         TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsBlock(alias), DSL.className, TOKEN, DSL.className);
         }
         return code.add(".orderBy($L)", ORDER_FIELDS_NAME)

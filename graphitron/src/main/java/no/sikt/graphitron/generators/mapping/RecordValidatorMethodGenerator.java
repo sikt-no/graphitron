@@ -19,7 +19,6 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordValida
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_ENV_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.GRAPHQL_ERROR;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.HASH_SET;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
