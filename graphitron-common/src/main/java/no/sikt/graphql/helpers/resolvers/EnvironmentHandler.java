@@ -7,6 +7,7 @@ import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.naming.LocalContextNames;
 import org.dataloader.BatchLoaderEnvironment;
 import org.jooq.DSLContext;
+import org.jooq.Row;
 
 import java.util.*;
 
@@ -20,18 +21,18 @@ public class EnvironmentHandler {
     protected final DSLContext dslContext;
     protected final SelectionSet select, connectionSelect;
     protected final Set<String> arguments;
-    protected final List<List<String>> nextKeys;
+    protected final Map<String, List<Row>> nextKeys;
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
         if (false) { // Disabled until everything uses context as a map.
             localContext = Optional.of((Map<String, Object>) env.getLocalContext()).orElse(new HashMap<>());
             dslContext = (DSLContext) localContext.get(LocalContextNames.DSL_CONTEXT.getName());  // Must exist.
-            nextKeys = Optional.of((List<List<String>>) localContext.get(LocalContextNames.NEXT_KEYS.getName())).orElse(List.of());
+            nextKeys = Optional.of((Map<String, List<Row>>) localContext.get(LocalContextNames.NEXT_KEYS.getName())).orElse(Map.of());
         } else {
             localContext = new HashMap<>();
             dslContext = env.getLocalContext();
-            nextKeys = List.of();
+            nextKeys = Map.of();
         }
 
         select = new SelectionSet(getSelectionSetsFromEnvironment(env));
@@ -68,8 +69,12 @@ public class EnvironmentHandler {
         return arguments;
     }
 
-    public List<List<String>> getNextKeys() {
+    public Map<String, List<Row>> getNextKeys() {
         return nextKeys;
+    }
+
+    public List<Row> getNextKeyFor(String fieldName) {
+        return Optional.of(nextKeys.get(fieldName)).orElse(List.of());
     }
 
     protected static List<DataFetchingFieldSelectionSet> getSelectionSetsFromEnvironment(BatchLoaderEnvironment loaderEnvironment) {

@@ -3,21 +3,24 @@ package no.sikt.graphql.helpers.query;
 import graphql.execution.DataFetcherResult;
 import no.sikt.graphql.naming.LocalContextNames;
 import org.jooq.DSLContext;
+import org.jooq.Row;
 
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 public class DBQueryResult<T> {
     private final T data;
-    private final HashMap<String, Object> nextKeys;
+    private final Map<String, List<Row>> nextKeys;
 
     public DBQueryResult(T data) {
         this.data = data;
         this.nextKeys = new HashMap<>();
     }
 
-    public DBQueryResult(T data, HashMap<String, Object> nextKeys) {
+    public DBQueryResult(T data, Map<String, List<Row>> nextKeys) {
         this.data = data;
         this.nextKeys = nextKeys;
     }
@@ -26,7 +29,7 @@ public class DBQueryResult<T> {
         return data;
     }
 
-    public HashMap<String, Object> getNextKeys() {
+    public Map<String, List<Row>> getNextKeys() {
         return nextKeys;
     }
 
