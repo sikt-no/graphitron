@@ -12,9 +12,9 @@ import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphql.NodeIdHandler;
 import no.sikt.graphql.exception.*;
-import no.sikt.graphql.helpers.EnvironmentUtils;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
+import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
@@ -41,9 +41,9 @@ public enum JavaPoetClassName {
     DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING(DataAccessExceptionContentToErrorMapping.class),
     DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(DataAccessExceptionMappingContent.class),
     DATA_FETCHING_ENVIRONMENT(graphql.schema.DataFetchingEnvironment.class),
-    ENVIRONMENT_UTILS(EnvironmentUtils.class),
-    DATA_FETCHER_GRAPHITRON(DataFetcherHelper.class),
+    ENVIRONMENT_HANDLER(EnvironmentHandler.class),
     DATA_FETCHER(graphql.schema.DataFetcher.class),
+    DATA_FETCHER_HELPER(DataFetcherHelper.class),
     DATA_SERVICE_FETCHER(ServiceDataFetcherHelper.class),
     DSL(org.jooq.impl.DSL.class),
     SORT_FIELD(org.jooq.SortField.class),

@@ -4,7 +4,6 @@ import graphql.ErrorType;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphql.exception.ValidationViolationGraphQLException;
-import no.sikt.graphql.helpers.EnvironmentUtils;
 import no.sikt.graphql.helpers.functions.DBCount;
 import no.sikt.graphql.helpers.functions.DBQuery;
 import no.sikt.graphql.helpers.functions.DBQueryRoot;
@@ -37,7 +36,7 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param <T> Type that the resolver fetches.
      */
     public <T> CompletableFuture<T> load(DBQueryRoot<T> dbFunction) {
-        return CompletableFuture.completedFuture(dbFunction.callDBMethod(this.ctx, selection));
+        return CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, select));
     }
 
     /**
@@ -59,9 +58,9 @@ public class DataFetcherHelper extends AbstractFetcher {
     ) {
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
-                        dbFunction.callDBMethod(ctx, connectionSelection),
+                        dbFunction.callDBMethod(dslContext, connectionSelect),
                         pageSize,
-                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(ctx, Set.of()) : -1,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, Set.of()) : -1,
                         maxNodes,
                         connectionFunction
                 )
@@ -133,7 +132,7 @@ public class DataFetcherHelper extends AbstractFetcher {
 
         var mergedKeys = mergeKeys(keys, env);
 
-        var dbResult = dbFunction.callDBMethod(ctx, new HashSet<>(mergedKeys), selection);
+        var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(mergedKeys), select);
         var orderedResult = mergedKeys.stream().map(dbResult::get).collect(Collectors.toList());
         return CompletableFuture.completedFuture(orderedResult);
     }
@@ -182,7 +181,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                 .getDataLoaderRegistry()
                 .<K, V1>computeIfAbsent(loaderName, name ->
                         DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<K, V0>) (keys, loaderEnvironment) ->
-                                CompletableFuture.completedFuture(dbFunction.callDBMethod(ctx, keys, new SelectionSet(EnvironmentUtils.getSelectionSetsFromEnvironment(loaderEnvironment))))
+                                CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment))))
                         )
                 )
                 .load(keyToLoad, env);
@@ -205,9 +204,9 @@ public class DataFetcherHelper extends AbstractFetcher {
         var idSet = new HashSet<>(keyToId.values());
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
-                        resultAsMap(keyToId, dbFunction.callDBMethod(ctx, idSet, selectionSet)),
+                        resultAsMap(keyToId, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
-                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(ctx, idSet) : -1,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : -1,
                         maxNodes,
                         connectionFunction
                 )
@@ -221,6 +220,6 @@ public class DataFetcherHelper extends AbstractFetcher {
         }
 
         var keyToId = getKeyToId(keys);
-        return CompletableFuture.completedFuture(resultAsMap(keyToId, dbFunction.callDBMethod(ctx, new HashSet<>(keyToId.values()), selectionSet)));
+        return CompletableFuture.completedFuture(resultAsMap(keyToId, dbFunction.callDBMethod(dslContext, new HashSet<>(keyToId.values()), selectionSet)));
     }
 }

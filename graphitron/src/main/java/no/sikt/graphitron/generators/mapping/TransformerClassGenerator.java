@@ -16,13 +16,7 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRO
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class TransformerClassGenerator extends AbstractClassGenerator {
-    public static final String
-            FILE_NAME_SUFFIX = "RecordTransformer",
-            METHOD_VALIDATE_NAME = "validate",
-            METHOD_CONTEXT_NAME = "get" + capitalize(CONTEXT_NAME),
-            METHOD_ENV_NAME = "get" + capitalize(VARIABLE_ENV),
-            METHOD_SELECT_NAME = "get" + capitalize(VARIABLE_SELECT),
-            DEFAULT_SAVE_DIRECTORY_NAME = "transform";
+    public static final String FILE_NAME_SUFFIX = "RecordTransformer", DEFAULT_SAVE_DIRECTORY_NAME = "transform";
     private final List<MethodGenerator> generators;
 
     public TransformerClassGenerator(ProcessedSchema processedSchema) {

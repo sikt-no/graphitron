@@ -18,7 +18,6 @@ import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
-import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -32,7 +31,6 @@ import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFet
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -46,7 +44,7 @@ public class FormatCodeBlocks {
             COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
             NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VARIABLE_ENV),
             DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
-            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_GRAPHITRON.className, VARIABLE_ENV),
+            NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_HELPER.className, VARIABLE_ENV),
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),
@@ -316,7 +314,7 @@ public class FormatCodeBlocks {
         if (!atResolver) {
             return CodeBlock.of("$N.contains($N + $S)", useArguments ? VARIABLE_ARGS : VARIABLE_SELECT, PATH_HERE_NAME, path);
         }
-        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, useArguments ? METHOD_ARGS_NAME : TransformerClassGenerator.METHOD_SELECT_NAME), path);
+        return CodeBlock.of("$L.contains($S)", asMethodCall(TRANSFORMER_NAME, useArguments ? METHOD_ARGS_NAME : METHOD_SELECT_NAME), path);
     }
 
     /**
@@ -498,7 +496,7 @@ public class FormatCodeBlocks {
                 asNodeQueryName(typeName),
                 asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
                 field.isIterableWrapped() ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
-                atResolver ? asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
+                atResolver ? asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,
                 field.isIterableWrapped() ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
         );

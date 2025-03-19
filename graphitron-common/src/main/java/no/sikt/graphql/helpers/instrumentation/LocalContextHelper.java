@@ -2,11 +2,8 @@ package no.sikt.graphql.helpers.instrumentation;
 
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DelegatingDataFetchingEnvironment;
+import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
 import org.jooq.DSLContext;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
 
 import static no.sikt.graphql.naming.LocalContextNames.DSL_CONTEXT;
 
@@ -19,8 +16,7 @@ public final class LocalContextHelper {
         return new DelegatingDataFetchingEnvironment(env) {
             @Override
             public <T> T getLocalContext() {
-                var localContext = env.getLocalContext();
-                var localContextMap = Optional.of((Map<String, Object>) localContext).orElse(new HashMap<>());
+                var localContextMap = new EnvironmentHandler(env).getLocalContext();
                 localContextMap.put(name, object);
                 return (T) localContextMap;
             }

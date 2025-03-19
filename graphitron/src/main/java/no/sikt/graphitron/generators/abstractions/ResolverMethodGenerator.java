@@ -214,7 +214,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         code.add("\n").add(recordCode.build());
 
         if (recordValidationEnabled()) {
-            code.add("\n").addStatement(asMethodCall(TRANSFORMER_NAME, TransformerClassGenerator.METHOD_VALIDATE_NAME));
+            code.add("\n").addStatement(asMethodCall(TRANSFORMER_NAME, METHOD_VALIDATE_NAME));
         }
 
         return code.build();

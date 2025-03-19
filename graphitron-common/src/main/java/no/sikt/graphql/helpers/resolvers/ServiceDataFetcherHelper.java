@@ -82,7 +82,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                 getPaginatedConnection(
                         dbTransform.transform(abstractTransformer, dbFunction.get()),
                         pageSize,
-                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(Set.of()) : null,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(Set.of()) : null,
                         maxNodes,
                         connectionFunction
                 )
@@ -162,13 +162,13 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
         var idSet = new HashSet<>(keyToId.values());
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
-                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName())
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
                                 ? resultAsMap(keyToId, dbFunction.apply(idSet))
                                 .entrySet()
                                 .stream()
                                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue()))) : Map.of(),
                         pageSize,
-                        connectionSelection.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null,
                         maxNodes,
                         connectionFunction
                 )

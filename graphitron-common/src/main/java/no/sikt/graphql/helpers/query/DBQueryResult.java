@@ -1,8 +1,14 @@
 package no.sikt.graphql.helpers.query;
 
-import java.util.HashMap;
+import graphql.execution.DataFetcherResult;
+import no.sikt.graphql.naming.LocalContextNames;
+import org.jooq.DSLContext;
 
-public class DBQueryResult <T> {
+import java.util.HashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
+
+public class DBQueryResult<T> {
     private final T data;
     private final HashMap<String, Object> nextKeys;
 
@@ -22,5 +28,20 @@ public class DBQueryResult <T> {
 
     public HashMap<String, Object> getNextKeys() {
         return nextKeys;
+    }
+
+    public <U> DBQueryResult<U> transform(Function<T, U> transform) {
+        return new DBQueryResult<>(transform.apply(data));
+    }
+
+    public DataFetcherResult<CompletableFuture<T>> asDataFetcherResult(DSLContext context) {
+        var newContext = new HashMap<>();
+        newContext.put(LocalContextNames.DSL_CONTEXT.getName(), context);
+        newContext.put(LocalContextNames.NEXT_KEYS.getName(), nextKeys);
+        return DataFetcherResult
+                .<CompletableFuture<T>>newResult()
+                .data(CompletableFuture.completedFuture(data))
+                .localContext(newContext)
+                .build();
     }
 }

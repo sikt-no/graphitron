@@ -16,8 +16,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asResultName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_CONTEXT_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
-import static no.sikt.graphitron.generators.mapping.TransformerClassGenerator.METHOD_CONTEXT_NAME;
 
 /**
  * This class generates the resolvers for update queries with the {@link GenerationDirective#MUTATION} directive set.

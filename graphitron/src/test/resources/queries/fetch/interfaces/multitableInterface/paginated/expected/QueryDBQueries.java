@@ -82,8 +82,8 @@ public class QueryDBQueries {
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
                         DSL.jsonArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"))
                 .from(_address)
-                .where(_token == null ? DSL.noCondition() : DSL.inline("Address").greaterOrEqual(_token.getTypeName()))
-                .and(_token != null && _token.matches("Address") ? DSL.row(_address.fields(_address.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.getFields())) : DSL.noCondition())
+                .where(_token == null ? DSL.noCondition() : DSL.inline("Address").greaterOrEqual(_token.typeName()))
+                .and(_token != null && _token.matches("Address") ? DSL.row(_address.fields(_address.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
                 .orderBy(orderFields)
                 .limit(pageSize + 1);
     }
@@ -110,8 +110,8 @@ public class QueryDBQueries {
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
                         DSL.jsonArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"))
                 .from(_customer)
-                .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.getTypeName()))
-                .and(_token != null && _token.matches("Customer") ? DSL.row(_customer.fields(_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.getFields())) : DSL.noCondition())
+                .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.typeName()))
+                .and(_token != null && _token.matches("Customer") ? DSL.row(_customer.fields(_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
                 .orderBy(orderFields)
                 .limit(pageSize + 1);
     }
