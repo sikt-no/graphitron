@@ -21,14 +21,14 @@ public class EnvironmentHandler {
     protected final DSLContext dslContext;
     protected final SelectionSet select, connectionSelect;
     protected final Set<String> arguments;
-    protected final Map<String, List<Row>> nextKeys;
+    protected final Map<String, Map<String, Row>> nextKeys;
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
         if (false) { // Disabled until everything uses context as a map.
             localContext = Optional.of((Map<String, Object>) env.getLocalContext()).orElse(new HashMap<>());
             dslContext = (DSLContext) localContext.get(LocalContextNames.DSL_CONTEXT.getName());  // Must exist.
-            nextKeys = Optional.of((Map<String, List<Row>>) localContext.get(LocalContextNames.NEXT_KEYS.getName())).orElse(Map.of());
+            nextKeys = Optional.of((Map<String, Map<String, Row>>) localContext.get(LocalContextNames.NEXT_KEYS.getName())).orElse(Map.of());
         } else {
             localContext = new HashMap<>();
             dslContext = env.getLocalContext();
@@ -69,12 +69,16 @@ public class EnvironmentHandler {
         return arguments;
     }
 
-    public Map<String, List<Row>> getNextKeys() {
+    public Map<String, Map<String, Row>> getNextKeys() {
         return nextKeys;
     }
 
-    public List<Row> getNextKeyFor(String fieldName) {
-        return Optional.of(nextKeys.get(fieldName)).orElse(List.of());
+    public Map<String, Row> getNextKeyFor(String fieldName) {
+        return Optional.of(nextKeys.get(fieldName)).orElse(Map.of());
+    }
+
+    public Set<Row> getNextKeySet(String fieldName) {
+        return new HashSet<>(getNextKeyFor(fieldName).values());
     }
 
     protected static List<DataFetchingFieldSelectionSet> getSelectionSetsFromEnvironment(BatchLoaderEnvironment loaderEnvironment) {
