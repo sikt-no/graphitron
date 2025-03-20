@@ -6,21 +6,22 @@ import org.jooq.DSLContext;
 import org.jooq.Row;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 public class DBQueryResult<T> {
     private final T data;
-    private final Map<String, List<Row>> nextKeys;
+
+    // TODO: Change inner map to Map<Row, Row> after phasing out graphql-codegen
+    private final Map<String, Map<String, Row>> nextKeys;
 
     public DBQueryResult(T data) {
         this.data = data;
         this.nextKeys = new HashMap<>();
     }
 
-    public DBQueryResult(T data, Map<String, List<Row>> nextKeys) {
+    public DBQueryResult(T data, Map<String, Map<String, Row>> nextKeys) {
         this.data = data;
         this.nextKeys = nextKeys;
     }
@@ -29,7 +30,7 @@ public class DBQueryResult<T> {
         return data;
     }
 
-    public Map<String, List<Row>> getNextKeys() {
+    public Map<String, Map<String, Row>> getNextKeys() {
         return nextKeys;
     }
 
