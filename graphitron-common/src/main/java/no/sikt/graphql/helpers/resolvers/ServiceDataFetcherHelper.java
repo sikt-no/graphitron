@@ -2,6 +2,7 @@ package no.sikt.graphql.helpers.resolvers;
 
 import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphql.helpers.functions.TransformCall;
+import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphql.relay.ConnectionImpl;
 import org.apache.commons.lang3.tuple.Pair;
@@ -91,7 +92,6 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
 
     /**
      * Load the data for a resolver.
-     * @param resolveName Name of the resolver.
      * @param dbFunction Function to call to retrieve the query data.
      * @param dbTransform Function that maps the query output to the resolver output.
      * @param key ID of the queried element.
@@ -99,8 +99,8 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * @param <V0> Type that the query returns.
      * @param <V1> Type that the resolver fetches.
      */
-    public <K, V0, V1> CompletableFuture<V1> load(String resolveName, K key, Function<Set<String>, Map<String, V0>> dbFunction, TransformCall<A, V0, V1> dbTransform) {
-        return getLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, dbFunction, dbTransform))
+    public <K, V0, V1> CompletableFuture<V1> load(K key, Function<Set<K>, Map<K, V0>> dbFunction, TransformCall<A, V0, V1> dbTransform) {
+        return getLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, dbFunction, dbTransform))
                 .load(asKeyPath(key), env);
     }
 
@@ -117,30 +117,28 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * @param <C> Connection type that the resolver fetches.
      */
     public <K, V0, V1, C> CompletableFuture<C> loadPaginated(
-            String resolveName,
             K key,
             int pageSize,
             int maxNodes,
-            Function<Set<String>, Map<String, List<Pair<String, V0>>>> dbFunction,
-            Function<Set<String>, Integer> countFunction,
+            Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
+            Function<Set<K>, Integer> countFunction,
             TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform,
             Function<ConnectionImpl<V1>, C> connectionFunction
     ) {
-        return getConnectionLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, maxNodes, pageSize, dbFunction, countFunction, dbTransform, connectionFunction))
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, maxNodes, pageSize, dbFunction, countFunction, dbTransform, connectionFunction))
                 .load(asKeyPath(key), env);
     }
 
     /**
      * Load the data for a resolver. The result is paginated.
-     * @param resolveName Name of the resolver.
      * @param dbFunction Function to call to retrieve the query data.
      * @param dbTransform Function to call to transform the output to schema types.
      * @param key ID of the queried element.
      * @return A resolver result.
      * @param <V0> Type that the resolver fetches.
      */
-    public <K, V0, V1> CompletableFuture<List<V1>> loadNonNullable(String resolveName, K key, Function<Set<String>, Map<String, List<V0>>> dbFunction, TransformCall<A, List<V0>, List<V1>> dbTransform) {
-        return getLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, dbFunction, dbTransform))
+    public <K, V0, V1> CompletableFuture<List<V1>> loadNonNullable(K key, Function<Set<K>, Map<K, List<V0>>> dbFunction, TransformCall<A, List<V0>, List<V1>> dbTransform) {
+        return getLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, dbFunction, dbTransform))
                 .load(asKeyPath(key), env)
                 .thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
     }
@@ -149,8 +147,8 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
             Set<KeyWithPath<K>> keys,
             int maxNodes,
             int pageSize,
-            Function<Set<String>, Map<String, List<Pair<String, V0>>>> dbFunction,
-            Function<Set<String>, Integer> countFunction,
+            Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
+            Function<Set<K>, Integer> countFunction,
             TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform,
             Function<ConnectionImpl<V1>, C> connectionFunction
     ) {
@@ -158,12 +156,11 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
             return CompletableFuture.completedFuture(Map.of());
         }
 
-        var keyToId = getKeyToId(keys);
-        var idSet = new HashSet<>(keyToId.values());
+        var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
-                                ? resultAsMap(keyToId, dbFunction.apply(idSet))
+                                ? resultAsMap(keys, dbFunction.apply(idSet))
                                 .entrySet()
                                 .stream()
                                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue()))) : Map.of(),
@@ -175,14 +172,14 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
         );
     }
 
-    private <K, V0, V1> CompletableFuture<Map<KeyWithPath<K>, V1>> getMappedDataLoader(Set<KeyWithPath<K>> keys, Function<Set<String>, Map<String, V0>> dbFunction, TransformCall<A, V0, V1> dbTransform) {
+    private <K, V0, V1> CompletableFuture<Map<KeyWithPath<K>, V1>> getMappedDataLoader(Set<KeyWithPath<K>> keys, Function<Set<K>, Map<K, V0>> dbFunction, TransformCall<A, V0, V1> dbTransform) {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
 
-        var keyToId = getKeyToId(keys);
+        var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
         return CompletableFuture.completedFuture(
-                resultAsMap(keyToId, dbFunction.apply(new HashSet<>(keyToId.values())))
+                resultAsMap(keys, dbFunction.apply(idSet))
                         .entrySet()
                         .stream()
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue())))

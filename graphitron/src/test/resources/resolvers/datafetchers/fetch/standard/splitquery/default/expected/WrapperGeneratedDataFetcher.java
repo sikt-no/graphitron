@@ -11,7 +11,7 @@ public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
         return env -> {
             var wrapper = ((Wrapper) env.getSource());
-            return new DataFetcherHelper(env).load("queryForWrapper", wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, selectionSet));
+            return new DataFetcherHelper(env).load(wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, selectionSet));
         };
     }
 }

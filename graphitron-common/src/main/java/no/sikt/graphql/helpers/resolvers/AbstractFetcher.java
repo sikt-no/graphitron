@@ -38,41 +38,36 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
         return keys.stream().map(this::asKeyPath).collect(Collectors.toSet());
     }
 
-    protected <K, V> DataLoader<KeyWithPath<K>, V> getLoader(String resolveName, DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
-        return env.getDataLoaderRegistry().computeIfAbsent(resolveName, name ->
+    protected <K, V> DataLoader<KeyWithPath<K>, V> getLoader(DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
+        return env.getDataLoaderRegistry().computeIfAbsent(dataloaderName, name ->
                 DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<KeyWithPath<K>, V>) (keys, batchEnvLoader) ->
                         mapFunction.map(keys, new SelectionSet(getSelectionSetsFromEnvironment(batchEnvLoader)))
                 )
         );
     }
 
-    protected <K, V> DataLoader<KeyWithPath<K>, V> getConnectionLoader(String resolveName, DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
-        return env.getDataLoaderRegistry().computeIfAbsent(resolveName, name ->
+    protected <K, V> DataLoader<KeyWithPath<K>, V> getConnectionLoader(DataLoaderMapper<KeyWithPath<K>, V> mapFunction) {
+        return env.getDataLoaderRegistry().computeIfAbsent(dataloaderName, name ->
                 DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<KeyWithPath<K>, V>) (keys, batchEnvLoader) ->
                         mapFunction.map(keys, new ConnectionSelectionSet(getSelectionSetsFromEnvironment(batchEnvLoader)))
                 )
         );
     }
 
-    protected static <K, V> Map<KeyWithPath<K>, V> resultAsMap(Map<KeyWithPath<K>, String> keyToId, Map<String, V> dbResult) {
-        return keyToId
-                .entrySet()
+    protected static <K, V> Map<KeyWithPath<K>, V> resultAsMap(Set<KeyWithPath<K>> keys, Map<K, V> dbResult) {
+        return keys
                 .stream()
-                .filter(it -> it.getValue() != null)
-                .filter(it -> dbResult.get(it.getValue()) != null)
+                .filter(it -> it.key() != null)
+                .filter(it -> dbResult.get(it.key()) != null)
                 .collect(
                         Collectors.toMap(
-                                Map.Entry::getKey,
+                                Function.identity(),
                                 it -> {
-                                    var dbValue = dbResult.get(it.getValue());
+                                    var dbValue = dbResult.get(it.key());
                                     return dbValue instanceof List<?> ? (V)((List<?>)dbValue).stream().filter(Objects::nonNull).toList() : dbValue;
                                 }
                         )
                 );
-    }
-
-    protected static <K> Map<KeyWithPath<K>, String> getKeyToId(Set<KeyWithPath<K>> keys) {
-        return keys.stream().collect(Collectors.toMap(s -> s, s -> s.toString().substring(s.toString().lastIndexOf("||") + 2)));
     }
 
     protected static <T, C> C getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, C> connectionFunction) {

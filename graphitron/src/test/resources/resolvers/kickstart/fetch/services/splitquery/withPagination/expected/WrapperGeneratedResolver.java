@@ -25,7 +25,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
         var transform = new RecordTransformer(env);
         var resolverFetchService = new ResolverFetchService(transform.getCtx());
         return new ServiceDataFetcherHelper<>(transform).loadPaginated(
-                "queryForWrapper", wrapper.getId(), pageSize, 1000,
+                wrapper.getId(), pageSize, 1000,
                 (ids) -> resolverFetchService.queryMap(ids, pageSize, after),
                 (ids) -> resolverFetchService.countQueryMap(ids),
                 (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, ""),

@@ -22,7 +22,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                                               Integer i, DummyEnum e, DummyInput in, List<String> idList, List<DummyInput> inList,
                                               DataFetchingEnvironment env) throws Exception {
         return new DataFetcherHelper(env).load(
-                "queryForWrapper", wrapper.getId(),
+                wrapper.getId(),
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
 
@@ -31,7 +31,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                                                          Boolean bool, Integer i, DummyEnum e, DummyInput in, List<String> idList,
                                                          List<DummyInput> inList, DataFetchingEnvironment env) throws Exception {
         return new DataFetcherHelper(env).load(
-                "queryNonNullableForWrapper", wrapper.getId(),
+                wrapper.getId(),
                 (ctx, ids, selectionSet) -> WrapperDBQueries.queryNonNullableForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
 }
