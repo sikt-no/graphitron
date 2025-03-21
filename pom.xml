@@ -32,7 +32,7 @@
     </modules>
 
     <properties>
-        <revision>3.3</revision>
+        <revision>3.4</revision>
         <!-- is overwritten by CI. Default is 999999-SNAPSHOT to ensure that the version is higher than the last release, when developing locally -->
         <changelist>.999999-SNAPSHOT</changelist>
 
@@ -74,18 +74,18 @@
             </dependency>
 
             <dependency>
-                <groupId>org.jooq.pro</groupId>
+                <groupId>org.jooq</groupId>
                 <artifactId>jooq</artifactId>
                 <version>${version.org.jooq}</version>
             </dependency>
             <dependency>
-                <groupId>org.jooq.pro</groupId>
+                <groupId>org.jooq</groupId>
                 <artifactId>jooq-codegen</artifactId>
                 <version>${version.org.jooq}</version>
             </dependency>
 
             <dependency>
-                <groupId>org.jooq.pro</groupId>
+                <groupId>org.jooq</groupId>
                 <artifactId>jooq-meta</artifactId>
                 <version>${version.org.jooq}</version>
             </dependency>
@@ -264,7 +264,7 @@
                 </plugin>
 
                 <plugin>
-                    <groupId>org.jooq.pro</groupId>
+                    <groupId>org.jooq</groupId>
                     <artifactId>jooq-codegen-maven</artifactId>
                     <version>${version.org.jooq}</version>
                 </plugin>
