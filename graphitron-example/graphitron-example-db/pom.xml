@@ -38,7 +38,7 @@
             <build>
                 <plugins>
                     <plugin>
-                        <groupId>org.jooq.pro</groupId>
+                        <groupId>org.jooq</groupId>
                         <artifactId>jooq-codegen-maven</artifactId>
                         <executions>
                             <execution>

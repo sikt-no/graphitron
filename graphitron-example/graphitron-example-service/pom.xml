@@ -12,7 +12,7 @@
     <name>graphitron-example-service</name>
     <dependencies>
         <dependency>
-            <groupId>org.jooq.pro</groupId>
+            <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
         <dependency>

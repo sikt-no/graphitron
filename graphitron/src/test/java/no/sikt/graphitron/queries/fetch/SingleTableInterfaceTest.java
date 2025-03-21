@@ -1,5 +1,6 @@
 package no.sikt.graphitron.queries.fetch;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -80,8 +81,8 @@ public class SingleTableInterfaceTest extends InterfaceTest {
                         ",_address.PHONE.as(\"phoneNumber\"))");
     }
 
-
     @Test
+    @Disabled("synthetic colums are not supported in jOOQ open source. Fix in GGG-159")
     @DisplayName("Discriminator column name is case insensitive")
     void discriminatorColumnNameIsCaseInsensitive() {
         assertGeneratedContentMatches("discriminatorColumnNameIsCaseInsensitive");
