@@ -4,7 +4,6 @@ import com.apollographql.federation.graphqljava._Any;
 import com.apollographql.federation.graphqljava._FieldSet;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
-import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeRuntimeWiring;
@@ -26,7 +25,8 @@ public class GraphqlServlet extends GraphitronServlet {
     private final AgroalDataSource dataSource;
     private final List<GraphQLScalarType> scalars = List.of(
             _FieldSet.type,
-            _Any.type
+            _Any.type,
+            CustomScalars.GraphQLLocalDateTime
     );
 
     @Inject

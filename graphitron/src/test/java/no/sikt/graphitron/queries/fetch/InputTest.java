@@ -38,11 +38,16 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentMatches("default");
     }
 
-    // Note: Can not handle dates yet, need to make a better type mapping for fields.
     @Test
     @DisplayName("String field")
     void string() {
         assertGeneratedContentMatches("string"); // Check the placement, but just this once.
+    }
+
+    @Test
+    @DisplayName("Scalar field found in extended scalars")
+    void scalar() {
+        assertGeneratedContentContains("scalar", ", LocalDate createdDate,", "_customer.CREATE_DATE.eq(createdDate)");
     }
 
     @Test

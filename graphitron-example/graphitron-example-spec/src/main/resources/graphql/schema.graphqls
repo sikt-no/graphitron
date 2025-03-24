@@ -1,4 +1,5 @@
 scalar BigDecimal
+scalar LocalDateTime
 
 type Query {
     helloWorld: String @notGenerated
@@ -16,7 +17,7 @@ type Query {
 
     languages: [Language] @asConnection
 
-    payments: [Payment] @asConnection
+    payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
 
     staff(input: StaffInput!): [Staff] @asConnection
@@ -119,6 +120,7 @@ enum OrderDirection {
 
 type Payment @table {
     amount: BigDecimal
+    dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 

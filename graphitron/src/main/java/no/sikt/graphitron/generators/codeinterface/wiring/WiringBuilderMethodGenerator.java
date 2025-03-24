@@ -122,7 +122,7 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
      * @return a CodeBlock representing the scalar type additions
      */
     private CodeBlock createAddScalarsCodeBlocks(Set<String> scalarsInSchema) {
-        var extendedScalars = ScalarUtils.getExtendedScalars();
+        var extendedScalars = ScalarUtils.getAllExtendedScalarsNotOverriddenByUserProvidedScalars();
 
         return scalarsInSchema.stream()
                 .filter(it -> !ScalarUtils.getBuiltInScalarNames().contains(it))

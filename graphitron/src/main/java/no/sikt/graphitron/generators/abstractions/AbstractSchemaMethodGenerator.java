@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.abstractions;
 
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -89,9 +90,17 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
             return processedSchema.getEnum(field).getGraphClassName();
         }
 
+        var typeName = field.getTypeName();
+
+        if (processedSchema.isScalar(field)) {
+            if (!ScalarUtils.getBuiltInScalarNames().contains(typeName)) {
+                return ScalarUtils.getCustomScalarTypeMapping(typeName);
+            }
+        }
+
         var typeClass = field.getTypeClass();
         if (typeClass == null) {
-            throw new IllegalStateException("Field \"" + field.getName() + "\" has a type \"" + field.getTypeName() + "\" that can not be resolved.");
+            throw new IllegalStateException("Field \"" + field.getName() + "\" has a type \"" + typeName + "\" that can not be resolved.");
         }
 
         return typeClass;
