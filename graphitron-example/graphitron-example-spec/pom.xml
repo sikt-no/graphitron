@@ -111,6 +111,12 @@
                     <externalReferenceImports>
                         <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                     </externalReferenceImports>
+                    <scalars>
+                        <scalar>
+                            <name>LocalDateTime</name>
+                            <fullyQualifiedClassName>java.time.LocalDateTime</fullyQualifiedClassName>
+                        </scalar>
+                    </scalars>
                 </configuration>
                 <executions>
                     <execution>

@@ -1,0 +1,9 @@
+# query can filter on BigDecimal scalar from graphql-java-extended-scalars
+{
+    payments(amount: 10.99, first: 1) {
+        nodes {
+            amount
+            dateTime
+        }
+    }
+}

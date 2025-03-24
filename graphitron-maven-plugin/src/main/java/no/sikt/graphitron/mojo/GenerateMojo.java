@@ -20,12 +20,13 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
-import org.jetbrains.annotations.NotNull;
+import org.jooq.types.DayToSecond;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static com.kobylynskyi.graphql.codegen.model.MappingConfigDefaultValuesInitializer.initDefaultValues;
@@ -88,6 +89,14 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Parameter(property = "generate.externalReferences")
     @SuppressWarnings("unused")
     private List<ExternalMojoClassReference> externalReferences;
+
+    /**
+     * Extra scalars that can be used in code generation. In addition to the default scalars provided by the graphql
+     * Java and <a href="https://github.com/graphql-java/graphql-java-extended-scalars"> Extended Scalars</a> libraries
+     */
+    @Parameter(property = "generate.scalars")
+    @SuppressWarnings("unused")
+    private List<ExternalMojoClassReference> scalars;
 
     /**
      * External reference elements that can be used in code generation.
@@ -184,17 +193,17 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         return config;
     }
 
-    private static @NotNull HashMap<String, String> getGraphqlCodegenCustomTypeMapping() {
-        var customTypesMapping = new HashMap<String, String>();
-        customTypesMapping.put("Duration", "org.jooq.types.DayToSecond");
-        customTypesMapping.put("Int!", "Integer");
-        customTypesMapping.put("Boolean!", "Boolean");
-        customTypesMapping.put("_Any", "java.lang.Object");
+    private Map<String, String> getGraphqlCodegenCustomTypeMapping() {
+        var userProvidedScalars = new HashMap<String, Class<?>>();
+        userProvidedScalars.put("Duration", DayToSecond.class);
+        userProvidedScalars.put("Int!", Integer.class);
+        userProvidedScalars.put("Boolean!", Boolean.class);
+        userProvidedScalars.put("_Any", Object.class);
 
-        // Populate customTypesMapping with all ExtendedScalars
-        customTypesMapping.putAll(ScalarUtils.getExtendedScalarsTypeMapping());
+        scalars.forEach(scalarRef -> userProvidedScalars.put(scalarRef.name(), scalarRef.classReference()));
+        ScalarUtils.setUserProvidedScalars(userProvidedScalars);
 
-        return customTypesMapping;
+        return ScalarUtils.getCustomScalarsTypeNameMapping();
     }
 
     @Override

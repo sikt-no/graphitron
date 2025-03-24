@@ -58,9 +58,17 @@ The options are the same for both goals.
 * `outputPath` - The location where the code will be generated.
 * `outputPackage` - The package path of the generated code.
 * `schemaFiles` - Set of schema files which should be used for the generation process.
+* `userSchemaFiles` - Set of schema files to provide to the user.
 * `generatedSchemaCodePackage` - The location of the graphql-codegen generated classes.
 * `jooqGeneratedPackage` - The location of the jOOQ generated code.
+* `resolverAnnotation` - Qualified class name (with package) that will be added as an annotation on top of every generated resolver class.
+* `externalReferences` - See [Code references](#code-references).
+* `externalReferenceImports` - See [Code references](#code-references).
+* `globalRecordTransforms` - See [Code references](#code-references).
+* `extensions` -  See [Code references](#code-references).
 * `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based resolvers. And thus also the database query limit.
+* `scalars` - Extra scalars that can be used in code generation.
+* `makeKickstart` - Flag indicating if Graphitron should generate code compatible with graphql-kickstart.
 * `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
   * `enabled` - Flag indicating if Graphitron should generate record validation code
   * `schemaErrorType` - Name of the schema error to be returned in case of validation violations and IllegalArgumentExceptions.
