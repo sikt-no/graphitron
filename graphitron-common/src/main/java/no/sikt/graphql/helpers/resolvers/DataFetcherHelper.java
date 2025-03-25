@@ -69,14 +69,13 @@ public class DataFetcherHelper extends AbstractFetcher {
 
     /**
      * Load the data for a resolver.
-     * @param loaderName Name of the resolver.
      * @param dbFunction Function to call to retrieve the query data.
      * @param key Key for the queried element.
      * @return A resolver result.
      * @param <V> Type that the resolver fetches.
      */
-    public <K, V> CompletableFuture<V> load(String loaderName, K key, DBQuery<String, V> dbFunction) {
-        return getLoader(loaderName, (keys, set) -> getMappedDataLoader(keys, set, dbFunction))
+    public <K, V> CompletableFuture<V> load(K key, DBQuery<K, V> dbFunction) {
+        return getLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, dbFunction))
                 .load(asKeyPath(key), env);
     }
 
@@ -91,28 +90,26 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param <C> Connection type that the resolver fetches.
      */
     public <K, V, C> CompletableFuture<C> loadPaginated(
-            String resolveName,
             K key,
             int pageSize,
             int maxNodes,
-            DBQuery<String, List<Pair<String, V>>> dbFunction,
-            DBCount<String> countFunction,
+            DBQuery<K, List<Pair<String, V>>> dbFunction,
+            DBCount<K> countFunction,
             Function<ConnectionImpl<V>, C> connectionFunction
     ) {
-        return getConnectionLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, connectionFunction))
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, connectionFunction))
                 .load(asKeyPath(key), env);
     }
 
     /**
      * Load the data for a resolver.
-     * @param resolveName Name of the resolver.
      * @param dbFunction Function to call to retrieve the query data.
      * @param key ID of the queried element.
      * @return A resolver result.
      * @param <V> Type that the resolver fetches.
      */
-    public <K, V> CompletableFuture<List<V>> loadNonNullable(String resolveName, K key, DBQuery<String, List<V>> dbFunction) {
-        return getLoader(resolveName, (keys, set) -> getMappedDataLoader(keys, set, dbFunction))
+    public <K, V> CompletableFuture<List<V>> loadNonNullable(K key, DBQuery<K, List<V>> dbFunction) {
+        return getLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, dbFunction))
                 .load(asKeyPath(key), env)
                 .thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
     }
@@ -171,12 +168,12 @@ public class DataFetcherHelper extends AbstractFetcher {
     /**
      * Load the data for an interface resolver.
      * @param loaderName The source from which the data should be loaded.
-     * @param keyToLoad The specific key that should be loaded.
+     * @param key The specific key that should be loaded.
      * @param dbFunction Function to call to retrieve the query data.
      * @return A resolver result without pagination.
      * @param <V1> Type that the resolver fetches.
      */
-    public <K, V1, V0 extends V1> CompletableFuture<V1> loadInterface(String loaderName, K keyToLoad, DBQuery<K, V0> dbFunction) {
+    public <K, V1, V0 extends V1> CompletableFuture<V1> loadInterface(String loaderName, K key, DBQuery<K, V0> dbFunction) {
         return env
                 .getDataLoaderRegistry()
                 .<K, V1>computeIfAbsent(loaderName, name ->
@@ -184,7 +181,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                                 CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment))))
                         )
                 )
-                .load(keyToLoad, env);
+                .load(key, env);
     }
 
     private <K, V, C> CompletableFuture<Map<KeyWithPath<K>, C>> getMappedDataLoader(
@@ -192,19 +189,18 @@ public class DataFetcherHelper extends AbstractFetcher {
             SelectionSet selectionSet,
             int maxNodes,
             int pageSize,
-            DBQuery<String, List<Pair<String, V>>> dbFunction,
-            DBCount<String> countFunction,
+            DBQuery<K, List<Pair<String, V>>> dbFunction,
+            DBCount<K> countFunction,
             Function<ConnectionImpl<V>, C> connectionFunction
     ) {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
 
-        var keyToId = getKeyToId(keys);
-        var idSet = new HashSet<>(keyToId.values());
+        var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
-                        resultAsMap(keyToId, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
+                        resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : -1,
                         maxNodes,
@@ -213,13 +209,12 @@ public class DataFetcherHelper extends AbstractFetcher {
         );
     }
 
-
-    private <K, V> CompletableFuture<Map<KeyWithPath<K>, V>> getMappedDataLoader(Set<KeyWithPath<K>> keys, SelectionSet selectionSet, DBQuery<String, V> dbFunction) {
+    private <K, V> CompletableFuture<Map<KeyWithPath<K>, V>> getMappedDataLoader(Set<KeyWithPath<K>> keys, SelectionSet selectionSet, DBQuery<K, V> dbFunction) {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
         }
 
-        var keyToId = getKeyToId(keys);
-        return CompletableFuture.completedFuture(resultAsMap(keyToId, dbFunction.callDBMethod(dslContext, new HashSet<>(keyToId.values()), selectionSet)));
+        var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
+        return CompletableFuture.completedFuture(resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)));
     }
 }

@@ -11,6 +11,8 @@ import org.jooq.Row;
 
 import java.util.*;
 
+import static org.apache.commons.lang3.StringUtils.capitalize;
+
 /**
  * Helper class for generated code that helps simplify the extraction of required data from a DataFetchingEnvironment.
  */
@@ -22,6 +24,7 @@ public class EnvironmentHandler {
     protected final SelectionSet select, connectionSelect;
     protected final Set<String> arguments;
     protected final Map<String, Map<String, Row>> nextKeys;
+    protected final String dataloaderName;
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
@@ -37,8 +40,9 @@ public class EnvironmentHandler {
 
         select = new SelectionSet(getSelectionSetsFromEnvironment(env));
         connectionSelect = new ConnectionSelectionSet(getSelectionSetsFromEnvironment(env));
-        executionPath = env.getExecutionStepInfo().getPath().toString();
         arguments = flattenArgumentKeys(env.getArguments());
+        executionPath = env.getExecutionStepInfo().getPath().toString();
+        dataloaderName = String.format("%sFor%s", capitalize(env.getField().getName()), env.getExecutionStepInfo().getObjectType().getName());
     }
 
     public DataFetchingEnvironment getEnv() {
@@ -79,6 +83,10 @@ public class EnvironmentHandler {
 
     public Set<Row> getNextKeySet(String fieldName) {
         return new HashSet<>(getNextKeyFor(fieldName).values());
+    }
+
+    public String getDataloaderName() {
+        return dataloaderName;
     }
 
     protected static List<DataFetchingFieldSelectionSet> getSelectionSetsFromEnvironment(BatchLoaderEnvironment loaderEnvironment) {

@@ -13,7 +13,6 @@ import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
-import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
@@ -90,10 +89,9 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
         var isService = target.hasServiceReference();
-        var queryMethodName = asQueryMethodName(target.getName(), localObject.getName());
         var dataBlock = CodeBlock
                 .builder()
-                .add(fetcherCodeInit(target, queryMethodName, localObject, isService ? newServiceDataFetcherWithTransform() : newDataFetcher()));
+                .add(fetcherCodeInit(target, localObject, isService ? newServiceDataFetcherWithTransform() : newDataFetcher()));
 
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = isService && object != null
@@ -136,7 +134,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         return CodeBlock.of("($L, $L) -> $L$S)", TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false), "");
     }
 
-    private static CodeBlock fetcherCodeInit(ObjectField target, String queryMethodName, RecordObjectSpecification<?> localObject, CodeBlock fetcher) {
+    private static CodeBlock fetcherCodeInit(ObjectField target, RecordObjectSpecification<?> localObject, CodeBlock fetcher) {
         var methodName = !localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable()
                 ? "loadNonNullable"
                 : target.hasForwardPagination() ? "loadPaginated" : "load";
@@ -146,7 +144,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 .indent()
                 .indent();
         if (!localObject.isOperationRoot()) {
-            code.add("$S, $N.getId(),", queryMethodName, uncapitalize(localObject.getName()));
+            code.add("$N.getId(),", uncapitalize(localObject.getName()));
         }
         return code.build();
     }

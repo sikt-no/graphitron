@@ -22,7 +22,7 @@ public class WrapperGeneratedDataFetcher {
             var after = ((String) _args.get("after"));
             int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
             return new DataFetcherHelper(env).loadPaginated(
-                    "queryForWrapper", wrapper.getId(), pageSize, 1000,
+                    wrapper.getId(), pageSize, 1000,
                     (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, pageSize, after, selectionSet),
                     (ctx, ids) -> WrapperDBQueries.countQueryForWrapper(ctx, ids),
                     (connection) ->  {

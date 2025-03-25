@@ -11,7 +11,7 @@ public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<CustomerTable>> customer() {
         return env -> {
             var wrapper = ((Wrapper) env.getSource());
-            return new DataFetcherHelper(env).load("customerForWrapper", wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, ids, selectionSet));
+            return new DataFetcherHelper(env).load(wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, ids, selectionSet));
         };
     }
 }

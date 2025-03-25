@@ -28,7 +28,7 @@ public class WrapperGeneratedDataFetcher {
             var idList = ((List<String>) _args.get("idList"));
             var inList = ResolverHelpers.transformDTOList(_args.get("inList"), DummyInput.class);
             return new DataFetcherHelper(env).load(
-                    "queryForWrapper", wrapper.getId(),
+                    wrapper.getId(),
                     (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet)
             );
         };
@@ -47,7 +47,7 @@ public class WrapperGeneratedDataFetcher {
             var idList = ((List<String>) _args.get("idList"));
             var inList = ResolverHelpers.transformDTOList(_args.get("inList"), DummyInput.class);
             return new DataFetcherHelper(env).load(
-                    "queryNonNullableForWrapper", wrapper.getId(),
+                    wrapper.getId(),
                     (ctx, ids, selectionSet) -> WrapperDBQueries.queryNonNullableForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet)
             );
         };
