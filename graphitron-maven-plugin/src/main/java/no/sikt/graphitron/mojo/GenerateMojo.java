@@ -76,13 +76,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     private String jooqGeneratedPackage;
 
     /**
-     * Qualified class name (with package) that will be added as an annotation on top of every generated resolver class. None if not set.
-     * This is typically used to define the resolver as a bean to make it detectable by dependency injection frameworks.
-     */
-    @Parameter(property = "generate.resolverAnnotation")
-    private String resolverAnnotation;
-
-    /**
      * External reference elements that can be used in code generation.
      */
     @Parameter(property = "generate.externalReferences")
@@ -235,11 +228,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public String getJooqGeneratedPackage() {
         return jooqGeneratedPackage;
-    }
-
-    @Override
-    public String getResolverAnnotation() {
-        return resolverAnnotation;
     }
 
     @Override

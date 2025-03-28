@@ -138,14 +138,4 @@ public class ResolverTest extends GeneratorTest {
                 "QueryDBQueries.addressForQuery("
         );
     }
-
-    @Test
-    @DisplayName("Resolver with annotation configured")
-    void resolverAnnotaion() {
-        GeneratorConfig.setResolverAnnotation("example.org.cdi.Bean");
-        assertGeneratedContentContains("operation/default", "@Bean" +
-                "public class QueryGeneratedResolver implements QueryResolver ");
-
-    }
-
 }

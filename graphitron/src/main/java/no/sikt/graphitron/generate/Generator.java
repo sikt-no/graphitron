@@ -15,8 +15,6 @@ public interface Generator {
     Set<String> getSchemaFiles();
     Set<String> getUserSchemaFiles();
     String getJooqGeneratedPackage();
-    String getResolverAnnotation();
-
     RecordValidation getRecordValidation();
 
     int getMaxAllowedPageSize();

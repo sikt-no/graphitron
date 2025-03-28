@@ -102,7 +102,6 @@
                     </schemaFiles>
                     <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                     <maxAllowedPageSize>1000</maxAllowedPageSize>
-                    <resolverAnnotation>jakarta.enterprise.context.Dependent</resolverAnnotation>
                     <recordValidation>
                         <enabled>true</enabled>
                         <schemaErrorType>UgyldigInput</schemaErrorType>

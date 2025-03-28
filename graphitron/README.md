@@ -61,7 +61,6 @@ The options are the same for both goals.
 * `userSchemaFiles` - Set of schema files to provide to the user.
 * `generatedSchemaCodePackage` - The location of the graphql-codegen generated classes.
 * `jooqGeneratedPackage` - The location of the jOOQ generated code.
-* `resolverAnnotation` - Qualified class name (with package) that will be added as an annotation on top of every generated resolver class.
 * `externalReferences` - See [Code references](#code-references).
 * `externalReferenceImports` - See [Code references](#code-references).
 * `globalRecordTransforms` - See [Code references](#code-references).

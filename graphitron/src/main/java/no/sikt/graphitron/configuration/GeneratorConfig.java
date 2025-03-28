@@ -30,8 +30,7 @@ public class GeneratorConfig {
             outputPackage,
             generatedSchemaResolversPackage,
             generatedSchemaModelsPackage,
-            generatedJooqPackage,
-            resolverAnnotation;
+            generatedJooqPackage;
 
     private static boolean makeKickstart = false;
 
@@ -97,7 +96,6 @@ public class GeneratorConfig {
         generatedSchemaResolversPackage = mojo.getApiPackageName();
         generatedSchemaModelsPackage = mojo.getModelPackageName();
         generatedJooqPackage = mojo.getJooqGeneratedPackage();
-        resolverAnnotation = mojo.getResolverAnnotation();
         maxAllowedPageSize = mojo.getMaxAllowedPageSize();
 
         externalReferences = new ExternalReferences(mojo.getExternalReferences());
@@ -124,7 +122,6 @@ public class GeneratorConfig {
         externalReferenceImports = Set.of();
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
-        resolverAnnotation = null;
     }
 
     public static Set<String> generatorSchemaFiles() {
@@ -153,10 +150,6 @@ public class GeneratorConfig {
 
     public static String getGeneratedJooqPackage() {
         return generatedJooqPackage;
-    }
-
-    public static Optional<String> getResolverAnnotation() {
-        return Optional.ofNullable(resolverAnnotation);
     }
 
     public static ExternalReferences getExternalReferences() {
@@ -216,9 +209,5 @@ public class GeneratorConfig {
 
     public static boolean useOptionalSelects() {
         return USE_OPTIONAL_SELECTS;
-    }
-
-    public static void setResolverAnnotation(String resolverAnnotation) {
-        GeneratorConfig.resolverAnnotation = resolverAnnotation;
     }
 }
