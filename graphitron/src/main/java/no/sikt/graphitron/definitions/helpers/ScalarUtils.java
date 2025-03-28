@@ -1,109 +1,144 @@
 package no.sikt.graphitron.definitions.helpers;
 
+import com.apollographql.federation.graphqljava._Any;
+import com.apollographql.federation.graphqljava._FieldSet;
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import graphql.Scalars;
 import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLScalarType;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class ScalarUtils {
 
-    private static final Set<String> BUILT_IN_SCALAR_NAMES;
-    private static final Map<String, String> EXTENDED_SCALARS;
+    private static ScalarUtils instance = null;
 
-    // The two maps below contains all scalars from the ExtendedScalars class.
-    private static final Map<String, String> EXTENDED_SCALARS_TYPE_NAME_MAPPING;
-    private static final Map<String, ClassName> EXTENDED_SCALARS_TYPE_MAPPING;
+    private final Set<String> BUILT_IN_SCALAR_NAMES;
 
-    private static Map<String, String> userProvidedScalarsTypeNameMapping;
-    private static Map<String, ClassName> userProvidedScalarsTypeMapping;
+    //order matters. Any custom scalars that should override the default ones should be added last.
+    private static final List<Class<?>> DEFAULT_SCALAR_DEFINITIONS_CLASSES =
+            List.of(Scalars.class, ExtendedScalars.class, _FieldSet.class, _Any.class, CustomScalars.class);
 
-    static {
+    private final Map<String, CodeBlock> scalarTypeCodeBlockMapping;
+    private final Map<String, String> scalarTypeNameMapping;
+    private final Map<String, ClassName> scalarsTypeClassMapping;
+
+    private ScalarUtils(Set<Class<?>> userProvidedDefinitionsClasses) {
         BUILT_IN_SCALAR_NAMES = getScalarFields(Scalars.class).values()
                 .stream()
                 .map(GraphQLScalarType::getName)
                 .collect(Collectors.toSet());
 
-        var extendedScalars = getScalarFields(ExtendedScalars.class);
-        EXTENDED_SCALARS = extendedScalars.entrySet()
-                .stream()
-                .collect(Collectors.toMap(entry -> entry.getValue().getName(), Map.Entry::getKey));
+        scalarTypeCodeBlockMapping = new HashMap<>();
+        scalarTypeNameMapping = new HashMap<>();
+        scalarsTypeClassMapping = new HashMap<>();
 
-        EXTENDED_SCALARS_TYPE_MAPPING = new HashMap<>();
-        extendedScalars.forEach((fieldName, scalarType) -> {
-            try {
-                Class<?> inputClass = scalarType.getCoercing().getClass().getMethod("parseValue", Object.class).getReturnType();
-                EXTENDED_SCALARS_TYPE_MAPPING.put(scalarType.getName(), ClassName.get(inputClass));
-            } catch (NoSuchMethodException e) {
-                throw new RuntimeException("Failed to access scalar field: " + fieldName, e);
-            }
-        });
+        var scalarDefinitionsClasses =
+                Stream.concat(
+                        DEFAULT_SCALAR_DEFINITIONS_CLASSES.stream(),
+                        userProvidedDefinitionsClasses.stream()
+                );
 
-        EXTENDED_SCALARS_TYPE_NAME_MAPPING = EXTENDED_SCALARS_TYPE_MAPPING.entrySet().stream()
-                .map(it -> Map.entry(it.getKey(), it.getValue().canonicalName()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        scalarDefinitionsClasses
+                .forEach(scalarDefinitionsClass -> {
+                    var scalars = getScalarFields(scalarDefinitionsClass);
+                    var scalarNameToClassNames = getScalarNameToClassNameMap(scalars);
+                    scalarsTypeClassMapping.putAll(scalarNameToClassNames);
+                    scalarTypeNameMapping.putAll(getScalarNameToJavaClassNameMap(scalarNameToClassNames));
+                    scalarTypeCodeBlockMapping.putAll(getScalarTypeNameToFieldNameMap(scalars, scalarDefinitionsClass));
+                });
+    }
 
-        userProvidedScalarsTypeMapping = new HashMap<>();
-        userProvidedScalarsTypeNameMapping = new HashMap<>();
+    public static ScalarUtils getInstance() {
+        if (instance == null) {
+            return new ScalarUtils(Set.of());
+        }
+        return instance;
+    }
+
+    public static ScalarUtils initialize(Set<Class<?>> definitionsClasses) {
+        instance = new ScalarUtils(definitionsClasses);
+        return instance;
     }
 
     /**
      * @return the names of the built-in scalar types supported by GraphQL Java.
      */
-    public static Set<String> getBuiltInScalarNames() {
+    public Set<String> getBuiltInScalarNames() {
         return BUILT_IN_SCALAR_NAMES;
     }
 
     /**
-     * @return a map of extended scalar names to their corresponding field names from the {@link ExtendedScalars} class.
-     * The map only contains the extended scalars that are not overridden by user provided scalars.
-     * This is because the user provided scalars need to be added manually to the wiring.
+     * @return a map of scalar names to CodeBlocks representing the code to access the scalar field.
+     * E.g "BigDecimal" -> "ExtendedScalars.GraphQLBigDecimal".
+     * This is used to automatically add scalar types to the wiring.
      */
-    public static Map<String, String> getAllExtendedScalarsNotOverriddenByUserProvidedScalars() {
-        return EXTENDED_SCALARS.entrySet().stream()
-                .filter(entry -> !userProvidedScalarsTypeNameMapping.containsKey(entry.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    public Map<String, CodeBlock> getScalarTypeCodeBlockMapping() {
+        return scalarTypeCodeBlockMapping;
     }
 
     /**
      * @return a map of all supported scalar names to their corresponding Java class names.
-     * I.e. the combined mapping of extended scalars and the user provided scalars.
-     * The built-in scalars are not included in this mapping because they are already known by the GraphQL Java library.
      */
-    public static Map<String, String> getCustomScalarsTypeNameMapping() {
-        Map<String, String> combinedMapping = new HashMap<>(EXTENDED_SCALARS_TYPE_NAME_MAPPING);
-        combinedMapping.putAll(userProvidedScalarsTypeNameMapping);
-        return combinedMapping;
+    public Map<String, String> getScalarTypeNameMapping() {
+        return scalarTypeNameMapping;
     }
 
     /**
      * @return the java ClassName type mapping for a supported scalar type.
-     * User provided scalars take precedence over extended scalars.
-     * If the scalar type is not recognized, an IllegalArgumentException is thrown.
+     * Null if the scalar is not supported.
      */
-    public static ClassName getCustomScalarTypeMapping(String scalarName) {
-        return Optional.ofNullable(userProvidedScalarsTypeMapping.get(scalarName))
-                .orElseGet(() -> Optional.ofNullable(EXTENDED_SCALARS_TYPE_MAPPING.get(scalarName))
-                        .orElseThrow(() -> new IllegalArgumentException(
-                                "Scalar type mapping not found for '" + scalarName + "'. Configured scalars: " +
-                                        Stream.of(userProvidedScalarsTypeMapping.keySet(), EXTENDED_SCALARS_TYPE_MAPPING.keySet())
-                                                .flatMap(Set::stream)
-                                                .sorted()
-                                                .collect(Collectors.joining(", ")))));
+    public ClassName getScalarTypeMapping(String scalarName) {
+        return scalarsTypeClassMapping.get(scalarName);
     }
 
-    public static void setUserProvidedScalars(Map<String, Class<?>> typeMapping) {
-        userProvidedScalarsTypeMapping = typeMapping.entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, entry -> ClassName.get(entry.getValue())));
-        userProvidedScalarsTypeNameMapping = typeMapping.entrySet().stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getCanonicalName()));
+    private Map<String, CodeBlock> getScalarTypeNameToFieldNameMap(Map<String, GraphQLScalarType> scalars, Class<?> containingClass) {
+        return scalars.entrySet()
+                .stream()
+                .collect(Collectors.toMap(entry -> entry.getValue().getName(),
+                        entry -> CodeBlock.of("$T.$N", containingClass, entry.getKey())));
+    }
+
+    private Map<String, ClassName> getScalarNameToClassNameMap(Map<String, GraphQLScalarType> scalars) {
+        HashMap<String, ClassName> extendedScalarsTypeMapping = new HashMap<>();
+        scalars.forEach((fieldName, scalarType) -> {
+            try {
+                Type[] genericInterfaces = scalarType.getCoercing().getClass().getGenericInterfaces();
+                for (Type genericInterface : genericInterfaces) {
+                    if (genericInterface instanceof ParameterizedType parameterizedType) {
+                        Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+                        if (actualTypeArguments.length > 0) {
+                            Type inputType = actualTypeArguments[0];
+                            if (inputType instanceof Class<?> inputClass) {
+                                extendedScalarsTypeMapping.put(scalarType.getName(), ClassName.get(inputClass));
+                                return;
+                            }
+                        }
+                    }
+                }
+                // Fallback mechanism for scalars that do not have generic type parameters
+                Class<?> inputClass = scalarType.getCoercing().getClass().getMethod("parseValue", Object.class).getReturnType();
+                extendedScalarsTypeMapping.put(scalarType.getName(), ClassName.get(inputClass));
+            } catch (NoSuchMethodException e) {
+                throw new RuntimeException("Failed to access scalar field: " + fieldName, e);
+            }
+        });
+        return extendedScalarsTypeMapping;
+    }
+
+    private Map<String, String> getScalarNameToJavaClassNameMap(Map<String, ClassName> scalarToClassNames) {
+        return scalarToClassNames.entrySet().stream()
+                .map(it -> Map.entry(it.getKey(), it.getValue().canonicalName()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     /**
@@ -111,7 +146,7 @@ public class ScalarUtils {
      * that are of type {@link GraphQLScalarType}. It then creates a map where the keys are the names of these fields
      * and the values are the corresponding scalar types.
      */
-    private static Map<String, GraphQLScalarType> getScalarFields(Class<?> clazz) {
+    private Map<String, GraphQLScalarType> getScalarFields(Class<?> clazz) {
         return Stream.of(clazz.getFields())
                 .filter(field -> GraphQLScalarType.class.isAssignableFrom(field.getType()))
                 .collect(Collectors.toMap(

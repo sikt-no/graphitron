@@ -20,14 +20,13 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
-import org.jooq.types.DayToSecond;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.kobylynskyi.graphql.codegen.model.MappingConfigDefaultValuesInitializer.initDefaultValues;
 import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
@@ -194,16 +193,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     }
 
     private Map<String, String> getGraphqlCodegenCustomTypeMapping() {
-        var userProvidedScalars = new HashMap<String, Class<?>>();
-        userProvidedScalars.put("Duration", DayToSecond.class);
-        userProvidedScalars.put("Int!", Integer.class);
-        userProvidedScalars.put("Boolean!", Boolean.class);
-        userProvidedScalars.put("_Any", Object.class);
-
-        scalars.forEach(scalarRef -> userProvidedScalars.put(scalarRef.name(), scalarRef.classReference()));
-        ScalarUtils.setUserProvidedScalars(userProvidedScalars);
-
-        return ScalarUtils.getCustomScalarsTypeNameMapping();
+        Set<Class<?>> userConfiguredScalarClasses = scalars.stream()
+                .map(ExternalMojoClassReference::classReference)
+                .collect(Collectors.toSet());
+        return ScalarUtils.initialize(userConfiguredScalarClasses).getScalarTypeNameMapping();
     }
 
     @Override

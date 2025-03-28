@@ -613,13 +613,6 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this field type belong to a scalar in the schema?
-     */
-    public boolean isScalar(FieldSpecification field) {
-        return scalarTypes.contains(field.getTypeName());
-    }
-
-    /**
      * @return The Query type.
      */
     public ObjectDefinition getQueryType() {

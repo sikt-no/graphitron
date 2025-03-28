@@ -1,95 +1,70 @@
 package no.sikt.graphitron.definitions.helpers;
 
-import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import graphql.Scalars;
 import graphql.scalars.ExtendedScalars;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ScalarUtilsTest {
 
-    @AfterEach
-    void tearDown() {
-        ScalarUtils.setUserProvidedScalars(Map.of());
+    @BeforeEach
+    void setUp() {
+        ScalarUtils.initialize(Set.of());
     }
 
     @Test
     @DisplayName("Should return set of built-in scalar names")
     void builtInScalarNames() {
-        Set<String> builtInScalars = ScalarUtils.getBuiltInScalarNames();
+        Set<String> builtInScalars = ScalarUtils.getInstance().getBuiltInScalarNames();
         assertThat(builtInScalars).contains("String", "Int", "Boolean");
     }
 
     @Test
-    @DisplayName("Should return map of extended scalar names to ExtendedScalar.-field names. Excluding those overridden by user-provided scalars")
-    void extendedScalars() {
-        String dateScalar = ExtendedScalars.Date.getName();
-        ScalarUtils.setUserProvidedScalars(Map.of(dateScalar, String.class));
-
-        Map<String, String> extendedScalars = ScalarUtils.getAllExtendedScalarsNotOverriddenByUserProvidedScalars();
-        assertThat(extendedScalars)
-                .containsEntry("BigDecimal", "GraphQLBigDecimal")
-                .containsEntry("Long", "GraphQLLong")
-                .doesNotContainKey(dateScalar);
+    @DisplayName("Should return map of scalar names to CodeBlocks representing the code to access the scalar field")
+    void getScalarTypeCodeBlockMapping() {
+        assertThat(ScalarUtils.getInstance().getScalarTypeCodeBlockMapping())
+                .containsEntry("BigDecimal", CodeBlock.of("$T.$N", ExtendedScalars.class, "GraphQLBigDecimal"))
+                .containsEntry("BigInteger", CodeBlock.of("$T.$N", ExtendedScalars.class, "GraphQLBigInteger"));
     }
 
     @Test
-    @DisplayName("Should return map of extended scalar names to Java class names")
-    void customScalarsTypeNameMapping() {
-        Map<String, String> customScalarsTypeNameMapping = ScalarUtils.getCustomScalarsTypeNameMapping();
-        assertThat(customScalarsTypeNameMapping).containsEntry("BigDecimal", "java.math.BigDecimal")
-                .containsEntry("Long", "java.lang.Long");
+    @DisplayName("Should return map of scalar names to Java class names")
+    void getScalarTypeNameMapping() {
+        assertThat(ScalarUtils.getInstance().getScalarTypeNameMapping())
+                .containsEntry("Boolean", "java.lang.Boolean") //from Scalars
+                .containsEntry("BigDecimal", "java.math.BigDecimal") //from ExtendedScalars
+                .containsEntry("_Any", "java.lang.Object"); //from _Any
+    }
+
+    @Test
+    @DisplayName("Should use custom scalar type mapping for ID scalar instead of default from Scalars")
+    void getCustomScalarsTypeNameMappingCustomID() {
+        assertThat(ScalarUtils.getInstance().getScalarTypeNameMapping())
+                .containsEntry("ID", "java.lang.String") //from CustomScalars
+                .doesNotContainEntry("ID", "java.lang.Object"); //from Scalars
     }
 
     @Test
     @DisplayName("Should return ClassName for valid extended scalar name")
-    void getCustomScalarTypeMapping_ValidScalar() {
-        ClassName className = ScalarUtils.getCustomScalarTypeMapping("BigDecimal");
+    void getScalarTypeMapping_ValidScalar() {
+        var className = ScalarUtils.getInstance().getScalarTypeMapping("BigDecimal");
         assertThat(className.canonicalName()).isEqualTo("java.math.BigDecimal");
     }
 
     @Test
-    @DisplayName("Should throw IllegalArgumentException for unrecognized scalar name")
-    void getCustomScalarTypeMapping_UnrecognizedScalar() {
-        assertThatThrownBy(() -> ScalarUtils.getCustomScalarTypeMapping("UnrecognizedScalar"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageStartingWith("Scalar type mapping not found for 'UnrecognizedScalar'. Configured scalars: BigDecimal, BigInteger");
-    }
+    @DisplayName("Initialize should add user-provided scalar to the mappings")
+    void initialize() {
+        //add Scalars to the end of definitions, re-adding the ID scalar from Scalars that overrides the one from CustomScalars
+        ScalarUtils.initialize(Set.of(Scalars.class));
 
-    @Test
-    @DisplayName("Should add user-provided scalar to the mappings")
-    void setUserProvidedScalars() {
-        var scalarName = "CustomScalar";
-        Class<?> scalarClass = java.time.Duration.class;
-
-        ScalarUtils.setUserProvidedScalars(Map.of(scalarName, scalarClass));
-
-        assertThat(ScalarUtils.getCustomScalarsTypeNameMapping())
-                .containsEntry(scalarName, scalarClass.getCanonicalName());
-
-        assertThat(ScalarUtils.getCustomScalarTypeMapping(scalarName).canonicalName())
-                .isEqualTo(scalarClass.getCanonicalName());
-    }
-
-    @Test
-    @DisplayName("User-provided scalar should take precedence over extended scalar")
-    void userProvidedScalarTakesPrecedence() {
-        var scalarName = ExtendedScalars.GraphQLBigDecimal.getName();
-        Class<?> userProvidedClass = Double.class; // extended scalar is java.math.BigDecimal
-
-        ScalarUtils.setUserProvidedScalars(Map.of(scalarName, userProvidedClass));
-
-        assertThat(ScalarUtils.getCustomScalarsTypeNameMapping())
-                .containsEntry(scalarName, userProvidedClass.getCanonicalName())
-                .doesNotContainEntry(scalarName, "java.math.BigDecimal");
-
-        assertThat(ScalarUtils.getCustomScalarTypeMapping(scalarName).canonicalName())
-                .isEqualTo(userProvidedClass.getCanonicalName());
+        assertThat(ScalarUtils.getInstance().getScalarTypeNameMapping())
+                .doesNotContainEntry("ID", "java.lang.String") //from CustomScalars
+                .containsEntry("ID", "java.lang.Object"); //from Scalars
     }
 }

@@ -33,6 +33,6 @@ public class WiringNoGeneratorsTest extends GeneratorTest {
     @Test
     @DisplayName("No other generator exists")
     void noFetchers() {
-        assertGeneratedContentContains("noGenerators", ".newRuntimeWiring();return wiring;");
+        assertGeneratedContentContains("noGenerators", ".newRuntimeWiring();wiring.scalar(_Any.type);return wiring;");
     }
 }
