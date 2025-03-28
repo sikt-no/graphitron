@@ -67,7 +67,7 @@ The options are the same for both goals.
 * `globalRecordTransforms` - See [Code references](#code-references).
 * `extensions` -  See [Code references](#code-references).
 * `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based resolvers. And thus also the database query limit.
-* `scalars` - Extra scalars that can be used in code generation.
+* `scalars` - Extra scalars that can be used in code generation and that will be added automatically to the wiring. Reflection is used to find all the scalar definitions of the provided class(es).
 * `makeKickstart` - Flag indicating if Graphitron should generate code compatible with graphql-kickstart.
 * `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
   * `enabled` - Flag indicating if Graphitron should generate record validation code
@@ -77,18 +77,19 @@ The options are the same for both goals.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
 
+See the [pom.xml](../graphitron-example/graphitron-example-spec/pom.xml) of graphitron-example-spec for an example on how to configure these settings.
+
 #### Code interface
 Graphitron provides a static generated class for accessing the generated results in a user-friendly way.
 This will be available after the first run of Graphitron codegen.
 
-Note that Graphitron does not have the functionality for properly wiring scalars (yet).
 Until ID handling gets another rework on our end, a [nodeIdHandler](#implement-and-configure-nodeidhandler)
 must be passed to most of these methods.
 
 Here are a few examples of how one can retrieve schema-related code for further use:
 
 ```java
-// Get the schema with all wiring included. Note: Only useful if you do not use custom scalars right now.
+// Get the schema with all wiring included. 
 GraphQLSchema schema = Graphitron.getSchema(nodeIdHandler);
 ```
 
@@ -98,7 +99,7 @@ RuntimeWiring runtimeWiring = Graphitron.getRuntimeWiring(nodeIdHandler);
 ```
 
 ```java
-// Get the wiring for the generated code as a builder. Equivalent to the getRuntimeWiring, but skips the .build() call at the end. Add your scalars to this.
+// Get the wiring for the generated code as a builder. Equivalent to the getRuntimeWiring, but skips the .build() call at the end. 
 RuntimeWiring.Builder runtimeWiringBuilder = Graphitron.getRuntimeWiringBuilder(nodeIdHandler);
 ```
 

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.example.server;
+package no.sikt.graphitron.example.service;
 
 import graphql.GraphQLContext;
 import graphql.execution.CoercedVariables;
@@ -15,7 +15,7 @@ import java.util.Locale;
 
 import static graphql.scalars.util.Kit.typeName;
 
-public class CustomScalars {
+public class ConsumerProvidedScalars {
 
     public static final GraphQLScalarType GraphQLLocalDateTime;
 

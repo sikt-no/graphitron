@@ -3,7 +3,6 @@ package no.sikt.graphitron.generators.codeinterface.wiring;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
-import graphql.scalars.ExtendedScalars;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
@@ -122,13 +121,13 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
      * @return a CodeBlock representing the scalar type additions
      */
     private CodeBlock createAddScalarsCodeBlocks(Set<String> scalarsInSchema) {
-        var extendedScalars = ScalarUtils.getAllExtendedScalarsNotOverriddenByUserProvidedScalars();
+        var scalarTypeToCodeBlockMapping = ScalarUtils.getInstance().getScalarTypeCodeBlockMapping();
 
         return scalarsInSchema.stream()
-                .filter(it -> !ScalarUtils.getBuiltInScalarNames().contains(it))
+                .filter(it -> !ScalarUtils.getInstance().getBuiltInScalarNames().contains(it))
                 .map(scalarName -> {
-                    if (extendedScalars.containsKey(scalarName)) {
-                        return CodeBlock.of("$N.scalar($T.$N);", VAR_WIRING, ExtendedScalars.class, extendedScalars.get(scalarName));
+                    if (scalarTypeToCodeBlockMapping.containsKey(scalarName)) {
+                        return CodeBlock.of("$N.scalar($L);", VAR_WIRING, scalarTypeToCodeBlockMapping.get(scalarName));
                     } else {
                         LOGGER.info("Scalar type '{}' is not recognized and must be added manually to the wiring.", scalarName);
                         return empty();

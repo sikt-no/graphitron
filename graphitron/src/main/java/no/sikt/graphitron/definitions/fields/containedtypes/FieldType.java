@@ -4,11 +4,9 @@ import graphql.language.ListType;
 import graphql.language.NonNullType;
 import graphql.language.Type;
 import graphql.language.TypeName;
+import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 
 import java.util.ArrayList;
-import java.util.Map;
-
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
  * Class that contains all the necessary information about a field's type and nullability.
@@ -20,16 +18,6 @@ public class FieldType {
     private boolean isIterableNonNullable = false;
     private boolean isIterableWrapped = false;
     private boolean isID = false;
-
-    // TODO: This needs to be reworked, as this limits the possible scalars that can be used in function returns.
-    private final static Map<String, com.palantir.javapoet.TypeName> TYPE_NAME_MAPPER = Map.of(
-            "ID", STRING.className,
-            "String", STRING.className,
-            "Int", INTEGER.className,
-            "Float", FLOAT.className,
-            "Boolean", BOOLEAN.className,
-            "_Any", OBJECT.className
-    );
 
     public FieldType(Type<?> fieldType) {
         ArrayList<Type<?>> orderedTypeList = extractNestedTypes(fieldType);
@@ -45,7 +33,7 @@ public class FieldType {
                 }
                 else if (objectType instanceof TypeName) {
                     name = ((TypeName) objectType).getName();
-                    typeClass = TYPE_NAME_MAPPER.get(getName());
+                    typeClass = ScalarUtils.getInstance().getScalarTypeMapping(name);
                     isNonNullable = isThisNonNullable;
                     isID = name.equals("ID");
                 }

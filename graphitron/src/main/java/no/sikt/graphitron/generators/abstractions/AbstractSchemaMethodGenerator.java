@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.abstractions;
 
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
-import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -12,7 +11,10 @@ import no.sikt.graphitron.generators.dependencies.Dependency;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 
@@ -91,12 +93,6 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
         }
 
         var typeName = field.getTypeName();
-
-        if (processedSchema.isScalar(field)) {
-            if (!ScalarUtils.getBuiltInScalarNames().contains(typeName)) {
-                return ScalarUtils.getCustomScalarTypeMapping(typeName);
-            }
-        }
 
         var typeClass = field.getTypeClass();
         if (typeClass == null) {
