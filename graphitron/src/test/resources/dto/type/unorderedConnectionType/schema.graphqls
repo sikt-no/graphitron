@@ -1,0 +1,11 @@
+type DummyConnection {
+    totalCount: Int
+    pageInfo: PageInfo
+    nodes: [DummyType!]!
+    edges: [DummyConnectionEdge]
+}
+
+type DummyConnectionEdge {
+    cursor: String
+    node: DummyType
+}

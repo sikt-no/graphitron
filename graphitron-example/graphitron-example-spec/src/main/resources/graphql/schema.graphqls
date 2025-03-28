@@ -140,3 +140,5 @@ type Staff @table(name: "STAFF") {
     email: String
     username: String
 }
+
+union SomeUnion = Language | Staff
