@@ -29,10 +29,10 @@ public class QueryGeneratedResolver implements QueryResolver {
                 (ids) -> resolverFetchService.countQueryList(),
                 (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, ""),
                 (connection) ->  {
-                    var edges = connection.getEdges().stream().map(it -> CustomerConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
+                    var edges = connection.getEdges().stream().map(it -> new CustomerConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());
                     var page = connection.getPageInfo();
-                    var graphPage = PageInfo.builder().setStartCursor(page.getStartCursor() == null ? null : page.getStartCursor().getValue()).setEndCursor(page.getEndCursor() == null ? null : page.getEndCursor().getValue()).setHasNextPage(page.isHasNextPage()).setHasPreviousPage(page.isHasPreviousPage()).build();
-                    return CustomerConnection.builder().setNodes(connection.getNodes()).setEdges(edges).setTotalCount(connection.getTotalCount()).setPageInfo(graphPage).build();
+                    var graphPage = new PageInfo(page.isHasPreviousPage(), page.isHasNextPage(), page.getStartCursor() == null ? null : page.getStartCursor().getValue(), page.getEndCursor() == null ? null : page.getEndCursor().getValue());
+                    return new CustomerConnection(edges, graphPage, connection.getNodes(), connection.getTotalCount());
                 }
         );
     }

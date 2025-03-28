@@ -1,0 +1,4 @@
+scalar Time
+type Customer {
+    time: Time
+}

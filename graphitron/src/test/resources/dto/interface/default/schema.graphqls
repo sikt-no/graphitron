@@ -1,0 +1,4 @@
+interface SomeInterface {
+    id: ID
+    someString: String @splitQuery
+}

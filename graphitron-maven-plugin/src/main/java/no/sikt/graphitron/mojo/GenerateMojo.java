@@ -1,8 +1,6 @@
 package no.sikt.graphitron.mojo;
 
 import com.kobylynskyi.graphql.codegen.java.JavaGraphQLCodegen;
-import com.kobylynskyi.graphql.codegen.model.ApiInterfaceStrategy;
-import com.kobylynskyi.graphql.codegen.model.ApiRootInterfaceStrategy;
 import com.kobylynskyi.graphql.codegen.model.MappingConfig;
 import com.kobylynskyi.graphql.codegen.model.RelayConfig;
 import graphql.parser.ParserOptions;
@@ -124,10 +122,14 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
 
-        try {
-            graphqlCodeGen();
-        } catch (IOException e) {
-            throw new MojoExecutionException(e);
+        if (makeKickstart) {
+            try {
+                graphqlCodeGen();
+            } catch (IOException e) {
+                throw new MojoExecutionException(e);
+            }
+        } else {
+            getGraphqlCodegenCustomTypeMapping();
         }
 
         GraphQLGenerator.generate();
@@ -167,20 +169,13 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         var relayConfig = new RelayConfig();
         relayConfig.setDirectiveName("NONE");
         config.setRelayConfig(relayConfig);
-
-        if (makeKickstart) {
-            config.setFieldsWithResolvers(Set.of("@splitQuery"));
-            config.setApiReturnType("java.util.concurrent.CompletableFuture");
-            config.setGenerateDataFetchingEnvironmentArgumentInApis(true);
-            config.setResolverParentInterface("graphql.kickstart.tools.GraphQLResolver<{{TYPE}}>");
-            config.setQueryResolverParentInterface("graphql.kickstart.tools.GraphQLQueryResolver");
-            config.setMutationResolverParentInterface("graphql.kickstart.tools.GraphQLMutationResolver");
-            config.setSubscriptionResolverParentInterface("graphql.kickstart.tools.GraphQLSubscriptionResolver");
-        } else {
-            config.setFieldsWithResolvers(Set.of("@splitQuery"));
-            config.setApiInterfaceStrategy(ApiInterfaceStrategy.DO_NOT_GENERATE);
-            config.setApiRootInterfaceStrategy(ApiRootInterfaceStrategy.DO_NOT_GENERATE);
-        }
+        config.setFieldsWithResolvers(Set.of("@splitQuery"));
+        config.setApiReturnType("java.util.concurrent.CompletableFuture");
+        config.setGenerateDataFetchingEnvironmentArgumentInApis(true);
+        config.setResolverParentInterface("graphql.kickstart.tools.GraphQLResolver<{{TYPE}}>");
+        config.setQueryResolverParentInterface("graphql.kickstart.tools.GraphQLQueryResolver");
+        config.setMutationResolverParentInterface("graphql.kickstart.tools.GraphQLMutationResolver");
+        config.setSubscriptionResolverParentInterface("graphql.kickstart.tools.GraphQLSubscriptionResolver");
 
         return config;
     }

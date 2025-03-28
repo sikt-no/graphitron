@@ -26,10 +26,10 @@ public class WrapperGeneratedDataFetcher {
                     (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, pageSize, after, selectionSet),
                     (ctx, ids) -> WrapperDBQueries.countQueryForWrapper(ctx, ids),
                     (connection) ->  {
-                        var edges = connection.getEdges().stream().map(it -> DummyConnectionEdge.builder().setCursor(it.getCursor() == null ? null : it.getCursor().getValue()).setNode(it.getNode()).build()).collect(Collectors.toList());
+                        var edges = connection.getEdges().stream().map(it -> new DummyConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());
                         var page = connection.getPageInfo();
-                        var graphPage = PageInfo.builder().setStartCursor(page.getStartCursor() == null ? null : page.getStartCursor().getValue()).setEndCursor(page.getEndCursor() == null ? null : page.getEndCursor().getValue()).setHasNextPage(page.isHasNextPage()).setHasPreviousPage(page.isHasPreviousPage()).build();
-                        return DummyConnection.builder().setNodes(connection.getNodes()).setEdges(edges).setTotalCount(connection.getTotalCount()).setPageInfo(graphPage).build();
+                        var graphPage = new PageInfo(page.isHasPreviousPage(), page.isHasNextPage(), page.getStartCursor() == null ? null : page.getStartCursor().getValue(), page.getEndCursor() == null ? null : page.getEndCursor().getValue());
+                        return new DummyConnection(edges, graphPage, connection.getNodes(), connection.getTotalCount());
                     }
             );
         };

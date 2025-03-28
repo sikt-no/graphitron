@@ -23,6 +23,11 @@ public enum GraphQLReservedName {
     CONNECTION_CURSOR_FIELD("cursor"),
     CONNECTION_EDGE_FIELD("edges"),
     CONNECTION_PAGE_INFO_NODE("PageInfo"),
+    CONNECTION_PAGE_INFO_FIELD(uncapitalize(CONNECTION_PAGE_INFO_NODE.getName())),
+    HAS_PREVIOUS_PAGE_FIELD("hasPreviousPage"),
+    HAS_NEXT_PAGE_FIELD("hasNextPage"),
+    START_CURSOR_FIELD("startCursor"),
+    END_CURSOR_FIELD("endCursor"),
 
     CONNECTION_TOTAL_COUNT("totalCount"),
 

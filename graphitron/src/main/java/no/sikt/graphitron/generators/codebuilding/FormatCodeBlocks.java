@@ -445,7 +445,7 @@ public class FormatCodeBlocks {
                         declare(
                                 EDGES_NAME,
                                 CodeBlock.of(
-                                        "$N.getEdges().stream().map(it -> $T.builder().setCursor($L.getValue()).setNode(it.getNode()).build())$L",
+                                        "$N.getEdges().stream().map(it -> new $T($L.getValue(), it.getNode()))$L",
                                         CONNECTION_NAME,
                                         connectionType.getEdgeObject().getGraphClassName(),
                                         nullIfNullElseThis(CodeBlock.of("it.getCursor()")),
@@ -458,24 +458,24 @@ public class FormatCodeBlocks {
                         declare(
                                 GRAPH_PAGE_NAME,
                                 CodeBlock.of(
-                                        "$T.builder().setStartCursor($L.getValue()).setEndCursor($L.getValue()).setHasNextPage($N.isHasNextPage()).setHasPreviousPage($N.isHasPreviousPage()).build()",
+                                        "new $T($N.isHasPreviousPage(), $N.isHasNextPage(), $L.getValue(), $L.getValue())",
                                         pageInfoType.getGraphClassName(),
-                                        nullIfNullElseThis(CodeBlock.of("$N.getStartCursor()", PAGE_NAME)),
-                                        nullIfNullElseThis(CodeBlock.of("$N.getEndCursor()", PAGE_NAME)),
                                         PAGE_NAME,
-                                        PAGE_NAME
+                                        PAGE_NAME,
+                                        nullIfNullElseThis(CodeBlock.of("$N.getStartCursor()", PAGE_NAME)),
+                                        nullIfNullElseThis(CodeBlock.of("$N.getEndCursor()", PAGE_NAME))
                                 )
                         )
                 )
                 .add(
                         returnWrap(
                                 CodeBlock.of(
-                                        "$T.builder().setNodes($N.getNodes()).setEdges($N).setTotalCount($N.getTotalCount()).setPageInfo($N).build()",
+                                        "new $T($N, $N, $N.getNodes(), $N.getTotalCount())",
                                         connectionType.getGraphClassName(),
-                                        CONNECTION_NAME,
                                         EDGES_NAME,
+                                        GRAPH_PAGE_NAME,
                                         CONNECTION_NAME,
-                                        GRAPH_PAGE_NAME
+                                        CONNECTION_NAME
                                 )
                         )
                 )
