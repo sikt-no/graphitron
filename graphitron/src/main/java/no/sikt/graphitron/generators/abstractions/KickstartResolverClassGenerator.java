@@ -33,8 +33,6 @@ abstract public class KickstartResolverClassGenerator<T extends GenerationTarget
         if (generators.stream().anyMatch(g -> !((KickstartResolverMethodGenerator)g).generatesAll())) {
             spec.addModifiers(Modifier.ABSTRACT);
         }
-        GeneratorConfig.getResolverAnnotation().map(annotation -> spec.addAnnotation(ClassName.bestGuess(annotation)));
-
         spec.addSuperinterface(ClassName.get(GeneratorConfig.generatedResolversPackage(), className + getExpectedInterfaceSuffix()));
         setDependencies(generators, spec);
         return spec;
