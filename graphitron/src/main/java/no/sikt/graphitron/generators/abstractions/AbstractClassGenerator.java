@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.apache.commons.lang3.StringUtils.capitalize;
+
 abstract public class AbstractClassGenerator implements ClassGenerator {
     @Override
     public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
@@ -85,6 +87,6 @@ abstract public class AbstractClassGenerator implements ClassGenerator {
      * @return ClassName based on the default output package and save directory.
      */
     public ClassName getGeneratedClassName(String name) {
-        return TypeNameFormat.getGeneratedClassName(getDefaultSaveDirectoryName(), name);
+        return TypeNameFormat.getGeneratedClassName(getDefaultSaveDirectoryName(), capitalize(name));
     }
 }

@@ -39,13 +39,14 @@ public class UpdateClassGenerator extends DataFetcherClassGenerator<ObjectField>
 
     @Override
     public TypeSpec generate(ObjectField target) {
-        return getSpec(
-                capitalize(target.getName()),
-                List.of(
-                        new MutationServiceMethodGenerator(target, processedSchema),
-                        new MutationTypeMethodGenerator(target, processedSchema)
-                )
-        ).build();
+        var generators = List.of(
+                new MutationServiceMethodGenerator(target, processedSchema),
+                new MutationTypeMethodGenerator(target, processedSchema)
+        );
+        var className = getGeneratedClassName(target.getName() + getFileNameSuffix());
+        var spec = getSpec(capitalize(target.getName()), generators);
+        generators.forEach(it -> addFetchers(it.getDataFetcherWiring(), className));
+        return spec.build();
     }
 
     @Override
