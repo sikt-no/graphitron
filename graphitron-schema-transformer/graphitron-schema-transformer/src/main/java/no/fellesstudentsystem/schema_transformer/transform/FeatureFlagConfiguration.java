@@ -7,8 +7,8 @@ import graphql.language.StringValue;
 import graphql.schema.*;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
-import no.fellesstudentsystem.schema_transformer.mapping.FieldType;
 import no.sikt.graphql.naming.GraphQLReservedName;
+import no.sikt.graphql.schema.FieldType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -26,7 +26,6 @@ import static graphql.util.TraversalControl.CONTINUE;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.FEATURE;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirectiveParam.FLAGS;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaHelpers.getOptionalDirectiveArgumentStringList;
-
 import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_EDGE_FIELD;
 
 /**

@@ -78,9 +78,7 @@
                         <directory>${project.basedir}/src/main/resources/graphql</directory>
                         <directory>${directivesDirectory}</directory>
                     </schemaRootDirectories>
-                    <descriptionSuffixFilename>description-suffix.md</descriptionSuffixFilename>
                 </configuration>
-
                 <executions>
                     <execution>
                         <id>transform-graphql-schema</id>
@@ -88,6 +86,20 @@
                         <goals>
                             <goal>generate</goal>
                         </goals>
+                        <configuration>
+                            <outputSchema>schema.graphql</outputSchema>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>make-generator-schema</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <outputSchema>generator-schema.graphql</outputSchema>
+                            <removeGeneratorDirectives>false</removeGeneratorDirectives>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

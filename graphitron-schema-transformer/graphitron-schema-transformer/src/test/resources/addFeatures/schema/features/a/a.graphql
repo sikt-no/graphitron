@@ -2,7 +2,7 @@ directive @dir2(param: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT
 
 extend type Query {
   getObject2: InnerObject2
-  getObject3: [InnerObjectC!]! @asConnection(connectionName: "Inner3Connection")
+  getObject3: [InnerObjectC!]!
   getObject4: SomeEnum
 }
 

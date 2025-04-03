@@ -1,7 +1,0 @@
-type Query {
-  nodes(id: ID!, navn: String): Node #field returning interface should have exactly one argument
-}
-
-type SomeType implements Node {
-  id: ID!
-}

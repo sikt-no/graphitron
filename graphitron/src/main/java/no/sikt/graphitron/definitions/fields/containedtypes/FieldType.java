@@ -11,7 +11,7 @@ import java.util.ArrayList;
 /**
  * Class that contains all the necessary information about a field's type and nullability.
  */
-public class FieldType {
+public class FieldType extends no.sikt.graphql.schema.FieldType {
     private String name;
     private com.palantir.javapoet.TypeName typeClass;
     private boolean isNonNullable = false;
@@ -20,6 +20,11 @@ public class FieldType {
     private boolean isID = false;
 
     public FieldType(Type<?> fieldType) {
+        super(fieldType);
+        setFields(fieldType);
+    }
+
+    protected void setFields(Type<?> fieldType) {
         ArrayList<Type<?>> orderedTypeList = extractNestedTypes(fieldType);
         boolean isThisNonNullable = false;
         for (Type<?> objectType : orderedTypeList) {
@@ -41,17 +46,6 @@ public class FieldType {
                 isThisNonNullable = false;
             }
         }
-    }
-
-    private ArrayList<Type<?>> extractNestedTypes(Type<?> t) {
-        var typeList = new ArrayList<Type<?>>();
-        typeList.add(t);
-        while(!(t instanceof TypeName)) {
-            var subType = (Type<?>) t.getNamedChildren().getChildOrNull("type");
-            typeList.add(subType);
-            t = subType;
-        }
-        return typeList;
     }
 
     /**

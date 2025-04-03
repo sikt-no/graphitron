@@ -1,0 +1,44 @@
+type Query {
+    q0(param: String!): T1Connection
+    q1(param: String!): [T1]
+}
+
+type T1Connection {
+    edges: [T1ConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [T1!]!
+    totalCount: Int
+}
+
+type T1ConnectionEdge {
+    cursor: String
+    node: T1
+}
+
+type T1 {
+    f: String!
+    t2: T2Connection
+}
+
+type T2Connection {
+    edges: [T2ConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [T2!]!
+    totalCount: Int
+}
+
+type T2ConnectionEdge {
+    cursor: String
+    node: T2
+}
+
+type T2 {
+    f: String!
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}

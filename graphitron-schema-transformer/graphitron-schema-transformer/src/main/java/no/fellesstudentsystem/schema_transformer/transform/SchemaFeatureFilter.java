@@ -1,11 +1,12 @@
 package no.fellesstudentsystem.schema_transformer.transform;
 
-import graphql.language.*;
+import graphql.language.DirectivesContainer;
 import graphql.schema.*;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 
-import java.util.*;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 

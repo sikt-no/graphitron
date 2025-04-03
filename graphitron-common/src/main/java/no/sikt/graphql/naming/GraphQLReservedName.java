@@ -40,6 +40,7 @@ public enum GraphQLReservedName {
     SCHEMA_CONNECTION_SUFFIX("Connection"),
     SCHEMA_QUERY("Query"),
     SCHEMA_MUTATION("Mutation"),
+    SCHEMA_SUBSCRIPTION("Subscription"),
     SCHEMA("schema"),
     OPERATION_QUERY(uncapitalize(SCHEMA_QUERY.getName())),
     OPERATION_MUTATION(uncapitalize(SCHEMA_MUTATION.getName())),

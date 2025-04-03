@@ -1,6 +1,0 @@
-"""Directive comment"""
-directive @paramDirective(param: String!) on FIELD_DEFINITION | ENUM_VALUE | ARGUMENT_DEFINITION
-
-type Query {
-  someType(param: String! @paramDirective(param: "VALUE")): SomeType
-}

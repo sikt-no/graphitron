@@ -1,14 +1,16 @@
 package no.fellesstudentsystem.schema_transformer.transform;
 
-import graphql.schema.*;
+import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLSchema;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
+import static no.fellesstudentsystem.schema_transformer.SchemaTransformer.assembleSchema;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaReader.getTypeDefinitionRegistry;
-import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.assembleSchema;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToString;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +18,7 @@ class SchemaFeatureFilterTest {
     private final static String SRC_TEST_RESOURCES = "src/test/resources/transform/";
 
     @Test
-    void filter_shouldIncludeOnlyWithoutFeatures() throws IOException {
+    void filter_shouldIncludeOnlyWithoutFeatures() {
         var schema = createSchema("noFlagsRequested/test.graphql");
         var expected = createSchema("noFlagsRequested/expected.graphql");
         var filteredSchema = new SchemaFeatureFilter().getFilteredGraphQLSchema(schema);
@@ -24,63 +26,63 @@ class SchemaFeatureFilterTest {
     }
 
     @Test
-    void filter_shouldRemoveNestedTypes() throws IOException {
+    void filter_shouldRemoveNestedTypes() {
         var schema = createSchema("removesNestedTypes/test.graphql");
         var expected = createSchema("removesNestedTypes/expected.graphql");
         testSchema(new SchemaFeatureFilter().getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldRemoveNestedInputs() throws IOException {
+    void filter_shouldRemoveNestedInputs() {
         var schema = createSchema("removesNestedInputs/test.graphql");
         var expected = createSchema("removesNestedInputs/expected.graphql");
         testSchema(new SchemaFeatureFilter().getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldRemoveNestedInterfaces() throws IOException {
+    void filter_shouldRemoveNestedInterfaces() {
         var schema = createSchema("removesNestedInterfaces/test.graphql");
         var expected = createSchema("removesNestedInterfaces/expected.graphql");
         testSchema(new SchemaFeatureFilter().getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldRemoveInputsIfFieldArgumentsAreRemoved() throws IOException {
+    void filter_shouldRemoveInputsIfFieldArgumentsAreRemoved() {
         var schema = createSchema("removesInputWhenFieldWithArgumentRemoved/test.graphql");
         var expected = createSchema("removesInputWhenFieldWithArgumentRemoved/expected.graphql");
         testSchema(new SchemaFeatureFilter().getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldRemoveInputsIfArgumentsAreRemoved() throws IOException {
+    void filter_shouldRemoveInputsIfArgumentsAreRemoved() {
         var schema = createSchema("removesInputWhenArgumentRemoved/test.graphql");
         var expected = createSchema("removesInputWhenArgumentRemoved/expected.graphql");
         testSchema(new SchemaFeatureFilter().getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldSelectOnlyRequestedFeatures() throws IOException {
+    void filter_shouldSelectOnlyRequestedFeatures() {
         var schema = createSchema("selectsRequestedFeatures/test.graphql");
         var expected = createSchema("selectsRequestedFeatures/expected.graphql");
         testSchema(new SchemaFeatureFilter(Set.of("F0", "F1")).getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldSelectOnlyRequestedListFeatures() throws IOException {
+    void filter_shouldSelectOnlyRequestedListFeatures() {
         var schema = createSchema("selectsRequestedListFeatures/test.graphql");
         var expected = createSchema("selectsRequestedListFeatures/expected.graphql");
         testSchema(new SchemaFeatureFilter(Set.of("F0", "F1")).getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldRemoveUnusedTypes() throws IOException {
+    void filter_shouldRemoveUnusedTypes() {
         var schema = createSchema("removesUnusedTypes/test.graphql");
         var expected = createSchema("removesUnusedTypes/expected.graphql");
         testSchema(new SchemaFeatureFilter(Set.of()).getFilteredGraphQLSchema(schema), expected);
     }
 
     @Test
-    void filter_shouldRemoveEmptyTypes() throws IOException {
+    void filter_shouldRemoveEmptyTypes() {
         var schema = createSchema("removesEmptyTypes/test.graphql");
         var filteredSchema = new SchemaFeatureFilter().getFilteredGraphQLSchema(schema); // No schema exception.
         var allTypes = filteredSchema.getAllTypesAsList();
@@ -99,7 +101,7 @@ class SchemaFeatureFilterTest {
                 .hasSize(2);
     }
 
-    private GraphQLSchema createSchema(String file) throws IOException {
+    private GraphQLSchema createSchema(String file) {
         return assembleSchema(getTypeDefinitionRegistry(List.of(SRC_TEST_RESOURCES + file, SRC_TEST_RESOURCES + "defaultDirectives.graphql")));
     }
 
