@@ -6,6 +6,8 @@ package no.fellesstudentsystem.schema_transformer.mapping;
  */
 public enum GraphQLDirectiveParam {
     FOR("for"),
+    CONNECTION_NAME("connectionName"),
+    FIRST_DEFAULT("defaultFirstValue"),
     FLAGS("flags");
 
     private final String name;

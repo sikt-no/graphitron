@@ -1,0 +1,31 @@
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type SomeTypeConnection {
+    edges: [SomeTypeConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [SomeType!]!
+    totalCount: Int
+}
+
+type SomeTypeConnectionEdge {
+    cursor: String
+    node: SomeType
+}
+
+type Query {
+    someType(
+        param: String!,
+        first: Int = 100,
+        after: String,
+    ): SomeTypeConnection
+}
+
+type SomeType {
+    id: ID!
+    field: String!
+}

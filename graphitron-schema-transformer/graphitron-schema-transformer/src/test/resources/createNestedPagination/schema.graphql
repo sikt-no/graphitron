@@ -1,0 +1,15 @@
+directive @asConnection(defaultFirstValue: Int = 100, connectionName: String) on FIELD_DEFINITION
+
+type Query {
+  q0(param: String!): [T1!]! @asConnection(connectionName: "T1Connection")
+  q1(param: String!): [T1]
+}
+
+type T1 {
+  f: String!
+  t2: [T2!]! @asConnection(defaultFirstValue: 10, connectionName: "T2Connection")
+}
+
+type T2 {
+  f: String!
+}

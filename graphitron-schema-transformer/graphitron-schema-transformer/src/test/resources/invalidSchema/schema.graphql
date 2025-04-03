@@ -1,0 +1,5 @@
+directive @D(p: String!) on FIELD_DEFINITION
+
+type Query {
+    q: String @D
+}

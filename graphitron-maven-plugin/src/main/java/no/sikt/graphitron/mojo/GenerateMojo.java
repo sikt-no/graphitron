@@ -58,7 +58,7 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     /**
      * The comma-separated locations of the schema files to use for code generation.
      */
-    @Parameter(property = "generate.schemaFiles", defaultValue = "${project.basedir}/target/generated-sources/schema.graphql", required = true)
+    @Parameter(property = "generate.schemaFiles", defaultValue = "${project.basedir}/target/generated-resources/schema.graphql", required = true)
     private Set<String> schemaFiles;
 
     /**

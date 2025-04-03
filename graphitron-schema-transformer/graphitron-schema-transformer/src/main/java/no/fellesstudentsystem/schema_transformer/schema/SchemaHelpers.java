@@ -1,6 +1,9 @@
 package no.fellesstudentsystem.schema_transformer.schema;
 
-import graphql.language.*;
+import graphql.language.ArrayValue;
+import graphql.language.DirectivesContainer;
+import graphql.language.NullValue;
+import graphql.language.StringValue;
 import no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective;
 
 import java.util.List;

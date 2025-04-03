@@ -1,0 +1,57 @@
+directive @D2 on FIELD_DEFINITION | ENUM | OBJECT | INPUT_OBJECT | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE | UNION | INTERFACE
+
+type Query {
+    q: String
+}
+
+type T1 {
+    f(a: String): String
+}
+
+type T2 @D2 {
+    f(a: String @D2): String @D2
+}
+
+type T3 @D2 {
+    f(a: String @D2): String @D2
+}
+
+interface I1 {
+    f: String
+}
+
+interface I2 @D2 {
+    f: String @D2
+}
+
+interface I3 @D2 {
+    f: String @D2
+}
+
+union U1 = T1
+union U2 @D2 = T2
+union U3 @D2 = T3
+
+input IN1 {
+    f: String
+}
+
+input IN2 @D2 {
+    f: String @D2
+}
+
+input IN3 @D2 {
+    f: String @D2
+}
+
+enum E1 {
+    E
+}
+
+enum E2 @D2 {
+    E @D2
+}
+
+enum E3 @D2 {
+    E @D2
+}
