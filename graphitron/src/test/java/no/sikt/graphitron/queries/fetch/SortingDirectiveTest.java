@@ -5,7 +5,6 @@ import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -71,28 +70,10 @@ public class SortingDirectiveTest extends GeneratorTest {
     }
 
     @Test
-    @Disabled("Custom sortering på multiset er ikke på plass enda. Se A51-362.")
-    @DisplayName("Table in subquery (multiset)")
-    void onMultiset() {
-        assertGeneratedContentContains("multiset",
-                "???"
-        );
-    }
-
-    @Test
     @DisplayName("Table without primary key")
     void noPrimaryKey() {
         assertGeneratedContentContains("noPrimaryKey",
                 "? new SortField[] {}");
-    }
-
-    @Test
-    @Disabled("Custom sortering på multiset er ikke på plass enda. Se A51-362.")
-    @DisplayName("Table without primary key in multiset")
-    void noPrimaryKeyInMultiset() {
-        assertGeneratedContentContains("noPrimaryKeyInMultiset",
-                "???"
-        );
     }
 
     @Test
