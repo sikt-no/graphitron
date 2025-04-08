@@ -3,9 +3,9 @@ type Query {
 }
 
 interface SomeInterface {
-    umid: String
+    usesysid: String
 }
 
-type PgUserMapping implements SomeInterface @table(name: "PG_USER_MAPPING") {
-    umid: String @field(name: "UMID")
+type PgUser implements SomeInterface @table(name: "PG_USER") {
+    usesysid: String
 }

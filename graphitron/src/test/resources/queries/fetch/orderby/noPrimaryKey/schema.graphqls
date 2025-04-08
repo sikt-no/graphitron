@@ -1,11 +1,11 @@
 type Query {
-  query(orderBy: Order @orderBy): [PgUserMapping]
+  query(orderBy: Order @orderBy): [PgDepend]
 }
 
 enum OrderByField {
-  USER_SERVER @index(name : "PG_USER_MAPPING_USER_SERVER_INDEX")
+  DEPENDER @index(name : "PG_DEPEND_DEPENDER_INDEX")
 }
 
-type PgUserMapping @table(name: "PG_USER_MAPPING") {
-  umid: String @field(name: "UMID")
+type PgDepend @table(name: "PG_DEPEND") {
+    refobjid: String
 }

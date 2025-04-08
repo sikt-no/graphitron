@@ -183,6 +183,6 @@ public class InterfaceTest extends ValidationTest {
         assertThatThrownBy(() -> generateFiles("listedNoPrimaryKey"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Interface 'SomeInterface' is returned in field 'query', but implementing " +
-                        "type 'PgUserMapping' has table 'PG_USER_MAPPING' which does not have a primary key.");
+                        "type 'PgUser' has table 'PG_USER' which does not have a primary key.");
     }
 }

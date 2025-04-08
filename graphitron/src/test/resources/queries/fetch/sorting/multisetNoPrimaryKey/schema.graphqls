@@ -3,9 +3,9 @@ type Query {
 }
 
 type Wrapper {
-  query: [PgUserMapping]
+  query: [PgUser]
 }
 
-type PgUserMapping @table(name: "PG_USER_MAPPING") {
-  umid: String @field(name: "UMID")
+type PgUser @table(name: "PG_USER") {
+    usesysid: String
 }

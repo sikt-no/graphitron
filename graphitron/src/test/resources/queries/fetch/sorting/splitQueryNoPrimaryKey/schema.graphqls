@@ -1,11 +1,11 @@
 type Query {
-  query: [PgUser] @notGenerated
-}
-
-type PgUser @table(name: "PG_USER"){
-  userMapping: [PgUserMapping] @splitQuery
+  query: [PgUserMapping] @notGenerated
 }
 
 type PgUserMapping @table(name: "PG_USER_MAPPING") {
-  umid: String @field(name: "UMID")
+    userMapping: [PgUser] @splitQuery
+}
+
+type PgUser @table(name: "PG_USER"){
+    usesysid: String
 }
