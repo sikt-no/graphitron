@@ -25,33 +25,67 @@ import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_RESOU
 public class Plugin extends AbstractMojo {
     private static final String TARGET_PATH = "target/generated-resources/graphql_transformer/";
 
+    /**
+     * The Maven project this plugin is being used in.
+     */
     @Parameter(property = "project", required = true, readonly = true)
     private MavenProject project;
 
+    /**
+     * Directories to search for GraphQL schema files. The plugin will process all schema files found
+     * in these directories and their subdirectories.
+     */
     @Parameter(property = "generate.schemaRootDirectories", required = true)
     private Set<String> schemaRootDirectories;
 
+    /**
+     * Name of the file containing description suffixes to be added to schema elements based on their feature flags.
+     * These files are looked for in each feature directory.
+     */
     @Parameter(property = "generate.descriptionSuffixFilename", defaultValue = "description-suffix.md")
     private String descriptionSuffixFilename;
 
+    /**
+     * Whether to remove generator directives from the output schema. Generator directives are
+     * implementation details needed for Graphitron code generation but not needed in the runtime schema.
+     */
     @Parameter(property = "generate.removeGeneratorDirectives", defaultValue = "true")
     private boolean removeGeneratorDirectives;
 
+    /**
+     * Whether to make the schema compatible with Apollo Federation by adding federation types and directives.
+     */
     @Parameter(property = "generate.makeApolloFederation", defaultValue = "false")
     private boolean makeApolloFederation;
 
+    /**
+     * Whether to expand GraphQL connection types into full GraphQL Cursor Connections Specification-compliant structures.
+     */
     @Parameter(property = "generate.expandConnections", defaultValue = "true")
     private boolean expandConnections;
 
+    /**
+     * Whether to add feature flags to the schema based on directory structure.
+     */
     @Parameter(property = "generate.addFeatureFlags", defaultValue = "false")
     private boolean addFeatureFlags;
 
+    /**
+     * The name of the output schema file. Used when generating a single output schema.
+     */
     @Parameter(property = "generate.outputSchema")
     private String outputSchema;
 
+    /**
+     * Configuration for multiple output schemas with different feature flags.
+     * Each output schema can have its own set of feature flags and filename.
+     */
     @Parameter(property = "generate.outputSchemas")
     private Set<OutputSchema> outputSchemas;
 
+    /**
+     * Set of directive names to remove from the output schema.
+     */
     @Parameter(property = "generate.directivesToRemove")
     private Set<String> directivesToRemove;
 

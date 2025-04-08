@@ -12,36 +12,10 @@ using Java and [jOOQ](https://www.jooq.org/).
 * Supports Apollo Federation
 * Error handling
 
-## Practical Requirements
-- Implement and configure NodeIdHandler
-
-### Implement and configure NodeIdHandler
-
-We are in an early phase of implementing an ID handler that aims to ensure
-global identification.
-
-As of now you are required to include an implementation of NodeIdHandler to be able
-to run Graphitron.
-
-We have provided a step-by-step guide below to show how you could configure and
-implement global identification. The only requirement as of now is that you implement
-the interface NodeIdHandler. How you decide to do the implementation is up to you.
-
-### For users of kjerneapi-codegen
-> TODO: Move this section somewhere else, FS-specific information does not belong here.
-
-The KjerneJooqGenerator from kjerneapi-codegen already implements this.
-If you're using it, then you only need to create a singleton class as follows:
-
-```java 
-@Singleton
-public class MyNodeIdHandler implements NodeIdHandler {
-    @Override
-    public Table<?> getTable(String id) {
-        return IdHelpers.getTable(id);
-    }
-}
-```
+## Usage
+See the [example project](../graphitron-example) for a complete example of how to set up and use Graphitron.
+This project is also used for running integration tests ensuring that Graphitron generates resolvers that work as expected.
+The example project includes a [README.md](../graphitron-example/README.md) file detailing the setup and usage of the example project.
 
 ## Maven Settings
 ### Goals
@@ -1335,6 +1309,27 @@ interface Error {
 ```
 
 This may be removed/changed in the near future as it may not be flexible enough.
+
+## Global node identification
+If your schema includes [Global Object Identification](https://graphql.org/learn/global-object-identification/),
+you need to implement a [NodeIdHandler](../graphitron-common/src/main/java/no/sikt/graphql/NodeIdHandler.java)
+in order to make Graphitron generate code that supports this.
+
+This is work in progress and is subject to change.
+
+TODO: write more about this when solving [GGG-123](https://sikt.atlassian.net/browse/GGG-123),
+
+An example implementation of a NodeIdHandler:
+
+```java 
+@Singleton
+public class MyNodeIdHandler implements NodeIdHandler {
+    @Override
+    public Table<?> getTable(String id) {
+        return IdHelpers.getTable(id);
+    }
+}
+```
 
 ## Graphitron integration tests
 For internal testing purposes Graphitron uses predefined input schemas combined with expected file results.

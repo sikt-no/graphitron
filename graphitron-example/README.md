@@ -64,6 +64,9 @@ GraphiQL is available at [http://localhost:8088/graphiql](http://localhost:8088/
 Quarkus will start the server in development mode, which means that it will automatically reload when changes are made to the code.
 Also _devservices_ is enabled, which means that the server will automatically run a Postgres database with the Sakila schema when started.
 
+### graphitron-example-service
+This module contains code necessary for more advanced features of Graphitron, such as custom service classes and conditions.
+
 ## Integration tests
 The project includes integration tests to verify the functionality of the generated GraphQL resolvers. These tests are located in the [graphitron-example-server](graphitron-example-server/src/test/java) module.
 There are two types of tests:
