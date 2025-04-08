@@ -95,7 +95,7 @@ Important notes:
 * Multiple schemas can be placed in the same directory
 * This process is not recursive - only the top-level feature directories are recognized
 
-## Schema Splitting
+### Schema Splitting
 
 The schema-transformer maven plugin offers flexible schema generation through configurable outputs:
 
