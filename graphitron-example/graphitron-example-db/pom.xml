@@ -80,11 +80,10 @@
                             <dependency>
                                 <groupId>org.postgresql</groupId>
                                 <artifactId>postgresql</artifactId>
-                                <version>42.6.0</version>
+                                <version>${version.postgresql}</version>
                             </dependency>
                         </dependencies>
                     </plugin>
-
                 </plugins>
             </build>
         </profile>
