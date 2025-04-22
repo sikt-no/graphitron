@@ -46,8 +46,10 @@
         <version.jakarta.validation>3.1.1</version.jakarta.validation>
         <version.org.jooq>3.19.18</version.org.jooq>
         <version.org.junit>5.12.0</version.org.junit>
-        <version.ch.qos.logback>1.5.17</version.ch.qos.logback>
+        <version.ch.qos.logback>1.5.18</version.ch.qos.logback>
 
+        <version.postgresql>42.6.0</version.postgresql>
+        <version.testcontainers.postgresql>1.20.1</version.testcontainers.postgresql>
     </properties>
 
     <dependencyManagement>
@@ -94,7 +96,7 @@
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>graphql-java</artifactId>
-                <version>22.3</version>
+                <version>23.0</version>
             </dependency>
             <dependency>
                 <groupId>com.graphql-java</groupId>
@@ -102,9 +104,9 @@
                 <version>22.0</version>
             </dependency>
             <dependency>
-                <groupId>com.graphql-java</groupId>
-                <artifactId>java-dataloader</artifactId>
-                <version>3.3.0</version>
+                <groupId>com.apollographql.federation</groupId>
+                <artifactId>federation-graphql-java-support</artifactId>
+                <version>5.4.0</version>
             </dependency>
 
             <dependency>
@@ -120,7 +122,7 @@
             <dependency>
                 <groupId>com.palantir.javapoet</groupId>
                 <artifactId>javapoet</artifactId>
-                <version>0.6.0</version>
+                <version>0.7.0</version>
             </dependency>
 
             <dependency>
@@ -175,6 +177,12 @@
                 <groupId>org.apache.maven.plugin-tools</groupId>
                 <artifactId>maven-plugin-annotations</artifactId>
                 <version>3.15.0</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.approvaltests</groupId>
+                <artifactId>approvaltests</artifactId>
+                <version>24.19.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

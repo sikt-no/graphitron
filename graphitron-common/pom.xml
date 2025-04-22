@@ -33,7 +33,6 @@
         <dependency>
             <groupId>com.apollographql.federation</groupId>
             <artifactId>federation-graphql-java-support</artifactId>
-            <version>5.2.0</version>
         </dependency>
         <dependency>
             <groupId>org.json</groupId>
