@@ -109,7 +109,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot());
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -446,43 +446,47 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot, boolean isResolverRoot) {
-        boolean hasWhere = false;
-        var code = CodeBlock.builder();
+    protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot) {
+        var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceObjectDefinition) {
-            code.add(".where($L.$L.in(", context.renderQuerySource(getLocalTable()), processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatingFieldName());
-
-            code.add(
-                        CodeBlock.join(
-                                processedSchema
-                                        .getObjects()
-                                        .values()
-                                        .stream()
-                                        .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
-                                        .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
-                                        .collect(Collectors.toList()),
-                                ", ")
-                );
-
-            code.add("))\n");
-            hasWhere = true;
+            // Discriminator condition for single table interface
+            conditionList.add(
+                    CodeBlock.of("$L.$L.in($L)",
+                            context.renderQuerySource(getLocalTable()),
+                            processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatingFieldName(),
+                            CodeBlock.join(
+                                    processedSchema
+                                            .getObjects()
+                                            .values()
+                                            .stream()
+                                            .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
+                                            .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
+                                            .collect(Collectors.toList()),
+                                    ", "))
+            );
         }
 
         if (!isRoot && !idParamName.isEmpty()) {
-            code.add(".where($L.hasIds($N))\n", context.renderQuerySource(getLocalTable()), idParamName);
+            conditionList.add(CodeBlock.of("$L.hasIds($N)", context.renderQuerySource(getLocalTable()), idParamName));
+        }
+        conditionList.addAll(getInputConditions(context));
+
+        var code = CodeBlock.builder();
+        var hasWhere = false;
+        for(var condition : conditionList) {
+            if (condition.isEmpty()) continue;
+            code.add(".$L($L)\n", hasWhere ? "and" : "where", indentIfMultiline(condition));
             hasWhere = true;
         }
-        if (((ObjectField) context.getReferenceObjectField()).hasNonReservedInputFields() && !isResolverRoot) {
-            code.add(createWhere(context, hasWhere));
-        }
+
         return code.build();
     }
 
-    private CodeBlock createWhere(FetchContext context, boolean hasWhere) {
+    private List<CodeBlock> getInputConditions(FetchContext context) {
+        var allConditionCodeBlocks = new ArrayList<CodeBlock>();
         var inputConditions = getInputConditions((ObjectField) context.getReferenceObjectField());
         var flatInputs = inputConditions.getIndependentConditions();
-        var codeBlockBuilder = CodeBlock.builder();
         var declaredInputConditions = inputConditions.getDeclaredConditionsByField();
         var inputsWithRecord = flatInputs
                 .stream()
@@ -494,6 +498,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .toList();
 
         for (var inputCondition : inputsWithoutRecord) {
+            var conditionBuilder = CodeBlock.builder();
             var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
@@ -501,41 +506,31 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var renderedSequence = context.iterateJoinSequenceFor(field).render();
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
-                codeBlockBuilder.add(hasWhere ? ".and(" : ".where(");
                 if (checksNotEmpty) {
-                    codeBlockBuilder.add(checks + " ? ");
+                    conditionBuilder.add(checks + " ? ");
                 }
 
-                codeBlockBuilder.add(renderedSequence);
+                conditionBuilder.add(renderedSequence);
 
                 if (field.isID()) {
-                    codeBlockBuilder
+                    conditionBuilder
                             .add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
                 } else {
-                    codeBlockBuilder
+                    conditionBuilder
                             .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(
                                     field.getTypeName(), processedSchema))
                             .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
                 }
 
                 if (checksNotEmpty) {
-                    codeBlockBuilder.add(" : $T.noCondition()", DSL.className);
+                    conditionBuilder.add(" : $T.noCondition()", DSL.className);
                 }
-
-                codeBlockBuilder.add(")\n");
-            }
-
-            if (!codeBlockBuilder.isEmpty()) {
-                hasWhere = true;
+                allConditionCodeBlocks.add(conditionBuilder.build());
             }
 
             if (field.hasCondition()) {
                 var conditionInputs = List.of(renderedSequence, getCheckedNameWithPath(inputCondition));
-                codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
-            }
-
-            if (!codeBlockBuilder.isEmpty()) {
-                hasWhere = true;
+                allConditionCodeBlocks.add(field.getCondition().formatToString(conditionInputs));
             }
         }
 
@@ -547,12 +542,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 continue;
             }
 
-            codeBlockBuilder.add(createTupleCondition(
-                    context, hasWhere, conditionTuple.getPath(), conditionTuple.getConditions()));
-
-            if (!codeBlockBuilder.isEmpty()) {
-                hasWhere = true;
-            }
+            allConditionCodeBlocks.add(createTupleCondition(
+                    context, conditionTuple.getPath(), conditionTuple.getConditions()));
         }
 
         for (var inputCondition : inputsWithRecord) {
@@ -561,9 +552,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             if (field.hasCondition()) {
                 var conditionInputs = List.of(
                         context.iterateJoinSequenceFor(field).render(), getCheckedNameWithPath(inputCondition));
-                codeBlockBuilder.add(wrapCondition(field.getCondition().formatToString(conditionInputs), hasWhere));
-
-                hasWhere = true;
+                allConditionCodeBlocks.add(field.getCondition().formatToString(conditionInputs));
             }
         }
 
@@ -573,14 +562,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     condition.getValue().stream().map(this::getCheckedNameWithPath)
             ).collect(Collectors.toList());
 
-            codeBlockBuilder.add(wrapCondition(
-                    condition.getKey().getCondition().formatToString(inputs),
-                    hasWhere));
-
-            hasWhere = true;
+            allConditionCodeBlocks.add(condition.getKey().getCondition().formatToString(inputs));
         }
-
-        return codeBlockBuilder.build();
+        return allConditionCodeBlocks;
     }
 
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
@@ -601,7 +585,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock createTupleCondition(
             FetchContext context,
-            boolean hasWhere,
             String argumentInputFieldName,
             List<InputCondition> conditions) {
 
@@ -649,43 +632,27 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .map(InputCondition::getChecksAsSequence)
                 .collect(Collectors.toSet()));
 
-        return wrapCondition(
-                CodeBlock
-                        .builder()
-                        .add(checks.isEmpty() ? "" : "$L ?\n", checks)
-                        .indent()
-                        .indent()
-                        .add(wrapRow(CodeBlock.join(tupleFieldBlocks, ",\n")))
-                        .add(".in(\n")
-                        .indent()
-                        .indent()
-                        .add("$N.stream().map($L ->\n", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
-                        .indent()
-                        .indent()
-                        .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
-                        .unindent()
-                        .unindent()
-                        .add("\n)")
-                        .unindent()
-                        .unindent()
-                        .add("$L\n) : $T.noCondition()", collectToList(), DSL.className)
-                        .unindent()
-                        .unindent()
-                        .build(),
-                hasWhere
-        );
-    }
-
-    private CodeBlock wrapCondition(CodeBlock condition, boolean hasWhere) {
-        if (condition.isEmpty()) {
-            return empty();
-        }
-
         return CodeBlock
                 .builder()
-                .add((hasWhere ? ".and(" : ".where("))
-                .add(indentIfMultiline(condition))
-                .add(")\n")
+                .add(checks.isEmpty() ? "" : "$L ?\n", checks)
+                .indent()
+                .indent()
+                .add(wrapRow(CodeBlock.join(tupleFieldBlocks, ",\n")))
+                .add(".in(\n")
+                .indent()
+                .indent()
+                .add("$N.stream().map($L ->\n", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
+                .indent()
+                .indent()
+                .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
+                .unindent()
+                .unindent()
+                .add("\n)")
+                .unindent()
+                .unindent()
+                .add("$L\n) : $T.noCondition()", collectToList(), DSL.className)
+                .unindent()
+                .unindent()
                 .build();
     }
 

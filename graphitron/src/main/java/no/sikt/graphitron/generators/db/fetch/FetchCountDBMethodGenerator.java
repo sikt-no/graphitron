@@ -50,7 +50,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         } else {
             var context = new FetchContext(processedSchema, target, getLocalObject(), true);
             var targetSource = context.renderQuerySource(getLocalTable());
-            var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+            var where = formatWhereContents(context, idParamName, isRoot);
             if (target.isResolver()) context = context.nextContext(target);
 
             code.add(createAliasDeclarations(context.getAliasSet()))
@@ -87,7 +87,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         implementations.forEach(implementation -> {
             var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
             var context = new FetchContext(processedSchema, virtualReference, implementation, false);
-            var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+            var where = formatWhereContents(context, idParamName, isRoot);
             var countForImplementation = CodeBlock.builder()
                     .add("$T.select($T.count().as($S))", DSL.className, DSL.className, COUNT_FIELD_NAME)
                     .add("\n.from($L)\n", context.getTargetAlias())
