@@ -36,6 +36,7 @@ import static java.util.stream.Collectors.groupingBy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -299,52 +300,55 @@ public class ProcessedDefinitionsValidator {
 
     private void validateInterfaceDefinitions() {
         schema.getInterfaces().forEach((name, interfaceDefinition) -> {
+                    if (name.equalsIgnoreCase(NODE_TYPE.getName()) || name.equalsIgnoreCase(ERROR_TYPE.getName())) return;
+
                     var implementations = schema.getObjects()
                             .values()
                             .stream()
-                            .filter(it -> it.implementsInterface(schema.getInterface(name).getName())).collect(Collectors.toList());
-                    
-                    if (interfaceDefinition instanceof InterfaceObjectDefinition) {
-                        if (!(interfaceDefinition.hasDiscrimatingField() && interfaceDefinition.hasTable())) {
+                            .filter(it -> it.implementsInterface(schema.getInterface(name).getName())).toList();
+
+                    if (interfaceDefinition.hasDiscriminator() == interfaceDefinition.isMultiTableInterface()) {
+                        errorMessages.add(
+                                String.format("'%s' and '%s' directives on interfaces must be used together. " +
+                                                "Interface '%s' is missing '%s' directive.",
+                                        DISCRIMINATE.getName(), TABLE.getName(), name,
+                                        interfaceDefinition.hasTable() ? DISCRIMINATE.getName() : TABLE.getName()));
+                    }
+
+                    if (!interfaceDefinition.isMultiTableInterface()) { // Single table interface with discriminator
+                        Optional<?> discriminatorField = getField(
+                                interfaceDefinition.getTable().getName(),
+                                interfaceDefinition.getDiscriminatorFieldName()
+                        );
+                        if (discriminatorField.isEmpty()) {
                             errorMessages.add(
-                                    String.format("'%s' and '%s' directives on interfaces must be used together. " +
-                                            "Interface '%s' is missing '%s' directive.",
-                                    DISCRIMINATE.getName(), TABLE.getName(), name,
-                                    interfaceDefinition.hasTable() ? DISCRIMINATE.getName() : TABLE.getName()));
+                                    String.format("Interface '%s' has discriminating field set as '%s', but the field " +
+                                                    "does not exist in table '%s'.",
+                                            name, interfaceDefinition.getDiscriminatorFieldName(), interfaceDefinition.getTable().getName()));
                         } else {
-                            Optional<?> field = getField(
+                            Optional<Class<?>> fieldType = getFieldType(
                                     interfaceDefinition.getTable().getName(),
-                                    interfaceDefinition.getDiscriminatingFieldName()
+                                    interfaceDefinition.getDiscriminatorFieldName()
                             );
-                            if (field.isEmpty()) {
+                            if (fieldType.isEmpty() || !fieldType.get().equals(String.class)) {
                                 errorMessages.add(
                                         String.format("Interface '%s' has discriminating field set as '%s', but the field " +
-                                                        "does not exist in table '%s'.",
-                                                name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
-                            } else {
-                                Optional<Class<?>> fieldType = getFieldType(
-                                        interfaceDefinition.getTable().getName(),
-                                        interfaceDefinition.getDiscriminatingFieldName()
-                                );
-                                if (fieldType.isEmpty() || !fieldType.get().equals(String.class)) {
-                                    errorMessages.add(
-                                            String.format("Interface '%s' has discriminating field set as '%s', but the field " +
-                                                            "does not return a string type, which is not supported.",
-                                                    name, interfaceDefinition.getDiscriminatingFieldName(), interfaceDefinition.getTable().getName()));
-                                }
+                                                        "does not return a string type, which is not supported.",
+                                                name, interfaceDefinition.getDiscriminatorFieldName(), interfaceDefinition.getTable().getName()));
                             }
                         }
+
                         implementations.forEach(impl -> {
-                            if (!impl.hasDiscriminator()){
+                            if (!impl.hasDiscriminator()) {
                                 errorMessages.add(
                                         String.format("Type '%s' is missing '%s' directive in order to implement interface '%s'.",
-                                        impl.getName(), DISCRIMINATOR.getName(), name));
+                                                impl.getName(), DISCRIMINATOR.getName(), name));
                             }
-                            if (impl.hasTable() && interfaceDefinition.hasTable() && !impl.getTable().equals(interfaceDefinition.getTable())){
+                            if (impl.hasTable() && interfaceDefinition.hasTable() && !impl.getTable().equals(interfaceDefinition.getTable())) {
                                 errorMessages.add(
                                         String.format("Interface '%s' requires implementing types to have table '%s', " +
                                                         "but type '%s' has table '%s'.",
-                                        name, interfaceDefinition.getTable().getName(), impl.getName(), impl.getTable().getName()));
+                                                name, interfaceDefinition.getTable().getName(), impl.getName(), impl.getTable().getName()));
                             }
 
                             impl.getFields()
@@ -356,7 +360,7 @@ public class ProcessedDefinitionsValidator {
                                                 "a single table interface is not currently supported, and must be identical " +
                                                 "with interface. Type '%s' has a configuration mismatch on field '%s' from the interface '%s'.";
 
-                                        if (!fieldInInterface.getUpperCaseName().equals(it.getUpperCaseName())){
+                                        if (!fieldInInterface.getUpperCaseName().equals(it.getUpperCaseName())) {
                                             errorMessages.add(String.format(
                                                     sharedErrorMessage,
                                                     FIELD.getName(), impl.getName(), it.getName(), name
@@ -428,8 +432,8 @@ public class ProcessedDefinitionsValidator {
 
                     var singleTableInterfaces = implementedInterfaces.stream()
                             .filter(it -> !it.equals(NODE_TYPE.getName()))
-                            .filter(it -> schema.getInterface(it).hasDiscrimatingField())
-                            .collect(Collectors.toList());
+                            .filter(it -> schema.getInterface(it).hasDiscriminator())
+                            .toList();
 
                     if (singleTableInterfaces.isEmpty() && objectDefinition.hasDiscriminator()) {
                         errorMessages.add(

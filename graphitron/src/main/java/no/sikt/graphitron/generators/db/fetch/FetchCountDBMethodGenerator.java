@@ -45,7 +45,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField target) {
 
         var code = CodeBlock.builder();
-        if (processedSchema.isInterface(target.getTypeName()) && !processedSchema.getInterface(target.getTypeName()).hasDiscrimatingField()) {
+        if (processedSchema.isInterface(target.getTypeName()) && !processedSchema.getInterface(target.getTypeName()).hasDiscriminator()) {
             code = getCodeForMultitableCountMethod(target);
         } else {
             var context = new FetchContext(processedSchema, target, getLocalObject(), true);

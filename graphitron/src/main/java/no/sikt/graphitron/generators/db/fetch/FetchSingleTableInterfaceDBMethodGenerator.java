@@ -89,7 +89,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         var rowElements = new ArrayList<CodeBlock>();
         rowElements.add(CodeBlock.builder()
-                .add(CodeBlock.of("$L.$N", context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatingFieldName()))
+                .add(CodeBlock.of("$L.$N", context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatorFieldName()))
                 .add(".as($S)", DISCRIMINATOR).build());
 
         if (target.hasForwardPagination()) {
@@ -111,7 +111,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
                 .add(declare(DISCRIMINATOR_VALUE,
                         CodeBlock.of("$N.get($S, $L.$L.getConverter())",
-                                VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatingFieldName())))
+                                VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatorFieldName())))
                 .beginControlFlow("switch ($N)", DISCRIMINATOR_VALUE
                 );
 
@@ -148,7 +148,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .stream()
                 .filter(processedSchema::isInterface)
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(it -> processedSchema.getInterface(it.getTypeName()).hasDiscrimatingField())
+                .filter(it -> processedSchema.getInterface(it.getTypeName()).hasDiscriminator())
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
