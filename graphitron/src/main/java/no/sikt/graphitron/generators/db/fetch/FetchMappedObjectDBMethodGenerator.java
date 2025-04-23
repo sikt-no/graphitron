@@ -45,7 +45,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var context = new FetchContext(processedSchema, target, localObject, false);
         // Note that this must happen before alias declaration.
         var selectRowBlock = target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context);
-        var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+        var whereBlock = formatWhereContents(context, idParamName, isRoot);
 
         var querySource = context.renderQuerySource(getLocalTable());
 
