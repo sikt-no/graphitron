@@ -14,7 +14,7 @@ import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
-import no.sikt.graphitron.definitions.objects.InterfaceObjectDefinition;
+import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
@@ -449,12 +449,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot) {
         var conditionList = new ArrayList<CodeBlock>();
 
-        if (context.getReferenceObject() instanceof InterfaceObjectDefinition) {
+        if (context.getReferenceObject() instanceof InterfaceDefinition) {
             // Discriminator condition for single table interface
             conditionList.add(
                     CodeBlock.of("$L.$L.in($L)",
                             context.renderQuerySource(getLocalTable()),
-                            processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatingFieldName(),
+                            processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatorFieldName(),
                             CodeBlock.join(
                                     processedSchema
                                             .getObjects()

@@ -404,7 +404,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
                 .stream()
                 .filter(processedSchema::isInterface)
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(it -> !processedSchema.getInterface(it.getTypeName()).hasDiscrimatingField())
+                .filter(it -> !processedSchema.getInterface(it.getTypeName()).hasDiscriminator())
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .flatMap(it -> generateWithSubselectMethods(it).stream())

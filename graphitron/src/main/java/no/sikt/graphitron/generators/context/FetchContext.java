@@ -8,7 +8,7 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
-import no.sikt.graphitron.definitions.objects.InterfaceObjectDefinition;
+import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Table;
@@ -70,8 +70,8 @@ public class FetchContext {
         this.addAllJoinsToJoinSet = addAllJoinsToJoinSet;
         this.recCounter = recCounter;
         this.processedSchema = processedSchema;
-        referenceObject = processedSchema.getInterface(referenceObjectField) instanceof InterfaceObjectDefinition ?
-                (InterfaceObjectDefinition) processedSchema.getInterface(referenceObjectField)
+        referenceObject = processedSchema.getInterface(referenceObjectField) != null ?
+                 processedSchema.getInterface(referenceObjectField)
                 : processedSchema.getObjectOrConnectionNode(referenceObjectField);
 
         this.joinSet = joinSet;

@@ -112,8 +112,7 @@ public class ProcessedSchema {
 
         interfaces = typeRegistry.getTypes(InterfaceTypeDefinition.class)
                 .stream()
-                .map(it -> it.hasDirective(DISCRIMINATE.getName()) || it.hasDirective(TABLE.getName()) ?
-                         new InterfaceObjectDefinition(it) : new InterfaceDefinition(it))
+                .map(InterfaceDefinition::new)
                 .collect(Collectors.toMap(ObjectSpecification::getName, Function.identity()));
 
         nodeExists = interfaces.containsKey(NODE_TYPE.getName());
