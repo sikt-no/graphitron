@@ -180,4 +180,13 @@ public class InputTest extends GeneratorTest {
                 ", AddressInput filter",
                 ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()))");
     }
+
+    @Test
+    @DisplayName("SplitQuery field")
+    void onSplitQueryField() {
+        assertGeneratedContentContains("onSplitQueryField",
+                ".from(address_2030472956_customer).where(address_2030472956_customer.EMAIL.eq(email))",
+                ".from(_address).where(_address.hasIds(addressIds)).fetch" // Make sure conditon is not applied on outer query
+        );
+    }
 }

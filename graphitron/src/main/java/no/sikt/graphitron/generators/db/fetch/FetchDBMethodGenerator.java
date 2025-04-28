@@ -109,7 +109,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot());
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -446,7 +446,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot) {
+    protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot, boolean isResolverRoot) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {
@@ -470,7 +470,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (!isRoot && !idParamName.isEmpty()) {
             conditionList.add(CodeBlock.of("$L.hasIds($N)", context.renderQuerySource(getLocalTable()), idParamName));
         }
-        conditionList.addAll(getInputConditions(context));
+        if (!isResolverRoot) {
+            conditionList.addAll(getInputConditions(context));
+        }
 
         var code = CodeBlock.builder();
         var hasWhere = false;
