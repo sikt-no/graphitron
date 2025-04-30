@@ -2,7 +2,9 @@ package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.UnionOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,15 +21,28 @@ public class UnionTest extends GeneratorTest {
         return "queries/fetch/union";
     }
 
+
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new MapOnlyFetchDBClassGenerator(schema));
+        return List.of(new UnionOnlyFetchDBClassGenerator(schema));
     }
 
     @Test // Note that setting it as a list does nothing, so will not add listed tests.
     @DisplayName("Union with one component")
     void defaultCase() {
         assertGeneratedContentMatches("default", CUSTOMER_UNION);
+    }
+
+    @Test
+    @DisplayName("Union with multitable query")
+    void unionTypeCase() {
+        assertGeneratedContentContains("multiTableUnionQuery", "languageSortFieldsForPaginatedUnionQuery");
+    }
+
+    @Test
+    @DisplayName("Union with singletable query")
+    void unionSingleTypeCase() {
+        assertGeneratedContentContains("multiTableUnionOneType", " languageForPaginatedUnionQuery()");
     }
 
     @Test
