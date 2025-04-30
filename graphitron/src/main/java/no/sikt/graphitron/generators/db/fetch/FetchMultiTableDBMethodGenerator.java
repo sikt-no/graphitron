@@ -25,10 +25,9 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.db.fetch.FetchSingleTableInterfaceDBMethodGenerator.TOKEN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
-import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
-import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
-public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGenerator {
+public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     public static final String UNION_KEYS_QUERY = "unionKeysQuery";
     public static final String RESULT = "_result";
@@ -38,7 +37,7 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
     public static final String INNER_ROW_NUM = "$innerRowNum";
     public static final int MAPPED_START_INDEX_IN_SELECT = 1;
 
-    public FetchMultiTableInterfaceDBMethodGenerator(
+    public FetchMultiTableDBMethodGenerator(
             ObjectDefinition localObject,
             ProcessedSchema processedSchema
     ) {
@@ -48,12 +47,13 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
     @Override
     public MethodSpec generate(ObjectField target) {
         var inputParser = new InputParser(target, processedSchema);
-        var interfaceDefinition = processedSchema.getInterface(target);
+
+        var unionOrInterfaceDefinition = processedSchema.isUnion(target)? processedSchema.getUnion(target): processedSchema.getInterface(target);
 
         // Order is important for paginated queries as it gets data fields by index in the mapping
-        var implementations = new LinkedHashSet<>(processedSchema.getImplementationsForInterface(interfaceDefinition));
+        LinkedHashSet implementations = new LinkedHashSet<ObjectDefinition>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
 
-        return getSpecBuilder(target, interfaceDefinition.getGraphClassName(), inputParser)
+        return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
                 .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
                 .build();
     }
@@ -162,7 +162,8 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
 
     private CodeBlock createMapping(ObjectField target, Set<ObjectDefinition> implementations) {
         var code = CodeBlock.builder();
-        var mapping = createMappingContent(processedSchema.getInterface(target).getGraphClassName(), implementations, target.hasForwardPagination());
+        var graphClassName = processedSchema.isInterface(target) ? processedSchema.getInterface(target).getGraphClassName() : processedSchema.getUnion(target).getGraphClassName();
+        var mapping = createMappingContent(graphClassName, implementations, target.hasForwardPagination());
         if (target.isIterableWrapped() || target.hasForwardPagination()) {
             code.add(".map(\n$L\n);", mapping);
         } else {
@@ -226,9 +227,10 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
         var methods = new ArrayList<MethodSpec>();
         methods.add(generate(target));
         var inputParser = new InputParser(target, processedSchema);
+        var unionOrInterfaceDefinition = processedSchema.isUnion(target)? processedSchema.getUnion(target): processedSchema.getInterface(target);
 
         processedSchema
-                .getImplementationsForInterface(processedSchema.getInterface(target))
+                .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName())
                 .forEach(implementation -> {
                     var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
                     var context = new FetchContext(processedSchema, virtualReference, implementation, false);
@@ -402,9 +404,9 @@ public class FetchMultiTableInterfaceDBMethodGenerator extends FetchDBMethodGene
         return getLocalObject()
                 .getFields()
                 .stream()
-                .filter(processedSchema::isInterface)
+                .filter(it -> processedSchema.isInterface(it) || (processedSchema.isUnion(it) && !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName())))
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(it -> !processedSchema.getInterface(it.getTypeName()).hasDiscriminator())
+                .filter(it-> !processedSchema.isInterface(it) || !processedSchema.getInterface(it).hasDiscriminator())
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .flatMap(it -> generateWithSubselectMethods(it).stream())

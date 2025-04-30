@@ -1,0 +1,10 @@
+type Query {
+   paginatedUnionQuery: [SomeUnion] @asConnection
+}
+
+union SomeUnion = Language
+
+
+type Language @table {
+    name: String
+}

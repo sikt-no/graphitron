@@ -315,6 +315,48 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Get the ObejctDefinition for each Type in a Union given its name
+     */
+    public Set<ObjectDefinition> getUnionSubTypes(String objectName) {
+        return unions.get(objectName).
+                getFieldTypeNames()
+                .stream()
+                .map(it -> objects.get(it))
+                .collect(Collectors.toSet());
+    }
+
+    /*
+    * Returns the ObjectDefinition for each Type in a union given that the name
+    * supplied is a union. Otherwise, return the ObjectDefinition for all types
+    * that implements the given interface.
+    * */
+
+    public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(String name) {
+        if (isUnion(name)) {
+            return getUnionSubTypes(name);
+        }
+        if (isInterface(name)) {
+            return getImplementationsForInterface(name);
+        }
+        return null;
+    }
+
+    /*
+     * Returns the ObjectDefinition for each type implementing an interface given its interfaceTypeDefinition
+     * */
+    public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(InterfaceDefinition interfaceDefinition) {
+        return getTypesFromInterfaceOrUnion(interfaceDefinition.getName());
+    }
+
+
+    /*
+     * Returns the ObjectDefinition for each type in a union given its unionTypeDefinition
+     * */
+    public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(UnionDefinition unionDefinition) {
+        return getTypesFromInterfaceOrUnion(unionDefinition.getName());
+    }
+
+    /**
      * @return Map of all the objects in the schema by name.
      */
     public Map<String, ObjectDefinition> getObjects() {

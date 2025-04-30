@@ -29,6 +29,8 @@ public class QueryTest extends ValidationTest {
         );
     }
 
+
+
     @Test
     @DisplayName("Has connection but misses some of the pagination inputs")
     void incompletePaginationFields() {
@@ -37,6 +39,15 @@ public class QueryTest extends ValidationTest {
                 "Type CustomerConnection ending with the reserved suffix 'Connection' must have either " +
                         "forward(first and after fields) or backwards(last and before fields) pagination, yet " +
                         "neither was found."
+        );
+    }
+
+    @Test
+    @DisplayName("Query of Union whose subtype lacks table")
+    void unionSubTypeNoTable() {
+        assertErrorsContain(
+                () -> getProcessedSchema("unionSubTypeNoTable"),
+                "Type Staff in Union 'SomeUnion' in Query has no table."
         );
     }
 

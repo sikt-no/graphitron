@@ -169,7 +169,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return getLocalObject()
                 .getFields()
                 .stream()
-                .filter(it -> !processedSchema.isInterface(it))
+                .filter(it -> !processedSchema.isInterface(it) && !processedSchema.isUnion(it))
                 .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationField::isGeneratedWithResolver)

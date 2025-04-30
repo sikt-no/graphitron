@@ -73,6 +73,7 @@ public class ProcessedDefinitionsValidator {
 
         validateTablesAndKeys();
         validateRequiredMethodCalls();
+        validateUnionFieldsTable();
         validateInterfaceDefinitions();
         validateInterfacesReturnedInFields();
         validateTypesUsingNodeInterface();
@@ -167,7 +168,7 @@ public class ProcessedDefinitionsValidator {
         var flatFields = new HashMap<String, ArrayList<FieldWithOverrideStatus>>();
         var lastTableIsNonNull = lastTable != null;
         for (var field : fields) {
-            if (schema.isObject(field) && !schema.isInterface(field)) {
+            if (schema.isObject(field) && !schema.isInterface(field) && !schema.isUnion(field)) {
                 var table = lastTableIsNonNull
                         ? lastTable
                         : (schema.hasTableObject(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : null);
@@ -296,6 +297,22 @@ public class ProcessedDefinitionsValidator {
                 .map(SQLCondition::getConditionReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e.getSchemaClassReference())));
+    }
+
+    private void validateUnionFieldsTable() {
+        if (schema.getObjects().containsKey("Query")) {
+            for (ObjectField field : schema.getObject("Query").getFields()) {
+                if (field.getName().equals(GraphQLReservedName.FEDERATION_ENTITIES_FIELD.getName())) { continue; }
+
+                if (schema.isUnion(field)) {
+                    for (ObjectDefinition subType : schema.getUnionSubTypes(field.getTypeName())) {
+                        if (!subType.hasTable()) {
+                            errorMessages.add(String.format("Type %s in Union '%s' in Query has no table.", subType.getName(), field.getTypeName()));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private void validateInterfaceDefinitions() {
@@ -442,6 +459,9 @@ public class ProcessedDefinitionsValidator {
                     }
                 });
     }
+
+
+
 
     private void validateInterfacesReturnedInFields() {
         for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).collect(Collectors.toList())) {

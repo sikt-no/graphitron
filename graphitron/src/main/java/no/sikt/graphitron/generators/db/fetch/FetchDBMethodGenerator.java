@@ -158,7 +158,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .getReferenceObject()
                 .getFields()
                 .stream()
-                .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
+                .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f) || processedSchema.isUnion(f))))
                 .collect(Collectors.toList());
 
         var rowElements = new ArrayList<CodeBlock>();

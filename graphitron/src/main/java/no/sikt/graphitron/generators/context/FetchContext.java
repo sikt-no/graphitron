@@ -70,9 +70,14 @@ public class FetchContext {
         this.addAllJoinsToJoinSet = addAllJoinsToJoinSet;
         this.recCounter = recCounter;
         this.processedSchema = processedSchema;
-        referenceObject = processedSchema.getInterface(referenceObjectField) != null ?
-                 processedSchema.getInterface(referenceObjectField)
-                : processedSchema.getObjectOrConnectionNode(referenceObjectField);
+
+         if (processedSchema.isInterface(referenceObjectField)) {
+             referenceObject = processedSchema.getInterface(referenceObjectField);
+         } else if (processedSchema.isUnion(referenceObjectField)) {
+             referenceObject = processedSchema.getUnion(referenceObjectField);
+         } else {
+             referenceObject = processedSchema.getObjectOrConnectionNode(referenceObjectField);
+         }
 
         this.joinSet = joinSet;
         this.aliasSet = aliasSet;
