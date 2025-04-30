@@ -634,6 +634,39 @@ CREATE VIEW staff_list AS
 
 ALTER TABLE public.staff_list OWNER TO postgres;
 
+CREATE SEQUENCE vacation_id_seq
+    INCREMENT BY 1
+    NO MAXVALUE
+    NO MINVALUE
+    CACHE 1;
+
+CREATE TABLE vacation (
+                       vacation_id bigint DEFAULT nextval('vacation_id_seq'::regclass) NOT NULL,
+                       description character varying(45) NOT NULL,
+                       parent_id bigint
+);
+
+CREATE SEQUENCE vacation_destination_id_seq
+    INCREMENT BY 1
+    NO MAXVALUE
+    NO MINVALUE
+    CACHE 1;
+
+ALTER TABLE ONLY vacation
+    ADD CONSTRAINT vacation_pkey PRIMARY KEY (vacation_id);
+
+CREATE TABLE vacation_destination (
+                               destination_id bigint DEFAULT nextval('vacation_destination_id_seq'::regclass) NOT NULL,
+                               country_name character varying(45) NOT NULL,
+                               vacation_id bigint
+);
+
+ALTER TABLE ONLY vacation_destination
+    ADD CONSTRAINT vacation_destination_vacation_fkey FOREIGN KEY (vacation_id) REFERENCES vacation(vacation_id);
+
+ALTER TABLE ONLY vacation_destination
+    ADD CONSTRAINT vacation_destination_pkey PRIMARY KEY (destination_id, country_name);
+
 --
 -- Name: film_in_stock(integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --

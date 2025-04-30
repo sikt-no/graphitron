@@ -35,12 +35,6 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     }
 
     @Test
-    @DisplayName("Type with splitquery field")
-    void splitQuery() {
-        assertGeneratedContentMatches("splitQuery");
-    }
-
-    @Test
     @DisplayName("Type with field referencing another DTO")
     void dtoField() {
         assertGeneratedContentContains("dtoField",

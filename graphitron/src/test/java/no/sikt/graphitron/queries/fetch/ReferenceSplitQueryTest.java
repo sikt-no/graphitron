@@ -8,8 +8,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_CUSTOMER_CONDITION;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_FILM_CONDITION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NOT_GENERATED;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch queries - Fetching through referenced tables with splitQuery-directive")
 public class ReferenceSplitQueryTest extends ReferenceTest {
@@ -21,6 +20,34 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     @Override
     protected Set<ExternalReference> getExternalReferences() {
         return makeReferences(REFERENCE_CUSTOMER_CONDITION, REFERENCE_FILM_CONDITION);
+    }
+
+    @Test
+    @DisplayName("Foreign key columns should be selected in previous query")
+    void previousQuery() {
+        assertGeneratedContentContains(
+                "previousQuery", Set.of(CUSTOMER_QUERY),
+                "DSL.row(DSL.row(_customer.ADDRESS_ID)).mapping(Functions.nullOnAllNull(Customer::new"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query on condition path")
+    void previousQueryConditionPath() {
+        assertGeneratedContentContains(
+                "previousQueryConditionPath", Set.of(CUSTOMER_QUERY),
+                "DSL.row(DSL.row(_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new"
+        );
+    }
+
+    @Test
+    @DisplayName("Foreign key columns should be selected in previous query in nested type")
+    void previousQueryNested() {
+        assertGeneratedContentContains(
+                "previousQueryNested", Set.of(CUSTOMER_QUERY),
+                "row(customer_2952383337_address.CITY_ID), customer_2952383337_address.getId())" +
+                        ".mapping(Functions.nullOnAllNull(Address::"
+        );
     }
 
     @Test

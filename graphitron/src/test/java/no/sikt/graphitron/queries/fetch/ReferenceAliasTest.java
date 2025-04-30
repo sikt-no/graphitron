@@ -95,7 +95,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/innerTableSelfReference",
                 "film_3747728953_film = _film.film().as(",
-                ".row(film_3747728953_film.getId()"
+                ".row(DSL.row(film_3747728953_film.FILM_ID), film_3747728953_film.getId()"
         );
     }
 

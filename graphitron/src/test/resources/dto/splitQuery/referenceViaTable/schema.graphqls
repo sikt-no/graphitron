@@ -1,0 +1,7 @@
+type Inventory @table {
+    staffForStore: [Staff] @splitQuery @reference(references: [{key: "INVENTORY__INVENTORY_STORE_ID_FKEY"}, {table: "STAFF"}])
+}
+
+type Staff @table {
+    id: ID
+}

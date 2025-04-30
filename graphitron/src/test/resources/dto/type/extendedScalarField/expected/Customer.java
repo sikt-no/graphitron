@@ -14,12 +14,12 @@ public class Customer implements Serializable {
         this.time = time;
     }
 
-    public void setTime(OffsetTime time) {
-        this.time = time;
-    }
-
     public OffsetTime getTime() {
         return time;
+    }
+
+    public void setTime(OffsetTime time) {
+        this.time = time;
     }
 
     @Override

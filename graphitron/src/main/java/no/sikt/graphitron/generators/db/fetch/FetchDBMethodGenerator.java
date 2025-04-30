@@ -5,10 +5,7 @@ import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.InputField;
-import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.VirtualSourceField;
+import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -27,6 +24,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Key;
 
 import java.util.*;
 import java.util.regex.Pattern;
@@ -35,6 +33,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
@@ -163,6 +162,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         var rowElements = new ArrayList<CodeBlock>();
 
+        var keySet = getKeySetForResolverFields(context.getReferenceObject().getFields(), processedSchema);
+        keySet.forEach(key ->
+                rowElements.add(getSelectKeyColumnRow(key, context.getTargetTableName(), context.getTargetAlias()))
+        );
+
         var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
 
         for (GenerationField field : fieldsWithoutSplitting) {
@@ -171,7 +175,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             referenceFieldSources.put(field.getName(), innerRowCodeAndFieldSource.getRight());
         }
 
-        return createMapping(context, fieldsWithoutSplitting, referenceFieldSources, rowElements);
+        return createMapping(context, fieldsWithoutSplitting, referenceFieldSources, rowElements, keySet);
     }
 
     protected Pair<CodeBlock, String> getSelectCodeAndFieldSource(GenerationField field, FetchContext context) {
@@ -218,15 +222,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements) {
-        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
+     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<Key<?>> keySet) {
+        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
-                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded)
+                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded, keySet.size())
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
         var mappingContent = maxTypeSafeFieldSizeIsExceeded
-                ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, referenceFieldSources)
+                ? wrapWithExplicitMapping(regularMappingFunction, context, fieldsWithoutSplitting, referenceFieldSources, keySet)
                 : regularMappingFunction;
 
         return CodeBlock
@@ -325,7 +329,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return codeBlockConditions.build();
     }
 
-    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<? extends GenerationField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExeeded) {
+    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<? extends GenerationField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExceeded, int keyCount) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
@@ -335,12 +339,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         codeBlockArguments.add("(");
         codeBlockConstructor.add("(");
 
-        for (int i = 0; i < fieldsWithoutTable.size(); i++) {
+        for (int i = 0; i < fieldsWithoutTable.size() + keyCount; i++) {
             String argumentName;
-            var field = fieldsWithoutTable.get(i);
-            var isLastField = (i == fieldsWithoutTable.size()-1);
 
-            if (processedSchema.isUnion(field.getTypeName())) {
+            var field = i < keyCount ? null : fieldsWithoutTable.get(i - keyCount);
+            var isLastField = (i == fieldsWithoutTable.size() + keyCount - 1);
+
+            if (field != null && processedSchema.isUnion(field.getTypeName())) {
                 useMemberConstructor = true;
                 codeBlockArguments.add(unionFieldArguments(field.getTypeName(), i, isLastField));
                 codeBlockConstructor.add(unionFieldConstructor(field.getTypeName(), i, isLastField));
@@ -348,7 +353,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 continue;
             }
 
-            if (maxTypeSafeFieldSizeIsExeeded) {
+            if (maxTypeSafeFieldSizeIsExceeded) {
                 argumentName = "r[" + i + "]";
             } else {
                 argumentName = "a" + i;
@@ -360,7 +365,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     .add(argumentName)
                     .add(isLastField ? ")" : ", ");
 
-            if (processedSchema.isObject(field))  {
+            if (field != null && processedSchema.isObject(field))  {
                 codeBlockConditions.add("($L == null || new $T().equals($L))", argumentName, processedSchema.getObject(field).getGraphClassName(), argumentName);
             } else {
                 codeBlockConditions.add("$L == null", argumentName);
@@ -368,7 +373,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             codeBlockConditions.add(isLastField ? "" : " && ");
         }
 
-        if (maxTypeSafeFieldSizeIsExeeded) {
+        if (maxTypeSafeFieldSizeIsExceeded) {
             return CodeBlock.of("$L ? null : new $T(\n", codeBlockConditions.build(), graphClassName);
         }
 
@@ -385,36 +390,52 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields) {
-        var codeBlockBuilder = CodeBlock.builder();
-        codeBlockBuilder.add("$T.class, r ->\n", context.getReferenceObject().getGraphClassName());
-        codeBlockBuilder.indent().indent();
-        codeBlockBuilder.add(mappingFunction);
-        codeBlockBuilder.indent().indent();
+    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<Key<?>> keySet) {
+        var innerMappingCode = new ArrayList<CodeBlock>();
 
-        for (int i = 0; i < fieldsWithoutTable.size(); i++) {
-            var field = fieldsWithoutTable.get(i);
+        int i = 0;
+        for (var key : keySet) {
+            innerMappingCode.add(CodeBlock.of("($T) r[$L]", getKeyTypeName(key), i));
+            i++;
+        }
+
+        for (; i < fieldsWithoutTable.size() + keySet.size(); i++) {
+            var field = fieldsWithoutTable.get(i - keySet.size());
 
             if (processedSchema.isObject(field)) {
                 if (field.isIterableWrapped()) {
-                    codeBlockBuilder.add("($T) r[$L]", ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName()), i);
+                    innerMappingCode.add(CodeBlock.of("($T) r[$L]", ParameterizedTypeName.get(LIST.className, processedSchema.getObject(field).getGraphClassName()), i));
                 } else {
-                    codeBlockBuilder.add("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i);
+                    innerMappingCode.add(CodeBlock.of("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i));
                 }
             } else if (field.isID()) {
-                codeBlockBuilder.add("($T) r[$L]", STRING.className, i);
+                innerMappingCode.add(CodeBlock.of("($T) r[$L]", STRING.className, i));
             } else if (processedSchema.isEnum(field)) {
                 var enumDefinition = processedSchema.getEnum(field);
-                codeBlockBuilder.add("($T) r[$L]", enumDefinition.getGraphClassName(), i);
+                innerMappingCode.add(CodeBlock.of("($T) r[$L]", enumDefinition.getGraphClassName(), i));
             } else {
-                codeBlockBuilder.add("$L.$N.getDataType().convert(r[$L])", field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getLocalTable()), field.getUpperCaseName(), i);
-            }
-            if (i < fieldsWithoutTable.size() - 1) {
-                codeBlockBuilder.add(",\n");
+                innerMappingCode.add(
+                        CodeBlock.of("$L.$N.getDataType().convert(r[$L])",
+                                field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getLocalTable()),
+                                field.getUpperCaseName(), i)
+                );
             }
         }
-        codeBlockBuilder.unindent().unindent().add("\n)\n").unindent().unindent();
-        return codeBlockBuilder.build();
+
+        return CodeBlock.builder()
+                .add("$T.class, r ->\n", context.getReferenceObject().getGraphClassName())
+                .indent()
+                .indent()
+                .add(mappingFunction)
+                .indent()
+                .indent()
+                .add(innerMappingCode.stream().collect(CodeBlock.joining(",\n")))
+                .unindent()
+                .unindent()
+                .add("\n)\n")
+                .unindent()
+                .unindent()
+                .build();
     }
 
     /**

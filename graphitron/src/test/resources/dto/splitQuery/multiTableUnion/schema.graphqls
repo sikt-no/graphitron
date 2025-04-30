@@ -1,0 +1,9 @@
+type Customer @table {
+    address: Address @splitQuery
+}
+
+type Address @table {
+    id: ID
+}
+
+union CustomerUnion = Customer

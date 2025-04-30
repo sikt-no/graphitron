@@ -24,8 +24,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
-import static no.sikt.graphql.directives.GenerationDirective.DISCRIMINATE;
-import static no.sikt.graphql.directives.GenerationDirective.TABLE;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -144,6 +142,7 @@ public class ProcessedSchema {
         objectWithPreviousTable = new HashMap<>();
         var nodes = objects.values().stream().filter(it -> it.implementsInterface(NODE_TYPE.getName())).map(it -> (RecordObjectSpecification<?>) it);
         (queryType != null ? Stream.concat(nodes, Stream.of(queryType)) : nodes).forEach(this::buildPreviousTableMap);
+        interfaces.values().forEach(this::buildPreviousTableMap);
 
         transformableFields = findTransformableFields();
     }
