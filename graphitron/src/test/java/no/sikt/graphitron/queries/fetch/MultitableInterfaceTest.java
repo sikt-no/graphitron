@@ -66,12 +66,12 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
-    @DisplayName("Interface with type reference with splitQuery should not have CustomerTable in subquery")
+    @DisplayName("Interface with type reference with splitQuery should have reference key fields in subquery")
     void interfaceWithTypeSplitQuery() {
         assertGeneratedContentContains(
                 "interfaceWithTypeSplitQuery",
                 Set.of(CUSTOMER_TABLE),
-                "row(_payment.getId()).mapping"
+                "row(DSL.row(_payment.CUSTOMER_ID), _payment.getId()).mapping"
         );
     }
 

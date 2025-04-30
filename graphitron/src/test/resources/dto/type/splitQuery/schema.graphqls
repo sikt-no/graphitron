@@ -1,4 +1,0 @@
-type CustomerTable @table(name: "CUSTOMER") {
-    id: ID
-    someString: String @splitQuery
-}

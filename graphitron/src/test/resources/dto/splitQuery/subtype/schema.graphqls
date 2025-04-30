@@ -1,0 +1,7 @@
+type VacationDestination @table(name: "VACATION_DESTINATION") {
+    someType: SomeType @splitQuery
+}
+
+type SomeType {
+    someString: String
+}

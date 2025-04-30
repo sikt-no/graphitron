@@ -9,10 +9,7 @@ import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -293,7 +290,7 @@ public class TableReflection {
         return Optional.ofNullable(TABLES_BY_JAVA_FIELD_NAME.get(name));
     }
 
-    private static Optional<ForeignKey<?, ?>> getForeignKey(String name) {
+    public static Optional<ForeignKey<?, ?>> getForeignKey(String name) {
         return Optional.ofNullable(FOREIGN_KEYS_BY_JAVA_FIELD_NAME.get(name));
     }
 
@@ -306,6 +303,18 @@ public class TableReflection {
                         .map(TableReflection::getJavaFieldName)
                         .collect(Collectors.toSet()))
                 .orElse(Set.of());
+    }
+
+    public static List<String> getJavaFieldNamesForKey(String tableName, Key<?> key) {
+        return key.getFields()
+                .stream()
+                .map(keyField ->
+                        getJavaFieldNamesForTable(tableName)
+                                .stream()
+                                .filter(tableFieldName -> tableFieldName.equalsIgnoreCase(keyField.getName()))
+                                .findFirst()
+                                .orElseThrow())
+                .toList();
     }
 
     public static Set<Class<?>> getClassFromSchemas(String className) {

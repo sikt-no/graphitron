@@ -202,6 +202,15 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains("over22FieldsWithMultiset", "Wrapper::new", "(List<Wrapper>) r[22]");
     }
 
+    @Test
+    @DisplayName("Row with more than 22 fields including key for splitQuery field")
+    void over22FieldsWithSplitQuery() {
+        assertGeneratedContentContains("over22FieldsWithSplitQuery",
+                "new Film( (Record1<Long>) r[0], _film.TITLE.getDataType().convert(r[1])",
+                "r[22]))"
+                );
+    }
+
     @Test // Enhanced null check treats empty objects as null.
     @DisplayName("Required row with optional fields")
     void requiredRowWithOptionalFields() {

@@ -4,7 +4,7 @@ type Query {
 
 type ActorInfo @table(name: "ACTOR_INFO") {
   id: ID!
-  actor: Actor @splitQuery @reference(references: [{condition: {name: "DUMMY_CONDITION"}}])
+  actor: Actor @reference(references: [{condition: {name: "DUMMY_CONDITION"}}])
 }
 
 type Actor @table(name: "ACTOR") {

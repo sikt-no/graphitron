@@ -2,6 +2,7 @@ package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -11,10 +12,16 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_PG_USER_MAPPING_CONDITION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Sorting - Queries with default ordering")
 public class SortingTest extends GeneratorTest {
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(REFERENCE_PG_USER_MAPPING_CONDITION);
+    }
+
     @Override
     protected String getSubpath() {
         return "queries/fetch/sorting";
