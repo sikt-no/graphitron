@@ -34,6 +34,7 @@ public class IdBasedGenerator extends JavaGenerator {
         var primaryKeyFields = resolveFieldNames(keyColumns);
 
         generateGetter(out, primaryKeyFields, "Id", "Id");
+        generateHasCondition(out, primaryKeyFields, "Id");
         generateFieldsGetter(out, table, primaryKeyFields);
 
         var qualifiers = new ArrayList<Map.Entry<String, String>>();

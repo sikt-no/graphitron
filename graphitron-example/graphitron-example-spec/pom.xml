@@ -88,6 +88,7 @@
                         </goals>
                         <configuration>
                             <outputSchema>schema.graphql</outputSchema>
+                            <removeFederationDefinitions>true</removeFederationDefinitions>
                         </configuration>
                     </execution>
                     <execution>
@@ -122,6 +123,9 @@
                     <externalReferenceImports>
                         <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                     </externalReferenceImports>
+                    <userSchemaFiles>
+                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/schema.graphql</schemaFile>
+                    </userSchemaFiles>
                     <scalars>
                         <class>
                             <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>

@@ -1,8 +1,8 @@
 package no.sikt.graphitron.example.server;
 
+import com.apollographql.federation.graphqljava.Federation;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
-import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeRuntimeWiring;
 import io.agroal.api.AgroalDataSource;
 import jakarta.inject.Inject;
@@ -37,7 +37,10 @@ public class GraphqlServlet extends GraphitronServlet {
                 TypeRuntimeWiring.newTypeWiring("City")
                         .dataFetcher("addressExample", QueryDataFetcher.addressExample())
         );
-        var schema = new SchemaGenerator().makeExecutableSchema(registry, newWiring.build());
+        var schema = Federation
+                .transform(registry, newWiring.build())
+                .setFederation2(true)
+                .build();
         return GraphQL.newGraphQL(schema).build();
     }
 

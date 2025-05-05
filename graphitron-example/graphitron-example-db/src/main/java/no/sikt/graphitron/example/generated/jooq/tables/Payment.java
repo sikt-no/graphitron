@@ -345,6 +345,16 @@ public class Payment extends TableImpl<PaymentRecord> {
             .as(DSL.name("Id"));
     }
 
+    public org.jooq.Condition hasId(String id) {
+        return hasIds(java.util.Set.of(id));
+    }
+
+    public org.jooq.Condition hasIds(java.util.Set<String> ids) {
+        var field = java.util.List.of(PAYMENT_ID).get(0);
+        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
+        return field.in(converted);
+    }
+
     public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.PaymentRecord, ?>> getIdFields() {
         return java.util.List.of(PAYMENT_ID);
     }

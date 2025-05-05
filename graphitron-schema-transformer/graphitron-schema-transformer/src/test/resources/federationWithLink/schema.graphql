@@ -1,0 +1,11 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@key"]){
+    query: Query
+}
+
+type Query {
+  a: String
+}
+
+type A @key(fields: "s") {
+  s: String
+}

@@ -62,7 +62,7 @@ public class AbstractTest {
 
     protected void assertTransformedDirectivesMatch(String expectedOutputFolder, GraphQLSchema schema) {
         try {
-            writeSchemaToDirectory(schema, "schema.graphql", temp.toString());
+            writeSchemaToDirectory(schema, "schema.graphql", temp.toString(), false);
             var generatedFiles = getGeneratedFiles();
             Files.walkFileTree(Paths.get(SRC_TEST_RESOURCES + expectedOutputFolder + "/expected"), new SimpleFileVisitor<>() {
                 @Override
@@ -112,7 +112,7 @@ public class AbstractTest {
     protected void assertTransformedSchemaMatches(String expectedOutputFolder, GraphQLSchema schema) {
         var expectedFileNames = new HashSet<String>();
         try {
-            writeSchemaToDirectory(schema, "schema.graphql", temp.toString());
+            writeSchemaToDirectory(schema, "schema.graphql", temp.toString(), false);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

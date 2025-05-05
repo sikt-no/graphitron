@@ -32,7 +32,7 @@
     </modules>
 
     <properties>
-        <revision>4.0</revision>
+        <revision>4.1</revision>
         <!-- is overwritten by CI. Default is 999999-SNAPSHOT to ensure that the version is higher than the last release, when developing locally -->
         <changelist>.999999-SNAPSHOT</changelist>
 

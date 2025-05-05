@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.dto;
 
+import com.apollographql.federation.graphqljava.Federation;
 import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -28,6 +29,7 @@ public class EnumDTOGenerator extends DTOGenerator {
                 .getEnums()
                 .values()
                 .stream()
+                .filter(it -> !it.getName().equalsIgnoreCase("link__purpose")) //Ignore the link__purpose enum required by the @link directive used by Apollo Federation
                 .map(this::generate)
                 .toList();
     }

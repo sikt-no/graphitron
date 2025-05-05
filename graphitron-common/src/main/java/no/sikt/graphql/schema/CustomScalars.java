@@ -1,5 +1,6 @@
-package no.sikt.graphitron.definitions.helpers;
+package no.sikt.graphql.schema;
 
+import com.apollographql.federation.graphqljava._FieldSet;
 import graphql.GraphQLContext;
 import graphql.execution.CoercedVariables;
 import graphql.language.IntValue;
@@ -22,6 +23,23 @@ import static graphql.scalar.CoercingUtil.i18nMsg;
 import static graphql.scalar.CoercingUtil.typeName;
 
 public class CustomScalars  {
+
+    /**
+     * Custom scalar for the FieldSet type in Apollo Federation.
+     * FieldSet replaces _FieldSet in version 2 of Apollo Federation.
+     */
+    public static final GraphQLScalarType FieldSet =
+            GraphQLScalarType.newScalar(_FieldSet.type)
+                    .name("FieldSet")
+                    .build();
+
+    /**
+     * If FieldSet is not imported via the @link directive, it's name is prefixed with federation__.
+     */
+    public static final GraphQLScalarType Federation__FieldSet =
+            GraphQLScalarType.newScalar(FieldSet)
+                    .name("federation__FieldSet")
+                    .build();
 
     /**
      * Custom ID scalar that serializes and parses values as Strings instead of Objects

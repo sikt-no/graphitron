@@ -2,11 +2,13 @@ package no.sikt.graphitron.definitions.helpers;
 
 import com.apollographql.federation.graphqljava._Any;
 import com.apollographql.federation.graphqljava._FieldSet;
+import com.apollographql.federation.graphqljava.link__Import;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import graphql.Scalars;
 import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLScalarType;
+import no.sikt.graphql.schema.CustomScalars;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
@@ -26,7 +28,7 @@ public class ScalarUtils {
 
     //order matters. Any custom scalars that should override the default ones should be added last.
     private static final List<Class<?>> DEFAULT_SCALAR_DEFINITIONS_CLASSES =
-            List.of(Scalars.class, ExtendedScalars.class, _FieldSet.class, _Any.class, CustomScalars.class);
+            List.of(Scalars.class, ExtendedScalars.class, _FieldSet.class, _Any.class, link__Import.class, CustomScalars.class);
 
     private final Map<String, CodeBlock> scalarTypeCodeBlockMapping;
     private final Map<String, String> scalarTypeNameMapping;
