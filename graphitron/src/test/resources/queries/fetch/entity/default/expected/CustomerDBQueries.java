@@ -1,9 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Keys.*;
-import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import java.lang.Object;
 import java.lang.String;
