@@ -1,8 +1,6 @@
 package fake.code.generated.queries.mutation;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
-import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Keys.*;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import java.util.ArrayList;

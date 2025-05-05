@@ -35,9 +35,7 @@ abstract public class DBClassGenerator<T extends GenerationTarget> extends Abstr
     }
 
     protected Set<Class<?>> getStaticImports() {
-        var union = new HashSet<Class<?>>();
-        union.addAll(TableReflection.getClassFromSchemas("Tables"));
-        union.addAll(TableReflection.getClassFromSchemas("Keys"));
+        var union = new HashSet<>(TableReflection.getClassFromSchemas("Tables"));
         return union;
     }
 
