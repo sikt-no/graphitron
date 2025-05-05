@@ -12,7 +12,7 @@ import static org.hamcrest.Matchers.notNullValue;
 public class QueryMatchTest extends MatchTestBase {
 
     @Test
-    @DisplayName("Test retrieval of data on nested types")
+    @DisplayName("Data on nested types can be retrieved")
     public void nested() {
         var queryFile = "query_basic_nested.graphql";
 
@@ -22,5 +22,15 @@ public class QueryMatchTest extends MatchTestBase {
                 .body("name.lastName", is(notNullValue()))
                 .body("address.addressLine1", is(notNullValue()))
                 .body("address.city.name", is(notNullValue()));
+    }
+
+    @Test
+    @DisplayName("The federation _service query works")
+    public void federationService() {
+        var queryFile = "query_federation_service.graphql";
+
+        getValidatableResponse(queryFile)
+                .rootPath("data._service.sdl")
+                .body("length()", is(notNullValue()));
     }
 }

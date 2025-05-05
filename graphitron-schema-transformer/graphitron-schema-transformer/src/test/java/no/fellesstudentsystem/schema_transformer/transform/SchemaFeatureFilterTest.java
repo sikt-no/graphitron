@@ -22,7 +22,8 @@ class SchemaFeatureFilterTest {
         var schema = createSchema("noFlagsRequested/test.graphql");
         var expected = createSchema("noFlagsRequested/expected.graphql");
         var filteredSchema = new SchemaFeatureFilter().getFilteredGraphQLSchema(schema);
-        assertThat(writeSchemaToString(filteredSchema)).isEqualToIgnoringWhitespace(writeSchemaToString(expected));
+        assertThat(writeSchemaToString(filteredSchema, false))
+                .isEqualToIgnoringWhitespace(writeSchemaToString(expected, false));
     }
 
     @Test
@@ -106,6 +107,7 @@ class SchemaFeatureFilterTest {
     }
 
     private void testSchema(GraphQLSchema actual, GraphQLSchema expected) {
-        assertThat(writeSchemaToString(actual)).isEqualToIgnoringWhitespace(writeSchemaToString(expected));
+        assertThat(writeSchemaToString(actual, false))
+                .isEqualToIgnoringWhitespace(writeSchemaToString(expected, false));
     }
 }

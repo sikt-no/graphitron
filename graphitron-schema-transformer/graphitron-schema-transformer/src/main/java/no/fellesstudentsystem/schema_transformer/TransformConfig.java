@@ -8,7 +8,6 @@ public record TransformConfig(
         List<String> schemaLocations,
         Set<String> directivesToFilter,
         Map<String, String> descriptionSuffixForFeatures,
-        boolean addFederation,
         boolean addFeatureFlags,
         boolean removeGeneratorDirectives,
         boolean expandConnections

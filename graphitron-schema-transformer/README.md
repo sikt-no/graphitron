@@ -11,7 +11,7 @@ For full documentation of all available parameters, see the Javadoc in the [Plug
 Key configuration parameters include:
 
 - `schemaRootDirectories`: Where to find the GraphQL schema files (required)
-- `makeApolloFederation`: Whether to add [Apollo Federation](#apollo-federation-support) support
+- `removeFederationDefinitions`: Whether to remove [certain Apollo Federation definitions](#removing-federation-definitions) from the schema
 - `addFeatureFlags`: Whether to add [feature flags to the schema based on directory structure](#Feature-Flag-Transformation)
 - `outputSchema`: Name of the output schema file (for single schema output)
 - `outputSchemas`: Configuration for multiple output schemas with different feature flags
@@ -93,7 +93,7 @@ Important notes:
 * Files placed at the root level are considered production schemas and don't have feature flags applied
 * Files placed in subdirectories under `features/` are annotated with feature flags matching their directory name
 * Multiple schemas can be placed in the same directory
-* This process is not recursive - only the top-level feature directories are recognized
+* This process is not recursive — only the top-level feature directories are recognized
 
 ### Schema Splitting
 
@@ -158,15 +158,34 @@ You can create separate Maven execution blocks to generate different types of sc
 
 ### Apollo Federation Support
 
-The transformer can add Apollo Federation support to your schema using the `makeApolloFederation` option:
-
-```xml
-<makeApolloFederation>true</makeApolloFederation>
+The transformer will automatically add the necessary types and fields to your schema to support Apollo Federation, 
+given that you have applied the `@link` directive to your schema type:
+```graphql
+extend schema
+@link(url: "https://specs.apollo.dev/federation/v2.3",
+    import: ["@key", "@shareable"])
 ```
+See the [Apollo Federation documentation](https://www.apollographql.com/docs/graphos/schema-design/federated-schemas/reference/directives#importing-directives) for more details.
 
 This transforms your schema to be compatible with Apollo Federation by:
+- Adding the imported directive definitions to the schema
 - Adding federation types like `_Entity` and `_Any`
 - Adding federation fields like `_entities` to the Query type
 - Setting up Apollo Federation 2 by default
 
 The federation transformation maintains applied federation directives like `@key` while adding the necessary federation types, directive definitions and fields.
+
+#### Removing Federation Definitions
+The Federation library does not like transforming schemas that already contain certain 
+Apollo Federation definitions, such as `_Entity`, `_Any`, and `_Service`.
+
+```java
+com.apollographql.federation.graphqljava.Federation.transform(...);
+```
+Thus you may need to remove these definitions from your schema before applying the federation transformation.
+This is done by setting the `removeFederationDefinitions` parameter to `true` in your Maven configuration.
+
+If you are using Apollo Federation you want to have the Apollo Federation definitions in the schema that is used for code generation,
+but not on the schema hosted by yout GraphQL server, if that schema is to be transformed by the Federation library.
+
+We will implement a more elegant solution to this in the future, but for now you can use the `removeFederationDefinitions` parameter to remove these definitions from the schema that is hosted by your GraphQL server.

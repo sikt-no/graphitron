@@ -53,10 +53,11 @@ public class Plugin extends AbstractMojo {
     private boolean removeGeneratorDirectives;
 
     /**
-     * Whether to make the schema compatible with Apollo Federation by adding federation types and directives.
+     * Whether to remove all Apollo federation directives and types from the schema.
+     * E.g. when hosting a subgraph in a non-federated environment.
      */
-    @Parameter(property = "generate.makeApolloFederation", defaultValue = "false")
-    private boolean makeApolloFederation;
+    @Parameter(property = "generate.removeFederationDefinitions", defaultValue = "false")
+    private boolean removeFederationDefinitions;
 
     /**
      * Whether to expand GraphQL connection types into full GraphQL Cursor Connections Specification-compliant structures.
@@ -95,17 +96,19 @@ public class Plugin extends AbstractMojo {
         var schemaFiles = SchemaReader.findSchemaFilesRecursivelyInDirectory(schemaRootDirectories);
         var descriptionSuffixForFeatures = SchemaReader.createDescriptionSuffixForFeatureMap(schemaRootDirectories, descriptionSuffixFilename);
         var outputDirectory = actualTarget.toString();
-        var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures, makeApolloFederation, addFeatureFlags, removeGeneratorDirectives, expandConnections);
+        var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures,
+                addFeatureFlags, removeGeneratorDirectives, expandConnections);
         var transformer = new SchemaTransformer(config);
         var newSchema = transformer.transformSchema();
-        var features = outputSchemas != null && !outputSchemas.isEmpty() ? splitFeatures(reloadSchema(newSchema), outputSchemas) : List.<FeatureSchema>of();
+        var features = outputSchemas != null && !outputSchemas.isEmpty() ? splitFeatures(
+                reloadSchema(newSchema, removeFederationDefinitions), outputSchemas) : List.<FeatureSchema>of();
         try {
             Files.createDirectories(actualTarget);
             if (outputSchema != null && !outputSchema.isEmpty()) {
-                writeSchemaToDirectory(newSchema, outputSchema, outputDirectory);
+                writeSchemaToDirectory(newSchema, outputSchema, outputDirectory, removeFederationDefinitions);
             }
             for (var f : features) {
-                writeSchemaToDirectory(f.schema(), f.fileName(), outputDirectory);
+                writeSchemaToDirectory(f.schema(), f.fileName(), outputDirectory, removeFederationDefinitions);
             }
         } catch (IOException e) {
             throw new MojoExecutionException(e.getMessage(), e);

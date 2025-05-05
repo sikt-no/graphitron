@@ -167,7 +167,7 @@ public class FeatureFlagConfiguration implements ModifyingGraphQLTypeVisitor {
 
     @NotNull
     private List<String> getOptionalFeatureDirectoryPath(SourceLocation location) {
-        if (location == null) { // When we add things in previous steps, such as connection types.
+        if (location == null || location.getSourceName() == null) { // When we add things in previous steps, such as connection types.
             return List.of();
         }
 
