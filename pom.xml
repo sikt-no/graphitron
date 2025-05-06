@@ -29,6 +29,7 @@
         <module>graphitron-maven-plugin</module>
         <module>graphitron-schema-transformer</module>
         <module>graphitron-example</module>
+        <module>graphitron-javapoet</module>
     </modules>
 
     <properties>

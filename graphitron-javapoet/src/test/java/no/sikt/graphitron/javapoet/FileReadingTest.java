@@ -107,12 +107,12 @@ public class FileReadingTest {
     CompilationTask task = compiler.getTask(null, 
         fileManager,
         diagnosticCollector,
-        Collections.emptySet(),
-        Collections.emptySet(),
+            Collections.singleton("-proc:none"),  // Disable annotation processing
+            Collections.emptySet(),
         Collections.singleton(javaFile.toJavaFileObject()));
     
     assertThat(task.call()).isTrue();
-    assertThat(diagnosticCollector.getDiagnostics()).isEmpty();
+     assertThat(diagnosticCollector.getDiagnostics()).isEmpty();
 
     ClassLoader loader = fileManager.getClassLoader(StandardLocation.CLASS_OUTPUT);
     Callable<?> test = Class.forName("foo.Test", true, loader)
