@@ -18,15 +18,15 @@
 package no.sikt.graphitron.javapoet;
 
 import com.google.testing.compile.CompilationRule;
+import org.junit.Rule;
+import org.junit.Test;
+
+import javax.lang.model.element.TypeElement;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.Inherited;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
-
-import javax.lang.model.element.TypeElement;
-import org.junit.Rule;
-import org.junit.Test;
 
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.fail;
@@ -49,7 +49,12 @@ public final class AnnotationSpecTest {
 
     public enum Breakfast {
         WAFFLES, PANCAKES;
-        public String toString() { return name() + " with cherries!"; };
+
+        public String toString() {
+            return name() + " with cherries!";
+        }
+
+        ;
     }
 
     @Retention(RetentionPolicy.RUNTIME)
@@ -106,9 +111,11 @@ public final class AnnotationSpecTest {
         // empty
     }
 
-    @Rule public final CompilationRule compilation = new CompilationRule();
+    @Rule
+    public final CompilationRule compilation = new CompilationRule();
 
-    @Test public void equalsAndHashCode() {
+    @Test
+    public void equalsAndHashCode() {
         AnnotationSpec a = AnnotationSpec.builder(AnnotationC.class).build();
         AnnotationSpec b = AnnotationSpec.builder(AnnotationC.class).build();
         assertThat(a.equals(b)).isTrue();
@@ -119,7 +126,8 @@ public final class AnnotationSpecTest {
         assertThat(a.hashCode()).isEqualTo(b.hashCode());
     }
 
-    @Test public void defaultAnnotation() {
+    @Test
+    public void defaultAnnotation() {
         String name = IsAnnotated.class.getCanonicalName();
         TypeElement element = compilation.getElements().getTypeElement(name);
         AnnotationSpec annotation = AnnotationSpec.get(element.getAnnotationMirrors().get(0));
@@ -156,7 +164,8 @@ public final class AnnotationSpecTest {
                 + "}\n");
     }
 
-    @Test public void defaultAnnotationWithImport() {
+    @Test
+    public void defaultAnnotationWithImport() {
         String name = IsAnnotated.class.getCanonicalName();
         TypeElement element = compilation.getElements().getTypeElement(name);
         AnnotationSpec annotation = AnnotationSpec.get(element.getAnnotationMirrors().get(0));
@@ -192,7 +201,8 @@ public final class AnnotationSpecTest {
         );
     }
 
-    @Test public void emptyArray() {
+    @Test
+    public void emptyArray() {
         AnnotationSpec.Builder builder = AnnotationSpec.builder(HasDefaultsAnnotation.class);
         builder.addMember("n", "$L", "{}");
         assertThat(builder.build().toString()).isEqualTo(
@@ -205,7 +215,8 @@ public final class AnnotationSpecTest {
                                 + ")");
     }
 
-    @Test public void dynamicArrayOfEnumConstants() {
+    @Test
+    public void dynamicArrayOfEnumConstants() {
         AnnotationSpec.Builder builder = AnnotationSpec.builder(HasDefaultsAnnotation.class);
         builder.addMember("n", "$T.$L", Breakfast.class, Breakfast.PANCAKES.name());
         assertThat(builder.build().toString()).isEqualTo(
@@ -244,7 +255,8 @@ public final class AnnotationSpecTest {
                         + "})");
     }
 
-    @Test public void defaultAnnotationToBuilder() {
+    @Test
+    public void defaultAnnotationToBuilder() {
         String name = IsAnnotated.class.getCanonicalName();
         TypeElement element = compilation.getElements().getTypeElement(name);
         AnnotationSpec.Builder builder = AnnotationSpec.get(element.getAnnotationMirrors().get(0))
@@ -263,7 +275,8 @@ public final class AnnotationSpecTest {
                         + ")");
     }
 
-    @Test public void reflectAnnotation() {
+    @Test
+    public void reflectAnnotation() {
         HasDefaultsAnnotation annotation = IsAnnotated.class.getAnnotation(HasDefaultsAnnotation.class);
         AnnotationSpec spec = AnnotationSpec.get(annotation);
         TypeSpec taco = TypeSpec.classBuilder("Taco")
@@ -297,7 +310,8 @@ public final class AnnotationSpecTest {
                 + "}\n");
     }
 
-    @Test public void reflectAnnotationWithDefaults() {
+    @Test
+    public void reflectAnnotationWithDefaults() {
         HasDefaultsAnnotation annotation = IsAnnotated.class.getAnnotation(HasDefaultsAnnotation.class);
         AnnotationSpec spec = AnnotationSpec.get(annotation, true);
         TypeSpec taco = TypeSpec.classBuilder("Taco")
@@ -355,7 +369,8 @@ public final class AnnotationSpecTest {
                 + "}\n");
     }
 
-    @Test public void disallowsNullMemberName() {
+    @Test
+    public void disallowsNullMemberName() {
         AnnotationSpec.Builder builder = AnnotationSpec.builder(HasDefaultsAnnotation.class);
         try {
             AnnotationSpec.Builder $L = builder.addMember(null, "$L", "");
@@ -365,7 +380,8 @@ public final class AnnotationSpecTest {
         }
     }
 
-    @Test public void requiresValidMemberName() {
+    @Test
+    public void requiresValidMemberName() {
         AnnotationSpec.Builder builder = AnnotationSpec.builder(HasDefaultsAnnotation.class);
         try {
             AnnotationSpec.Builder $L = builder.addMember("@", "$L", "");
@@ -375,7 +391,8 @@ public final class AnnotationSpecTest {
         }
     }
 
-    @Test public void modifyMembers() {
+    @Test
+    public void modifyMembers() {
         AnnotationSpec.Builder builder = AnnotationSpec.builder(SuppressWarnings.class)
                 .addMember("value", "$S", "Foo");
 

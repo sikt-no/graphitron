@@ -18,30 +18,32 @@
 package no.sikt.graphitron.javapoet;
 
 import com.google.testing.compile.CompilationRule;
-import java.util.Map;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.util.Elements;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
+
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.util.Elements;
+import java.util.Map;
 
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
-import static org.mockito.Mockito.when;
 
 @RunWith(JUnit4.class)
 public final class ClassNameTest {
-    @Rule public CompilationRule compilationRule = new CompilationRule();
+    @Rule
+    public CompilationRule compilationRule = new CompilationRule();
 
-    @Test public void bestGuessForString_simpleClass() {
+    @Test
+    public void bestGuessForString_simpleClass() {
         assertThat(ClassName.bestGuess(String.class.getName()))
                 .isEqualTo(ClassName.get("java.lang", "String"));
     }
 
-    @Test public void bestGuessNonAscii() {
+    @Test
+    public void bestGuessNonAscii() {
         ClassName className = ClassName.bestGuess(
                 "com.\ud835\udc1andro\ud835\udc22d.\ud835\udc00ctiv\ud835\udc22ty");
         assertEquals("com.\ud835\udc1andro\ud835\udc22d", className.packageName());
@@ -52,7 +54,8 @@ public final class ClassNameTest {
         static class InnerClass {}
     }
 
-    @Test public void bestGuessForString_nestedClass() {
+    @Test
+    public void bestGuessForString_nestedClass() {
         assertThat(ClassName.bestGuess(Map.Entry.class.getCanonicalName()))
                 .isEqualTo(ClassName.get("java.util", "Map", "Entry"));
         assertThat(ClassName.bestGuess(OuterClass.InnerClass.class.getCanonicalName()))
@@ -60,7 +63,8 @@ public final class ClassNameTest {
                         "ClassNameTest", "OuterClass", "InnerClass"));
     }
 
-    @Test public void bestGuessForString_defaultPackage() {
+    @Test
+    public void bestGuessForString_defaultPackage() {
         assertThat(ClassName.bestGuess("SomeClass"))
                 .isEqualTo(ClassName.get("", "SomeClass"));
         assertThat(ClassName.bestGuess("SomeClass.Nested"))
@@ -69,7 +73,8 @@ public final class ClassNameTest {
                 .isEqualTo(ClassName.get("", "SomeClass", "Nested", "EvenMore"));
     }
 
-    @Test public void bestGuessForString_confusingInput() {
+    @Test
+    public void bestGuessForString_confusingInput() {
         assertBestGuessThrows("");
         assertBestGuessThrows(".");
         assertBestGuessThrows(".Map");
@@ -92,7 +97,8 @@ public final class ClassNameTest {
         }
     }
 
-    @Test public void createNestedClass() {
+    @Test
+    public void createNestedClass() {
         ClassName foo = ClassName.get("com.example", "Foo");
         ClassName bar = foo.nestedClass("Bar");
         assertThat(bar).isEqualTo(ClassName.get("com.example", "Foo", "Bar"));
@@ -104,21 +110,24 @@ public final class ClassNameTest {
         static class $Inner {}
     }
 
-    @Test public void classNameFromTypeElement() {
+    @Test
+    public void classNameFromTypeElement() {
         Elements elements = compilationRule.getElements();
         TypeElement object = elements.getTypeElement(Object.class.getCanonicalName());
         assertThat(ClassName.get(object).toString()).isEqualTo("java.lang.Object");
         TypeElement outer = elements.getTypeElement($Outer.class.getCanonicalName());
         assertThat(ClassName.get(outer).toString()).isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest.$Outer");
         TypeElement inner = elements.getTypeElement($Outer.$Inner.class.getCanonicalName());
-        assertThat(ClassName.get(inner).toString()).isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest.$Outer.$Inner");
+        assertThat(ClassName.get(inner).toString()).isEqualTo(
+                "no.sikt.graphitron.javapoet.ClassNameTest.$Outer.$Inner");
     }
 
     /**
      * Buck builds with "source-based ABI generation" and those builds don't support
      * {@link TypeElement#getKind()}. Test to confirm that we don't use that API.
      */
-    @Test public void classNameFromTypeElementDoesntUseGetKind() {
+    @Test
+    public void classNameFromTypeElementDoesntUseGetKind() {
         Elements elements = compilationRule.getElements();
 
         // Create a simple proxy implementation instead of using Mockito.spy
@@ -143,7 +152,7 @@ public final class ClassNameTest {
     private TypeElement createTypeElementProxy(TypeElement original) {
         return (TypeElement) java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(),
-                new Class<?>[] { TypeElement.class },
+                new Class<?>[]{TypeElement.class},
                 (proxy, method, args) -> {
                     if (method.getName().equals("getKind")) {
                         throw new AssertionError("getKind() should not be called");
@@ -161,14 +170,17 @@ public final class ClassNameTest {
                 });
     }
 
-    @Test public void classNameFromClass() {
+    @Test
+    public void classNameFromClass() {
         assertThat(ClassName.get(Object.class).toString())
                 .isEqualTo("java.lang.Object");
         assertThat(ClassName.get(OuterClass.InnerClass.class).toString())
                 .isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest.OuterClass.InnerClass");
         assertThat((ClassName.get(new Object() {}.getClass())).toString())
                 .isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest$1");
-        assertThat((ClassName.get(new Object() { Object inner = new Object() {}; }.inner.getClass())).toString())
+        assertThat((ClassName.get(new Object() {
+            Object inner = new Object() {};
+        }.inner.getClass())).toString())
                 .isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest$2$1");
         assertThat((ClassName.get($Outer.class)).toString())
                 .isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest.$Outer");
@@ -176,7 +188,8 @@ public final class ClassNameTest {
                 .isEqualTo("no.sikt.graphitron.javapoet.ClassNameTest.$Outer.$Inner");
     }
 
-    @Test public void peerClass() {
+    @Test
+    public void peerClass() {
         assertThat(ClassName.get(Double.class).peerClass("Short"))
                 .isEqualTo(ClassName.get(Short.class));
         assertThat(ClassName.get("", "Double").peerClass("Short"))
@@ -185,7 +198,8 @@ public final class ClassNameTest {
                 .isEqualTo(ClassName.get("a.b", "Combo", "Burrito"));
     }
 
-    @Test public void fromClassRejectionTypes() {
+    @Test
+    public void fromClassRejectionTypes() {
         try {
             ClassName.get(int.class);
             fail();
