@@ -39,7 +39,7 @@ import java.util.Collections;
 import java.util.Locale;
 import java.util.concurrent.Callable;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @RunWith(JUnit4.class)

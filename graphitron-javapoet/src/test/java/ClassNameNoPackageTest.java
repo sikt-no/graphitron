@@ -16,10 +16,10 @@
  * Modified by Sikt for internal use in the Graphitron project.
  */
 
-import static com.google.common.truth.Truth.assertThat;
-
 import no.sikt.graphitron.javapoet.ClassName;
 import org.junit.Test;
+
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 /**
  * Since it is impossible to import classes from the default package into other

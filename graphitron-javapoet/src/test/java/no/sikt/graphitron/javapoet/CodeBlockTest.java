@@ -24,7 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -62,8 +62,7 @@ public final class CodeBlockTest {
             fail();
         } catch (IllegalArgumentException exp) {
             assertThat(exp)
-                    .hasMessageThat()
-                    .isEqualTo("$$, $>, $<, $[, $], $W, and $Z may not have an index");
+                    .hasMessage("$$, $>, $<, $[, $], $W, and $Z may not have an index");
         }
     }
 
@@ -74,8 +73,7 @@ public final class CodeBlockTest {
             fail();
         } catch (IllegalArgumentException exp) {
             assertThat(exp)
-                    .hasMessageThat()
-                    .isEqualTo("$$, $>, $<, $[, $], $W, and $Z may not have an index");
+                    .hasMessage("$$, $>, $<, $[, $], $W, and $Z may not have an index");
         }
     }
 
@@ -86,8 +84,7 @@ public final class CodeBlockTest {
             fail();
         } catch (IllegalArgumentException exp) {
             assertThat(exp)
-                    .hasMessageThat()
-                    .isEqualTo("$$, $>, $<, $[, $], $W, and $Z may not have an index");
+                    .hasMessage("$$, $>, $<, $[, $], $W, and $Z may not have an index");
         }
     }
 
@@ -98,8 +95,7 @@ public final class CodeBlockTest {
             fail();
         } catch (IllegalArgumentException exp) {
             assertThat(exp)
-                    .hasMessageThat()
-                    .isEqualTo("$$, $>, $<, $[, $], $W, and $Z may not have an index");
+                    .hasMessage("$$, $>, $<, $[, $], $W, and $Z may not have an index");
         }
     }
 
@@ -110,8 +106,7 @@ public final class CodeBlockTest {
             fail();
         } catch (IllegalArgumentException exp) {
             assertThat(exp)
-                    .hasMessageThat()
-                    .isEqualTo("$$, $>, $<, $[, $], $W, and $Z may not have an index");
+                    .hasMessage("$$, $>, $<, $[, $], $W, and $Z may not have an index");
         }
     }
 
@@ -174,7 +169,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().addNamed("$text:S", map).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("Missing named argument for $text");
+            assertThat(expected).hasMessage("Missing named argument for $text");
         }
     }
 
@@ -186,7 +181,7 @@ public final class CodeBlockTest {
             CodeBlock block = CodeBlock.builder().addNamed("$Text:S", map).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("argument 'Text' must start with a lowercase character");
+            assertThat(expected).hasMessage("argument 'Text' must start with a lowercase character");
         }
     }
 
@@ -220,7 +215,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().addNamed("$clazz:T$", map).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("dangling $ at end");
+            assertThat(expected).hasMessage("dangling $ at end");
         }
     }
 
@@ -230,7 +225,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$2T", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("index 2 for '$2T' not in range (received 1 arguments)");
+            assertThat(expected).hasMessage("index 2 for '$2T' not in range (received 1 arguments)");
         }
     }
 
@@ -240,7 +235,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$0T", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("index 0 for '$0T' not in range (received 1 arguments)");
+            assertThat(expected).hasMessage("index 0 for '$0T' not in range (received 1 arguments)");
         }
     }
 
@@ -250,7 +245,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$-1T", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("invalid format string: '$-1T'");
+            assertThat(expected).hasMessage("invalid format string: '$-1T'");
         }
     }
 
@@ -260,7 +255,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$1", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("dangling format characters in '$1'");
+            assertThat(expected).hasMessage("dangling format characters in '$1'");
         }
     }
 
@@ -270,7 +265,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$1 taco", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("invalid format string: '$1 taco'");
+            assertThat(expected).hasMessage("invalid format string: '$1 taco'");
         }
     }
 
@@ -280,7 +275,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$1T").build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("index 1 for '$1T' not in range (received 0 arguments)");
+            assertThat(expected).hasMessage("index 1 for '$1T' not in range (received 0 arguments)");
         }
     }
 
@@ -290,7 +285,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("dangling format characters in '$'");
+            assertThat(expected).hasMessage("dangling format characters in '$'");
         }
     }
 
@@ -300,7 +295,7 @@ public final class CodeBlockTest {
             CodeBlock.builder().add("$ tacoString", String.class).build();
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("invalid format string: '$ tacoString'");
+            assertThat(expected).hasMessage("invalid format string: '$ tacoString'");
         }
     }
 
@@ -320,7 +315,7 @@ public final class CodeBlockTest {
             codeBlock.toString();
             fail();
         } catch (IllegalStateException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("statement enter $[ followed by statement enter $[");
+            assertThat(expected).hasMessage("statement enter $[ followed by statement enter $[");
         }
     }
 
@@ -332,7 +327,7 @@ public final class CodeBlockTest {
             codeBlock.toString();
             fail();
         } catch (IllegalStateException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("statement exit $] has no matching statement enter $[");
+            assertThat(expected).hasMessage("statement exit $] has no matching statement enter $[");
         }
     }
 

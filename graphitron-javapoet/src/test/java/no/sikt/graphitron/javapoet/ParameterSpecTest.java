@@ -31,10 +31,10 @@ import javax.lang.model.util.Elements;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.google.common.truth.Truth.assertThat;
 import static javax.lang.model.util.ElementFilter.fieldsIn;
 import static javax.lang.model.util.ElementFilter.methodsIn;
 import static no.sikt.graphitron.javapoet.TestUtil.findFirst;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 public class ParameterSpecTest {
@@ -113,7 +113,7 @@ public class ParameterSpecTest {
             ParameterSpec.get(element);
             fail();
         } catch (IllegalArgumentException exception) {
-            assertThat(exception).hasMessageThat().isEqualTo("element is not a parameter");
+            assertThat(exception).hasMessage("element is not a parameter");
         }
     }
 

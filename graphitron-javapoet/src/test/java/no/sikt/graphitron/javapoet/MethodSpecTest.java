@@ -43,7 +43,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.TimeoutException;
 
 import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.Compiler.javac;
 import static javax.lang.model.util.ElementFilter.methodsIn;
@@ -73,7 +73,7 @@ public final class MethodSpecTest {
             MethodSpec.methodBuilder("doSomething").addAnnotations(null);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("annotationSpecs == null");
+            assertThat(expected).hasMessage("annotationSpecs == null");
         }
     }
 
@@ -83,7 +83,7 @@ public final class MethodSpecTest {
             MethodSpec.methodBuilder("doSomething").addTypeVariables(null);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("typeVariables == null");
+            assertThat(expected).hasMessage("typeVariables == null");
         }
     }
 
@@ -93,7 +93,7 @@ public final class MethodSpecTest {
             MethodSpec.methodBuilder("doSomething").addParameters(null);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("parameterSpecs == null");
+            assertThat(expected).hasMessage("parameterSpecs == null");
         }
     }
 
@@ -103,7 +103,7 @@ public final class MethodSpecTest {
             MethodSpec.methodBuilder("doSomething").addExceptions(null);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("exceptions == null");
+            assertThat(expected).hasMessage("exceptions == null");
         }
     }
 
@@ -240,7 +240,7 @@ public final class MethodSpecTest {
             MethodSpec.overriding(findFirst(methods, "method"));
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo(
+            assertThat(expected).hasMessage(
                     "Cannot override method on final class no.sikt.graphitron.javapoet.MethodSpecTest.FinalClass");
         }
     }
@@ -253,19 +253,19 @@ public final class MethodSpecTest {
             MethodSpec.overriding(findFirst(methods, "finalMethod"));
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("cannot override method with modifiers: [final]");
+            assertThat(expected).hasMessage("cannot override method with modifiers: [final]");
         }
         try {
             MethodSpec.overriding(findFirst(methods, "privateMethod"));
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("cannot override method with modifiers: [private]");
+            assertThat(expected).hasMessage("cannot override method with modifiers: [private]");
         }
         try {
             MethodSpec.overriding(findFirst(methods, "staticMethod"));
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("cannot override method with modifiers: [static]");
+            assertThat(expected).hasMessage("cannot override method with modifiers: [static]");
         }
     }
 

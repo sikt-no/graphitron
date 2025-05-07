@@ -45,7 +45,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -344,19 +344,19 @@ public final class TypeSpecTest {
             TypeSpec.classBuilder("Foo").addAnnotation((AnnotationSpec) null);
             fail();
         } catch (NullPointerException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("annotationSpec == null");
+            assertThat(expected).hasMessage("annotationSpec == null");
         }
         try {
             TypeSpec.classBuilder("Foo").addAnnotation((ClassName) null);
             fail();
         } catch (NullPointerException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("type == null");
+            assertThat(expected).hasMessage("type == null");
         }
         try {
             TypeSpec.classBuilder("Foo").addAnnotation((Class<?>) null);
             fail();
         } catch (NullPointerException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("clazz == null");
+            assertThat(expected).hasMessage("clazz == null");
         }
     }
 
@@ -2239,7 +2239,7 @@ public final class TypeSpecTest {
             CodeBlock.builder().add("$N", String.class);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("expected name but was " + String.class);
+            assertThat(expected).hasMessage("expected name but was " + String.class);
         }
     }
 
@@ -2288,7 +2288,7 @@ public final class TypeSpecTest {
             CodeBlock.builder().add("$T", "java.lang.String");
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("expected type but was java.lang.String");
+            assertThat(expected).hasMessage("expected type but was java.lang.String");
         }
     }
 
@@ -2298,7 +2298,7 @@ public final class TypeSpecTest {
             CodeBlock.builder().add("$S");
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("index 1 for '$S' not in range (received 0 arguments)");
+            assertThat(expected).hasMessage("index 1 for '$S' not in range (received 0 arguments)");
         }
     }
 
@@ -2308,7 +2308,7 @@ public final class TypeSpecTest {
             CodeBlock.builder().add("$L $L", "a", "b", "c");
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("unused arguments: expected 2, received 3");
+            assertThat(expected).hasMessage("unused arguments: expected 2, received 3");
         }
     }
 
@@ -2318,19 +2318,19 @@ public final class TypeSpecTest {
             CodeBlock.builder().add("$1L $2L", "a", "b", "c");
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("unused argument: $3");
+            assertThat(expected).hasMessage("unused argument: $3");
         }
         try {
             CodeBlock.builder().add("$1L $1L $1L", "a", "b", "c");
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("unused arguments: $2, $3");
+            assertThat(expected).hasMessage("unused arguments: $2, $3");
         }
         try {
             CodeBlock.builder().add("$3L $1L $3L $1L $3L", "a", "b", "c", "d");
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("unused arguments: $2, $4");
+            assertThat(expected).hasMessage("unused arguments: $2, $4");
         }
     }
 
@@ -2482,9 +2482,9 @@ public final class TypeSpecTest {
         TypeSpec recreatedTaco = taco.toBuilder().build();
         assertThat(toString(taco)).isEqualTo(toString(recreatedTaco));
         assertThat(taco.originatingElements())
-                .containsExactlyElementsIn(recreatedTaco.originatingElements());
+                .containsExactlyElementsOf(recreatedTaco.originatingElements());
         assertThat(taco.alwaysQualifiedNames())
-                .containsExactlyElementsIn(recreatedTaco.alwaysQualifiedNames());
+                .containsExactlyElementsOf(recreatedTaco.alwaysQualifiedNames());
 
         TypeSpec initializersAdded = taco.toBuilder()
                 .addInitializerBlock(CodeBlock.builder()
@@ -2713,7 +2713,7 @@ public final class TypeSpecTest {
                 .addEnumConstant("WUT", TypeSpec.anonymousClassBuilder("").build());
 
         builder.enumConstants.remove("WUT");
-        assertThat(builder.build().enumConstants()).containsExactly("BELL", constantType);
+        assertThat(builder.build().enumConstants()).containsEntry("BELL", constantType);
     }
 
     @Test

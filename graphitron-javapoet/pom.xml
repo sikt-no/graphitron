@@ -15,16 +15,14 @@
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>4.13.2</junit.version>
-        <truth.version>1.4.4</truth.version>
         <compile-testing.version>0.21.0</compile-testing.version>
     </properties>
 
 
     <dependencies>
         <dependency>
-            <groupId>com.google.truth</groupId>
-            <artifactId>truth</artifactId>
-            <version>${truth.version}</version>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

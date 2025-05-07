@@ -19,7 +19,7 @@ package no.sikt.graphitron.javapoet;
 
 import org.junit.Test;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 public final class NameAllocatorTest {
@@ -92,7 +92,7 @@ public final class NameAllocatorTest {
             nameAllocator.newName("bar", 1);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("tag 1 cannot be used for both 'foo' and 'bar'");
+            assertThat(expected).hasMessage("tag 1 cannot be used for both 'foo' and 'bar'");
         }
     }
 
@@ -103,7 +103,7 @@ public final class NameAllocatorTest {
             nameAllocator.get(1);
             fail();
         } catch (IllegalArgumentException expected) {
-            assertThat(expected).hasMessageThat().isEqualTo("unknown tag: 1");
+            assertThat(expected).hasMessage("unknown tag: 1");
         }
     }
 

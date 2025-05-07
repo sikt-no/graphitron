@@ -28,7 +28,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 public final class AnnotationSpecTest {
@@ -376,7 +376,7 @@ public final class AnnotationSpecTest {
             AnnotationSpec.Builder $L = builder.addMember(null, "$L", "");
             fail($L.build().toString());
         } catch (NullPointerException e) {
-            assertThat(e).hasMessageThat().isEqualTo("name == null");
+            assertThat(e).hasMessage("name == null");
         }
     }
 
@@ -387,7 +387,7 @@ public final class AnnotationSpecTest {
             AnnotationSpec.Builder $L = builder.addMember("@", "$L", "");
             fail($L.build().toString());
         } catch (IllegalArgumentException e) {
-            assertThat(e).hasMessageThat().isEqualTo("not a valid name: @");
+            assertThat(e).hasMessage("not a valid name: @");
         }
     }
 

@@ -21,7 +21,7 @@ import org.junit.Test;
 
 import javax.lang.model.element.Modifier;
 
-import static com.google.common.truth.Truth.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 public class FieldSpecTest {

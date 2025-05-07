@@ -41,10 +41,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.Compiler.javac;
 import static javax.lang.model.util.ElementFilter.fieldsIn;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
 public abstract class AbstractTypesTest {
@@ -110,7 +109,7 @@ public abstract class AbstractTypesTest {
             }
         }).compile(hasErrorTypes);
 
-        assertThat(compilation).failed();
+        assertThat(compilation.errors()).isNotEmpty();
     }
 
     static class Parameterized<
