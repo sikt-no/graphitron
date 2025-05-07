@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.dto;
 
-import com.palantir.javapoet.*;
+import no.sikt.graphitron.javapoet.*;
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;

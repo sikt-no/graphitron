@@ -121,12 +121,6 @@
                 <version>2.0.17</version>
             </dependency>
             <dependency>
-                <groupId>com.palantir.javapoet</groupId>
-                <artifactId>javapoet</artifactId>
-                <version>0.7.0</version>
-            </dependency>
-
-            <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-text</artifactId>
                 <version>1.13.0</version>

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.objects;
 
-import com.palantir.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ClassName;
 import graphql.language.TypeDefinition;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.helpers.ClassReference;

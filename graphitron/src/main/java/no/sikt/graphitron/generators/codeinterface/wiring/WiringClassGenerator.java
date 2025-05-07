@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.codeinterface.wiring;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

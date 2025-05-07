@@ -1,6 +1,6 @@
 package no.sikt.graphitron.reducedgenerators.dummygenerators;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

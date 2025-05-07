@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.InputDefinition;

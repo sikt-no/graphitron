@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 

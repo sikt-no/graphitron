@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.sql;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import org.apache.commons.lang3.StringUtils;

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.definitions.helpers;
 
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;

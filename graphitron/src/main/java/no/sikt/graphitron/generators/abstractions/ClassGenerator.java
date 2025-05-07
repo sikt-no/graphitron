@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +20,7 @@ public interface ClassGenerator {
     void generateAllToDirectory(String path, String packagePath);
 
     /**
-     * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
+     * Create the {@link no.sikt.graphitron.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
      * @param generatedClass A complete javapoet {@link TypeSpec}.
      * @param path           The path to the output directory.
      * @param packagePath    The package path that this class should be written to.
@@ -28,7 +28,7 @@ public interface ClassGenerator {
     void writeToFile(TypeSpec generatedClass, String path, String packagePath);
 
     /**
-     * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
+     * Create the {@link no.sikt.graphitron.javapoet.JavaFile JavaFile} for this class, add any common static imports and write it to file.
      * @param generatedClass A complete javapoet {@link TypeSpec}.
      * @param path           The path to the output directory.
      * @param packagePath    The package path that this class should be written to.
@@ -42,7 +42,7 @@ public interface ClassGenerator {
     Map<String, String> generateAllAsMap();
 
     /**
-     * Create the {@link com.palantir.javapoet.JavaFile JavaFile} for this class, add any common static imports and render the file as a string.
+     * Create the {@link no.sikt.graphitron.javapoet.JavaFile JavaFile} for this class, add any common static imports and render the file as a string.
      * @param generatedClass A complete javapoet {@link TypeSpec}.
      */
     String writeToString(TypeSpec generatedClass);

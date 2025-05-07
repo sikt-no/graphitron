@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers;
 
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;

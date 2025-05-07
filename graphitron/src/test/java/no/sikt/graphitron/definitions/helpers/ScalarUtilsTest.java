@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.helpers;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import graphql.Scalars;
 import graphql.scalars.ExtendedScalars;
 import org.junit.jupiter.api.BeforeEach;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.mapping;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.COLLECTORS;

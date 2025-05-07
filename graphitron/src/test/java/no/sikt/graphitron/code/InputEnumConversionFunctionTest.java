@@ -1,6 +1,6 @@
 package no.sikt.graphitron.code;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.common.CodeBlockTest;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;

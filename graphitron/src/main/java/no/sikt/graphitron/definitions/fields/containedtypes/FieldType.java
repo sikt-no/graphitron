@@ -13,7 +13,7 @@ import java.util.ArrayList;
  */
 public class FieldType extends no.sikt.graphql.schema.FieldType {
     private String name;
-    private com.palantir.javapoet.TypeName typeClass;
+    private no.sikt.graphitron.javapoet.TypeName typeClass;
     private boolean isNonNullable = false;
     private boolean isIterableNonNullable = false;
     private boolean isIterableWrapped = false;
@@ -81,9 +81,9 @@ public class FieldType extends no.sikt.graphql.schema.FieldType {
     }
 
     /**
-     * @return {@link com.palantir.javapoet.TypeName} for this field.
+     * @return {@link no.sikt.graphitron.javapoet.TypeName} for this field.
      */
-    public com.palantir.javapoet.TypeName getTypeClass() {
+    public no.sikt.graphitron.javapoet.TypeName getTypeClass() {
         return typeClass;
     }
 }

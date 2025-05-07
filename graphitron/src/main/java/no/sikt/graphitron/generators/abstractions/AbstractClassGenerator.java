@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.JavaFile;
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 

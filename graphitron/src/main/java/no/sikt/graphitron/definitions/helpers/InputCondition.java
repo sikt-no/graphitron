@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.helpers;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.InputField;
 
 import java.util.LinkedHashSet;

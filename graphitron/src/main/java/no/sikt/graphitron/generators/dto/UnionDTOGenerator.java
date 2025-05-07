@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.dto;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.UnionDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 

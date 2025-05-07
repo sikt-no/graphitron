@@ -1,6 +1,6 @@
 package no.sikt.graphitron.reducedgenerators;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.generators.db.fetch.FetchMappedObjectDBMethodGenerator;
