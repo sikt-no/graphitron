@@ -22,14 +22,14 @@
 
     <modules>
         <module>graphitron</module>
-        <module>graphitron-error-handling-javax</module>
-        <module>graphitron-error-handling-jakarta</module>
         <module>graphitron-common</module>
+        <module>graphitron-error-handling-jakarta</module>
+        <module>graphitron-error-handling-javax</module>
+        <module>graphitron-example</module>
         <module>graphitron-jakarta-servlet</module>
+        <module>graphitron-javapoet</module>
         <module>graphitron-maven-plugin</module>
         <module>graphitron-schema-transformer</module>
-        <module>graphitron-example</module>
-        <module>graphitron-javapoet</module>
     </modules>
 
     <properties>
