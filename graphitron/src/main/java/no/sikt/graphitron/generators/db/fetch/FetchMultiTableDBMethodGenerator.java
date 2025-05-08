@@ -51,7 +51,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var unionOrInterfaceDefinition = processedSchema.isUnion(target)? processedSchema.getUnion(target): processedSchema.getInterface(target);
 
         // Order is important for paginated queries as it gets data fields by index in the mapping
-        LinkedHashSet implementations = new LinkedHashSet<ObjectDefinition>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
+        LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
                 .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
@@ -76,8 +76,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
             joins.add("\n.leftJoin($N)\n.on($N.field($S, $T.class).eq($N.field($S, $T.class)))",
                     mappedVariableName,
-                    UNION_KEYS_QUERY, PK_FIELDS, JSON_JOOQ.className,
-                    mappedVariableName, PK_FIELDS, JSON_JOOQ.className);
+                    UNION_KEYS_QUERY, PK_FIELDS, JSONB.className,
+                    mappedVariableName, PK_FIELDS, JSONB.className);
         }
 
         var unionQuery = getUnionQuery(sortFieldQueryMethodCalls, inputs, target.hasForwardPagination());
@@ -327,7 +327,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private static CodeBlock getPrimaryKeyFieldsArray(String name, String alias, String tableName) {
         return CodeBlock.builder()
-                .add("$T.jsonArray($T.inline($S), ", DSL.className, DSL.className, name)
+                .add("$T.jsonbArray($T.inline($S), ", DSL.className, DSL.className, name)
                 .add(getPrimaryKeyFields(tableName, alias))
                 .add(")").build();
     }
@@ -354,32 +354,21 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private static ParameterizedTypeName getReturnTypeForMappedMethod(ClassName implementationClassName) {
-        return ParameterizedTypeName.get(
-                ClassName.get(SelectJoinStep.class),
-                ParameterizedTypeName.get(
-                        ClassName.get(Record2.class),
-                        ClassName.get(JSON.class),
-                        implementationClassName
-                )
+        return ParameterizedTypeName.get(SELECT_JOIN_STEP.className,
+                ParameterizedTypeName.get(RECORD2.className,
+                        JSONB.className,
+                        implementationClassName)
         );
     }
 
     private static ParameterizedTypeName getReturnTypeForMappedConnectionMethod(ClassName implementationClassName) {
-        return ParameterizedTypeName.get(
-                ClassName.get(SelectJoinStep.class),
-                ParameterizedTypeName.get(
-                        ClassName.get(Record2.class),
-                        ClassName.get(JSON.class),
-                        ParameterizedTypeName.get(
-                                ClassName.get(Record2.class),
-                                ParameterizedTypeName.get(
-                                        ClassName.get(SelectField.class),
-                                        ClassName.get(String.class)
-                                ),
-                                ParameterizedTypeName.get(
-                                        ClassName.get(SelectSelectStep.class),
-                                        ParameterizedTypeName.get(
-                                                ClassName.get(Record1.class),
+        return ParameterizedTypeName.get(SELECT_JOIN_STEP.className,
+                ParameterizedTypeName.get(RECORD2.className,
+                        JSONB.className,
+                        ParameterizedTypeName.get(RECORD2.className,
+                                ParameterizedTypeName.get(SELECT_FIELD.className, STRING.className),
+                                ParameterizedTypeName.get(SELECT_SELECT_STEP.className,
+                                        ParameterizedTypeName.get(RECORD1.className,
                                                 implementationClassName
                                         )
                                 )
@@ -391,11 +380,10 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private static ParameterizedTypeName getReturnTypeForKeysMethod(boolean isConnection) {
         return ParameterizedTypeName.get(
                 ClassName.get(isConnection ? SelectLimitPercentStep.class : SelectSeekStepN.class),
-                ParameterizedTypeName.get(
-                        Record3.class,
-                        String.class,
-                        Integer.class,
-                        JSON.class)
+                ParameterizedTypeName.get(RECORD3.className,
+                        STRING.className,
+                        INTEGER.className,
+                        JSONB.className)
         );
     }
 

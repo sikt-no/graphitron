@@ -1,0 +1,11 @@
+# pageInfo returns correct information about the current (first) page of the query
+{
+    reachableByEmail {
+        pageInfo {
+            endCursor
+            hasNextPage
+            hasPreviousPage
+            startCursor
+        }
+    }
+}
