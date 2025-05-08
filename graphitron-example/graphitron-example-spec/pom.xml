@@ -126,6 +126,7 @@
                     <userSchemaFiles>
                         <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/schema.graphql</schemaFile>
                     </userSchemaFiles>
+                    <makeNodeStrategy>true</makeNodeStrategy>
                     <scalars>
                         <class>
                             <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>

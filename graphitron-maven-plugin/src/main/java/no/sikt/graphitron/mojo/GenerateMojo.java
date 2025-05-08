@@ -118,6 +118,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @SuppressWarnings("unused")
     private boolean makeKickstart;
 
+    @Parameter(property = "generate.makeNodeStrategy", defaultValue = "false")
+    @SuppressWarnings("unused")
+    private boolean makeNodeStrategy;
+
     @Override
     public void execute() throws MojoExecutionException {
         GeneratorConfig.loadProperties(this);
@@ -265,6 +269,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public boolean makeKickstart() {
         return makeKickstart;
+    }
+
+    @Override
+    public boolean makeNodeStrategy() {
+        return makeNodeStrategy;
     }
 
 

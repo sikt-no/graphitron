@@ -3,24 +3,33 @@ package no.sikt.graphql;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class NodeIdStrategyTest {
-    // Below is string "1337:keyColumn1,keyColumn2" base64 encoded
-    static final String BASE64_ENCODED_ID = "MTMzNzprZXlDb2x1bW4xLGtleUNvbHVtbjI";
-    static final String TYPE_ID = "1337";
-    static final String[] KEY_COLUMNS = {"keyColumn1", "keyColumn2"};
-
     @Test
     void shouldCreateId() {
-        var actualId = NodeIdStrategy.createId(TYPE_ID, KEY_COLUMNS);
+        var actualId = new NodeIdStrategy().createId("1337", "keyColumn1", "keyColumn2");
 
-        assertEquals(BASE64_ENCODED_ID, actualId);
+        assertEquals("MTMzNzprZXlDb2x1bW4xLGtleUNvbHVtbjI", actualId);
     }
 
     @Test
     void shouldReturnTypeId() {
-        var actualTypeId = NodeIdStrategy.getTypeId(BASE64_ENCODED_ID);
+        assertEquals("1337", new NodeIdStrategy().getTypeId("MTMzNzprZXlDb2x1bW4xLGtleUNvbHVtbjI"));
+    }
 
-        assertEquals(TYPE_ID, actualTypeId);
+    @Test
+    void shouldHandleKeyColumnsWithComma() {
+        assertEquals("MTQ6MCwxLDIlMkMsMw", new NodeIdStrategy().createId("14", "0", "1", "2,", "3"));
+    }
+
+    @Test
+    void shouldThrowErrorWhenWrongId() {
+        var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> new NodeIdStrategy().getTypeId("MCwxLDIlMkMsMw")
+        );
+
+        assertEquals("MCwxLDIlMkMsMw (0,1,2%2C,3) is not a valid id", ex.getMessage());
     }
 }

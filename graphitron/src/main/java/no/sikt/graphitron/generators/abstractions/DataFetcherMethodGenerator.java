@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.abstractions;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -16,6 +17,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -28,9 +30,14 @@ abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator
 
     @Override
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
-        return super
+        MethodSpec.Builder builder = super
                 .getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC);
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            builder.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+        }
+
+        return builder;
     }
 
     protected CodeBlock extractParams(ObjectField target) {

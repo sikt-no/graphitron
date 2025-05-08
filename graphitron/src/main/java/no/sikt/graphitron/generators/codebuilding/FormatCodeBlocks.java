@@ -411,6 +411,10 @@ public class FormatCodeBlocks {
         if (!isService) {
             inputs.add(CONTEXT_NAME);
             params.add(CONTEXT_NAME);
+
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                params.add(NODE_ID_STRATEGY_NAME);
+            }
         }
         if (hasIds) {
             inputs.add(IDS_NAME);

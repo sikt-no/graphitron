@@ -25,6 +25,12 @@ type Query {
     paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
 
     staff(input: StaffInput!): [Staff] @asConnection
+
+    node(id: ID!): Node
+}
+
+interface Node {
+    id: ID!
 }
 
 type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
@@ -50,8 +56,8 @@ type CustomerConnectionEdge {
     node: Customer
 }
 
-type Customer @table {
-    id: ID
+type Customer implements Node @table {
+    id: ID!
     name: CustomerName
     email: String
     address: Address!
@@ -97,8 +103,8 @@ type Language @table {
 #    films(releaseYear: Int! @field(name: "RELEASE_YEAR")): [Film] @splitQuery
 }
 
-type Film @table {
-    id: ID
+type Film implements Node @table {
+    id: ID!
     title: String
 }
 

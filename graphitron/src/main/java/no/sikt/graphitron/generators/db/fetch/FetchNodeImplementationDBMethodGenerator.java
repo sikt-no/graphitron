@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
@@ -21,9 +22,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indent
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
@@ -57,9 +57,25 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         var argumentName = argument.getName() + "s";
         var querySource = context.renderQuerySource(implementationTableObject);
 
-        var where = argument.isID()
-                ? CodeBlock.of("has$N", StringUtils.capitalize(argumentName))
-                : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
+        CodeBlock id;
+        CodeBlock where;
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            var typeId = implementation.getTable().getName();
+            var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
+
+            var createId = CodeBlock.of("$N.createId($S, $L)", NODE_ID_STRATEGY_NAME, typeId, keyColumns);
+            id = CodeBlock.of("$L,\n$L", createId, selectCode);
+
+            where = CodeBlock.of(".where($N.hasIds($S, $N, $L))\n", NODE_ID_STRATEGY_NAME, typeId, IDS_NAME, keyColumns);
+        } else {
+            var hasOrIn = argument.isID()
+                    ? CodeBlock.of("has$N", StringUtils.capitalize(argumentName))
+                    : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
+
+            id = CodeBlock.of("$L.getId(),\n$L", querySource, selectCode);
+
+            where = CodeBlock.of(".where($L.$L($N))\n", querySource, hasOrIn, argumentName);
+        }
 
         var code = CodeBlock.builder()
                 .add(createAliasDeclarations(context.getAliasSet()))
@@ -67,10 +83,10 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .indent()
                 .indent()
                 .add(".select(")
-                .add(indentIfMultiline(CodeBlock.of("$L.getId(),\n$L", querySource, selectCode)))
+                .add(indentIfMultiline(id))
                 .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
-                .add(".where($L.$L($N))\n", querySource, where, argumentName)
+                .add(where)
                 .add(createSelectConditions(context.getConditionList(), true))
                 .addStatement(".$L($T::value1, $T::value2)",
                         (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),
@@ -80,10 +96,15 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .unindent()
                 .unindent();
 
-        return getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
+        var spec = getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
                 .addParameter(getStringSetTypeName(), argumentName)
-                .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
-                .addCode(code.build())
+                .addParameter(SELECTION_SET.className, VARIABLE_SELECT);
+
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+        }
+
+        return spec.addCode(code.build())
                 .build();
     }
 

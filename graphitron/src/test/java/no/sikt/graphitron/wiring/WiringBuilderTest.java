@@ -1,6 +1,7 @@
 package no.sikt.graphitron.wiring;
 
 import no.sikt.graphitron.common.GeneratorTest;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
@@ -40,6 +41,18 @@ public class WiringBuilderTest extends GeneratorTest {
                 "getRuntimeWiringBuilder(NodeIdHandler nodeIdHandler)",
                 ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdHandler)"
         );
+    }
+
+    @Test
+    @DisplayName("Node data fetcher generator exists")
+    void nodeStrategy() {
+        GeneratorConfig.setNodeStrategy(true);
+        assertGeneratedContentContains(
+                "node", Set.of(NODE),
+                "getRuntimeWiringBuilder(NodeIdStrategy nodeIdStrategy)",
+                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdStrategy)"
+        );
+        GeneratorConfig.setNodeStrategy(false);
     }
 
     @Test
