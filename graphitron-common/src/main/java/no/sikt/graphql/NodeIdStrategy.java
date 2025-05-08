@@ -12,17 +12,17 @@ import java.util.stream.IntStream;
 import static org.jooq.impl.DSL.row;
 
 public class NodeIdStrategy {
-    SelectField<String> createId(String typeId, Field<?>... keyColumnFields) {
+    public SelectField<String> createId(String typeId, Field<?>... keyColumnFields) {
         return row(keyColumnFields)
-                .mapping(
-                        String.class,
-                        Functions.nullOnAnyNull(keyColumns ->
-                                createId(typeId, Arrays.toString(keyColumns))
-                        )
-                );
+                .mapping(String.class, Functions.nullOnAnyNull((Object[] values) -> {
+                    String[] stringValues = Arrays.stream(values)
+                            .map(Object::toString)
+                            .toArray(String[]::new);
+                    return createId(typeId, stringValues);
+                }));
     }
 
-    protected static String createId(String typeId, String... keyColumns) {
+    protected String createId(String typeId, String... keyColumns) {
         var csv = Arrays
                 .stream(keyColumns)
                 .map(x -> x.replace(",", "%2C"))
@@ -35,7 +35,7 @@ public class NodeIdStrategy {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(StandardCharsets.UTF_8));
     }
 
-    protected static String getTypeId(String base64EncodedId) {
+    public String getTypeId(String base64EncodedId) {
         String id = dec(base64EncodedId);
         return getTypeIdPartOf(base64EncodedId, id);
     }
@@ -55,15 +55,12 @@ public class NodeIdStrategy {
         }
     }
 
-
-    Condition hasIds(String typeId, Set<String> base64Ids, Field<?>... keyColumnFields) {
+    public Condition hasIds(String typeId, Set<String> base64Ids, Field<?>... keyColumnFields) {
         var rows = getRows(typeId, keyColumnFields, base64Ids);
         return row(keyColumnFields).in(rows);
     }
 
-
-
-    List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {
+    private static List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {
         return base64Ids.stream().map(base64Id -> {
             String[] values = unpack(typeId, fields, base64Id);
 
@@ -75,8 +72,7 @@ public class NodeIdStrategy {
         }).toList();
     }
 
-
-    String[] unpack(String typeId, Field<?>[] fields, String base64Id) {
+    private static String[] unpack(String typeId, Field<?>[] fields, String base64Id) {
         String id = dec(base64Id);
         var foundTypeId = getTypeIdPartOf(id, id);
         var keyPart = id.substring(id.indexOf(':') + 1);
@@ -96,7 +92,6 @@ public class NodeIdStrategy {
         }
         return values;
     }
-
 
     private static <T> T fieldValue(Field<T> field, String value) {
         var fieldType = field.getDataType().getType();

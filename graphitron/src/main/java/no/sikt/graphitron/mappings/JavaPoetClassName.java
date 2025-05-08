@@ -11,6 +11,7 @@ import graphql.schema.idl.TypeRuntimeWiring;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
 import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphql.NodeIdHandler;
+import no.sikt.graphql.NodeIdStrategy;
 import no.sikt.graphql.exception.*;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
@@ -95,7 +96,8 @@ public enum JavaPoetClassName {
     TYPE_DEFINITION_REGISTRY(TypeDefinitionRegistry.class),
     SCHEMA_READER(SchemaReadingHelper.class),
     GRAPHQL_SCHEMA(GraphQLSchema.class),
-    SCHEMA_GENERATOR(SchemaGenerator.class);
+    SCHEMA_GENERATOR(SchemaGenerator.class),
+    NODE_ID_STRATEGY(NodeIdStrategy.class);
 
     public final ClassName className;
 

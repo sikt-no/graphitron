@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import no.sikt.graphitron.example.datafetchers.QueryDataFetcher;
 import no.sikt.graphitron.example.generated.graphitron.graphitron.Graphitron;
 import no.sikt.graphitron.servlet.GraphitronServlet;
+import no.sikt.graphql.NodeIdStrategy;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
@@ -24,10 +25,13 @@ public class GraphqlServlet extends GraphitronServlet {
         this.dataSource = dataSource;
     }
 
+    @Inject
+    public NodeIdStrategy nodeIdStrategy;
+
     @Override
     protected GraphQL getSchema(HttpServletRequest request) {
         var registry = Graphitron.getTypeRegistry();
-        var newWiring = Graphitron.getRuntimeWiringBuilder();
+        var newWiring = Graphitron.getRuntimeWiringBuilder(nodeIdStrategy);
         newWiring.type(
                 TypeRuntimeWiring.newTypeWiring("Query")
                         .dataFetcher("helloWorld", QueryDataFetcher.helloWorld())

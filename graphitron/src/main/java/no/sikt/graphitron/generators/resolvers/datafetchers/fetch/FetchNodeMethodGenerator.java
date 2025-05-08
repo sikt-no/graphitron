@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -19,8 +20,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.ILLEGAL_ARGUMENT_EXCEPTION;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
@@ -51,7 +51,11 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
         var anyImplementation = implementations.stream().findFirst();
         var targetBlock = CodeBlock.builder();
         if (anyImplementation.isPresent() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {  // Node special case.
-            targetBlock.add("$N.get($N.getTable($N).getName())", NODE_MAP_NAME, NODE_ID_HANDLER_NAME, inputFieldName);
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                targetBlock.add("$N.getTypeId($N)", NODE_ID_STRATEGY_NAME, inputFieldName);
+            } else {
+                targetBlock.add("$N.get($N.getTable($N).getName())", NODE_MAP_NAME, NODE_ID_HANDLER_NAME, inputFieldName);
+            }
         } else {
             targetBlock.add("null");
         }
@@ -61,7 +65,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 ILLEGAL_ARGUMENT_EXCEPTION.className,
                 inputFieldName,
                 inputFieldName,
-                VARIABLE_TYPE_NAME
+                GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME
         ).build();
 
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
@@ -70,22 +74,22 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
-                .addCode(declare(VARIABLE_TYPE_NAME, targetBlock.build()))
-                .beginControlFlow("if ($N == null)", VARIABLE_TYPE_NAME)
+                .addCode(declare(GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, targetBlock.build()))
+                .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", VARIABLE_TYPE_NAME, "_" + target.getName())))
+                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, "_" + target.getName())))
                 .addCode(declare(VARIABLE_FETCHER_NAME, newDataFetcher()))
                 .addCode("\n")
-                .beginControlFlow("switch ($N)", VARIABLE_TYPE_NAME);
+                .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME);
 
-        if (interfaceDefinition.getName().equals(NODE_TYPE.getName())) {
+        if (!GeneratorConfig.shouldMakeNodeStrategy() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {
             spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
         }
 
         implementations
                 .stream()
-                .map(implementation -> codeForImplementation(implementation.getName(), inputFieldName))
+                .map(implementation -> codeForImplementation(implementation, inputFieldName))
                 .forEach(spec::addCode);
 
         return spec
@@ -95,22 +99,30 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
     }
 
-    private CodeBlock codeForImplementation(String implementationTypeName, String inputFieldName) {
-        var dbFunction = CodeBlock.of(
-                "($L, $L, $L) -> $T.$L($N, $N, $N)",
+    private CodeBlock codeForImplementation(ObjectDefinition implementation, String inputFieldName) {
+        var implementationTypeName = implementation.getName();
+        CodeBlock dbFunction = CodeBlock.of(
+                "($L, $L, $L) -> $T.$L($L)",
                 CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME,
                 getQueryClassName(asQueryClass(implementationTypeName)),
                 asNodeQueryName(implementationTypeName),
-                CONTEXT_NAME,
-                IDS_NAME,
-                SELECTION_SET_NAME
-        );
+                GeneratorConfig.shouldMakeNodeStrategy() ?
+                        CodeBlock.of("$N, $N, $N, $N", CONTEXT_NAME, IDS_NAME, SELECTION_SET_NAME, NODE_ID_STRATEGY_NAME)
+                        : CodeBlock.of("$N, $N, $N", CONTEXT_NAME, IDS_NAME, SELECTION_SET_NAME)
+            );
+
+        String name;
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            name = implementation.getTable().getName();
+        } else {
+            name = implementationTypeName;
+        }
 
         return CodeBlock
                 .builder()
-                .addStatement("case $S: return $N.$L($N, $N, $L)", implementationTypeName, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction)
+                .addStatement("case $S: return $N.$L($N, $N, $L)", name, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction)
                 .build();
     }
 

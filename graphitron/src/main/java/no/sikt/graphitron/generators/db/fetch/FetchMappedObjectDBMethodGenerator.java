@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -19,7 +20,8 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
@@ -111,7 +113,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 code.add(concatBlock).add(",\n");
             }
         } else if (!isRoot) {
-            code.add("$L.getId(),\n", table);
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
+                code.add("$N.createId($S, $L),\n", NODE_ID_STRATEGY_NAME, table, keyColumns);
+            } else {
+                code.add("$L.getId(),\n", table);
+            }
         }
         return code.build();
     }

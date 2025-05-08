@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
@@ -36,13 +37,20 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
         var cases = CodeBlock.builder();
         var entities = processedSchema.getEntities().values();
         for (var entity : entities) {
-            var fetchBlock = CodeBlock.of(
+            var fetchBlock = GeneratorConfig.shouldMakeNodeStrategy() ?
+                    CodeBlock.of(
+                            "$T.$L($N, $N, $N)",
+                            getQueryClassName(asQueryClass(entity.getName())),
+                            asEntityQueryMethodName(entity.getName()),
+                            CONTEXT_NAME,
+                            VARIABLE_INTERNAL_ITERATION,
+                            NODE_ID_STRATEGY_NAME)
+                    : CodeBlock.of(
                     "$T.$L($N, $N)",
                     getQueryClassName(asQueryClass(entity.getName())),
                     asEntityQueryMethodName(entity.getName()),
                     CONTEXT_NAME,
-                    VARIABLE_INTERNAL_ITERATION
-            );
+                    VARIABLE_INTERNAL_ITERATION);
             cases
                     .add("case $S: ", entity.getName())
                     .add(returnWrap(transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock)));

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
 import no.sikt.graphitron.generators.abstractions.KickstartResolverClassGenerator;
@@ -45,7 +46,7 @@ public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinit
         target
                 .getFields()
                 .stream()
-                .filter(it -> it.getTypeName().equals(NODE_TYPE.getName()))
+                .filter(it -> it.getTypeName().equals(NODE_TYPE.getName()) && !GeneratorConfig.shouldMakeNodeStrategy())
                 .findFirst()
                 .flatMap(this::buildNodeMap)
                 .ifPresent(spec::addField);

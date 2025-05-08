@@ -171,6 +171,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         for (GenerationField field : fieldsWithoutSplitting) {
             var innerRowCodeAndFieldSource = getSelectCodeAndFieldSource(field, context);
+
             rowElements.add(innerRowCodeAndFieldSource.getLeft());
             referenceFieldSources.put(field.getName(), innerRowCodeAndFieldSource.getRight());
         }
@@ -444,6 +445,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.renderQuerySource(getLocalTable());
         if (field.isID()) {
+
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                var typeId =  context.getTargetTable().getName();
+                var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
+
+                return CodeBlock.of("$N.createId($S, $L)", NODE_ID_STRATEGY_NAME, typeId, keyColumns);
+            }
+
             return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
@@ -489,7 +498,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (!isRoot && !idParamName.isEmpty()) {
-            conditionList.add(CodeBlock.of("$L.hasIds($N)", context.renderQuerySource(getLocalTable()), idParamName));
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                var typeId = context.getTargetTable().getName();
+                var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
+                conditionList.add(CodeBlock.of("$N.hasIds($S, $N, $L)", NODE_ID_STRATEGY_NAME, typeId, idParamName, keyColumns));
+            } else {
+                conditionList.add(CodeBlock.of("$L.hasIds($N)", context.renderQuerySource(getLocalTable()), idParamName));
+            }
         }
         if (!isResolverRoot) {
             conditionList.addAll(getInputConditions(context));
@@ -876,6 +891,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
         );
+
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+
+        }
         if (!isRoot) {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }

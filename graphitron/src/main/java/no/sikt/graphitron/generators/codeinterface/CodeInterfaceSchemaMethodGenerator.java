@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.codeinterface;
 
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.SimpleMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringBuilderMethodGenerator;
@@ -11,6 +12,7 @@ import javax.lang.model.element.Modifier;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -27,10 +29,16 @@ public class CodeInterfaceSchemaMethodGenerator extends SimpleMethodGenerator {
 
     @Override
     public MethodSpec generate() {
-        var code = includeNode ? CodeBlock.of("($N)", NODE_ID_HANDLER_NAME) : CodeBlock.of("()");
+        var code = includeNode ? CodeBlock.of("($N)",
+                GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : NODE_ID_HANDLER_NAME)
+                : CodeBlock.of("()");
         var spec = MethodSpec.methodBuilder(METHOD_NAME);
         if (includeNode) {
-            spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+            } else {
+                spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
+            }
         }
         return spec
                 .addModifiers(Modifier.PUBLIC)

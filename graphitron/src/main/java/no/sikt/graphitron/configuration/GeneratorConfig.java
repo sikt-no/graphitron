@@ -33,6 +33,7 @@ public class GeneratorConfig {
             generatedJooqPackage;
 
     private static boolean makeKickstart = false;
+    private static boolean makeNodeStrategy = false;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -105,6 +106,7 @@ public class GeneratorConfig {
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
         makeKickstart = mojo.makeKickstart();
+        makeNodeStrategy = mojo.makeNodeStrategy();
     }
 
     /**
@@ -178,6 +180,14 @@ public class GeneratorConfig {
     public static boolean shouldMakeKickstart() {
         return makeKickstart;
     }
+
+    public static boolean shouldMakeNodeStrategy() {
+        return makeNodeStrategy;
+    }
+
+    public static void setNodeStrategy(boolean shouldUseNodeStrategy) {
+        makeNodeStrategy = shouldUseNodeStrategy;
+   }
 
     public static void setRecordValidation(RecordValidation recordValidation) {
         GeneratorConfig.recordValidation = recordValidation;

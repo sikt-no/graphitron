@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.codeinterface.wiring;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
@@ -27,10 +28,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indent
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.join;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RUNTIME_WIRING;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RUNTIME_WIRING_BUILDER;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.TYPE_RUNTIME_WIRING;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
  * This class generates code for the RuntimeWiring Builder fetching method.
@@ -79,7 +78,11 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
                 .addModifiers(Modifier.STATIC)
                 .returns(returnType);
         if (includeNode) {
-            spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+            } else {
+                spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
+            }
         }
         return spec;
     }

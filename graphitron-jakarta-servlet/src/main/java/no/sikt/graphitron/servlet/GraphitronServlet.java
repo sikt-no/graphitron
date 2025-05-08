@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.core.MediaType;
 import no.sikt.graphitron.servlet.GraphqlHttpRequest.Payload;
+import org.dataloader.DataLoaderRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,6 +85,8 @@ public abstract class GraphitronServlet extends HttpServlet {
         if (payload.extensions() != null) {
             input.extensions(payload.extensions());
         }
+
+        input.dataLoaderRegistry(new DataLoaderRegistry());
 
         return input;
     }
