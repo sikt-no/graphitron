@@ -19,7 +19,7 @@ import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
-import org.jooq.JSON;
+import org.jooq.JSONB;
 import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
@@ -49,9 +49,9 @@ public class QueryDBQueries {
                         mappedCustomer.field(1))
                 .from(unionKeysQuery)
                 .leftJoin(mappedAddress)
-                .on(unionKeysQuery.field("$pkFields", JSON.class).eq(mappedAddress.field("$pkFields", JSON.class)))
+                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedAddress.field("$pkFields", JSONB.class)))
                 .leftJoin(mappedCustomer)
-                .on(unionKeysQuery.field("$pkFields", JSON.class).eq(mappedCustomer.field("$pkFields", JSON.class)))
+                .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
                 .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
                 .limit(pageSize + 1)
                 .fetch()
@@ -72,13 +72,13 @@ public class QueryDBQueries {
                 );
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSON>> addressSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> addressSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
         var _address = ADDRESS.as("address_2030472956");
         var orderFields = _address.fields(_address.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Address").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"))
+                        DSL.jsonbArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"))
                 .from(_address)
                 .where(_token == null ? DSL.noCondition() : DSL.inline("Address").greaterOrEqual(_token.typeName()))
                 .and(_token != null && _token.matches("Address") ? DSL.row(_address.fields(_address.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
@@ -86,11 +86,11 @@ public class QueryDBQueries {
                 .limit(pageSize + 1);
     }
 
-    private static SelectJoinStep<Record2<JSON, Record2<SelectField<String>, SelectSelectStep<Record1<Address>>>>> addressForSomeInterface(
+    private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Address>>>>> addressForSomeInterface(
     ) {
         var _address = ADDRESS.as("address_2030472956");
         return DSL.select(
-                        DSL.jsonArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"),
                         DSL.field(
                                 DSL.row(
                                         QueryHelper.getOrderByTokenForMultitableInterface(_address, _address.fields(_address.getPrimaryKey().getFieldsArray()), "Address"),
@@ -100,13 +100,13 @@ public class QueryDBQueries {
                 .from(_address);
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSON>> customerSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
         var _customer = CUSTOMER.as("customer_2952383337");
         var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"))
+                        DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"))
                 .from(_customer)
                 .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.typeName()))
                 .and(_token != null && _token.matches("Customer") ? DSL.row(_customer.fields(_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
@@ -114,10 +114,10 @@ public class QueryDBQueries {
                 .limit(pageSize + 1);
     }
 
-    private static SelectJoinStep<Record2<JSON, Record2<SelectField<String>, SelectSelectStep<Record1<Customer>>>>> customerForSomeInterface() {
+    private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Customer>>>>> customerForSomeInterface() {
         var _customer = CUSTOMER.as("customer_2952383337");
         return DSL.select(
-                        DSL.jsonArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
                                 DSL.row(
                                         QueryHelper.getOrderByTokenForMultitableInterface(_customer, _customer.fields(_customer.getPrimaryKey().getFieldsArray()), "Customer"),

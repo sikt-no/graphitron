@@ -23,7 +23,10 @@ import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
-import org.jooq.JSON;
+import org.jooq.JSONB;
+import org.jooq.SelectField;
+import org.jooq.SelectJoinStep;
+import org.jooq.SelectSelectStep;
 import org.jooq.exception.DataAccessException;
 
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
@@ -88,7 +91,7 @@ public enum JavaPoetClassName {
     VALIDATION_VIOLATION_EXCEPTION(ValidationViolationGraphQLException.class),
     RECORD_TRANSFORMER(getGeneratedClassName(TransformerClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, TransformerClassGenerator.FILE_NAME_SUFFIX)),
     ABSTRACT_TRANSFORMER(AbstractTransformer.class),
-    JSON_JOOQ(JSON.class),
+    JSONB(JSONB.class),
     RUNTIME_WIRING(RuntimeWiring.class),
     RUNTIME_WIRING_BUILDER(RuntimeWiring.Builder.class),
     TYPE_RUNTIME_WIRING(TypeRuntimeWiring.class),
@@ -97,7 +100,10 @@ public enum JavaPoetClassName {
     SCHEMA_READER(SchemaReadingHelper.class),
     GRAPHQL_SCHEMA(GraphQLSchema.class),
     SCHEMA_GENERATOR(SchemaGenerator.class),
-    NODE_ID_STRATEGY(NodeIdStrategy.class);
+    NODE_ID_STRATEGY(NodeIdStrategy.class),
+    SELECT_JOIN_STEP(SelectJoinStep.class),
+    SELECT_FIELD(SelectField.class),
+    SELECT_SELECT_STEP(SelectSelectStep.class);
 
     public final ClassName className;
 

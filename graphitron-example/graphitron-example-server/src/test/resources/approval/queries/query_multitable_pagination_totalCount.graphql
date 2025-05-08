@@ -1,0 +1,6 @@
+# totalCount retrieves the total count of nodes, not just the number of nodes returned
+{
+    reachableByEmail(first: 2) {
+        totalCount
+    }
+}

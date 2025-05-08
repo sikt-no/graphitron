@@ -1,0 +1,26 @@
+{
+    "data": {
+        "reachableByEmail": {
+            "edges": [
+                {
+                    "node": {
+                        "email": "WADE.DELVALLE@sakilacustomer.org",
+                        "__typename": "CustomerWithEmail"
+                    }
+                },
+                {
+                    "node": {
+                        "email": "AUSTIN.CINTRON@sakilacustomer.org",
+                        "__typename": "CustomerWithEmail"
+                    }
+                },
+                {
+                    "node": {
+                        "email": "Mike.Hillyer@sakilastaff.com",
+                        "__typename": "StaffWithEmail"
+                    }
+                }
+            ]
+        }
+    }
+}
