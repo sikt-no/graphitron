@@ -95,8 +95,9 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateTablesAndKeys() {
-        var recordTypes = schema.getRecordTypes().values();
+        var recordTypes = schema.getRecordTypes();
         recordTypes
+                .values()
                 .stream()
                 .filter(RecordObjectSpecification::hasTable)
                 .map(RecordObjectSpecification::getTable)
@@ -105,6 +106,7 @@ public class ProcessedDefinitionsValidator {
                 .forEach(it -> errorMessages.add(String.format("No table with name \"%s\" found.", it)));
 
         var allReferences = recordTypes
+                .values()
                 .stream()
                 .flatMap(it -> it.getFields().stream())
                 .flatMap(it -> it.isInput() ? Stream.of(it) : Stream.concat(Stream.of(it), ((ObjectField) it).getArguments().stream()))
@@ -126,6 +128,71 @@ public class ProcessedDefinitionsValidator {
                 .map(JOOQMapping::getMappingName)
                 .filter(it -> !TableReflection.keyExists(it))
                 .forEach(it -> errorMessages.add(String.format("No key with name \"%s\" found.", it)));
+
+
+        recordTypes
+                .values()
+                .stream()
+                .flatMap(it -> it.getFields().stream())
+                .filter(field -> recordTypes.containsKey(field.getTypeName()))
+                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
+                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
+                .forEach((field) -> {
+                            var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
+                            var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
+                            validateReferencePath(field, sourceTable, targetTable);
+                        }
+                );
+    }
+
+    private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {
+        if (sourceTable.equals(targetTable)) { return; }
+        for(FieldReference fieldReference : field.getFieldReferences()) {
+            if (fieldReference.hasTable()) {
+                String nextTable = fieldReference.getTable().getName();
+                if (TableReflection.getNumberOfForeignKeys(sourceTable, nextTable) > 1 || TableReflection.getNumberOfForeignKeys(nextTable, sourceTable) > 1) {
+                    errorMessages.add(String.format("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use in the @reference directive instead.", field.getName(), field.getContainerTypeName(), sourceTable, nextTable));
+                    return;
+                }
+                if (TableReflection.getNumberOfForeignKeys(sourceTable, nextTable) == 0 && TableReflection.getNumberOfForeignKeys(nextTable, sourceTable) == 0) {
+                    errorMessages.add(String.format("\"Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify a valid path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, nextTable));
+                    return;
+                }
+                if (nextTable.equals(targetTable)) {
+                    return;
+                } else {
+                    sourceTable = nextTable;
+                }
+            }
+            else if (fieldReference.hasKey()) {
+                String nextTable = "";
+                String keyName = fieldReference.getKey().getName();
+                var keyTargetOptional = TableReflection.getKeyTargetTable(keyName);
+                if (keyTargetOptional.isPresent() && !keyTargetOptional.get().equals(sourceTable)) {
+                    nextTable = keyTargetOptional.get();
+                } else {
+                    keyTargetOptional = TableReflection.getKeySourceTable(keyName);
+                    if (keyTargetOptional.isPresent()) {
+                        nextTable = keyTargetOptional.get();
+                    }
+                }
+
+                if (nextTable.equals(targetTable)) {
+                    return;
+                } else {
+                    sourceTable = nextTable;
+                }
+            }
+            else if (fieldReference.hasTableCondition()) {
+                return;
+            }
+        }
+
+        if (TableReflection.getNumberOfForeignKeys(sourceTable, targetTable) > 1 || TableReflection.getNumberOfForeignKeys(targetTable, sourceTable) > 1) {
+            errorMessages.add(String.format("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable));
+        } else if (TableReflection.getNumberOfForeignKeys(sourceTable, targetTable) == 0 && TableReflection.getNumberOfForeignKeys(targetTable, sourceTable) == 0) {
+            errorMessages.add(String.format("Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable));
+        }
     }
 
     private void validateRequiredMethodCalls() {

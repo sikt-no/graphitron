@@ -1,0 +1,11 @@
+type Query {
+    film:Film
+}
+
+type Film @table{
+    payment: Payment @splitQuery @reference(references: [{table: "Payment"}])
+}
+
+type Payment @table{
+    id: Int @field(name: "PAYMENT_ID")
+}

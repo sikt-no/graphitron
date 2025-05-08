@@ -52,10 +52,28 @@ public class TableReflection {
         if (reverseKeys.size() == 1) {
             var keyName = reverseKeys.get(0).getName();
             return Optional.of(FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(keyName));
-
         }
 
         return Optional.empty();
+    }
+
+    /*
+    * Returns the number of foreign keys from leftTable to rightTable.
+    * */
+    public static int getNumberOfForeignKeys (String leftTableName, String rightTableName) {
+        var leftTableOptional = getTable(leftTableName);
+        if (leftTableOptional.isEmpty()) {
+            throw new IllegalArgumentException("Table " + leftTableName + " not found");
+        }
+        var rightTableOptional = getTable(rightTableName);
+        if (rightTableOptional.isEmpty()) {
+            throw new IllegalArgumentException("Table " + rightTableName + " not found");
+        }
+        var leftTable = leftTableOptional.get();
+        var rightTable = rightTableOptional.get();
+
+        return leftTable.getReferencesTo(rightTable).size();
+
     }
 
     /**

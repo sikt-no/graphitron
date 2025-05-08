@@ -761,6 +761,13 @@ public class ProcessedSchema {
         return objectWithPreviousTable.get(object.getName());
     }
 
+    /*
+    * @return Returns whether the object has a table on or above it.
+    * */
+    public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
+        return objectWithPreviousTable.containsKey(object.getName());
+    }
+
     /**
      * Create a map of which objects should be related to which tables. Note that this enforces that each type is only connected to one table.
      */

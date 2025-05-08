@@ -1,0 +1,12 @@
+type Query {
+    film: Film
+}
+
+type Language @table{
+    id : Int @field(name: "Language_ID")
+}
+
+type Film @table {
+    film_id: Int
+    language: Language @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+}
