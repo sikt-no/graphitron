@@ -74,13 +74,6 @@ public class QueryTest extends ValidationTest {
         assertErrorsContain("selfReferenceWithoutSplit", "Self reference must have splitQuery, field \"customer\" in object \"Customer\"");
     }
 
-    @Test
-    @DisplayName("Implicit join with an incorrect path")
-    void impossibleImplicitJoin() {
-        getProcessedSchema("impossibleImplicitJoin", Set.of(CUSTOMER_TABLE));
-        assertWarningsContain("No field(s) or method(s) with name(s) 'customer' found in table 'FILM'");
-    }
-
     @Test  // Reverse references are allowed and should not cause warnings or errors.
     @DisplayName("Correct reverse join")
     void reverseJoin() {
@@ -123,4 +116,29 @@ public class QueryTest extends ValidationTest {
     void externalFieldNoTable() {
         assertErrorsContain("externalFieldNoTable", "No table found for field name");
     }
+
+    @Test
+    @DisplayName("reference directive is needed when there are multiple foreign keys between tables. ")
+    void multipleFKToTable() {
+        assertErrorsContain("multipleForeignKeysNoRef", "Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\"");
+    }
+    @Test
+    @DisplayName("Correct reference to table with multiple foreign keys.")
+    void multipleFKToTableWithRef() {
+        getProcessedSchema("multipleForeignKeysWithRef");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("No foreign key between tables")
+    void noForeignKeyToTable() {
+        assertErrorsContain("noForeignKey", "No foreign key found between tables");
+    }
+
+    @Test
+    @DisplayName("Chained reference tags to table")
+    void chainedReferenceToTable() {
+        getProcessedSchema("chainedReferences");
+    }
+
 }

@@ -15,4 +15,5 @@ public class ReferenceMultipleTest extends ReferenceTest {
                 ".where(customer_2952383337_address_left.DISTRICT.eq(district"
         );
     }
+
 }
