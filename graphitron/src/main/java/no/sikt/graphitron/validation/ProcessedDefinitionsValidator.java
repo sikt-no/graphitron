@@ -307,7 +307,7 @@ public class ProcessedDefinitionsValidator {
                 if (schema.isUnion(field)) {
                     for (ObjectDefinition subType : schema.getUnionSubTypes(field.getTypeName())) {
                         if (!subType.hasTable()) {
-                            errorMessages.add(String.format("Type %s in Union '%s' in Query has no table.", subType.getName(), field.getTypeName()));
+                            errorMessages.add(String.format("Type %s in Union '%s' in Query has no table.", subType.getName(), schema.getUnion(field.getTypeName()).getName()));
                         }
                     }
                 }

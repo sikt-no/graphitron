@@ -1,5 +1,5 @@
 type Query {
-   paginatedUnionQuery: [SomeUnion] @asConnection
+   paginatedUnionQuery(first: Int = 100, after: String): SomeUnionConnection
 }
 
 union SomeUnion = Language

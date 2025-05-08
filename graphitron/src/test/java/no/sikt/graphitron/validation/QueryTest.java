@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static no.sikt.graphql.directives.GenerationDirective.LOOKUP_KEY;
 import static no.sikt.graphql.directives.GenerationDirective.ORDER_BY;
 
@@ -46,7 +45,7 @@ public class QueryTest extends ValidationTest {
     @DisplayName("Query of Union whose subtype lacks table")
     void unionSubTypeNoTable() {
         assertErrorsContain(
-                () -> getProcessedSchema("unionSubTypeNoTable"),
+                () -> getProcessedSchema("unionSubTypeNoTable", Set.of(SOMEUNION_CONNECTION, PAGE_INFO)),
                 "Type Staff in Union 'SomeUnion' in Query has no table."
         );
     }

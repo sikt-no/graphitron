@@ -36,13 +36,17 @@ public class UnionTest extends GeneratorTest {
     @Test
     @DisplayName("Union with multitable query")
     void unionTypeCase() {
-        assertGeneratedContentContains("multiTableUnionQuery", "languageSortFieldsForPaginatedUnionQuery");
+        assertGeneratedContentContains("multiTableUnionQuery",  Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
+                "languageSortFieldsForPaginatedUnionQuery"
+        );
     }
 
     @Test
     @DisplayName("Union with singletable query")
     void unionSingleTypeCase() {
-        assertGeneratedContentContains("multiTableUnionOneType", " languageForPaginatedUnionQuery()");
+        assertGeneratedContentContains("multiTableUnionOneType", Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
+                " languageForPaginatedUnionQuery()"
+        );
     }
 
     @Test
