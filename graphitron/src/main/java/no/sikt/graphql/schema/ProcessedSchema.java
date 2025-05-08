@@ -314,13 +314,13 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Get the ObejctDefinition for each Type in a Union given its name
+     * @return Get the ObjectDefinition for each Type in a Union given its name
      */
     public Set<ObjectDefinition> getUnionSubTypes(String objectName) {
-        return unions.get(objectName).
+        return getUnion(objectName).
                 getFieldTypeNames()
                 .stream()
-                .map(it -> objects.get(it))
+                .map(this::getObjectOrConnectionNode)
                 .collect(Collectors.toSet());
     }
 

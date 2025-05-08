@@ -39,6 +39,8 @@ public enum SchemaComponent {
     DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(ID_RECORD)),
     DUMMY_CONNECTION("basic/DummyConnection", DUMMY_TYPE, PAGE_INFO),
 
+    SOMEUNION_CONNECTION("basic/SomeUnionConnection"),
+
     MUTATION_RESPONSE("basic/MutationResponse"),
 
     NAME_INPUT("basic/NameInput"),

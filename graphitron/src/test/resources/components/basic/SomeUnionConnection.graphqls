@@ -1,0 +1,10 @@
+type SomeUnionConnection {
+    edges: [SomeUnionConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [SomeUnion!]!
+}
+
+type SomeUnionConnectionEdge {
+    cursor: String
+    node: SomeUnion
+}
