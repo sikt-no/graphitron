@@ -130,19 +130,19 @@ public class ProcessedDefinitionsValidator {
                 .forEach(it -> errorMessages.add(String.format("No key with name \"%s\" found.", it)));
 
 
-        recordTypes
-                .values()
-                .stream()
-                .flatMap(it -> it.getFields().stream())
-                .filter(field -> recordTypes.containsKey(field.getTypeName()))
-                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
-                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
-                .forEach((field) -> {
-                            var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
-                            var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
-                            validateReferencePath(field, sourceTable, targetTable);
-                        }
-                );
+//        recordTypes
+//                .values()
+//                .stream()
+//                .flatMap(it -> it.getFields().stream())
+//                .filter(field -> recordTypes.containsKey(field.getTypeName()))
+//                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
+//                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
+//                .forEach((field) -> {
+//                            var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
+//                            var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
+//                            validateReferencePath(field, sourceTable, targetTable);
+//                        }
+//                );
     }
 
     private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {

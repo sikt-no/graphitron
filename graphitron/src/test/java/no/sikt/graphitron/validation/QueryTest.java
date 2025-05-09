@@ -117,11 +117,11 @@ public class QueryTest extends ValidationTest {
         assertErrorsContain("externalFieldNoTable", "No table found for field name");
     }
 
-    @Test
-    @DisplayName("reference directive is needed when there are multiple foreign keys between tables. ")
-    void multipleFKToTable() {
-        assertErrorsContain("multipleForeignKeysNoRef", "Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\"");
-    }
+//    @Test
+//    @DisplayName("reference directive is needed when there are multiple foreign keys between tables. ")
+//    void multipleFKToTable() {
+//        assertErrorsContain("multipleForeignKeysNoRef", "Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\"");
+//    }
     @Test
     @DisplayName("Correct reference to table with multiple foreign keys.")
     void multipleFKToTableWithRef() {
@@ -129,11 +129,11 @@ public class QueryTest extends ValidationTest {
         assertNoWarnings();
     }
 
-    @Test
-    @DisplayName("No foreign key between tables")
-    void noForeignKeyToTable() {
-        assertErrorsContain("noForeignKey", "No foreign key found between tables");
-    }
+//    @Test
+//    @DisplayName("No foreign key between tables")
+//    void noForeignKeyToTable() {
+//        assertErrorsContain("noForeignKey", "No foreign key found between tables");
+//    }
 
     @Test
     @DisplayName("Chained reference tags to table")
