@@ -15,6 +15,11 @@
                         <to>u -> Integer.valueOf(u)</to>
                     </lambdaConverter>
                 </forcedType>
+                <forcedType>
+                    <userType>java.lang.Integer</userType>
+                    <includeTypes>smallint</includeTypes>
+                    <converter>no.sikt.graphitron.converters.ShortToIntegerConverter</converter>
+                </forcedType>
             </forcedTypes>
         </database>
     </generator>

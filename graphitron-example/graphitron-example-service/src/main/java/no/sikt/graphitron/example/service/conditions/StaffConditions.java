@@ -13,6 +13,6 @@ public class StaffConditions {
     }
 
     public static Condition withAddressIdInCity300(Address address, Integer addressId) {
-        return addressId == null ? noCondition() : address.CITY_ID.eq((short) 300);
+        return addressId == null ? noCondition() : address.CITY_ID.eq(300);
     }
 }
