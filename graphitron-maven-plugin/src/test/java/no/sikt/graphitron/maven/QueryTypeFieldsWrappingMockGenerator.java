@@ -1,7 +1,7 @@
 package no.sikt.graphitron.maven;
 
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

@@ -11,7 +11,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import com.palantir.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ClassName;
 
 import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
 

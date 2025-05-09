@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.context;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;

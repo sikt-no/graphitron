@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.dto;
 
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphql.naming.GraphQLReservedName;

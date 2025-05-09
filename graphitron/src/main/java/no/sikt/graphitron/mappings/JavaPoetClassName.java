@@ -1,6 +1,6 @@
 package no.sikt.graphitron.mappings;
 
-import com.palantir.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ClassName;
 import graphql.GraphQLError;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.TypeResolver;

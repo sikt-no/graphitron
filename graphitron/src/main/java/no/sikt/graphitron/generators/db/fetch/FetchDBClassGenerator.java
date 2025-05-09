@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;

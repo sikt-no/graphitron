@@ -1,8 +1,8 @@
 package no.sikt.graphitron.reducedgenerators;
 
-import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.db.fetch.*;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;

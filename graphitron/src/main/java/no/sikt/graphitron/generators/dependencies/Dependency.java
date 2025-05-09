@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.dependencies;
 
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.FieldSpec;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.FieldSpec;
 
 /**
  * General interface for dependency handling in generated classes.

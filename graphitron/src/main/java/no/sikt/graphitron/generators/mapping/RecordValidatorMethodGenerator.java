@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.mapping;
 
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.MethodSpec;
-import com.palantir.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
 import no.sikt.graphitron.generators.context.MapperContext;

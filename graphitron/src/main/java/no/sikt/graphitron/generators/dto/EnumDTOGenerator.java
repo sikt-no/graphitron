@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.dto;
 
 import com.apollographql.federation.graphqljava.Federation;
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
 

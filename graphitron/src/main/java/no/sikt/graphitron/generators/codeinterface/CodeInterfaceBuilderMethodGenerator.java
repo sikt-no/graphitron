@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.codeinterface;
 
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringBuilderMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

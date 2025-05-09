@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.dependencies.Dependency;
 
 import java.util.List;

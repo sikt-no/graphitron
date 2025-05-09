@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.db.update;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
-import com.palantir.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.dependencies;
 
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.FieldSpec;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.FieldSpec;
 import org.jetbrains.annotations.NotNull;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;

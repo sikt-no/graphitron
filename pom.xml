@@ -22,13 +22,14 @@
 
     <modules>
         <module>graphitron</module>
-        <module>graphitron-error-handling-javax</module>
-        <module>graphitron-error-handling-jakarta</module>
         <module>graphitron-common</module>
+        <module>graphitron-error-handling-jakarta</module>
+        <module>graphitron-error-handling-javax</module>
+        <module>graphitron-example</module>
         <module>graphitron-jakarta-servlet</module>
+        <module>graphitron-javapoet</module>
         <module>graphitron-maven-plugin</module>
         <module>graphitron-schema-transformer</module>
-        <module>graphitron-example</module>
     </modules>
 
     <properties>
@@ -119,12 +120,6 @@
                 <artifactId>slf4j-api</artifactId>
                 <version>2.0.17</version>
             </dependency>
-            <dependency>
-                <groupId>com.palantir.javapoet</groupId>
-                <artifactId>javapoet</artifactId>
-                <version>0.7.0</version>
-            </dependency>
-
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-text</artifactId>

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.codeinterface.wiring;
 
-import com.palantir.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
 

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.update;
 
-import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
 import no.sikt.graphitron.generators.abstractions.KickstartResolverClassGenerator;

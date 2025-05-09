@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.dependencies;
 
-import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
-import com.palantir.javapoet.FieldSpec;
-import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.FieldSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;

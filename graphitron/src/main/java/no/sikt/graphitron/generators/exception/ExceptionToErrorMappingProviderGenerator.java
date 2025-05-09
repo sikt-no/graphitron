@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.exception;
 
-import com.palantir.javapoet.*;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.ExceptionToErrorMapping;
 import no.sikt.graphitron.definitions.fields.ObjectField;

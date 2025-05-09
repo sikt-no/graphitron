@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.exception;
 
-import com.palantir.javapoet.*;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;

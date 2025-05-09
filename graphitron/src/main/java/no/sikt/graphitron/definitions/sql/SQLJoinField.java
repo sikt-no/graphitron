@@ -1,6 +1,6 @@
 package no.sikt.graphitron.definitions.sql;
 
-import com.palantir.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.generators.context.JoinListSequence;
 import org.jetbrains.annotations.NotNull;
 
