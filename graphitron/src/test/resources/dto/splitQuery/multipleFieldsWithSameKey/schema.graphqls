@@ -1,6 +1,6 @@
 type Inventory @table {
-    store1: [Store] @splitQuery @reference(references: [{key: "INVENTORY__INVENTORY_STORE_ID_FKEY"}])
-    store2: [Store] @splitQuery @reference
+    store1: Store @splitQuery @reference(references: [{key: "INVENTORY__INVENTORY_STORE_ID_FKEY"}])
+    store2: Store @splitQuery @reference
 }
 
 type Store @table {

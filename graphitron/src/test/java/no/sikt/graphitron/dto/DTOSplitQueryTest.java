@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -42,7 +43,17 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     }
 
     @Test
-    @DisplayName("Field with reverse reference should keep primary key fields")
+    @DisplayName("Listed field should keep primary key fields")
+    void listedReference() {
+        assertGeneratedContentContains("listedReference",
+                "Record1<Long> destinationKey",
+                "Vacation(Record1<Long> primaryKey)",
+                "this.destinationKey = primaryKey"
+        );
+    }
+
+    @Test
+    @DisplayName("Fields with reverse reference should keep primary key fields even if they are not listed")
     void reverseReference() {
         assertGeneratedContentContains("reverseReference",
                 "Record1<Long> destinationKey",
@@ -52,10 +63,11 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     }
 
     @Test
-    @DisplayName("Connection field with splitQuery referencing another table should store foreign key fields")
+    @DisplayName("Connection field with splitQuery referencing another table should store primary key fields")
     void connectionReference() {
-        assertGeneratedContentContains("connectionReference",
-                "this.vacationKey = vacation_destination_vacation_fkey"
+        assertGeneratedContentContains("connectionReference", Set.of(CUSTOMER_TABLE, CUSTOMER_CONNECTION),
+                "Store(Record1<Long> primaryKey)",
+                "this.customersKey = primaryKey"
         );
     }
 
@@ -90,7 +102,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void referenceViaTable() {
         assertGeneratedContentContains("referenceViaTable",
                 "Inventory(Record1<Long> inventory_store_id_fkey)",
-                "this.staffForStoreKey = inventory_store_id_fkey"
+                "this.staffForInventoryKey = inventory_store_id_fkey"
         );
     }
 
