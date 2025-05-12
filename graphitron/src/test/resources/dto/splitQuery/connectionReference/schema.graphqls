@@ -1,7 +1,3 @@
-type Vacation @table(name: "VACATION") {
-    someString: String
-}
-
-type VacationDestination @table(name: "VACATION_DESTINATION") {
-    vacation: Vacation @splitQuery @asConnection
+type Store @table {
+    customers(first: Int = 100, after: String): CustomerConnection @splitQuery
 }

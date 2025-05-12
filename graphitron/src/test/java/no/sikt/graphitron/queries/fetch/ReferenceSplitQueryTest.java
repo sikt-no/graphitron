@@ -32,6 +32,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Primary key columns should be selected in previous query on paginated fields")
+    void previousQueryPaginated() {
+        assertGeneratedContentContains(
+                "previousQueryPaginated", Set.of(CUSTOMER_CONNECTION),
+                "DSL.row(DSL.row(_store.STORE_ID)).mapping(Functions.nullOnAllNull(Store::new"
+        );
+    }
+
+    @Test
     @DisplayName("Primary key columns should be selected in previous query on condition path")
     void previousQueryConditionPath() {
         assertGeneratedContentContains(

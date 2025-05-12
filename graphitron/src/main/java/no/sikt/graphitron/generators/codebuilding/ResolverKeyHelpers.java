@@ -99,11 +99,11 @@ public class ResolverKeyHelpers {
                     .orElseThrow();
         }
 
-        if (!foreignKey.getTable().getName().equalsIgnoreCase(containerTypeTable.getName())) {
-            if (primaryKeyOptional.isPresent() && primaryKeyOptional.get().getFields().equals(foreignKey.getInverseKey().getFields())) {
-                return primaryKeyOptional.get();
-            }
-            return foreignKey.getInverseKey();
+        if (!foreignKey.getTable().getName().equalsIgnoreCase(containerTypeTable.getName())) { // Reverse reference
+            return primaryKeyOptional
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in a listed field.",
+                                    field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
         }
         return foreignKey;
     }
