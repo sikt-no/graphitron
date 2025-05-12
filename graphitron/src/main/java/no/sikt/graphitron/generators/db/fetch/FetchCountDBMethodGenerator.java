@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.db.fetch;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -20,8 +21,8 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
  * Generator that creates methods for counting all available elements for a type.
@@ -122,11 +123,17 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 INTEGER.className
         );
+
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+        }
+
         if (!isRoot) {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }
 
         parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
+
 
         return spec;
     }

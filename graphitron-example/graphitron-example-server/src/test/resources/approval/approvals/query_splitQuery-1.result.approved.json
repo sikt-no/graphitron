@@ -1,0 +1,23 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "id": "Q0lUWTox",
+                    "addresses": [
+                        {
+                            "id": "QUREUkVTUzo1Ng"
+                        }
+                    ],
+                    "addressesPaginated": {
+                        "nodes": [
+                            {
+                                "id": "QUREUkVTUzo1Ng"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

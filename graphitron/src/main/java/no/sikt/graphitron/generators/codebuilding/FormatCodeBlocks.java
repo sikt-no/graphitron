@@ -383,6 +383,11 @@ public class FormatCodeBlocks {
         if (includeContext) {
             params.add(CONTEXT_NAME);
         }
+
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            params.add(NODE_ID_STRATEGY_NAME);
+        }
+
         if (!inputList.isEmpty()) {
             params.add(inputList);
         }
