@@ -27,6 +27,7 @@ type Query {
     staff(input: StaffInput!): [Staff] @asConnection
 
     node(id: ID!): Node
+    cities: [City] @asConnection
 }
 
 interface Node {
@@ -82,7 +83,8 @@ type City @table {
     name: String! @field(name: "CITY_")
     countryName: String! @field(name: "COUNTRY_") @reference(references: [{table: "COUNTRY"}])
     addressExample: Address @splitQuery @notGenerated
-#    addresses: [Address] @splitQuery @asConnection
+    addresses: [Address] @splitQuery
+    addressesPaginated: [Address] @splitQuery @asConnection
     payments: [Payment] @reference(references: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
 }
 

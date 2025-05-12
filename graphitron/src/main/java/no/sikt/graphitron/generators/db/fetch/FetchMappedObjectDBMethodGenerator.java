@@ -115,7 +115,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         } else if (!isRoot) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
                 var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
-                code.add("$N.createId($S, $L),\n", NODE_ID_STRATEGY_NAME, table, keyColumns);
+                code.add("$N.createId($S, $L),\n", NODE_ID_STRATEGY_NAME, context.getTargetTable().getName(), keyColumns);
             } else {
                 code.add("$L.getId(),\n", table);
             }

@@ -38,7 +38,7 @@ public class CustomerDBQueries {
         var orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(
-                        nodeIdStrategy.createId("_customer", _customer.fields(_customer.getPrimaryKey().getFieldsArray())),
+                        nodeIdStrategy.createId("CUSTOMER", _customer.fields(_customer.getPrimaryKey().getFieldsArray())),
                         DSL.field(
                                 DSL.select(DSL.row(nodeIdStrategy.createId("ADDRESS", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
                                         .from(customer_2952383337_address)
