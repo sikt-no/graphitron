@@ -3,6 +3,8 @@ package no.sikt.graphitron.validation;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.ERROR;
 
@@ -126,5 +128,29 @@ public class MutationTest extends ValidationTest {
     void bothNotIterableWithErrors() {
         getProcessedSchema("bothNotIterableWithErrors", CUSTOMER_INPUT_TABLE, ERROR);
         assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Input that has no records")
+    void noRecordInput() {
+        assertErrorsContain("noRecordInput",
+                "Problems have been found that prevent code generation:\n" +
+                        "Mutations must have at least one table attached when generating resolvers with queries. Mutation 'mutation' has no tables attached."
+        );
+    }
+
+    @Test  // Not sure if this is the intended behaviour for such cases. The mutation does not try to unwrap the input.
+    @DisplayName("Input with non-record wrapper containing a record")
+    void wrappedInput() {
+        assertErrorsContain("wrappedInput", Set.of(CUSTOMER_INPUT_TABLE),
+                "Problems have been found that prevent code generation:\n" +
+                        "Mutations must have at least one table attached when generating resolvers with queries. Mutation 'mutation' has no tables attached."
+        );
+    }
+
+    @Test
+    @DisplayName("Neither service nor mutation directive is set on a mutation")
+    void noHandlingSet() {
+        assertErrorsContain("noHandlingSet", "Mutation 'mutation' is set to generate, but has neither a service nor mutation type set.");
     }
 }

@@ -12,7 +12,6 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
-import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -47,7 +46,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class ProcessedDefinitionsValidator {
     protected final ProcessedSchema schema;
     private final List<ObjectField> allFields;
-    static final Logger LOGGER = LoggerFactory.getLogger(GraphQLGenerator.class);
+    static final Logger LOGGER = LoggerFactory.getLogger(ProcessedDefinitionsValidator.class);
     private final Set<String> warningMessages = new LinkedHashSet<>();
     private final Set<String> errorMessages = new LinkedHashSet<>();
     protected static final String
@@ -78,6 +77,7 @@ public class ProcessedDefinitionsValidator {
         validateTypesUsingNodeInterface();
         validateInputFields();
         validateExternalMappingReferences();
+        validateMutationDirectives();
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
         validateSelfReferenceHasSplitQuery();
@@ -136,7 +136,7 @@ public class ProcessedDefinitionsValidator {
                 .flatMap(it -> it.getFields().stream())
                 .flatMap(it -> it.isInput() ? Stream.of(it) : Stream.concat(Stream.of(it), ((ObjectField) it).getArguments().stream()))
                 .flatMap(it -> it.getFieldReferences().stream())
-                .collect(Collectors.toList());
+                .toList();
 
         allReferences
                 .stream()
@@ -177,7 +177,7 @@ public class ProcessedDefinitionsValidator {
             if (fieldReference.hasTableCondition() && !fieldReference.hasKey()){
                 return;
             } else if (fieldReference.hasKey()) {
-                String nextTable = "";
+                String nextTable;
                 String keyName = fieldReference.getKey().getName();
                 var keyTarget = getKeyTargetTable(keyName).orElse("");
                 if (!keyTarget.equals(sourceTable)) {
@@ -230,11 +230,11 @@ public class ProcessedDefinitionsValidator {
                 .forEach(entry -> {
                     var tableName = entry.getKey();
                     var allFieldNames = getJavaFieldNamesForTable(tableName);
-                    var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).collect(Collectors.toList());
+                    var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).toList();
                     var missingElements = nonFieldElements
                             .stream()
                             .filter(it -> searchTableForMethodWithName(tableName, it).isEmpty())
-                            .collect(Collectors.toList());
+                            .toList();
 
                     if (!missingElements.isEmpty()) {
                         warningMessages.add(String.format("No field(s) or method(s) with name(s) '%s' found in table '%s'",
@@ -445,7 +445,7 @@ public class ProcessedDefinitionsValidator {
                                 errorMessages.add(
                                         String.format("Interface '%s' has discriminating field set as '%s', but the field " +
                                                         "does not return a string type, which is not supported.",
-                                                name, interfaceDefinition.getDiscriminatorFieldName(), interfaceDefinition.getTable().getName()));
+                                                name, interfaceDefinition.getDiscriminatorFieldName()));
                             }
                         }
 
@@ -558,7 +558,7 @@ public class ProcessedDefinitionsValidator {
 
 
     private void validateInterfacesReturnedInFields() {
-        for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).collect(Collectors.toList())) {
+        for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).toList()) {
             var typeName = field.getTypeName();
             var name = Optional
                     .ofNullable(schema.getObjectOrConnectionNode(typeName))
@@ -636,7 +636,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> !schema.hasRecord(it) && !it.hasOverridingCondition())
                 .filter(AbstractField::isIterableWrapped)
                 .filter(schema::isInputType)
-                .collect(Collectors.toList());
+                .toList();
 
         for (var field : oneLayerFlattenedFields) {
             var messageStart = String.format("Argument '%s' is a collection of InputFields ('%s') type.", field.getName(), field.getTypeName());
@@ -741,32 +741,61 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
+    private void validateMutationDirectives() {
+        var mutation = schema.getMutationType();
+        if (mutation == null) {
+            return;
+        }
+
+        var mutations = mutation
+                .getFields()
+                .stream()
+                .filter(ObjectField::isGeneratedWithResolver)
+                .toList();
+        if (mutations.isEmpty()) {
+            return;
+        }
+
+        mutations
+                .stream()
+                .filter(it -> !it.hasMutationType() && !it.hasServiceReference())
+                .forEach(it -> errorMessages.add(String.format("Mutation '%s' is set to generate, but has neither a service nor mutation type set.", it.getName())));
+        mutations
+                .stream()
+                .filter(it -> it.hasMutationType() && !new InputParser(it, schema).hasJOOQRecords())
+                .forEach(it -> errorMessages.add(String.format("Mutations must have at least one table attached when generating resolvers with queries. Mutation '%s' has no tables attached.", it.getName())));
+    }
+
     private void validateMutationRequiredFields() {
         var mutation = schema.getMutationType();
-        if (mutation != null) {
-            mutation
-                    .getFields()
-                    .stream()
-                    .filter(ObjectField::isGeneratedWithResolver)
-                    .filter(ObjectField::hasMutationType)
-                    .forEach(target -> {
-                        validateRecordRequiredFields(target);
-                        new InputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
-                    });
+        if (mutation == null) {
+            return;
         }
+
+        mutation
+                .getFields()
+                .stream()
+                .filter(ObjectField::isGeneratedWithResolver)
+                .filter(ObjectField::hasMutationType)
+                .forEach(target -> {
+                    validateRecordRequiredFields(target);
+                    new InputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
+                });
     }
 
     private void validateMutationRecursiveRecordInputs() {
         var mutation = schema.getMutationType();
-        if (mutation != null) {
-            mutation
-                    .getFields()
-                    .stream()
-                    .filter(ObjectField::hasServiceReference)
-                    .flatMap(it -> it.getArguments().stream())
-                    .filter(schema::isInputType)
-                    .forEach(it -> validateMutationRecursiveRecordInputs(it, false, 0));
+        if (mutation == null) {
+            return;
         }
+
+        mutation
+                .getFields()
+                .stream()
+                .filter(ObjectField::hasServiceReference)
+                .flatMap(it -> it.getArguments().stream())
+                .filter(schema::isInputType)
+                .forEach(it -> validateMutationRecursiveRecordInputs(it, false, 0));
     }
 
     private void validateMutationRecursiveRecordInputs(InputField field, boolean wasRecord, int recursion) {

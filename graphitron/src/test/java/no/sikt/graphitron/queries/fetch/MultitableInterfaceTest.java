@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class MultitableInterfaceTest extends InterfaceTest {
     @Override
@@ -73,15 +72,6 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 Set.of(CUSTOMER_TABLE),
                 "row(DSL.row(_payment.CUSTOMER_ID), _payment.getId()).mapping"
         );
-    }
-
-    @Test
-    @DisplayName("Query on root has an implementation without table set should throw exception")
-    void withoutTableFromRoot() {
-        assertThatThrownBy(() -> generateFiles("withoutTableFromRoot"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Interface 'SomeInterface' is returned in field 'someInterface', but " +
-                        "type 'Customer' implementing 'SomeInterface' does not have table set. This is not supported.");
     }
 
     @Test

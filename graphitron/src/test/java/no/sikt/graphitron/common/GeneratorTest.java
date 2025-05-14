@@ -10,6 +10,7 @@ import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.jetbrains.annotations.NotNull;
 import org.junit.ComparisonFailure;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.function.Executable;
@@ -87,7 +88,7 @@ public abstract class GeneratorTest {
         try {
             Files.walkFileTree(path, new SimpleFileVisitor<>() {
                 @Override
-                public FileVisitResult visitFile(Path expectedOutputFile, BasicFileAttributes attrs) {
+                public @NotNull FileVisitResult visitFile(@NotNull Path expectedOutputFile, @NotNull BasicFileAttributes attrs) {
                     String expectedFileName = expectedOutputFile.getFileName().toString().replace(".java", "");
                     expectedFileNames.add(expectedFileName);
                     var expectedFile = readFileAsStrings(expectedOutputFile);
@@ -205,7 +206,7 @@ public abstract class GeneratorTest {
     }
 
     public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), checkProcessedSchemaDefault);
+        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), validateSchema(), checkProcessedSchemaDefault);
     }
 
     protected Set<String> mergeComponentsAndSetConfig(Set<SchemaComponent> extraComponents) {
@@ -343,6 +344,10 @@ public abstract class GeneratorTest {
 
     protected String getSubpath() {
         return "";
+    }
+
+    protected boolean validateSchema() {
+        return false;
     }
 
     protected boolean getCheckProcessedSchemaDefault() {

@@ -14,7 +14,6 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_INPUT;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Query optional inputs - Nullability and list checks for optional fields")
 public class OptionalInputTest extends GeneratorTest {
@@ -61,18 +60,6 @@ public class OptionalInputTest extends GeneratorTest {
                 "nestedInput", Set.of(DUMMY_INPUT),
                 "in != null && in.getIn() != null && in.getIn().getId() != null ? _customer.hasId(in.getIn().getId()) : DSL.noCondition()"
         );
-    }
-
-    @Test
-    @DisplayName("Listed input field")
-    void listedInput() {
-        assertThatThrownBy(() -> getProcessedSchema("listedInput", DUMMY_INPUT))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining(
-                        "Argument 'in' is a collection of InputFields ('DummyInput') type." +
-                                " Optional fields on such types are not supported." +
-                                " The following fields will be treated as mandatory in the resulting, generated condition tuple: 'id'"
-                );
     }
 
     @Test // Note that if the inner input type is not marked as required, an exception will be thrown wrongly stating that the outer field is the culprit.
