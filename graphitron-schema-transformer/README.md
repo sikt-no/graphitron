@@ -66,32 +66,34 @@ When specifying multiple feature flags using the array syntax `@feature(flags: [
 - All specified flags must be active for the element to be included in the schema
 - If you only request one of the flags (e.g., just "F0"), the element will NOT be included
 
-This behavior allows you to create implicit hierarchies of features. For example, if you want to ensure that all "beta" features include "experimental" features, 
-you could annotate beta features with `@feature(flags: ["beta", "experimental"])`. This would ensure that when requesting "beta" features, you always get "experimental" features as well.
+This behavior allows you to create implicit hierarchies of features. For example, if you want to ensure that all "experimental" features must include "beta" features, 
+you could annotate experimental features with `@feature(flags: ["beta", "experimental"])`. This would ensure that when requesting "experimental" features, you always need to request "beta" features as well.
 
 While feature flags don't have an inherent hierarchy, this technique can be used to simulate dependencies between feature sets.
 
 ### Automatic Feature Directive Application
 
-The schema-transformer Maven plugin automatically applies the `@feature` directive to fields, arguments, and enums based on the file structure of the provided schemas. This works in tandem with feature flag transformation to include the correct schema parts based on active feature flags.
+The schema-transformer Maven plugin automatically applies the `@feature` directive to fields, arguments, and enums
+based on the file structure of the provided schemas. This works in tandem with feature flag transformation to include
+the correct schema parts based on active feature flags.
 
 To enable this, place schema files in the following structure:
 
 ```plaintext
 schema-root/
-    # Production schemas (no feature flag applied)
-    schema1.graphql
-    schema2.graphql
     features/
-        beta/
+        f0/
             schema.graphql
-        experimental/
+        f1/
             schema.graphql
+        f2/
+            schema0.graphql
+            schema1.graphql
 ```
 
 Important notes:
-* Files placed at the root level are considered production schemas and don't have feature flags applied
 * Files placed in subdirectories under `features/` are annotated with feature flags matching their directory name
+* Files placed outside the feature folders will not have feature flags applied
 * Multiple schemas can be placed in the same directory
 * This process is not recursive — only the top-level feature directories are recognized
 
@@ -108,20 +110,20 @@ The schema-transformer maven plugin offers flexible schema generation through co
   <addFeatureFlags>true</addFeatureFlags>
   <outputSchemas>
     <schema>
-      <fileName>schema-prod.graphql</fileName>
+      <fileName>f0.graphql</fileName>
       <flags/>
     </schema>
     <schema>
-      <fileName>schema-beta.graphql</fileName>
+      <fileName>f1.graphql</fileName>
       <flags>
-        <flag>beta</flag>
+        <flag>f1</flag>
       </flags>
     </schema>
     <schema>
-      <fileName>schema-exp.graphql</fileName>
+      <fileName>f2</fileName>
       <flags>
-        <flag>beta</flag>
-        <flag>experimental</flag>
+        <flag>f1</flag>
+        <flag>f2</flag>
       </flags>
     </schema>
   </outputSchemas>
@@ -130,7 +132,7 @@ The schema-transformer maven plugin offers flexible schema generation through co
 
 Common schema outputs include:
 
-- `generator-schema.graphql`: Used for code generation, contains all Graphitron directives
+- `generator-schema.graphql`: Used for code generation, retains all Graphitron directives
 - `schema.graphql`: The full schema with all feature flags included
 - `federation-schema.graphql`: Schema prepared for Apollo Federation
 
@@ -175,6 +177,11 @@ This transforms your schema to be compatible with Apollo Federation by:
 
 The federation transformation maintains applied federation directives like `@key` while adding the necessary federation types, directive definitions and fields.
 
+#### Tags
+If [Feature Flag Transformation](#Feature-Flag-Transformation) is enabled and federation is used, federation `@tag`
+directives will be placed alongside the `@feature` directives. These are placed in exactly the same locations, with the exception that
+`@tag` will also be placed on union type declarations. This is needed for the tags schema filtering to work.
+
 #### Removing Federation Definitions
 The Federation library does not like transforming schemas that already contain certain 
 Apollo Federation definitions, such as `_Entity`, `_Any`, and `_Service`.
@@ -182,10 +189,11 @@ Apollo Federation definitions, such as `_Entity`, `_Any`, and `_Service`.
 ```java
 com.apollographql.federation.graphqljava.Federation.transform(...);
 ```
-Thus you may need to remove these definitions from your schema before applying the federation transformation.
+
+Thus, you may need to remove these definitions from your schema if you want to apply the federation transformation at a later stage.
 This is done by setting the `removeFederationDefinitions` parameter to `true` in your Maven configuration.
 
-If you are using Apollo Federation you want to have the Apollo Federation definitions in the schema that is used for code generation,
-but not on the schema hosted by yout GraphQL server, if that schema is to be transformed by the Federation library.
+If you are using Apollo Federation, you want to have the Apollo Federation definitions in the schema that is used for code generation,
+but not on the schema hosted by your GraphQL server, if that schema is to be transformed by the Federation library at run time.
 
 We will implement a more elegant solution to this in the future, but for now you can use the `removeFederationDefinitions` parameter to remove these definitions from the schema that is hosted by your GraphQL server.
