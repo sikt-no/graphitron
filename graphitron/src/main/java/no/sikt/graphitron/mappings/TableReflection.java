@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
+import org.jooq.Record;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.InvocationTargetException;
@@ -32,48 +33,38 @@ public class TableReflection {
      * @return The implicit key between these two tables.
      */
     public static Optional<String> findImplicitKey(String leftTableName, String rightTableName) {
-        var leftTableOptional = getTable(leftTableName);
-        if (leftTableOptional.isEmpty()) {
-            return Optional.empty();
+        var keysOptional = getForeignKeysBetweenTables(leftTableName, rightTableName);
+        if (keysOptional.isPresent()) {
+            var keys = keysOptional.get();
+            if (keys.size() == 1) {
+                return Optional.of(FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(keys.get(0).getName()));
+            }
         }
-        var rightTableOptional = getTable(rightTableName);
-        if (rightTableOptional.isEmpty()) {
-            return Optional.empty();
-        }
-        var leftTable = leftTableOptional.get();
-        var rightTable = rightTableOptional.get();
-
-        var keys = leftTable.getReferencesTo(rightTable);
-        if (keys.size() == 1) {
-            var keyName = keys.get(0).getName();
-            return Optional.of(FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(keyName));
-        }
-        var reverseKeys = rightTable.getReferencesTo(leftTable);
-        if (reverseKeys.size() == 1) {
-            var keyName = reverseKeys.get(0).getName();
-            return Optional.of(FOREIGN_KEY_NAME_TO_JAVA_FIELD_NAME.get(keyName));
-        }
-
         return Optional.empty();
     }
 
     /*
-    * Returns the number of foreign keys from leftTable to rightTable.
+    * @return an Optional list of foreign keys between leftTable and rightTable
     * */
-    public static int getNumberOfForeignKeys (String leftTableName, String rightTableName) {
-        var leftTableOptional = getTable(leftTableName);
-        if (leftTableOptional.isEmpty()) {
-            throw new IllegalArgumentException("Table " + leftTableName + " not found");
+    public static Optional<List<? extends ForeignKey<?, ?>>> getForeignKeysBetweenTables(String leftTableName, String rightTableName) {
+        var leftTable = getTable(leftTableName).orElse(null);
+        var rightTable = getTable(rightTableName).orElse(null);
+        if (leftTable == null || rightTable == null) {
+            return Optional.empty();
         }
-        var rightTableOptional = getTable(rightTableName);
-        if (rightTableOptional.isEmpty()) {
-            throw new IllegalArgumentException("Table " + rightTableName + " not found");
-        }
-        var leftTable = leftTableOptional.get();
-        var rightTable = rightTableOptional.get();
+        Set<ForeignKey<?, ?>> uniqueKeys = new HashSet<>();
+        uniqueKeys.addAll(leftTable.getReferencesTo(rightTable));
+        uniqueKeys.addAll(rightTable.getReferencesTo(leftTable));
+        return Optional.of(new ArrayList<>(uniqueKeys));
+    }
 
-        return leftTable.getReferencesTo(rightTable).size();
-
+    /*
+    * @return the number of foreign keys between leftTable and rightTable.
+    * */
+    public static int getNumberOfForeignKeysBetweenTables(String leftTableName, String rightTableName) {
+        return getForeignKeysBetweenTables(leftTableName,rightTableName)
+                .map(List::size)
+                .orElse(0);
     }
 
     /**

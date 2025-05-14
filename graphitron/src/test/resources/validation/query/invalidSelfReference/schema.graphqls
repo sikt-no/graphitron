@@ -1,0 +1,7 @@
+type Query {
+    city: City
+}
+
+type City @table {
+    city: City @splitQuery
+}
