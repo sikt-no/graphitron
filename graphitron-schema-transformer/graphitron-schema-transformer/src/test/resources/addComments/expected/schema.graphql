@@ -4,7 +4,7 @@ input InnerInput {
 }
 
 type InnerObject {
-  id: ID!
+  id: ID! @feature(flags : ["c"])
   "feature A!"
   id2: ID @feature(flags : ["a"])
   "feature B!"
@@ -17,7 +17,7 @@ type Object2 implements Interface {
 }
 
 input Input {
-  id: ID!
+  id: ID! @feature(flags : ["c"])
   """
   existing inner description
 
@@ -39,20 +39,9 @@ interface Interface {
   id: ID! @feature(flags : ["a"])
 }
 
-interface Node {
-  id: ID!
-}
-
-type PageInfo {
-  hasPreviousPage: Boolean!
-  hasNextPage: Boolean!
-  startCursor: String
-  endCursor: String
-}
-
 type Query {
-  getObject(a0: String!): SomeObject
-  getObjectWithInputs(a0: Input!, a1: [Input!]): SomeObject
+  getObject(a0: String! @feature(flags : ["c"])): SomeObject @feature(flags : ["c"])
+  getObjectWithInputs(a0: Input! @feature(flags : ["c"]), a1: [Input!] @feature(flags : ["c"])): SomeObject @feature(flags : ["c"])
   """
   existing getObject2 description
   multiple lines
@@ -76,32 +65,8 @@ enum SomeEnum {
 }
 
 type SomeObject {
-  id: ID!
-  inner: [InnerObject!]!
+  id: ID! @feature(flags : ["c"])
+  inner: [InnerObject!]! @feature(flags : ["c"])
 }
 
-"Directs the executor to include this field or fragment only when the `if` argument is true"
-directive @include(
-    "Included when true."
-    if: Boolean!
-) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
-
-"Directs the executor to skip this field or fragment when the `if` argument is true."
-directive @skip(
-    "Skipped when true."
-    if: Boolean!
-) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
-
 directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
-
-"Marks the field, argument, input field or enum value as deprecated"
-directive @deprecated(
-    "The reason for the deprecation"
-    reason: String = "No longer supported"
-) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
-
-"Exposes a URL that specifies the behaviour of this scalar."
-directive @specifiedBy(
-    "The URL that specifies the behaviour of this scalar."
-    url: String!
-) on SCALAR

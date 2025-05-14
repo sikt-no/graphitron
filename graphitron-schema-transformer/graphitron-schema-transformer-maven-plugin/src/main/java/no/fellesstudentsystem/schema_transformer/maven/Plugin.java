@@ -17,7 +17,8 @@ import java.nio.file.Files;
 import java.util.List;
 import java.util.Set;
 
-import static no.fellesstudentsystem.schema_transformer.SchemaTransformer.*;
+import static no.fellesstudentsystem.schema_transformer.SchemaTransformer.reloadSchema;
+import static no.fellesstudentsystem.schema_transformer.SchemaTransformer.splitFeatures;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToDirectory;
 import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_RESOURCES;
 
@@ -96,12 +97,12 @@ public class Plugin extends AbstractMojo {
         var schemaFiles = SchemaReader.findSchemaFilesRecursivelyInDirectory(schemaRootDirectories);
         var descriptionSuffixForFeatures = SchemaReader.createDescriptionSuffixForFeatureMap(schemaRootDirectories, descriptionSuffixFilename);
         var outputDirectory = actualTarget.toString();
-        var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures,
-                addFeatureFlags, removeGeneratorDirectives, expandConnections);
+        var config = new TransformConfig(schemaFiles, directivesToRemove, descriptionSuffixForFeatures, addFeatureFlags, removeGeneratorDirectives, expandConnections);
         var transformer = new SchemaTransformer(config);
         var newSchema = transformer.transformSchema();
-        var features = outputSchemas != null && !outputSchemas.isEmpty() ? splitFeatures(
-                reloadSchema(newSchema, removeFederationDefinitions), outputSchemas) : List.<FeatureSchema>of();
+        var features = outputSchemas != null && !outputSchemas.isEmpty()
+                ? splitFeatures(reloadSchema(newSchema, removeFederationDefinitions), outputSchemas)
+                : List.<FeatureSchema>of();
         try {
             Files.createDirectories(actualTarget);
             if (outputSchema != null && !outputSchema.isEmpty()) {

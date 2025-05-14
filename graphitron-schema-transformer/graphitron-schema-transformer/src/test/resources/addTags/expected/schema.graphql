@@ -1,0 +1,76 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@tag"]) {
+  query: Query
+}
+
+input InnerInput {
+  id: ID! @feature(flags : ["c"]) @tag(name: "c")
+}
+
+input InnerInput2 {
+  id: ID! @feature(flags : ["a"]) @tag(name: "a")
+}
+
+input InnerInput3 {
+  id: ID! @feature(flags : ["b"]) @tag(name: "b")
+}
+
+type InnerObject {
+  id: ID! @feature(flags : ["c"]) @tag(name: "c")
+  f0(a0: String @feature(flags : ["c"]) @tag(name: "EXTRA") @tag(name: "c")): String! @feature(flags : ["c"]) @tag(name: "c")
+  inner: InnerObject2 @dir @feature(flags : ["a"]) @tag(name: "a")
+  f1(a0: String @dir2(param : "ARG") @feature(flags : ["a"]) @tag(name: "a")): String! @feature(flags : ["a"]) @tag(name: "a")
+  double: ID @feature(flags : ["a"]) @tag(name: "a")
+  triple: ID @feature(flags : ["a"]) @tag(name: "FLAG") @tag(name: "a")
+  inner3: InnerObject3 @dir @feature(flags : ["b"]) @tag(name: "b")
+  extraFlag: ID @feature(flags : ["b"]) @tag(name: "b") @tag(name: "EXTRA")
+}
+
+type InnerObject2 {
+  id: ID! @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type InnerObject3 {
+  id: ID! @feature(flags : ["b"]) @tag(name: "b")
+}
+
+type InnerObjectC implements Interface {
+  id: ID! @feature(flags : ["a"]) @tag(name: "a")
+}
+
+input Input {
+  id: ID! @feature(flags : ["c"]) @tag(name: "c")
+  inner: InnerInput @dir @feature(flags : ["c"]) @tag(name: "c")
+  inner2: InnerInput2 @dir2(param: "ARG") @feature(flags : ["a"]) @tag(name: "a")
+  double: ID @feature(flags : ["a"]) @tag(name: "a")
+  triple: ID @feature(flags : ["a"]) @tag(name: "FLAG") @tag(name: "a")
+  inner3: InnerInput3 @feature(flags : ["b"]) @tag(name: "b")
+  extraFlag: ID @feature(flags : ["b"]) @tag(name: "b") @tag(name: "EXTRA")
+}
+
+interface Interface {
+  id: ID! @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type Query {
+  getObject(a0: String! @dir @feature(flags : ["c"]) @tag(name: "EXTRA") @tag(name: "c")): SomeObject @feature(flags : ["c"]) @tag(name: "c")
+  getObjectWithInputs(a0: Input! @dir @feature(flags : ["c"]) @tag(name: "EXTRA") @tag(name: "c"), a1: [Input!] @feature(flags : ["c"]) @tag(name: "c")): SomeObject @dir @feature(flags : ["c"]) @tag(name: "c")
+  getObject2: InnerObject2 @feature(flags : ["a"]) @tag(name: "a")
+  getObject3: [InnerObjectC!]! @feature(flags : ["a"]) @tag(name: "a")
+  getObject4: SomeEnum @feature(flags : ["a"]) @tag(name: "a")
+}
+
+enum SomeEnum {
+  e0 @feature(flags : ["a"]) @tag(name: "a")
+  e1 @dir(param : "PARAM") @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type SomeObject {
+  id: ID! @feature(flags : ["c"]) @tag(name: "c")
+  inner: [InnerObject!]! @dir @feature(flags : ["c"]) @tag(name: "c")
+}
+
+directive @dir(param: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+directive @dir2(param: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION

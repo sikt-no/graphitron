@@ -2,7 +2,7 @@ package no.fellesstudentsystem.schema_transformer.schema;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.fellesstudentsystem.schema_transformer.transform.FeatureFlagConfiguration;
+import no.fellesstudentsystem.schema_transformer.transform.FeatureConfiguration;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 
 import java.io.File;
@@ -38,8 +38,8 @@ public class SchemaReader {
                 .sorted()
                 .toList();
         return Stream.concat(
-                allFiles.stream().filter(it -> !it.contains(FeatureFlagConfiguration.FEATURES_DIRECTORY)),
-                allFiles.stream().filter(it -> it.contains(FeatureFlagConfiguration.FEATURES_DIRECTORY))
+                allFiles.stream().filter(it -> !it.contains(FeatureConfiguration.FEATURES_DIRECTORY)),
+                allFiles.stream().filter(it -> it.contains(FeatureConfiguration.FEATURES_DIRECTORY))
         ).collect(Collectors.toList());
     }
 

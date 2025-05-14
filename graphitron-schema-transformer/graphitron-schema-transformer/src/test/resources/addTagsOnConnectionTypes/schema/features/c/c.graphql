@@ -1,0 +1,18 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@tag"]) {
+  query: Query
+}
+
+type Query {
+  object1: [Object1] @asConnection
+}
+
+type Object1 {
+  string: String!
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}

@@ -47,6 +47,10 @@ public enum GraphQLReservedName {
 
     FEDERATION_KEY(FederationDirectives.keyName),
     FEDERATION_KEY_ARGUMENT(FederationDirectives.fieldsArgumentName),
+    FEDERATION_LINK("link"),
+    FEDERATION_LINK_IMPORT("import"),
+    FEDERATION_TAG("tag"),
+    FEDERATION_TAG_ARGUMENT("name"),
     FEDERATION_SERVICE_FIELD(_Service.fieldName),
     FEDERATION_SERVICE_TYPE(_Service.typeName),
     FEDERATION_ENTITIES_FIELD(_Entity.fieldName),

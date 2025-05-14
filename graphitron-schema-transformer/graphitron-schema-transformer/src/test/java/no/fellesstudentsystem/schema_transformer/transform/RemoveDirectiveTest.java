@@ -10,6 +10,8 @@ public class RemoveDirectiveTest extends AbstractTest {
     @DisplayName("Remove selected directive from the schema")
     void removeDirective() {
         var path = "removeDirective";
-        assertTransformedDirectivesMatch(path, new DirectivesFilter(makeSchema(path), Set.of("D1")).getModifiedGraphQLSchema());
+        var test = makeTestSchema(path);
+        var expected = makeExpectedSchema(path);
+        assertDirectives(new DirectivesFilter(test, Set.of("D1")).getModifiedGraphQLSchema(), expected);
     }
 }

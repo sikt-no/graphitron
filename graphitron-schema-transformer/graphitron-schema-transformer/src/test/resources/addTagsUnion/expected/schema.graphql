@@ -1,0 +1,27 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@tag"]) {
+  query: Query
+}
+
+union Union1 @tag(name: "c") = Object1
+union Union2 @tag(name: "a") = Object2 | Object1
+union Union3 @tag(name: "b") = Object3
+
+type Query {
+  u1: Union1 @feature(flags : ["c"]) @tag(name: "c")
+  u2: Union2 @feature(flags : ["a"]) @tag(name: "a")
+  u3: Union3 @feature(flags : ["b"]) @tag(name: "b")
+}
+
+type Object1 {
+  string: String! @feature(flags : ["c"]) @tag(name: "c")
+}
+
+type Object2 {
+  string: String! @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type Object3 {
+  string: String! @feature(flags : ["b"]) @tag(name: "b")
+}
+
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION

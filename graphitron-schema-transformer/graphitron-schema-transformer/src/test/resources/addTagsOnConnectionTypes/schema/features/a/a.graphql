@@ -1,0 +1,7 @@
+extend type Query {
+  object2: [Object2] @asConnection
+}
+
+type Object2 {
+  string: String!
+}

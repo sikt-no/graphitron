@@ -5,25 +5,11 @@ import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcesso
 import graphql.language.ScalarTypeDefinition;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
-import graphql.schema.idl.EchoingWiringFactory;
-import graphql.schema.idl.RuntimeWiring;
-import graphql.schema.idl.ScalarInfo;
-import graphql.schema.idl.SchemaGenerator;
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
-import no.fellesstudentsystem.schema_transformer.transform.DirectivesFilter;
-import no.fellesstudentsystem.schema_transformer.transform.FeatureFlagConfiguration;
-import no.fellesstudentsystem.schema_transformer.transform.MakeConnections;
-import no.fellesstudentsystem.schema_transformer.transform.MergeExtensions;
-import no.fellesstudentsystem.schema_transformer.transform.SchemaFeatureFilter;
+import graphql.schema.idl.*;
+import no.fellesstudentsystem.schema_transformer.transform.*;
 import no.sikt.graphql.directives.GenerationDirective;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -32,9 +18,7 @@ import static graphql.schema.idl.EchoingWiringFactory.fakeScalar;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.CONNECTION;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaReader.getTypeDefinitionRegistry;
 import static no.fellesstudentsystem.schema_transformer.schema.SchemaWriter.writeSchemaToString;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_SUBSCRIPTION;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class SchemaTransformer {
     private final TransformConfig config;
@@ -47,7 +31,7 @@ public class SchemaTransformer {
         var registry = getTypeDefinitionRegistry(config.schemaLocations());
         getRegistryTransforms().forEach(it -> it.accept(registry));
         var schema = assembleSchema(registry);
-        var transforms = getSchemaTransforms();
+        var transforms = getSchemaTransforms(registry);
         for (var t : transforms) {
             schema = t.apply(schema);
         }
@@ -64,11 +48,11 @@ public class SchemaTransformer {
         return transforms;
     }
 
-    private List<Function<GraphQLSchema, GraphQLSchema>> getSchemaTransforms() {
+    private List<Function<GraphQLSchema, GraphQLSchema>> getSchemaTransforms(TypeDefinitionRegistry registry) {
         var transforms = new ArrayList<Function<GraphQLSchema, GraphQLSchema>>();
 
         if (config.addFeatureFlags()) {
-            transforms.add((s) -> new FeatureFlagConfiguration(s, config.descriptionSuffixForFeatures()).getModifiedGraphQLSchema());
+            transforms.add((s) -> new FeatureConfiguration(s, config.descriptionSuffixForFeatures(), federationIsImported(registry)).getModifiedGraphQLSchema());
         }
 
         var filterDirectives = new HashSet<>(config.directivesToFilter());
