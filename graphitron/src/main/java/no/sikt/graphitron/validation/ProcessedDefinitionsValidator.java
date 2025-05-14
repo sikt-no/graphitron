@@ -14,7 +14,6 @@ import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
@@ -102,7 +101,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(RecordObjectSpecification::hasTable)
                 .map(RecordObjectSpecification::getTable)
                 .map(JOOQMapping::getMappingName)
-                .filter(it -> !TableReflection.tableExists(it))
+                .filter(it -> !tableExists(it))
                 .forEach(it -> errorMessages.add(String.format("No table with name \"%s\" found.", it)));
 
         var allReferences = recordTypes
@@ -118,7 +117,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(FieldReference::hasTable)
                 .map(FieldReference::getTable)
                 .map(JOOQMapping::getMappingName)
-                .filter(it -> !TableReflection.tableExists(it))
+                .filter(it -> !tableExists(it))
                 .forEach(it -> errorMessages.add(String.format("No table with name \"%s\" found.", it)));
 
         allReferences
@@ -126,71 +125,73 @@ public class ProcessedDefinitionsValidator {
                 .filter(FieldReference::hasKey)
                 .map(FieldReference::getKey)
                 .map(JOOQMapping::getMappingName)
-                .filter(it -> !TableReflection.keyExists(it))
+                .filter(it -> !keyExists(it))
                 .forEach(it -> errorMessages.add(String.format("No key with name \"%s\" found.", it)));
 
 
-//        recordTypes
-//                .values()
-//                .stream()
-//                .flatMap(it -> it.getFields().stream())
-//                .filter(field -> recordTypes.containsKey(field.getTypeName()))
-//                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
-//                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
-//                .forEach((field) -> {
-//                            var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
-//                            var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
-//                            validateReferencePath(field, sourceTable, targetTable);
-//                        }
-//                );
+        recordTypes
+                .values()
+                .stream()
+                .flatMap(it -> it.getFields().stream())
+                .filter(field -> recordTypes.containsKey(field.getTypeName()))
+                .filter(field -> recordTypes.get(field.getTypeName()).hasTable() || field.hasFieldReferences() || field.isResolver())
+                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
+                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
+                .forEach((field) -> {
+                            var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
+                            var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
+                            validateReferencePath(field, sourceTable, targetTable);
+                        }
+                );
     }
 
     private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {
-        if (sourceTable.equals(targetTable)) { return; }
+        if (sourceTable.equals(targetTable) && !field.isResolver() && !field.hasFieldReferences()) { return; }
         for(FieldReference fieldReference : field.getFieldReferences()) {
-            if (fieldReference.hasTable()) {
-                String nextTable = fieldReference.getTable().getName();
-                if (TableReflection.getNumberOfForeignKeys(sourceTable, nextTable) > 1 || TableReflection.getNumberOfForeignKeys(nextTable, sourceTable) > 1) {
-                    errorMessages.add(String.format("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use in the @reference directive instead.", field.getName(), field.getContainerTypeName(), sourceTable, nextTable));
-                    return;
-                }
-                if (TableReflection.getNumberOfForeignKeys(sourceTable, nextTable) == 0 && TableReflection.getNumberOfForeignKeys(nextTable, sourceTable) == 0) {
-                    errorMessages.add(String.format("\"Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify a valid path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, nextTable));
-                    return;
-                }
-                if (nextTable.equals(targetTable)) {
-                    return;
-                } else {
-                    sourceTable = nextTable;
-                }
-            }
-            else if (fieldReference.hasKey()) {
+            if (fieldReference.hasTableCondition() && !fieldReference.hasKey()){
+                return;
+            } else if (fieldReference.hasKey()) {
                 String nextTable = "";
                 String keyName = fieldReference.getKey().getName();
-                var keyTargetOptional = TableReflection.getKeyTargetTable(keyName);
-                if (keyTargetOptional.isPresent() && !keyTargetOptional.get().equals(sourceTable)) {
-                    nextTable = keyTargetOptional.get();
+                var keyTarget = getKeyTargetTable(keyName).orElse("");
+                if (!keyTarget.equals(sourceTable)) {
+                    nextTable = keyTarget;
                 } else {
-                    keyTargetOptional = TableReflection.getKeySourceTable(keyName);
-                    if (keyTargetOptional.isPresent()) {
-                        nextTable = keyTargetOptional.get();
-                    }
+                    nextTable = getKeySourceTable(keyName).orElse("");
                 }
-
                 if (nextTable.equals(targetTable)) {
                     return;
                 } else {
                     sourceTable = nextTable;
                 }
             }
-            else if (fieldReference.hasTableCondition()) {
-                return;
+            else if (fieldReference.hasTable()) {
+                String nextTable = fieldReference.getTable().getName();
+                if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) > 1) {
+                    errorMessages.add(String.format(
+                            "Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use in the @reference directive instead."
+                            , field.getName(), field.getContainerTypeName(), sourceTable, nextTable
+                    ));
+                    return;
+                }
+                if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) == 0) {
+                    errorMessages.add(String.format(
+                            "\"Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify a valid path with the @reference directive."
+                            , field.getName(), field.getContainerTypeName(), sourceTable, nextTable
+                    ));
+                    return;
+                }
+                if (nextTable.equals(targetTable)) {
+                    return;
+                } else {
+                    sourceTable = nextTable;
+                }
             }
         }
 
-        if (TableReflection.getNumberOfForeignKeys(sourceTable, targetTable) > 1 || TableReflection.getNumberOfForeignKeys(targetTable, sourceTable) > 1) {
+        if (getNumberOfForeignKeysBetweenTables(sourceTable, targetTable) > 1) {
             errorMessages.add(String.format("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable));
-        } else if (TableReflection.getNumberOfForeignKeys(sourceTable, targetTable) == 0 && TableReflection.getNumberOfForeignKeys(targetTable, sourceTable) == 0) {
+        } else if (getNumberOfForeignKeysBetweenTables(sourceTable, targetTable) == 0) {
             errorMessages.add(String.format("Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable));
         }
     }
@@ -199,14 +200,14 @@ public class ProcessedDefinitionsValidator {
         getUsedTablesWithRequiredMethods()
                 .entrySet()
                 .stream()
-                .filter(it -> TableReflection.tableOrKeyExists(it.getKey()))
+                .filter(it -> tableOrKeyExists(it.getKey()))
                 .forEach(entry -> {
                     var tableName = entry.getKey();
                     var allFieldNames = getJavaFieldNamesForTable(tableName);
                     var nonFieldElements = entry.getValue().stream().filter(it -> !allFieldNames.contains(it)).collect(Collectors.toList());
                     var missingElements = nonFieldElements
                             .stream()
-                            .filter(it -> TableReflection.searchTableForMethodWithName(tableName, it).isEmpty())
+                            .filter(it -> searchTableForMethodWithName(tableName, it).isEmpty())
                             .collect(Collectors.toList());
 
                     if (!missingElements.isEmpty()) {
@@ -322,7 +323,7 @@ public class ProcessedDefinitionsValidator {
                 var nextTable = reference.hasTable()
                         ? reference.getTable().getMappingName()
                         : (schema.isRecordType(field) ? schema.getObjectOrConnectionNode(field).getTable().getMappingName() : lastTable);
-                var reverseKeyFound = TableReflection.searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
+                var reverseKeyFound = searchTableForMethodWithName(nextTable, key.getMappingName()).isPresent(); // In joins the key can also be used in reverse.
                 requiredJOOQTypesAndMethods
                         .computeIfAbsent(reverseKeyFound ? nextTable : lastTable, (k) -> new HashSet<>())
                         .add(key.getMappingName());
@@ -374,7 +375,7 @@ public class ProcessedDefinitionsValidator {
                 if (schema.isUnion(field)) {
                     for (ObjectDefinition subType : schema.getUnionSubTypes(field.getTypeName())) {
                         if (!subType.hasTable()) {
-                            errorMessages.add(String.format("Type %s in Union '%s' in Query has no table.", subType.getName(), schema.getUnion(field.getTypeName()).getName()));
+                            errorMessages.add(String.format("Type %s in Union '%s' in Query has no table.", subType.getName(), schema.getUnion(field).getName()));
                         }
                     }
                 }
@@ -811,10 +812,10 @@ public class ProcessedDefinitionsValidator {
         var inputObject = schema.getInputType(recordInput);
         var tableName = inputObject.getTable().getMappingName();
 
-        var requiredDBFields = TableReflection.getRequiredFields(tableName)
+        var requiredDBFields = getRequiredFields(tableName)
                 .stream()
                 .map(String::toUpperCase)
-                .filter(it -> !TableReflection.tableFieldHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
+                .filter(it -> !tableFieldHasDefaultValue(tableName, it)) // No need to complain when it has a default set. Note that this does not work for views.
                 .collect(Collectors.toList());
         var recordFieldNames =
                 inputObject.getFields()
