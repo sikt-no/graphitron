@@ -1,0 +1,13 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@tag"]) {
+  query: Query
+}
+
+type Query {
+  u1: Union1
+}
+
+union Union1 = Object1
+
+type Object1 {
+  string: String!
+}

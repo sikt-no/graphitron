@@ -1,0 +1,2 @@
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+directive @asConnection(defaultFirstValue: Int = 100, connectionName: String) on FIELD_DEFINITION

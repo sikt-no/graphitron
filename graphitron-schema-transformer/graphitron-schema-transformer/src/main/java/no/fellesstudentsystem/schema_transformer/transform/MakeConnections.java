@@ -1,22 +1,7 @@
 package no.fellesstudentsystem.schema_transformer.transform;
 
 import graphql.Scalars;
-import graphql.language.Directive;
-import graphql.language.DirectiveDefinition;
-import graphql.language.DirectivesContainer;
-import graphql.language.FieldDefinition;
-import graphql.language.ImplementingTypeDefinition;
-import graphql.language.InputValueDefinition;
-import graphql.language.IntValue;
-import graphql.language.InterfaceTypeDefinition;
-import graphql.language.ListType;
-import graphql.language.NamedNode;
-import graphql.language.NonNullType;
-import graphql.language.ObjectTypeDefinition;
-import graphql.language.SDLDefinition;
-import graphql.language.StringValue;
-import graphql.language.Type;
-import graphql.language.TypeName;
+import graphql.language.*;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import org.jetbrains.annotations.NotNull;
@@ -31,18 +16,7 @@ import java.util.stream.Collectors;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirective.AS_CONNECTION;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirectiveParam.CONNECTION_NAME;
 import static no.fellesstudentsystem.schema_transformer.mapping.GraphQLDirectiveParam.FIRST_DEFAULT;
-import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_CURSOR_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_EDGE_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_NODES_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_NODE_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
-import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_TOTAL_COUNT;
-import static no.sikt.graphql.naming.GraphQLReservedName.END_CURSOR_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.HAS_NEXT_PAGE_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.HAS_PREVIOUS_PAGE_FIELD;
-import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_AFTER;
-import static no.sikt.graphql.naming.GraphQLReservedName.PAGINATION_FIRST;
-import static no.sikt.graphql.naming.GraphQLReservedName.START_CURSOR_FIELD;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 
 public class MakeConnections {
@@ -63,7 +37,8 @@ public class MakeConnections {
 
             if (!fields.isEmpty()) {
                 if (!typeDefinitionRegistry.hasType(PAGE_INFO)) {
-                    typeDefinitionRegistry.add(createPageInfo());
+                    var sourceLocation = typeDefinitionRegistry.getType(SCHEMA_QUERY.getName()).map(Node::getSourceLocation).orElse(null);
+                    typeDefinitionRegistry.add(createPageInfo(sourceLocation));
                 }
 
                 typeDefinitionRegistry.remove(objectTypeDefinition);
@@ -77,7 +52,8 @@ public class MakeConnections {
 
             if (!fields.isEmpty()) {
                 if (!typeDefinitionRegistry.hasType(PAGE_INFO)) {
-                    typeDefinitionRegistry.add(createPageInfo());
+                    var sourceLocation = typeDefinitionRegistry.getType(SCHEMA_QUERY.getName()).map(Node::getSourceLocation).orElse(null);
+                    typeDefinitionRegistry.add(createPageInfo(sourceLocation));
                 }
 
                 typeDefinitionRegistry.remove(interfaceTypeDefinition);
@@ -110,9 +86,10 @@ public class MakeConnections {
         }
     }
 
-    private static SDLDefinition<?> createPageInfo() {
+    private static SDLDefinition<?> createPageInfo(SourceLocation sourceLocation) {
         return ObjectTypeDefinition.newObjectTypeDefinition()
                 .name(CONNECTION_PAGE_INFO_NODE.getName())
+                .sourceLocation(sourceLocation)
                 .fieldDefinitions(List.of(
                         FieldDefinition.newFieldDefinition()
                                 .name(HAS_PREVIOUS_PAGE_FIELD.getName())
@@ -143,6 +120,7 @@ public class MakeConnections {
 
         var connectionTypeName = getConnectionTypeName(objectTypeDefinition, fieldDefinition, connection);
         var connectionType = maybeCreateConnectionType(connectionTypeName, typeDefinitionRegistry, fieldDefinition, (TypeName) wrappedType);
+        var source = fieldDefinition.getSourceLocation();
         return fieldDefinition.transform(builder -> {
             // 2. Endre felttypen til å peke på Connection-typen
             builder.type(connectionType);
@@ -150,15 +128,17 @@ public class MakeConnections {
             // 3. Endre felttypen til å ha first og after-argument
             builder.inputValueDefinition(InputValueDefinition
                     .newInputValueDefinition()
-                            .name(PAGINATION_FIRST.getName())
-                            .type(INT_TYPE)
-                            .defaultValue(getDefaultFirstValue(connection))
+                    .name(PAGINATION_FIRST.getName())
+                    .type(INT_TYPE)
+                    .defaultValue(getDefaultFirstValue(connection))
+                    .sourceLocation(source)
                     .build());
 
             builder.inputValueDefinition(InputValueDefinition
                     .newInputValueDefinition()
                     .name(PAGINATION_AFTER.getName())
                     .type(STRING_TYPE)
+                    .sourceLocation(source)
                     .build());
 
             // Filtrer bort asConnection-direktivet
@@ -189,7 +169,7 @@ public class MakeConnections {
         }
 
         if (!(fieldType instanceof ListType)) {
-            throw new IllegalArgumentException(String.format("The field %s.%s is not a list type, this is not supported.", objectTypeDefinition.getName(), fieldDefinition.getName()));
+            throw new IllegalArgumentException(String.format("The field %s.%s is not a list type, this is not supported for relay connections.", objectTypeDefinition.getName(), fieldDefinition.getName()));
         }
 
         var wrappedType = ((ListType) fieldType).getType();
@@ -210,6 +190,7 @@ public class MakeConnections {
         //    TODO: kopiere feature-direktiv fra parent-feltet?
 
         var connectionType = new TypeName(connectionTypeName);
+        var source = fieldDefinition.getSourceLocation();
         if (!typeDefinitionRegistry.hasType(connectionType)) {
             var edgeType = new TypeName(connectionTypeName + "Edge");
             var edge = ObjectTypeDefinition.newObjectTypeDefinition()
@@ -218,12 +199,15 @@ public class MakeConnections {
                             FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_CURSOR_FIELD.getName())
                                     .type(STRING_TYPE)
+                                    .sourceLocation(source)
                                     .build(),
                             FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_NODE_FIELD.getName())
                                     .type(wrappedType)
+                                    .sourceLocation(source)
                                     .build()
                     ))
+                    .sourceLocation(source)
                     .build();
 
             var connection = ObjectTypeDefinition.newObjectTypeDefinition()
@@ -232,20 +216,25 @@ public class MakeConnections {
                             FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_EDGE_FIELD.getName())
                                     .type(new ListType(edgeType))
+                                    .sourceLocation(source)
                                     .build(),
                             FieldDefinition.newFieldDefinition()
                                     .name("pageInfo")
                                     .type(PAGE_INFO)
+                                    .sourceLocation(source)
                                     .build(),
                             FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_NODES_FIELD.getName())
                                     .type(fieldDefinition.getType())
+                                    .sourceLocation(source)
                                     .build(),
                             FieldDefinition.newFieldDefinition()
                                     .name(CONNECTION_TOTAL_COUNT.getName())
                                     .type(INT_TYPE)
+                                    .sourceLocation(source)
                                     .build()
                     ))
+                    .sourceLocation(source)
                     .build();
             typeDefinitionRegistry.add(connection);
             typeDefinitionRegistry.add(edge);
