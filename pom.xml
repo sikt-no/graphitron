@@ -7,17 +7,6 @@
     <artifactId>graphitron-parent</artifactId>
     <packaging>pom</packaging>
 
-    <!--
-         Vi bruker ikke Maven Release Plugin, i stedet bruker vi såkalte CI
-         Friendly version. Dette gjør det mulig for byggeserveren vår å
-         spesifisere versjonen basert på informasjon fra git. Dette er også
-         grunnen til at vi bruker flatten-maven-plugin.
-
-         For mer info, se:
-             - https://maven.apache.org/maven-ci-friendly.html
-         - https://blog.soebes.de/blog/2017/04/02/maven-pom-files-without-a-version-in-it/
-         - https://axelfontaine.com/blog/dead-burried.html
-    -->
     <version>${revision}${changelist}</version>
 
     <modules>
@@ -194,8 +183,8 @@
         </snapshotRepository>
     </distributionManagement>
     <scm>
-        <url>https://gitlab.sikt.no/graphitron/graphitron.git</url>
-        <developerConnection>scm:git:git@gitlab.sikt.no:graphitron/graphitron.git</developerConnection>
+        <url>https://github.com/sikt-no/graphitron.git</url>
+        <developerConnection>scm:git:git@git@github.com:sikt-no/graphitron.git</developerConnection>
     </scm>
     <licenses>
         <license>
@@ -384,57 +373,6 @@
             </plugin>
         </plugins>
     </build>
-
-    <repositories>
-        <repository>
-            <id>artifactory-central</id>
-            <name>libs-releases</name>
-            <url>https://artifactory.sikt.no/artifactory/libs-releases</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-        <repository>
-            <id>artifactory-libs-snapshots</id>
-            <name>libs-snapshots</name>
-            <url>https://artifactory.sikt.no/artifactory/libs-snapshots</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-        </repository>
-        <repository>
-            <id>redhat-ga</id>
-            <url>https://maven.repository.redhat.com/ga/</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
-
-    <pluginRepositories>
-        <pluginRepository>
-            <id>artifactory-central</id>
-            <name>libs-releases</name>
-            <url>https://artifactory.sikt.no/artifactory/libs-releases</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </pluginRepository>
-        <pluginRepository>
-            <id>artifactory-libs-snapshots</id>
-            <name>libs-snapshots</name>
-            <url>https://artifactory.sikt.no/artifactory/libs-snapshots</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-        </pluginRepository>
-    </pluginRepositories>
 
     <profiles>
         <profile>

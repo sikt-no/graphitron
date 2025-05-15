@@ -25,7 +25,7 @@ The @externalField directive indicates that the annotated field is
 retrieved using a static method implemented in Java.
 This is typically used when the field's value requires custom logic implemented in Java."
 
-For more information, see documentation [here](https://gitlab.sikt.no/graphitron/graphitron/-/tree/main/graphitron/graphitron?ref_type=heads#external-field).
+For more information, see documentation [here](https://github.com/sikt-no/graphitron/graphitron/-/tree/main/graphitron/graphitron?ref_type=heads#external-field).
 """
 directive @externalField on FIELD_DEFINITION
 
