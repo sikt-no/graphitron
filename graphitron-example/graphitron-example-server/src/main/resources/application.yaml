@@ -31,7 +31,7 @@ application:
         "org.jooq":
           level: WARN
 
-# This configuration is used when running tests on CI (GitLab)
+# This configuration is used when running tests on CI
 "%ci":
   quarkus:
     profile:
