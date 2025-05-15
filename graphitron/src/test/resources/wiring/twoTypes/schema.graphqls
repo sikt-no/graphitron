@@ -1,0 +1,12 @@
+type Query {
+  customer: Customer
+}
+
+type Customer {
+  id: ID
+  address: Address @splitQuery
+}
+
+type Address {
+  id: ID
+}

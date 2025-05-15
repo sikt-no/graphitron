@@ -1,0 +1,91 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-example</artifactId>
+        <version>${revision}${changelist}</version>
+    </parent>
+
+    <artifactId>graphitron-example-db</artifactId>
+    <name>graphitron-example-db</name>
+
+    <properties>
+        <db.url>jdbc:postgresql://localhost:5433/sakila</db.url>
+        <db.username>sakila</db.username>
+        <db.password>p_ssW0rd</db.password>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-common</artifactId>
+            <version>${revision}${changelist}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.hibernate.validator</groupId>
+            <artifactId>hibernate-validator</artifactId>
+            <version>8.0.2.Final</version>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <profile>
+            <id>jooq-codegen</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jooq</groupId>
+                        <artifactId>jooq-codegen-maven</artifactId>
+                        <executions>
+                            <execution>
+                                <id>jooq-code-generator</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>generate</goal>
+                                </goals>
+
+                                <configuration>
+                                    <configurationFiles>
+                                        <configurationFile>jooq-configuration.xml</configurationFile>
+                                    </configurationFiles>
+                                    <jdbc>
+                                        <driver>org.postgresql.Driver</driver>
+                                        <url>${db.url}</url>
+                                        <user>${db.username}</user>
+                                        <password>${db.password}</password>
+                                    </jdbc>
+                                    <generator>
+                                        <name>no.sikt.jooq.IdBasedGenerator</name>
+                                        <database>
+                                            <inputSchema>public</inputSchema>
+                                            <includeIndexes>true</includeIndexes>
+                                        </database>
+                                        <target>
+                                            <packageName>${generatedJooqPackage}</packageName>
+                                            <directory>src/main/java</directory>
+                                        </target>
+                                    </generator>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.postgresql</groupId>
+                                <artifactId>postgresql</artifactId>
+                                <version>${version.postgresql}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

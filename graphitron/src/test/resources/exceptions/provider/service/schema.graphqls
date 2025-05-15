@@ -1,0 +1,12 @@
+type Mutation {
+  mutation: Response @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Response {
+  errors: [SomeError]
+}
+
+type SomeError implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+}

@@ -1,0 +1,7 @@
+type Mutation {
+  mutation: Response @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Response {
+  errors: [ValidationError]
+}

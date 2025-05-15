@@ -1,0 +1,15 @@
+{
+  cities(first: 1) {
+    nodes {
+      id
+      addresses {
+        id
+      }
+      addressesPaginated {
+        nodes {
+          id
+        }
+      }
+    }
+  }
+}

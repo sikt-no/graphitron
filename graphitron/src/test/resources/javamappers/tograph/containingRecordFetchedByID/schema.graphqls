@@ -1,0 +1,7 @@
+type Address @record(record: {name: "NESTED_RECORD"}) {
+  customer: Customer @fetchByID
+}
+
+type Customer implements Node @table {
+  id: ID
+}

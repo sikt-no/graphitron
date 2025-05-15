@@ -1,0 +1,37 @@
+directive @dir2(param: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+extend type Query {
+  getObject2: InnerObject2
+  getObject3: [InnerObjectC!]!
+  getObject4: SomeEnum
+}
+
+extend type InnerObject {
+  inner: InnerObject2 @dir
+  f1(a0: String @dir2(param: "ARG")): String!
+}
+
+type InnerObject2 {
+  id: ID!
+}
+
+interface Interface {
+  id: ID!
+}
+
+type InnerObjectC implements Interface {
+  id: ID!
+}
+
+extend input Input {
+  inner2: InnerInput2 @dir2 (param: "ARG")
+}
+
+input InnerInput2 {
+  id: ID!
+}
+
+enum SomeEnum {
+  e0,
+  e1 @dir(param: "PARAM")
+}

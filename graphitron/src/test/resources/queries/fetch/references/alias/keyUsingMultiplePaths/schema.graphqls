@@ -1,0 +1,9 @@
+type Query {
+  film: Film
+}
+
+type Film @table {
+  id: ID!
+  name: String @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+  originalName: String @field(name: "NAME") @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+}

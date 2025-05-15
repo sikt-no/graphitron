@@ -1,0 +1,7 @@
+type Query {
+  customers: [Customer]
+}
+
+type Customer implements Node @table {
+  id: ID!
+}

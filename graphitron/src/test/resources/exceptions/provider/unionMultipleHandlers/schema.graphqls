@@ -1,0 +1,15 @@
+type Response {
+  errors: [U]
+}
+
+union U = SomeError0 | SomeError1
+
+type SomeError0 implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type SomeError1 implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+}

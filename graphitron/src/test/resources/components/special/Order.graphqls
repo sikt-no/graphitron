@@ -1,0 +1,4 @@
+input Order {
+  direction: OrderDirection!
+  orderByField: OrderByField!
+}

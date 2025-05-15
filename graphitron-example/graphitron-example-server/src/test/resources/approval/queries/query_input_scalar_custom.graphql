@@ -1,0 +1,9 @@
+# query can filter on custom scalar, LocalDateTime
+{
+    payments(dateTime: "2005-05-28T10:35:23") {
+        nodes {
+            amount
+            dateTime
+        }
+    }
+}

@@ -1,0 +1,35 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  wrapper: Wrapper!
+
+  email0: String @field(name: "EMAIL")
+  email1: String @field(name: "EMAIL")
+  email2: String @field(name: "EMAIL")
+  email3: String @field(name: "EMAIL")
+  email4: String @field(name: "EMAIL")
+  email5: String @field(name: "EMAIL")
+  email6: String @field(name: "EMAIL")
+  email7: String @field(name: "EMAIL")
+  email8: String @field(name: "EMAIL")
+  email9: String @field(name: "EMAIL")
+  email10: String @field(name: "EMAIL")
+  email11: String @field(name: "EMAIL")
+  email12: String @field(name: "EMAIL")
+  email13: String @field(name: "EMAIL")
+  email14: String @field(name: "EMAIL")
+  email15: String @field(name: "EMAIL")
+  email16: String @field(name: "EMAIL")
+  email17: String @field(name: "EMAIL")
+  email18: String @field(name: "EMAIL")
+  email19: String @field(name: "EMAIL")
+  email20: String @field(name: "EMAIL")
+  email21: String @field(name: "EMAIL")
+  email22: String @field(name: "EMAIL")
+}
+
+type Wrapper {
+  email: String @field(name: "EMAIL")
+}

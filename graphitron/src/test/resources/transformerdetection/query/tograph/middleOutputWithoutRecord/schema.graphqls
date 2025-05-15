@@ -1,0 +1,20 @@
+type Query {
+  query: Level1 @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Level1 @record(record: {name: "DUMMY_RECORD"}) {
+  level2: Level2
+}
+
+type Level2 {
+  level3A: [Level3A!]
+  level3B: [Level3B!]
+}
+
+type Level3A @table(name: "CUSTOMER") {
+  id: ID
+}
+
+type Level3B @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID
+}

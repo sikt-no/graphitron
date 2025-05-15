@@ -1,0 +1,32 @@
+extend type Query {
+  """
+  existing getObject2 description
+  multiple lines
+  """
+  getObject2: Object2
+  getObject3: SomeEnum
+}
+
+type Object2 implements Interface {
+  id: ID!
+}
+
+interface Interface {
+  "interface text"
+  id: ID!
+}
+
+extend input Input {
+  "existing inner description"
+  inner: InnerInput
+}
+
+input InnerInput {
+  id: ID!
+}
+
+enum SomeEnum {
+  "existing e0 description"
+  e0,
+  e1
+}

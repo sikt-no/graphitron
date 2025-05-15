@@ -1,0 +1,21 @@
+type Query {
+  q0: T0 @feature(flags: "F0")
+  q1: T3 # This one should be kept since it has another usage.
+}
+
+type T0 {
+  t1: T1
+}
+
+type T1 {
+  t2: T2
+  t3: T3
+}
+
+type T2 {
+  f0: String
+}
+
+type T3 {
+  f0: String
+}

@@ -1,0 +1,156 @@
+extend schema
+@link(url: "https://specs.apollo.dev/federation/v2.4",
+    import: ["@key"])
+
+scalar BigDecimal
+scalar LocalDateTime
+
+type Query {
+    helloWorld: String @notGenerated
+    helloWorldAgain(name: String!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+
+    customers(first: Int = 100, after: String): CustomerConnection
+    activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
+#    customerFromService: CustomerRecord @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"}) # TODO: GGG-41
+
+    films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
+    filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
+    filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
+    filmLists(category: String): [FilmList]
+
+    languages: [Language] @asConnection
+
+    payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
+
+    staff(input: StaffInput!): [Staff] @asConnection
+
+    node(id: ID!): Node
+    cities: [City] @asConnection
+}
+
+interface Node {
+    id: ID!
+}
+
+type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
+    greeting: String
+}
+
+type CustomerConnection {
+    edges: [CustomerConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Customer!]!
+    totalCount: Int
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type CustomerConnectionEdge {
+    cursor: String
+    node: Customer
+}
+
+type Customer implements Node @table {
+    id: ID!
+    name: CustomerName
+    email: String
+    address: Address!
+}
+
+type CustomerName {
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName: String! @field(name: "LAST_NAME")
+}
+
+type Address @table @key(fields: "id", resolvable: false) {
+    id: ID
+    addressLine1: String! @field(name: "ADDRESS_")
+    addressLine2: String @field(name: "ADDRESS2")
+    city: City!
+    zip: String @field(name: "POSTAL_CODE")
+    phone: String!
+}
+
+type City @table {
+    id: ID!
+    name: String! @field(name: "CITY_")
+    countryName: String! @field(name: "COUNTRY_") @reference(references: [{table: "COUNTRY"}])
+    addressExample: Address @splitQuery @notGenerated
+    addresses: [Address] @splitQuery
+    addressesPaginated: [Address] @splitQuery @asConnection
+    payments: [Payment] @reference(references: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+}
+
+type FilmList @table(name: "FILM_LIST") {
+    description: String
+    category: FilmCategory @field(name: "CATEGORY")
+}
+
+enum FilmCategory { # Note that this enum is not complete, and other values are also present in the database
+    SPORTS @field(name: "Sports")
+    CLASSICS @field(name: "Classics")
+    COMEDY @field(name: "Comedy")
+    ANIMATION @field(name: "Animation")
+}
+
+type Language @table {
+    name: String
+#    films(releaseYear: Int! @field(name: "RELEASE_YEAR")): [Film] @splitQuery
+}
+
+type Film implements Node @table {
+    id: ID!
+    title: String
+}
+
+input FilmLookupInput {
+    filmId: String! @field(name: "FILM_ID")
+    title: String!
+}
+
+input FilmsOrderByInput {
+    orderByField: FilmsOrderByFields!
+    direction: OrderDirection!
+}
+
+enum FilmsOrderByFields {
+    TITLE @index(name: "IDX_TITLE")
+    LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
+}
+
+enum OrderDirection {
+    ASC
+    DESC
+}
+
+type Payment @table {
+    amount: BigDecimal
+    dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
+#    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
+}
+
+type CustomerRecord @table(name: "CUSTOMER") {
+    id: ID
+}
+
+input StaffInput {
+    username: String
+    isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
+    addressId: Int @field(name: "ADDRESS_ID") @reference(references: [{table: "ADDRESS"}])
+    withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(references: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
+}
+
+type Staff @table(name: "STAFF") {
+    id: ID
+    email: String
+    username: String
+}
+
+union SomeUnion = Language | Staff

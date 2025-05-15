@@ -1,0 +1,27 @@
+type Query {
+    address(first: Int = 100, after: String): AddressConnection
+}
+
+interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
+    postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
+    id: ID
+    postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {
+    postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressConnection {
+    edges: [AddressConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Address!]!
+}
+
+type AddressConnectionEdge {
+    cursor: String
+    node: Address
+}

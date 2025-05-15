@@ -1,0 +1,7 @@
+type Address @record(record: {name: "NESTED_RECORD"}) {
+  inner: InnerWrapper
+}
+
+type InnerWrapper {
+  dummyRecord: DummyTypeRecord
+}

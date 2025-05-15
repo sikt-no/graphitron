@@ -1,0 +1,15 @@
+type Query {
+  payments(customerId: String @field(name: "CUSTOMER_ID")): [Payment]
+}
+
+interface Payment {
+  amount: Int
+}
+
+type PaymentTypeOne implements Payment @table(name: "PAYMENT_P2007_01") {
+  amount: Int
+}
+
+type PaymentTypeTwo implements Payment @table(name: "PAYMENT_P2007_02") {
+  amount: Int
+}

@@ -1,0 +1,12 @@
+type Query {
+  # This invokes special mapping logic due to the mapping source being less clear.
+  query: Wrapper @service(service: {name: "MAPPER_FETCH_SERVICE", method: "customerQuery"})
+}
+
+type Wrapper {
+  customer: Customer
+}
+
+type Customer @table {
+  id: ID! @notGenerated
+}

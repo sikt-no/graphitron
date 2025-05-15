@@ -1,0 +1,3 @@
+type VacationDestination @table(name: "VACATION_DESTINATION") {
+    someStrings: [String] @splitQuery @reference(references: [{condition: {name: "DUMMY_CONDITION"}}])
+}

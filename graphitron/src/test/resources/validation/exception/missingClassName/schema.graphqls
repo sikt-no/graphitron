@@ -1,0 +1,4 @@
+type SomeError implements Error @error(handlers: [{handler: GENERIC, description: "bad word detected"}]) {
+  path: [String!]!
+  message: String!
+}

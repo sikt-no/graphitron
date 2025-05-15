@@ -1,0 +1,15 @@
+type Mutation {
+  mutation(in: [CustomerInputTable]): Response1 @mutation(typeName: UPDATE)
+}
+
+type Response1 {
+  response2: Response2  # Note, needs this extra stage for some reason, this "feature" is pretty weak. Returning Response2 directly creates invalid code.
+}
+
+type Response2 {
+  customer: Customer
+}
+
+type Customer implements Node @table {
+  id: ID!
+}

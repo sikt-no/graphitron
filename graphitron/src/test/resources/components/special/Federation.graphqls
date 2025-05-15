@@ -1,0 +1,4 @@
+scalar _Any
+scalar FieldSet
+
+directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE

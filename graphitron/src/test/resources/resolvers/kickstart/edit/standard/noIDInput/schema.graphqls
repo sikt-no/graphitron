@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: Customer): ID @mutation(typeName: UPDATE)
+}
+
+input Customer @table {
+  email: String
+}

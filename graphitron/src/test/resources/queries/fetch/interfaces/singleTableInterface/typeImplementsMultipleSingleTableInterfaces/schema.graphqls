@@ -1,0 +1,18 @@
+type Query {
+  address: Address
+  addressWithPhoneNumber: AddressWithPhoneNumber
+}
+
+interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+interface AddressWithPhoneNumber @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
+  phone: String
+}
+
+type AddressInDistrictOne implements Address & AddressWithPhoneNumber @table(name: "ADDRESS") @discriminator(value: "ONE") {
+  id: ID
+  postalCode: String @field(name: "POSTAL_CODE")
+  phone: String
+}

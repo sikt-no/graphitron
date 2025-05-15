@@ -1,0 +1,11 @@
+type Query {
+  query: Film @notGenerated
+}
+
+type Film @table {
+  language: Language! @splitQuery @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+}
+
+type Language @table {
+  id: ID!
+}

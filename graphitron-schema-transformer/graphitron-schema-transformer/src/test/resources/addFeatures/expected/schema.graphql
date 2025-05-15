@@ -1,0 +1,79 @@
+input InnerInput {
+  id: ID! @feature(flags : ["c"])
+}
+
+input InnerInput2 {
+  id: ID! @feature(flags : ["a"])
+}
+
+input InnerInput3 {
+  id: ID! @feature(flags : ["b"])
+}
+
+type InnerObject {
+  id: ID! @feature(flags : ["c"])
+  f0(a0: String @feature(flags : ["EXTRA", "c"])): String! @feature(flags : ["c"])
+  inner: InnerObject2 @dir @feature(flags : ["a"])
+  f1(a0: String @dir2(param : "ARG") @feature(flags : ["a"])): String! @feature(flags : ["a"])
+  double: ID @feature(flags : ["a"])
+  triple: ID @feature(flags : ["FLAG", "a"])
+  inner3: InnerObject3 @dir @feature(flags : ["b"])
+  extraFlag: ID @feature(flags : ["EXTRA", "b"])
+}
+
+type InnerObject2 {
+  id: ID! @feature(flags : ["a"])
+}
+
+type InnerObject3 {
+  id: ID! @feature(flags : ["b"])
+}
+
+type InnerObjectC implements Interface {
+  id: ID! @feature(flags : ["a"])
+}
+
+input Input {
+  id: ID! @feature(flags : ["c"])
+  inner: InnerInput @dir @feature(flags : ["c"])
+  inner2: InnerInput2 @dir2(param: "ARG") @feature(flags : ["a"])
+  double: ID @feature(flags : ["a"])
+  triple: ID @feature(flags : ["FLAG", "a"])
+  inner3: InnerInput3 @feature(flags : ["b"])
+  extraFlag: ID @feature(flags : ["EXTRA", "b"])
+}
+
+interface Interface {
+  id: ID! @feature(flags : ["a"])
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Query {
+  getObject(a0: String! @dir @feature(flags : ["EXTRA", "c"])): SomeObject @feature(flags : ["c"])
+  getObjectWithInputs(a0: Input! @dir @feature(flags : ["EXTRA", "c"]), a1: [Input!] @feature(flags : ["c"])): SomeObject @dir @feature(flags : ["c"])
+  getObject2: InnerObject2 @feature(flags : ["a"])
+  getObject3: [InnerObjectC!]! @feature(flags : ["a"])
+  getObject4: SomeEnum @feature(flags : ["a"])
+}
+
+enum SomeEnum {
+  e0 @feature(flags : ["a"])
+  e1 @dir(param : "PARAM") @feature(flags : ["a"])
+}
+
+type SomeObject {
+  id: ID! @feature(flags : ["c"])
+  inner: [InnerObject!]! @dir @feature(flags : ["c"])
+}
+
+directive @dir(param: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION
+
+directive @dir2(param: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION

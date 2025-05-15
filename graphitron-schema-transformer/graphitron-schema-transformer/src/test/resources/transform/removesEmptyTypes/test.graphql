@@ -1,0 +1,26 @@
+type Query {
+  q0: T1 @feature(flags: "F0")
+  q1(in: I0 @feature(flags: "F0")): T0
+  q2: E0 @feature(flags: "F0")
+}
+
+type T0 implements I {
+  f0: ID
+  t1: ID
+}
+
+type T1 implements I {
+  f0: ID @feature(flags: "F0")
+}
+
+interface I {
+  f0: ID @feature(flags: "F0")
+}
+
+input I0 {
+  i0: ID @feature(flags: "F0")
+}
+
+enum E0 {
+  e0 @feature(flags: "F0")
+}

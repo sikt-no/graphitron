@@ -1,0 +1,11 @@
+type Mutation {
+  mutation(in: Customer): ID! @mutation(typeName: INSERT)
+}
+
+input Customer @table {
+  customer_id: String!
+  activebool: Boolean!
+  last_name: String!
+  store_id: String!
+  address_id: String!
+}

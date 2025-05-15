@@ -1,0 +1,9 @@
+type Query {
+  customer(in: [CustomerInput]): CustomerTable @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"})
+  customerOverride(in: [CustomerInput]): CustomerTable @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerJOOQRecordList"}, override: true)
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+  id: ID! @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerString"})
+  first: String! @field(name: "FIRST_NAME") @condition(condition: {name: "RECORD_FETCH_CONDITION", method: "customerString"}, override: true)
+}

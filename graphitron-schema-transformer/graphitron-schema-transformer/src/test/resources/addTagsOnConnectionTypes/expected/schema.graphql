@@ -1,0 +1,66 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@tag"]) {
+  query: Query
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean! @feature(flags : ["c"]) @tag(name: "c")
+  hasNextPage: Boolean! @feature(flags : ["c"]) @tag(name: "c")
+  startCursor: String @feature(flags : ["c"]) @tag(name: "c")
+  endCursor: String @feature(flags : ["c"]) @tag(name: "c")
+}
+
+type Query {
+  object1(first: Int = 100 @feature(flags : ["c"]) @tag(name: "c"), after: String @feature(flags : ["c"]) @tag(name: "c")): QueryObject1Connection @feature(flags : ["c"]) @tag(name: "c")
+  object2(first: Int = 100 @feature(flags : ["a"]) @tag(name: "a"), after: String @feature(flags : ["a"]) @tag(name: "a")): QueryObject2Connection @feature(flags : ["a"]) @tag(name: "a")
+  object3(first: Int = 100 @feature(flags : ["b"]) @tag(name: "b"), after: String @feature(flags : ["b"]) @tag(name: "b")): QueryObject3Connection @feature(flags : ["b"]) @tag(name: "b")
+}
+
+type Object1 {
+  string: String! @feature(flags : ["c"]) @tag(name: "c")
+}
+
+type QueryObject1Connection {
+  edges: [QueryObject1ConnectionEdge] @feature(flags : ["c"]) @tag(name: "c")
+  pageInfo: PageInfo @feature(flags : ["c"]) @tag(name: "c")
+  nodes: [Object1] @feature(flags : ["c"]) @tag(name: "c")
+  totalCount: Int @feature(flags : ["c"]) @tag(name: "c")
+}
+
+type QueryObject1ConnectionEdge {
+  cursor: String @feature(flags : ["c"]) @tag(name: "c")
+  node: Object1 @feature(flags : ["c"]) @tag(name: "c")
+}
+
+type Object2 {
+  string: String! @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type QueryObject2Connection {
+  edges: [QueryObject2ConnectionEdge] @feature(flags : ["a"]) @tag(name: "a")
+  pageInfo: PageInfo @feature(flags : ["a"]) @tag(name: "a")
+  nodes: [Object2] @feature(flags : ["a"]) @tag(name: "a")
+  totalCount: Int @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type QueryObject2ConnectionEdge {
+  cursor: String @feature(flags : ["a"]) @tag(name: "a")
+  node: Object2 @feature(flags : ["a"]) @tag(name: "a")
+}
+
+type Object3 {
+  string: String! @feature(flags : ["b"]) @tag(name: "b")
+}
+
+type QueryObject3Connection {
+  edges: [QueryObject3ConnectionEdge] @feature(flags : ["b"]) @tag(name: "b")
+  pageInfo: PageInfo @feature(flags : ["b"]) @tag(name: "b")
+  nodes: [Object3] @feature(flags : ["b"]) @tag(name: "b")
+  totalCount: Int @feature(flags : ["b"]) @tag(name: "b")
+}
+
+type QueryObject3ConnectionEdge {
+  cursor: String @feature(flags : ["b"]) @tag(name: "b")
+  node: Object3 @feature(flags : ["b"]) @tag(name: "b")
+}
+
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION

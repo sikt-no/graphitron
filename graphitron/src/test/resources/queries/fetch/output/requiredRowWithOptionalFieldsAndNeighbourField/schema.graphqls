@@ -1,0 +1,12 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  email: String
+  wrapper: Wrapper!
+}
+
+type Wrapper {
+  email: String
+}

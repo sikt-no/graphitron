@@ -1,0 +1,3 @@
+interface Address @discriminate(on: "DISTRICT") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}

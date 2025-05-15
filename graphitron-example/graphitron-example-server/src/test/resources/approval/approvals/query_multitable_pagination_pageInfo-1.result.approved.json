@@ -1,0 +1,12 @@
+{
+    "data": {
+        "reachableByEmail": {
+            "pageInfo": {
+                "endCursor": "eyJ0eXBlTmFtZSIgOiAiQ3VzdG9tZXJXaXRoRW1haWwiLCAiZmllbGRzIiA6IFsxMDBdfQ",
+                "hasNextPage": true,
+                "hasPreviousPage": false,
+                "startCursor": "eyJ0eXBlTmFtZSIgOiAiQ3VzdG9tZXJXaXRoRW1haWwiLCAiZmllbGRzIiA6IFsxXX0"
+            }
+        }
+    }
+}

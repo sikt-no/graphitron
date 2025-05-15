@@ -1,0 +1,15 @@
+input CityInput1 {
+  city: CityInput2
+}
+
+input CityInput2 @record(record: {name: "DUMMY_RECORD"}) {
+  cityId: String! @field(name: "CITY_ID")
+}
+
+input CityInput3 @record(record: {name: "DUMMY_RECORD"}) {
+  city: CityInput4
+}
+
+input CityInput4 @record(record: {name: "DUMMY_RECORD"}) {
+  cityId: String! @field(name: "CITY_ID")
+}

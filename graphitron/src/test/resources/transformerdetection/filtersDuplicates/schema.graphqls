@@ -1,0 +1,4 @@
+type Query {
+  query: DummyTypeRecord @service(service: {name: "DUMMY_SERVICE"})
+  queryList: [DummyTypeRecord] @service(service : {name: "DUMMY_SERVICE"})
+}

@@ -1,0 +1,5 @@
+input NameInput @record(record: {name: "JAVA_RECORD_STAFF_NAME"}) {
+  firstname: String! @field(name: "FIRST_NAME")
+  lastname: String! @field(name: "LAST_NAME")
+}
+

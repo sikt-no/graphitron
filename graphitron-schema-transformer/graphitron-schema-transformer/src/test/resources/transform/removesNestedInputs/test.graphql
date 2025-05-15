@@ -1,0 +1,21 @@
+input I0 {
+  i1: I1
+}
+
+input I1 {
+  i2: I2
+  i3: I3
+}
+
+input I2 {
+  f0: String
+}
+
+input I3 {
+  f0: String
+}
+
+type Query {
+  q0(i0: I0): ID @feature(flags: "F0")
+  q1(i3: I3): ID # This one should be kept since it has another usage.
+}

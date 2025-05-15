@@ -1,0 +1,7 @@
+type Query {
+  query(in: Wrapper!): CustomerTable
+}
+
+input Wrapper {
+  in: DummyInput!
+}

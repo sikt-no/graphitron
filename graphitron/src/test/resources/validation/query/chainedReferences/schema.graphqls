@@ -1,0 +1,12 @@
+type Query {
+    address : Address
+}
+
+type Address @table {
+    id: ID!
+    payments: [Payment] @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+}
+
+type Payment @table {
+    id: Int @field(name: "PAYMENT_ID")
+}

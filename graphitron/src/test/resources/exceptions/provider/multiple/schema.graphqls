@@ -1,0 +1,22 @@
+type Mutation {
+  mutation0: Response0 @mutation(typeName: UPDATE)
+  mutation1: Response1 @mutation(typeName: UPDATE)
+}
+
+type Response0 {
+  errors: [SomeError0]
+}
+
+type Response1 {
+  errors: [SomeError1]
+}
+
+type SomeError0 implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type SomeError1 implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+  path: [String!]!
+  message: String!
+}

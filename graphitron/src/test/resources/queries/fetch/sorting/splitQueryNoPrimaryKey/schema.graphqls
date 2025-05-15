@@ -1,0 +1,11 @@
+type Query {
+  query: [PgUserMapping] @notGenerated
+}
+
+type PgUserMapping @table(name: "PG_USER_MAPPING") {
+    userMapping: [PgUser] @splitQuery @reference(references: [{condition: {className: "PgUserMappingCondition"}}])
+}
+
+type PgUser @table(name: "PG_USER"){
+    usesysid: String
+}

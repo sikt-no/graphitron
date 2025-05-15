@@ -1,0 +1,16 @@
+type Query {
+  address(filter: AddressInput!): [Address] @condition(condition: {name: "QUERY_FETCH_ADDRESS_INTERFACE_CONDITION"})
+}
+
+input AddressInput {
+  postalCode: String! @field(name: "POSTAL_CODE")
+}
+
+interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
+  id: ID
+  postalCode: String @field(name: "POSTAL_CODE")
+}

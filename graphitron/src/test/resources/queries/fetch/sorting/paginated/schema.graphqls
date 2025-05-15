@@ -1,0 +1,7 @@
+type Query {
+  query(first: Int = 100, after: String): CustomerConnection
+}
+
+type CustomerTable @table(name: "Customer") {
+  name: String @field(name: "LAST_NAME")
+}

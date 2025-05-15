@@ -1,0 +1,3 @@
+input Dummy @table(name: "UNKNOWN_TABLE") {
+  id: ID!
+}

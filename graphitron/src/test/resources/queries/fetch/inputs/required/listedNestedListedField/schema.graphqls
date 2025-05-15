@@ -1,0 +1,7 @@
+type Query {
+  query(in0: [Wrapper]!): CustomerTable
+}
+
+input Wrapper {
+  in1: [ID]!
+}

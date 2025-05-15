@@ -1,0 +1,3 @@
+type Address @discriminator(value: "ONE") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}

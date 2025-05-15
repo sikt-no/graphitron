@@ -1,0 +1,17 @@
+extend type InnerObject {
+  inner3: InnerObject3 @dir
+  extraFlag: ID @tag(name: "EXTRA")
+}
+
+type InnerObject3 {
+  id: ID!
+}
+
+extend input Input {
+  inner3: InnerInput3
+  extraFlag: ID @tag(name: "EXTRA")
+}
+
+input InnerInput3 {
+  id: ID!
+}

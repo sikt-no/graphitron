@@ -1,0 +1,12 @@
+interface Node { id: ID! }
+
+type Query {
+    someType(
+        param: String!
+    ): [SomeType] @asConnection @asConnection
+}
+
+type SomeType implements Node {
+    id: ID!
+    field: String!
+}

@@ -1,0 +1,9 @@
+extend input Input {
+  double: ID
+  triple: ID @tag(name: "FLAG")
+}
+
+extend type InnerObject {
+  double: ID
+  triple: ID @tag(name: "FLAG")
+}

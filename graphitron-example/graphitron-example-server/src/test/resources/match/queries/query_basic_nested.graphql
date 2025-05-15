@@ -1,0 +1,17 @@
+# nested fields are correctly resolved
+{
+    customers {
+        nodes {
+            id
+            name {
+                lastName
+            }
+            address {
+                addressLine1
+                city {
+                    name
+                }
+            }
+        }
+    }
+}

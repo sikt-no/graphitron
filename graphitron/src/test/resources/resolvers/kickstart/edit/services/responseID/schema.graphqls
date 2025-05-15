@@ -1,0 +1,7 @@
+type Mutation {
+  mutation: Response @service(service: {name: "RESOLVER_MUTATION_SERVICE"})
+}
+
+type Response {
+  id: ID
+}

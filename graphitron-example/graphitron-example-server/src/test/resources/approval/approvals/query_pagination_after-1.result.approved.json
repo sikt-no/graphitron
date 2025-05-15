@@ -1,0 +1,18 @@
+{
+    "data": {
+        "customers": {
+            "nodes": [
+                {
+                    "id": "Q1VTVE9NRVI6MTAx"
+                },
+                {
+                    "id": "Q1VTVE9NRVI6MTAy"
+                }
+            ],
+            "pageInfo": {
+                "endCursor": "WzEwMl0",
+                "startCursor": "WzEwMV0"
+            }
+        }
+    }
+}

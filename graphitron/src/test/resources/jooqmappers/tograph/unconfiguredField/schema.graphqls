@@ -1,0 +1,8 @@
+type Query {
+  query: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer @table {
+  id1: ID # Wrong.
+  id2: ID @field(name: "WRONG_NAME") # Even more wrong.
+}

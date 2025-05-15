@@ -1,0 +1,6 @@
+type Query {
+  # Layer without record. Maybe this case should not be generated after all? For services this would not really work out.
+  # This is a silly case and out of scope for now.
+  service1(cityInput: CityInput1): ID @service(service: {name: "DUMMY_SERVICE"})
+  service2(cityInput: CityInput3): ID @service(service: {name: "DUMMY_SERVICE"})
+}

@@ -1,0 +1,156 @@
+"""Create a new resolver and a separate query for fetching of the annotated field."""
+directive @splitQuery on FIELD_DEFINITION
+
+"""
+Any field with this directive set is exempt from code generation. This should be used on resolvers that are to be manually implemented.
+Can be set on an input field to prevent generation of record mappers.
+"""
+directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INTERFACE | UNION
+
+"""Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
+directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
+
+"""
+The default assumption for generating fields is that the name of each schema field corresponds exactly to a jOOQ table record field
+in the related jOOQ table (set by @table), or a field in a Java record if that is used instead.
+This directive overrides the assumption, allowing to correctly map schema field names that diverge from what is available in the record.
+
+The second parameter is used exclusively for Java records, and is kept separate to support cases where Java and jOOQ records need to interact.
+It defaults to the value of the first parameter.
+"""
+directive @field(name: String!, javaName: String) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
+"""
+The @externalField directive indicates that the annotated field is
+retrieved using a static method implemented in Java.
+This is typically used when the field's value requires custom logic implemented in Java."
+
+For more information, see documentation [here](https://gitlab.sikt.no/graphitron/graphitron/-/tree/main/graphitron/graphitron?ref_type=heads#external-field).
+"""
+directive @externalField on FIELD_DEFINITION
+
+"""Links this schema enum to a Java enum class. Available values are set in the plugin configuration."""
+directive @enum(enumReference: ExternalCodeReference!) on ENUM
+
+"""
+Use an external service to do the DB-operations.
+The signature of the method must match the inputs of the mutation or query.
+Available values are set in the plugin configuration.
+"""
+directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
+
+"""
+The @error directive serves to map specific Java exceptions to GraphQL errors.
+This directive is applied to error types in the schema and accepts a list of
+handlers with parameters, specifying how various exceptions should be mapped.
+"""
+directive @error(handlers: [ErrorHandler!]!) on OBJECT
+
+"""
+Defines the handlers for the @error directive. Each handler has properties
+which help to map exceptions to GraphQL errors.
+"""
+input ErrorHandler {
+  """
+  Determines which error handler to use. DATABASE and GENERIC are the two options
+  currently available.
+  """
+  handler: ErrorHandlerType!
+
+  """
+  Specifies the fully qualified name of the exception class. Required for the
+  GENERIC handler and defaults to org.jooq.exception.DataAccessException if not
+  provided for the DATABASE handler.
+  """
+  className: String
+
+  """
+  For the DATABASE handler, this is the database error code associated with the exception.
+  Not used for the GENERIC handler.
+  """
+  code: String
+
+  """
+  A string that the exception message must contain in order to be handled.
+  If not present, the handler will be used for all exceptions of the specified class.
+  """
+  matches: String
+
+  """
+  Provides a description of the error to be returned to the user. If not provided,
+  the exception message will be used.
+  """
+  description: String
+}
+
+"""
+Determines the type of the error handler to use.
+"""
+enum ErrorHandlerType {
+  GENERIC,
+  DATABASE
+}
+
+"""
+Helps create connections between tables where a simple implicit join would be insufficient.
+In addition, this directive permits fields to be mapped to different tables than their surrounding object.
+If neither table or key are provided and none can be automatically inferred, the condition is assumed to be sufficient to complete the join.
+"""
+directive @reference(
+  """The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type of the field."""
+  references: [ReferenceElement!]!
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Adjust constraints for this field, argument or input field."""
+directive @condition(
+  """Condition to be used. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference,
+  """If true, this condition should be used instead of the usual checks that are generated."""
+  override: Boolean = false
+) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
+
+"""Handle this input argument as orderBy functionality"""
+directive @orderBy on ARGUMENT_DEFINITION
+
+"""Connect this enum value to an index with the given name"""
+directive @index(name: String) on ENUM_VALUE
+
+"""Wrap type in the given Java record. Currently, this can only be used with services."""
+directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
+
+"""Temporary directive annotating that this object should be fetched by IDs rather than be set from user-defined records."""
+directive @fetchByID on FIELD_DEFINITION
+
+enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
+
+input ExternalCodeReference {
+    name: String @deprecated(reason: "Fases ut til fordel for `class`"),
+    """Navnet på klassen man ønsker å referere til.
+
+    Dersom pakken klassen finnes i er importert i `externalReferences` i graphitron-konfigurasjonen så holder det med det forenklede navnet, ellers må det fullstendige navnet (fqcn) oppgis."""
+    className: String
+    """Navnet på metoden man ønsker å referere til."""
+    method: String
+}
+
+input ReferenceElement {
+  """The jOOQ table to connect to."""
+  table: String,
+  """The key to use to create this reference."""
+  key: String,
+  """Extra condition for this reference. Available values are set in the plugin configuration."""
+  condition: ExternalCodeReference
+}
+
+directive @discriminate(
+  """Column that should be used to decide which subtype an object belongs to"""
+  on: String!
+) on INTERFACE | UNION
+
+directive @discriminator(
+  """The descriminator value that means an object belongs to this subtype"""
+  value: String!
+) on OBJECT

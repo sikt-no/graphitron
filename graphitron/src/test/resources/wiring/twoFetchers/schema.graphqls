@@ -1,0 +1,8 @@
+type Query {
+  customer: Customer
+  payment: Payment
+}
+
+type Payment {
+  id: ID
+}

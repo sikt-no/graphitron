@@ -1,0 +1,14 @@
+# after should return the next page of results after the cursor
+{
+    reachableByEmail(
+        after: "eyJ0eXBlTmFtZSIgOiAiQ3VzdG9tZXJXaXRoRW1haWwiLCAiZmllbGRzIiA6IFs1OTddfQ"
+        first: 3
+    ) {
+        edges {
+            node {
+                email
+                __typename
+            }
+        }
+    }
+}

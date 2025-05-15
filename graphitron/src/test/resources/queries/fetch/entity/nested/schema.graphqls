@@ -1,0 +1,10 @@
+union _Entity = Customer | Address
+
+type Customer @table @key(fields: "id") {
+  id: ID
+  address: Address
+}
+
+type Address @table @key(fields: "id") {
+  id: ID
+}

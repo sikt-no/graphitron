@@ -1,0 +1,15 @@
+type Mutation {
+  mutation(level1: Level1!): ID! @service(service : {name: "DUMMY_SERVICE"})
+}
+
+input Level1 @table(name: "CUSTOMER") {
+  level2: Level2
+}
+
+input Level2 @table(name: "CUSTOMER") {
+  level3: Level3!
+}
+
+input Level3 @table(name: "CUSTOMER") {
+  id: ID
+}

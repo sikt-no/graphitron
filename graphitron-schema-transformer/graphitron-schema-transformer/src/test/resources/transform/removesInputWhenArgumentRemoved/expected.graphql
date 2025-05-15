@@ -1,0 +1,12 @@
+input I0 {
+  f0: String
+  i2: I2
+}
+
+input I2 {
+  f0: String
+}
+
+type Query {
+  q0(i0: I0): ID
+}

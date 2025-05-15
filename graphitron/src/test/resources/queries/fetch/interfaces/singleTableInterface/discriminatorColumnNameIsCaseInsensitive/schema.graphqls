@@ -1,0 +1,8 @@
+# See synthetic db objects in graphitron/graphitron/pom.xml:138 for column sPonGeBob_CASED
+interface AddressByDistrict @discriminate(on: "spongebob_cased") @table(name: "ADDRESS") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type Address implements AddressByDistrict @discriminator(value: "ONE") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}

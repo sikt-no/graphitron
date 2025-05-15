@@ -1,0 +1,7 @@
+input I3 {
+  f0: String
+}
+
+type Query {
+  q1(i3: I3): ID # This one should be kept since it has another usage.
+}

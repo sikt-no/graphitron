@@ -1,0 +1,15 @@
+interface Node { id: ID! }
+
+type Query {
+    someType(
+        param: String!
+    ): [SomeType] @asConnection(defaultFirstValue: 100)
+    someTypeSoon(
+        param: String!
+    ): [SomeType] @asConnection(defaultFirstValue: 100)
+}
+
+type SomeType implements Node {
+    id: ID!
+    field: String!
+}

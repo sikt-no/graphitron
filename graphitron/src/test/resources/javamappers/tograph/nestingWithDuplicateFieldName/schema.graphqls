@@ -1,0 +1,11 @@
+type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
+  inner: Wrapper
+}
+
+type Wrapper {
+  inner: InnerWrapper # Has the same name as the field in the previous type.
+}
+
+type InnerWrapper {
+  postalCode: String!
+}

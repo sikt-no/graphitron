@@ -1,0 +1,6 @@
+# Without jOOQ converter.
+enum DummyEnum {
+    A
+    B
+    C
+}

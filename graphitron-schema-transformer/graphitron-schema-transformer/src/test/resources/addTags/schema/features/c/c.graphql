@@ -1,0 +1,27 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.9", import : ["@tag"]) {
+  query: Query
+}
+
+type Query {
+  getObject(a0: String! @dir @tag(name: "EXTRA")): SomeObject
+  getObjectWithInputs(a0: Input! @dir @tag(name: "EXTRA"), a1: [Input!]): SomeObject @dir
+}
+
+type SomeObject {
+  id: ID!
+  inner: [InnerObject!]! @dir
+}
+
+type InnerObject {
+  id: ID!
+  f0(a0: String @tag(name: "EXTRA")): String!
+}
+
+input Input {
+  id: ID!
+  inner: InnerInput @dir
+}
+
+input InnerInput {
+  id: ID!
+}

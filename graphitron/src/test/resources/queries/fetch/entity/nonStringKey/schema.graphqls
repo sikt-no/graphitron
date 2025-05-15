@@ -1,0 +1,6 @@
+union _Entity = FilmInStock
+
+type FilmInStock @table(name: "FILM_IN_STOCK") @key(fields: "p_film_count") {
+  id: ID
+  p_film_count: Int
+}

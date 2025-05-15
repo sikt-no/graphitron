@@ -1,0 +1,6 @@
+type Query {
+  query: Union
+}
+
+union Union = UnionInner | DummyType
+union UnionInner = DummyType | INVALID

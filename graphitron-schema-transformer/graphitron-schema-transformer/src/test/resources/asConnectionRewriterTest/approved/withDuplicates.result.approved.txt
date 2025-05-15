@@ -1,0 +1,44 @@
+interface Node {
+  id: ID!
+}
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Query {
+  someType(param: String!, first: Int = 100, after: String): QuerySomeTypeConnection
+  someTypeSoon(param: String!, first: Int = 100, after: String): QuerySomeTypeSoonConnection
+}
+
+type QuerySomeTypeConnection {
+  edges: [QuerySomeTypeConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [SomeType]
+  totalCount: Int
+}
+
+type QuerySomeTypeConnectionEdge {
+  cursor: String
+  node: SomeType
+}
+
+type QuerySomeTypeSoonConnection {
+  edges: [QuerySomeTypeSoonConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [SomeType]
+  totalCount: Int
+}
+
+type QuerySomeTypeSoonConnectionEdge {
+  cursor: String
+  node: SomeType
+}
+
+type SomeType implements Node {
+  id: ID!
+  field: String!
+}

@@ -1,0 +1,11 @@
+type Query {
+  query(in: Customer): ID
+}
+
+input Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  address: Address @splitQuery
+}
+
+type Address @table {
+  id: ID
+}

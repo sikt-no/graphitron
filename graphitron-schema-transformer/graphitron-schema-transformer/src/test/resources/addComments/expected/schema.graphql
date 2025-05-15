@@ -1,0 +1,72 @@
+input InnerInput {
+  "feature A!"
+  id: ID! @feature(flags : ["a"])
+}
+
+type InnerObject {
+  id: ID! @feature(flags : ["c"])
+  "feature A!"
+  id2: ID @feature(flags : ["a"])
+  "feature B!"
+  extraFlag: ID @feature(flags : ["b"])
+}
+
+type Object2 implements Interface {
+  "feature A!"
+  id: ID! @feature(flags : ["a"])
+}
+
+input Input {
+  id: ID! @feature(flags : ["c"])
+  """
+  existing inner description
+
+  feature A!
+  """
+  inner: InnerInput @feature(flags : ["a"])
+  "feature A!"
+  id2: ID @feature(flags : ["a"])
+  "feature B!"
+  extraFlag: ID @feature(flags : ["b"])
+}
+
+interface Interface {
+  """
+  interface text
+
+  feature A!
+  """
+  id: ID! @feature(flags : ["a"])
+}
+
+type Query {
+  getObject(a0: String! @feature(flags : ["c"])): SomeObject @feature(flags : ["c"])
+  getObjectWithInputs(a0: Input! @feature(flags : ["c"]), a1: [Input!] @feature(flags : ["c"])): SomeObject @feature(flags : ["c"])
+  """
+  existing getObject2 description
+  multiple lines
+
+  feature A!
+  """
+  getObject2: Object2 @feature(flags : ["a"])
+  "feature A!"
+  getObject3: SomeEnum @feature(flags : ["a"])
+}
+
+enum SomeEnum {
+  """
+  existing e0 description
+
+  feature A!
+  """
+  e0 @feature(flags : ["a"])
+  "feature A!"
+  e1 @feature(flags : ["a"])
+}
+
+type SomeObject {
+  id: ID! @feature(flags : ["c"])
+  inner: [InnerObject!]! @feature(flags : ["c"])
+}
+
+directive @feature(flags: [String!]!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE | INPUT_FIELD_DEFINITION

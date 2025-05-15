@@ -1,0 +1,3 @@
+type VacationDestination @table(name: "VACATION_DESTINATION") {
+    vacationDescription: String @field(name: "DESCRIPTION") @reference(references: [{table: "VACATION"}]) @splitQuery
+}

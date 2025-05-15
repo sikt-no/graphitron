@@ -1,0 +1,12 @@
+type Query {
+  query: ActorInfo
+}
+
+type ActorInfo @table(name: "ACTOR_INFO") {
+  id: ID!
+  actor: Actor @reference(references: [{condition: {name: "DUMMY_CONDITION"}}])
+}
+
+type Actor @table(name: "ACTOR") {
+  id: ID!
+}

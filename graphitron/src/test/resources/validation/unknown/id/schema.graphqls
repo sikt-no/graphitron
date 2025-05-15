@@ -1,0 +1,3 @@
+type Customer @table {
+  wrong: ID
+}

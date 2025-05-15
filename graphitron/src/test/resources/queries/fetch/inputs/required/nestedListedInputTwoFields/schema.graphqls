@@ -1,0 +1,12 @@
+type Query {
+  query(in: Wrapper!): CustomerTable
+}
+
+input Wrapper {
+  in: [Input]!
+}
+
+input Input {
+  first: String! @field(name: "FIRST_NAME")
+  last: String! @field(name: "LAST_NAME")
+}

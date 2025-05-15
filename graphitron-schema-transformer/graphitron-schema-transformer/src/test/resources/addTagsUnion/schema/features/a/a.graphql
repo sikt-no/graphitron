@@ -1,0 +1,9 @@
+extend type Query {
+  u2: Union2
+}
+
+union Union2 = Object2 | Object1
+
+type Object2 {
+  string: String!
+}

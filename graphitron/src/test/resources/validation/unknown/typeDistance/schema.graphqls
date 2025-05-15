@@ -1,0 +1,11 @@
+type Query {
+  query: Typee
+}
+
+type Type {
+  id: ID
+}
+
+type UnrelatedType {
+  id: ID
+}

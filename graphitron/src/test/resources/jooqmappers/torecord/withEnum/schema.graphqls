@@ -1,0 +1,7 @@
+type Query {
+  film(in: FilmInput): ID @service(service : {name: "DUMMY_SERVICE"})
+}
+
+input FilmInput @table(name: "FILM") {
+  e: DummyEnum! @field(name: "RATING")
+}

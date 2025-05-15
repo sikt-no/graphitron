@@ -1,0 +1,3 @@
+type Query {
+  query(firstName: String! @field(name: "FIRST_NAME"), lastName: String! @field(name: "LAST_NAME")): CustomerTable
+}

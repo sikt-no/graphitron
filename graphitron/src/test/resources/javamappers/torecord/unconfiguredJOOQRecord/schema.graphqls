@@ -1,0 +1,8 @@
+type Query {
+  query(in: Customer): ID
+}
+
+input Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+  c1: CustomerTable # Wrong.
+  c2: CustomerTable @field(name: "WRONG_NAME") # Even more wrong.
+}

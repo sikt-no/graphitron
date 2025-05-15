@@ -1,0 +1,13 @@
+type Query {
+    paginatedUnionQuery(first: Int = 100, after: String): SomeUnionConnection
+}
+
+union SomeUnion = Language | Staff
+
+type Staff {
+    id: ID
+}
+
+type Language @table {
+    name: String
+}

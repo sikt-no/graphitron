@@ -1,0 +1,7 @@
+interface Address {
+  postalCode: String @field(name: "POSTAL_CODE")
+}
+
+type AddressInDistrictOne @discriminator(value: "ONE") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}

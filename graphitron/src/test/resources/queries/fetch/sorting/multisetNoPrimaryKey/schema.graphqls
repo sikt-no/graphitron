@@ -1,0 +1,11 @@
+type Query {
+  query: [Wrapper]
+}
+
+type Wrapper {
+  query: [PgUser]
+}
+
+type PgUser @table(name: "PG_USER") {
+    usesysid: String
+}

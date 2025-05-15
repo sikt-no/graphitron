@@ -1,0 +1,7 @@
+input I1 {
+  f0: String
+}
+
+type Query {
+  q1(i1: I1): ID
+}

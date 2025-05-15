@@ -1,0 +1,56 @@
+input I0 {
+  f0: String @feature(flags: "F0")
+  f1: String @feature(flags: "F1")
+  f2: String @feature(flags: "F2")
+  f3: String @feature(flags: ["F0", "F1"])
+  f4: String @feature(flags: ["F1", "F2"])
+  i1: I1
+  e0: E0
+}
+
+input I1 {
+  f0: String @feature(flags: "F0")
+  f1: String @feature(flags: "F1")
+  f2: String @feature(flags: "F2")
+  f3: String @feature(flags: ["F0", "F1"])
+  f4: String @feature(flags: ["F1", "F2"])
+}
+
+interface Inter0 {
+  f0: String @feature(flags: "F0")
+  f1: String @feature(flags: "F1")
+  f2: String @feature(flags: "F2")
+  f3: String @feature(flags: ["F0", "F1"])
+  f4: String @feature(flags: ["F1", "F2"])
+  t1: T1
+}
+
+type Query {
+  q0(i0: I0): T0
+}
+
+type T0 implements Inter0 {
+  f0: String @feature(flags: "F0")
+  f1: String @feature(flags: "F1")
+  f2: String @feature(flags: "F2")
+  f3: String @feature(flags: ["F0", "F1"])
+  f4: String @feature(flags: ["F1", "F2"])
+  t1: T1
+  e0: E0
+}
+
+type T1 {
+  f0: String @feature(flags: "F0")
+  f1: String @feature(flags: "F1")
+  f2: String @feature(flags: "F2")
+  f3: String @feature(flags: ["F0", "F1"])
+  f4: String @feature(flags: ["F1", "F2"])
+}
+
+enum E0 {
+  e0 @feature(flags: "F0")
+  e1 @feature(flags: "F1")
+  e2 @feature(flags: "F2")
+  e3 @feature(flags: ["F0", "F1"])
+  e4 @feature(flags: ["F1", "F2"])
+}

@@ -1,0 +1,6 @@
+# federation _service is resolvable
+query {
+    _service {
+        sdl
+    }
+}

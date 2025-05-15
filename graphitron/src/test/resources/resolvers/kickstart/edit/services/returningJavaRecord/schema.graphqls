@@ -1,0 +1,3 @@
+type Mutation {
+  mutation: DummyTypeRecord @service(service: {name: "RESOLVER_MUTATION_SERVICE", method: "mutationDummy"})
+}

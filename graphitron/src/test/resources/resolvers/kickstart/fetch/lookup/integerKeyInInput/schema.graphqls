@@ -1,0 +1,7 @@
+type Query {
+  query(in: Input): DummyType
+}
+
+input Input {
+  i: Int @lookupKey
+}

@@ -1,0 +1,7 @@
+type Query {
+  query(in: Input!): CustomerTable
+}
+
+input Input {
+  id: ID! @condition(condition: {name: "QUERY_FETCH_CONDITION"})
+}

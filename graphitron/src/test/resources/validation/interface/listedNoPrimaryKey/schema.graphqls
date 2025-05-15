@@ -1,0 +1,11 @@
+type Query {
+    query: [SomeInterface]
+}
+
+interface SomeInterface {
+    usesysid: String
+}
+
+type PgUser implements SomeInterface @table(name: "PG_USER") {
+    usesysid: String
+}

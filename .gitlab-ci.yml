@@ -1,0 +1,51 @@
+include:
+  - component: gitlab.sikt.no/platon/ci-components/artifactory-auth/artifactory-auth@1.3.2
+
+variables:
+  ## The following is required for testcontainers to work. See documentation here: https://java.testcontainers.org/supported_docker_environment/continuous_integration/gitlab_ci/
+  DOCKER_HOST: "tcp://docker:2375"
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DRIVER: overlay2
+  ## ryuk stops containers after testcontainers is done, but does not work on gitlab.sikt.no
+  TESTCONTAINERS_RYUK_DISABLED: "true"
+
+workflow:
+  rules:
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  # Prevent duplicate pipelines for branches with open merge requests
+  - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+    when: never
+  - if: $CI_COMMIT_REF_NAME == "main"
+
+mvn-build:
+  extends: .artifactory-auth
+  image: artifactory.sikt.no/docker/maven-docker:3.9-eclipse-temurin-17
+  variables:
+    DOCKER_REPO: artifactory.sikt.no/docker-common-local
+    MAVEN_GOALS: "clean deploy"
+    MAVEN_OPTS: >
+      -Dmaven.repo.local=$MAVEN_REPO
+      -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN
+      -Dorg.slf4j.simpleLogger.showDateTime=true
+    MAVEN_CLI_OPTS: "-s ci_settings.xml --batch-mode --errors --fail-at-end --show-version"
+    CHANGELIST: "-SNAPSHOT"
+  script:
+  - echo "$ARTIFACTORY_PASSWORD" | docker login -u "$ARTIFACTORY_USERNAME" --password-stdin $DOCKER_REPO
+  - |
+    REVISION=$(awk -F '[<>]' '/<revision>/ {print $3}' pom.xml)
+    mvn ${MAVEN_CLI_OPTS} -Dgitlab-build -Drevision=${REVISION} -Dchangelist=${CHANGELIST} -Dquarkus.test.profile=ci ${MAVEN_GOALS}
+  artifacts:
+    when: always
+    paths:
+      # Results from test runs
+      - graphitron/**/target/*-reports/*.xml
+    expire_in: 1 week
+    reports:
+      junit:
+        # Results from test runs
+        - graphitron/**/*-reports/*.xml
+  rules:
+  - if: $CI_COMMIT_REF_NAME == "main"
+    variables:
+      CHANGELIST: ".r${CI_PIPELINE_IID}"
+  - when: on_success

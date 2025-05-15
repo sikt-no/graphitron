@@ -1,0 +1,7 @@
+type Query {
+  query(
+    name: NameInput! @condition(condition: {name: "RECORD_FETCH_STAFF_CONDITION", method: "name"})
+    active: Boolean!
+  ) : [Staff]
+}
+

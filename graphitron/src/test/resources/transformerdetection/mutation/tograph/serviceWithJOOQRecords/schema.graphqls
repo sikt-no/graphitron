@@ -1,0 +1,20 @@
+type Mutation {
+  mutation: Customer @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Customer implements Node @table {
+  id: ID!
+  wrapper: Wrapper
+  addresses: [Address!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Wrapper {
+  addressesWrapped: [AddressWrapped!]! @splitQuery @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type Address @table {
+  id: ID!
+
+  city: AddressCity0 # This should not be found.
+  cityRecord: AddressCity1 # Table ignores record directive.
+}

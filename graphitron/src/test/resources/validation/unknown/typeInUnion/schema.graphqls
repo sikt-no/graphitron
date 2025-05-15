@@ -1,0 +1,5 @@
+type Query {
+  query: U
+}
+
+union U = DummyType | INVALID
