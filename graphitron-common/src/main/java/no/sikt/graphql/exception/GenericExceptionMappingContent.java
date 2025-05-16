@@ -15,7 +15,13 @@ public class GenericExceptionMappingContent {
 
     boolean matches(Throwable throwable) {
         return streamCauses(throwable)
-                .anyMatch(it -> it.getClass().getName().equals(fullyQualifiedClassName) && messageMatches(it.getMessage()));
+                .anyMatch(it -> {
+                    try {
+                        return Class.forName(fullyQualifiedClassName).isInstance(it) && messageMatches(it.getMessage());
+                    } catch (ClassNotFoundException e) {
+                        return false;
+                    }
+                });
     }
 
     private Stream<Throwable> streamCauses(Throwable throwable) {
