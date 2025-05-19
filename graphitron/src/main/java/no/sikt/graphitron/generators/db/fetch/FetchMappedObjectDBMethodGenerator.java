@@ -1,8 +1,6 @@
 package no.sikt.graphitron.generators.db.fetch;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -10,6 +8,8 @@ import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -18,13 +18,11 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
-import static no.sikt.graphql.naming.GraphQLReservedName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 
 /**
  * Generator that creates the default data fetching methods
@@ -114,8 +112,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             }
         } else if (!isRoot) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
-                code.add("$N.createId($S, $L),\n", NODE_ID_STRATEGY_NAME, context.getTargetTable().getName(), keyColumns);
+                code.add("$L,\n", createNodeIdBlock(localObject, table.toString()));
             } else {
                 code.add("$L.getId(),\n", table);
             }

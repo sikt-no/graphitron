@@ -447,10 +447,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (field.isID()) {
 
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                var typeId =  context.getTargetTable().getName();
-                var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
-
-                return CodeBlock.of("$N.createId($S, $L)", NODE_ID_STRATEGY_NAME, typeId, keyColumns);
+                return createNodeIdBlock(((ObjectDefinition) context.getReferenceObject()), context.getTargetAlias());
             }
 
             return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
@@ -499,9 +496,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (!isRoot && !idParamName.isEmpty()) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                var typeId = context.getTargetTable().getName();
-                var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
-                conditionList.add(CodeBlock.of("$N.hasIds($S, $N, $L)", NODE_ID_STRATEGY_NAME, typeId, idParamName, keyColumns));
+                conditionList.add(hasIdsBlock(idParamName, getLocalObject(), context.getTargetAlias()));
             } else {
                 conditionList.add(CodeBlock.of("$L.hasIds($N)", context.renderQuerySource(getLocalTable()), idParamName));
             }
@@ -879,10 +874,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
                 .unindent().unindent()
                 .build();
-    }
-
-    protected static CodeBlock getPrimaryKeyFieldsBlock(String actualRefTable) {
-        return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", actualRefTable, actualRefTable);
     }
 
     @NotNull

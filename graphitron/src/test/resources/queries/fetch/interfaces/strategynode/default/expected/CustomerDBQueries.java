@@ -15,7 +15,7 @@ import org.jooq.impl.DSL;
 import no.sikt.graphql.NodeIdStrategy;
 
 public class CustomerDBQueries {
-    public static Map<String, Customer> customerForNode(DSLContext ctx, Set<String> ids, SelectionSet select , NodeIdStrategy nodeIdStrategy) {
+    public static Map<String, Customer> customerForNode(DSLContext ctx, Set<String> ids, SelectionSet select, NodeIdStrategy nodeIdStrategy) {
         var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(

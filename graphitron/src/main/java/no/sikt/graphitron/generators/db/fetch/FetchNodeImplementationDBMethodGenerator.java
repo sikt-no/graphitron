@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
@@ -58,23 +58,17 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         var querySource = context.renderQuerySource(implementationTableObject);
 
         CodeBlock id;
-        CodeBlock where;
+        CodeBlock whereCondition;
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            var typeId = implementation.getTable().getName();
-            var keyColumns = getPrimaryKeyFieldsBlock(context.getTargetAlias());
-
-            var createId = CodeBlock.of("$N.createId($S, $L)", NODE_ID_STRATEGY_NAME, typeId, keyColumns);
-            id = CodeBlock.of("$L,\n$L", createId, selectCode);
-
-            where = CodeBlock.of(".where($N.hasIds($S, $N, $L))\n", NODE_ID_STRATEGY_NAME, typeId, IDS_NAME, keyColumns);
+            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectCode);
+            whereCondition = hasIdsBlock(localObject, context.getTargetAlias());
         } else {
             var hasOrIn = argument.isID()
                     ? CodeBlock.of("has$N", StringUtils.capitalize(argumentName))
                     : CodeBlock.of("$L.in", implementation.getFieldByName(argument.getName()).getUpperCaseName());
 
             id = CodeBlock.of("$L.getId(),\n$L", querySource, selectCode);
-
-            where = CodeBlock.of(".where($L.$L($N))\n", querySource, hasOrIn, argumentName);
+            whereCondition = CodeBlock.of("$L.$L($N)", querySource, hasOrIn, argumentName);
         }
 
         var code = CodeBlock.builder()
@@ -86,7 +80,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .add(indentIfMultiline(id))
                 .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
-                .add(where)
+                .add(".where($L)\n", whereCondition)
                 .add(createSelectConditions(context.getConditionList(), true))
                 .addStatement(".$L($T::value1, $T::value2)",
                         (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),
