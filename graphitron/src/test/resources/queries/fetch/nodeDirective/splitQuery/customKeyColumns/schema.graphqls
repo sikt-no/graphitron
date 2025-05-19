@@ -1,0 +1,7 @@
+type Customer implements Node @node(keyColumns: ["CUSTOMER_ID", "EMAIL"]) @table {
+  address: Address @splitQuery
+}
+
+type Address implements Node @node @table {
+id: ID!
+}

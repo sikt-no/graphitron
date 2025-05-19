@@ -1,0 +1,7 @@
+type Address implements Node @node(typeId: "A") @table {
+  customer: Customer @splitQuery
+}
+
+type Customer implements Node @node(typeId: "C") @table {
+  id: ID!
+}

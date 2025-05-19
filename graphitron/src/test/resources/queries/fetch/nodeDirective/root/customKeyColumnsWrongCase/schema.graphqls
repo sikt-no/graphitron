@@ -1,0 +1,3 @@
+type Customer implements Node @node(keyColumns: ["Customer_ID", "email"]) @table {
+  id: ID!
+}

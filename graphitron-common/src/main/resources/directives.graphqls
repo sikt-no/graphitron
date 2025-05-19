@@ -154,3 +154,19 @@ directive @discriminator(
   """The descriminator value that means an object belongs to this subtype"""
   value: String!
 ) on OBJECT
+
+directive @node(
+  """
+  Value that identifies the type. It is embedded in the ID, and indicates where to look for the object identified by the ID.
+  If nothing is specified here, we use the name of the type.
+  Setting typeId can be set when you want a shorter ID, or an ID that remains the same even if the name of the type changes.
+  """
+  typeId: String
+
+  """
+  Specifies which columns are included in the key and in which order.
+  We strongly recommend that what is specified matches the primary key (or another unique key) in the database. If you do not specify keyColumns, we use the primary key in the database and the order set there.
+  Note that in such a case, changing the primary key will cause the IDs to change, which can be undesirable.
+  """
+  keyColumns: [String!]
+) on OBJECT

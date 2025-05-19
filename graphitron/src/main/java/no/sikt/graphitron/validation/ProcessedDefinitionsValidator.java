@@ -82,7 +82,8 @@ public class ProcessedDefinitionsValidator {
         validateMutationRecursiveRecordInputs();
         validateSelfReferenceHasSplitQuery();
         validateNotUsingBothExternalFieldAndField();
-        validateExternalField(schema);
+        validateExternalField();
+        validateNodeDirective();
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -91,6 +92,31 @@ public class ProcessedDefinitionsValidator {
         if (!errorMessages.isEmpty()) {
             throw new IllegalArgumentException("Problems have been found that prevent code generation:\n" + String.join("\n", errorMessages));
         }
+    }
+
+    private void validateNodeDirective() {
+        schema.getObjects().values().stream()
+                .filter(ObjectDefinition::hasNodeDirective)
+                .forEach(objectDefinition -> {
+                    if (!objectDefinition.hasTable()) {
+                        errorMessages.add(String.format("Type %s has the %s directive, but is missing the %s directive.",
+                                objectDefinition.getName(), NODE.getName(), TABLE.getName()));
+                    } else {
+                        var tableFields = getJavaFieldNamesForTable(objectDefinition.getTable().getName());
+                        objectDefinition.getKeyColumns().stream()
+                                .filter(col -> tableFields.stream().noneMatch(it -> it.equalsIgnoreCase(col)))
+                                .forEach(col -> errorMessages.add(
+                                        String.format(" Key column '%s' in node ID for type '%s' does not exist in table '%s'",
+                                                col,
+                                                objectDefinition.getName(),
+                                                objectDefinition.getTable().getName()))
+                                );
+                    }
+                    if (!objectDefinition.implementsInterface(NODE_TYPE.getName())){
+                        errorMessages.add(String.format("Type %s has the %s directive, but does not implement the %s interface.",
+                                objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName()));
+                    }
+                });
     }
 
     private void validateTablesAndKeys() {
@@ -879,7 +905,7 @@ public class ProcessedDefinitionsValidator {
                 );
     }
 
-    private void validateExternalField(ProcessedSchema schema) {
+    private void validateExternalField() {
         this.schema.getObjects().values()
                 .forEach(object -> object.getFields().stream()
                         .filter(GenerationSourceField::isExternalField)

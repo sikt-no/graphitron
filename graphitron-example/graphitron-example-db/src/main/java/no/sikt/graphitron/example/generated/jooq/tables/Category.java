@@ -293,22 +293,6 @@ public class Category extends TableImpl<CategoryRecord> {
         return where(DSL.notExists(select));
     }
 
-    public org.jooq.SelectField<String> getId() {
-        return DSL.row(CATEGORY_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("Id"));
-    }
-
-    public org.jooq.Condition hasId(String id) {
-        return hasIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(CATEGORY_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
     public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.CategoryRecord, ?>> getIdFields() {
         return java.util.List.of(CATEGORY_ID);
     }

@@ -318,12 +318,16 @@ public class TableReflection {
         return key.getFields()
                 .stream()
                 .map(keyField ->
-                        getJavaFieldNamesForTable(tableName)
-                                .stream()
-                                .filter(tableFieldName -> tableFieldName.equalsIgnoreCase(keyField.getName()))
-                                .findFirst()
+                        getJavaFieldName(tableName, keyField.getName())
                                 .orElseThrow())
                 .toList();
+    }
+
+    public static Optional<String> getJavaFieldName(String tableName, String fieldName) {
+        return getJavaFieldNamesForTable(tableName)
+                .stream()
+                .filter(tableFieldName -> tableFieldName.equalsIgnoreCase(fieldName))
+                .findFirst();
     }
 
     public static Set<Class<?>> getClassFromSchemas(String className) {

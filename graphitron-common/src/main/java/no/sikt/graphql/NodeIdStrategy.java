@@ -55,6 +55,10 @@ public class NodeIdStrategy {
         }
     }
 
+    public Condition hasId(String typeId, String base64Id, Field<?>... keyColumnFields) {
+        return hasIds(typeId, Set.of(base64Id), keyColumnFields);
+    }
+
     public Condition hasIds(String typeId, Set<String> base64Ids, Field<?>... keyColumnFields) {
         var rows = getRows(typeId, keyColumnFields, base64Ids);
         return row(keyColumnFields).in(rows);
@@ -78,7 +82,7 @@ public class NodeIdStrategy {
         var keyPart = id.substring(id.indexOf(':') + 1);
 
         if (!Objects.equals(typeId, foundTypeId)) {
-            throw new IllegalArgumentException("TypeId" + typeId + " does not match foundTypeId" + foundTypeId);
+            throw new IllegalArgumentException("TypeId " + typeId + " does not match foundTypeId " + foundTypeId);
         }
 
         var values = Arrays
