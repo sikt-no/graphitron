@@ -11,6 +11,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.SCHEMA_E
 public enum SchemaComponent {
     PAGE_INFO("special/PageInfo"),
     NODE("special/Node"),
+    NODE_QUERY("special/NodeQuery"),
     ERROR("special/Error"),
     ORDER_DIRECTION("special/OrderDirection"),
     ORDER("special/Order", ORDER_DIRECTION),

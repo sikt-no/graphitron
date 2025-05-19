@@ -1,0 +1,7 @@
+type Query {
+  query: Customer @notGenerated
+}
+
+type Customer @node @table {
+  name: String
+}

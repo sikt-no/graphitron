@@ -929,4 +929,46 @@ public class FormatCodeBlocks {
     public static CodeBlock returnCompletedFuture(CodeBlock code) {
         return returnWrap(CodeBlock.of("$T.completedFuture($L)", COMPLETABLE_FUTURE.className, code));
     }
+
+    public static CodeBlock createNodeIdBlock(ObjectDefinition obj, String targetAlias) {
+        return CodeBlock.of("$N.createId($S, $L)",
+                NODE_ID_STRATEGY_NAME,
+                obj.getTypeId(),
+                nodeIdColumnsBlock(targetAlias, obj)
+        );
+    }
+
+    public static CodeBlock hasIdBlock(String id, ObjectDefinition obj, String targetAlias) {
+        return CodeBlock.of("$N.hasId($S, $L, $L)",
+                NODE_ID_STRATEGY_NAME,
+                obj.getTypeId(),
+                id,
+                nodeIdColumnsBlock(targetAlias, obj)
+        );
+    }
+
+    public static CodeBlock hasIdsBlock(ObjectDefinition obj, String targetAlias) {
+        return hasIdsBlock(IDS_NAME, obj, targetAlias);
+    }
+
+    public static CodeBlock hasIdsBlock(String idParamName, ObjectDefinition obj, String targetAlias) {
+        return CodeBlock.of("$N.hasIds($S, $N, $L)",
+                NODE_ID_STRATEGY_NAME,
+                obj.getTypeId(),
+                idParamName,
+                nodeIdColumnsBlock(targetAlias, obj)
+        );
+    }
+
+    private static CodeBlock nodeIdColumnsBlock(String targetAlias, ObjectDefinition obj) {
+        if (obj.hasCustomKeyColumns()) {
+            return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$N.$L", targetAlias, it))
+                    .collect(CodeBlock.joining(", "));
+        }
+        return getPrimaryKeyFieldsBlock(targetAlias);
+    }
+
+    public static CodeBlock getPrimaryKeyFieldsBlock(String targetAlias) {
+        return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", targetAlias, targetAlias);
+    }
 }

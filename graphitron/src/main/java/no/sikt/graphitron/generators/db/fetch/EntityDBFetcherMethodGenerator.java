@@ -116,7 +116,11 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
         var conditionCode = CodeBlock.builder();
         conditionCode.add("$N.", context.getTargetAlias());
         if (field.isID()) {
-            conditionCode.add("hasId(($T) ", STRING.className);
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                return hasIdBlock(CodeBlock.of("($T) $N.get($S)", STRING.className, VARIABLE_INPUT_MAP, key).toString(), getLocalObject(), context.getTargetAlias());
+            } else {
+                conditionCode.add("hasId(($T) ", STRING.className);
+            }
         } else {
             conditionCode.add(
                     "$L$L.eq(($T) ",

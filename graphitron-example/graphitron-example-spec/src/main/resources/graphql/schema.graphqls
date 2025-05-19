@@ -57,7 +57,7 @@ type CustomerConnectionEdge {
     node: Customer
 }
 
-type Customer implements Node @table {
+type Customer implements Node @node @table {
     id: ID!
     name: CustomerName
     email: String
@@ -78,7 +78,7 @@ type Address @table @key(fields: "id", resolvable: false) {
     phone: String!
 }
 
-type City @table {
+type City implements Node @table @node(typeId: "CityType"){
     id: ID!
     name: String! @field(name: "CITY_")
     countryName: String! @field(name: "COUNTRY_") @reference(references: [{table: "COUNTRY"}])
@@ -100,9 +100,10 @@ enum FilmCategory { # Note that this enum is not complete, and other values are 
     ANIMATION @field(name: "Animation")
 }
 
-type Language @table {
+type Language implements Node @table @node(keyColumns: ["NAME", "LANGUAGE_ID"]){
+    id: ID!
     name: String
-#    films(releaseYear: Int! @field(name: "RELEASE_YEAR")): [Film] @splitQuery
+    films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
 }
 
 type Film implements Node @table {
