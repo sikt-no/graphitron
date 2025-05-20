@@ -347,7 +347,7 @@ public abstract class GeneratorTest {
     }
 
     protected boolean validateSchema() {
-        return false;
+        return true;
     }
 
     protected boolean getCheckProcessedSchemaDefault() {
