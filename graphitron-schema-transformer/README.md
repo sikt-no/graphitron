@@ -16,7 +16,7 @@ Key configuration parameters include:
 - `outputSchema`: Name of the output schema file (for single schema output)
 - `outputSchemas`: Configuration for multiple output schemas with different feature flags
 - `removeGeneratorDirectives`: Whether to remove directives used for code generation
-- `expandConnections`: Whether to expand GraphQL connection types
+- `expandConnections`: Whether to [expand GraphQL connection types](#Relay-Connection-Expansion)
 
 ## Functionality
 
@@ -197,3 +197,77 @@ If you are using Apollo Federation, you want to have the Apollo Federation defin
 but not on the schema hosted by your GraphQL server, if that schema is to be transformed by the Federation library at run time.
 
 We will implement a more elegant solution to this in the future, but for now you can use the `removeFederationDefinitions` parameter to remove these definitions from the schema that is hosted by your GraphQL server.
+
+### Relay Connection Expansion
+
+The [GraphQL Cursor Connections Specification](https://relay.dev/graphql/connections.htm) requires a significant amount of boilerplate code. 
+To simplify this, we've created a directive that automatically expands list return types into proper Relay connection patterns.
+
+The `@asConnection` directive transforms a field returning a list into a complete Relay connection when the `expandConnections` parameter is set to `true`.
+
+#### Example Usage
+
+```graphql
+interface Node { id: ID! }
+
+type Query {
+    someType(
+        param: String!
+    ): [SomeType] @asConnection
+}
+
+type SomeType implements Node {
+    id: ID!
+    field: String!
+}
+```
+
+This generates the following schema:
+
+```graphql
+interface Node {
+    id: ID!
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type Query {
+    someType(param: String!, first: Int = 100, after: String): QuerySomeTypeConnection
+}
+
+type QuerySomeTypeConnection {
+    edges: [QuerySomeTypeConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [SomeType]
+    totalCount: Int
+}
+
+type QuerySomeTypeConnectionEdge {
+    cursor: String
+    node: SomeType
+}
+
+type SomeType implements Node {
+    id: ID!
+    field: String!
+}
+```
+
+This approach eliminates the need to manually define connection types, edges, and page info for each paginated field in your schema,
+significantly reducing boilerplate while ensuring consistent implementation of the Relay connection pattern.
+
+
+#### Customization
+
+You can customize the default pagination size with the `defaultFirstValue` argument:
+
+```graphql
+type Query {
+    someType(param: String!): [SomeType] @asConnection(defaultFirstValue: 50)
+}
+```
