@@ -147,4 +147,31 @@ public class QueryTest extends ValidationTest {
         assertErrorsContain("invalidSelfReference", "No foreign key found between tables \"CITY\" and \"CITY\"");
     }
 
+    @Test
+    @DisplayName("Listed, then input nested and listed again field") // Could equivalently be input as well, but field is simpler.
+    void listedNestedListedField() {
+        assertErrorsContain("listedNestedListedField", Set.of(CUSTOMER_TABLE),
+                "Argument 'in0' is a collection of InputFields ('Wrapper') type." +
+                        " Fields returning collections: 'in1' are not supported on such types (used for generating condition tuples)"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed optional input field")
+    void listedOptionalInput() {
+        assertErrorsContain("listedOptionalInput", Set.of(DUMMY_INPUT, CUSTOMER_TABLE),
+                "Argument 'in' is a collection of InputFields ('DummyInput') type." +
+                        " Optional fields on such types are not supported." +
+                        " The following fields will be treated as mandatory in the resulting, generated condition tuple: 'id'"
+        );
+    }
+
+    @Test
+    @DisplayName("Query on root with an interface implementation without table set")
+    void interfaceWithoutTableFromRoot() {
+        assertErrorsContain("interfaceWithoutTableFromRoot",
+                "Interface 'SomeInterface' is returned in field 'someInterface', but " +
+                        "type 'Customer' implementing 'SomeInterface' does not have table set. This is not supported."
+        );
+    }
 }

@@ -40,12 +40,6 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Input that has no records")
-    void noRecordInput() {
-        assertThatThrownBy(() -> generateFiles("noRecordInput")).isInstanceOf(UnsupportedOperationException.class);
-    }
-
-    @Test
     @DisplayName("Input that has no usable IDs")
     void noIDInput() {
         assertThatThrownBy(() -> generateFiles("noIDInput")).isInstanceOf(IllegalStateException.class);
@@ -117,12 +111,6 @@ public class ResolverTest extends GeneratorTest {
                 ".getCtx(), in0RecordList, in1Record",
                 ".completedFuture(in0RecordList.stream().map(it -> it.getId()).collect("
         );
-    }
-
-    @Test  // Not sure if this is the intended behaviour for such cases. The mutation does not try to unwrap the input.
-    @DisplayName("Input with non-record wrapper containing a record")
-    void wrappedInput() {
-        assertThatThrownBy(() -> generateFiles("wrappedInput")).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

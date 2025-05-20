@@ -25,13 +25,15 @@ public class TestConfiguration {
             EXPECTED_OUTPUT_NAME = "expected";
 
     @NotNull
-    public static ProcessedSchema getProcessedSchema(String schemaPath, Set<String> components, boolean checkTypes) {
+    public static ProcessedSchema getProcessedSchema(String schemaPath, Set<String> components, boolean validate, boolean checkTypes) {
         var files = Stream.concat(Stream.of(SRC_DIRECTIVES, schemaPath + "/" + COMMON_TEST_SCHEMA_NAME), components.stream()).collect(Collectors.toSet());
         GeneratorConfig.setGeneratorSchemaFiles(files);
         GeneratorConfig.setUserSchemaFiles(files);
 
         var processedSchema = GraphQLGenerator.getProcessedSchema();
-        processedSchema.validate(checkTypes);
+        if (validate) {
+            processedSchema.validate(checkTypes);
+        }
         return processedSchema;
     }
 

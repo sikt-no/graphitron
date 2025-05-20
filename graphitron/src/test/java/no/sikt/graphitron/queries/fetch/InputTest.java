@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Query inputs - Equality, list and null checks for fields")
 public class InputTest extends GeneratorTest {
@@ -146,17 +145,6 @@ public class InputTest extends GeneratorTest {
                         "                DSL.row(DSL.inline(internal_it_.getFirst()), DSL.inline(internal_it_.getLast()))" +
                         "        ).collect(Collectors.toList())" +
                         ") : DSL.noCondition()"
-                );
-    }
-
-    @Test
-    @DisplayName("Listed, then input nested and listed again field") // Could equivalently be input as well, but field is simpler.
-    void listedNestedListedField() {
-        assertThatThrownBy(() -> getProcessedSchema("listedNestedListedField"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage(
-                        "Argument 'in0' is a collection of InputFields ('Wrapper') type." +
-                                " Fields returning collections: 'in1' are not supported on such types (used for generating condition tuples)"
                 );
     }
 

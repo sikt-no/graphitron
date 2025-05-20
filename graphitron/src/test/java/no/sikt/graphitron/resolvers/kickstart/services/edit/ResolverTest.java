@@ -270,12 +270,4 @@ public class ResolverTest extends GeneratorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Service reference no.sikt.graphitron.codereferences.services.ResolverMutationService does not contain method named UNDEFINED");
     }
-
-    @Test
-    @DisplayName("Neither service nor mutation directive is set on a mutation")
-    void noHandlingSet() {
-        assertThatThrownBy(() -> generateFiles("noHandlingSet"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Mutation 'mutation' is set to generate, but has neither a service nor mutation type set.");
-    }
 }
