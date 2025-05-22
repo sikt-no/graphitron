@@ -1,12 +1,37 @@
 # Graphitron Schema Transformer
 
-Graphitron schema transformer is a Maven plugin that can run independently of the main `graphitron-maven-plugin`.
-It is used to transform GraphQL schemas in various ways.
+Graphitron schema transformer is an integrated part of `graphitron-maven-plugin`, 
+providing GraphQL schema transformation capabilities.
+
+## Usage
+
+The transform functionality is available as the `transform` goal of the maven-plugin.
+To use the schema transformer, add the following to your Maven configuration:
+
+```xml
+<plugin>
+    <groupId>no.sikt</groupId>
+    <artifactId>graphitron-maven-plugin</artifactId>
+    <version>...</version>
+    <executions>
+        <execution>
+            <id>transform-graphql-schema</id>
+            <goals>
+                <goal>transform</goal>
+            </goals>
+            <configuration>
+                <outputSchema>schema.graphql</outputSchema>
+                <!-- other transform parameters -->
+            </configuration>
+        </execution>
+    </executions>
+</plugin>
+```
 
 ## Plugin Configuration Parameters
 
-The schema-transformer plugin provides a variety of configuration parameters to customize its behavior.
-For full documentation of all available parameters, see the Javadoc in the [Plugin.java](./graphitron-schema-transformer-maven-plugin/src/main/java/no/fellesstudentsystem/schema_transformer/maven/Plugin.java) file.
+The schema-transformer provides a variety of configuration parameters to customize its behavior.
+For full documentation of all available parameters, see the Javadoc in the [TransformMojo.java](../graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/TransformMojo.java) file.
 
 Key configuration parameters include:
 
