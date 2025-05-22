@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.query;
 
-import fake.code.generated.queries.query.QueryDBQueries;
+import fake.code.generated.queries.QueryDBQueries;
 import fake.graphql.example.api.QueryResolver;
 import fake.graphql.example.model.DummyType;
 import graphql.schema.DataFetchingEnvironment;

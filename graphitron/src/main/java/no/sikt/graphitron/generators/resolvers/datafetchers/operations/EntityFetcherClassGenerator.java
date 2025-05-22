@@ -1,4 +1,4 @@
-package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
+package no.sikt.graphitron.generators.resolvers.datafetchers.operations;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;

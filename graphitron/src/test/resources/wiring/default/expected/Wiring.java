@@ -1,4 +1,4 @@
-import fake.code.generated.resolvers.query.QueryGeneratedDataFetcher;
+import fake.code.generated.resolvers.operations.QueryGeneratedDataFetcher;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.TypeRuntimeWiring;
 

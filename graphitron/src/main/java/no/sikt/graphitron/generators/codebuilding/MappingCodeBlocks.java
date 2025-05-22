@@ -14,7 +14,7 @@ public class MappingCodeBlocks {
     /**
      * @return Code for adding error types and calling transform methods.
      */
-    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, boolean returnsRecord, ProcessedSchema schema) {
+    public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, ProcessedSchema schema) {
         if (!mapperContext.targetIsType()) {
             return empty();
         }
@@ -41,13 +41,13 @@ public class MappingCodeBlocks {
 
             if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
                 if (!innerContext.targetIsType()) {
-                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, returnsRecord, schema)));
+                    innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, schema)));
                 } else if (innerContext.shouldUseStandardRecordFetch()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else if (innerContext.hasRecordReference()) {
                     innerCode.add(idFetchAllowingDuplicates(innerContext, innerField, previousTarget.getName(), true));
                 } else {
-                    innerCode.add(generateSchemaOutputs(innerContext, returnsRecord, schema));
+                    innerCode.add(generateSchemaOutputs(innerContext, schema));
                 }
             }
 
@@ -77,9 +77,9 @@ public class MappingCodeBlocks {
         return code.build();
     }
 
-    private static CodeBlock getFieldSetContent(ObjectField field, ObjectField previousField, boolean serviceReturnsRecord, ProcessedSchema schema) {
+    private static CodeBlock getFieldSetContent(ObjectField field, ObjectField previousField, ProcessedSchema schema) {
         var resultName = asIterableResultNameIf(previousField.getUnprocessedFieldOverrideInput(), previousField.isIterableWrapped());
-        if (schema.isObject(previousField) && (serviceReturnsRecord || schema.isRecordType(field))) {
+        if (schema.isObject(previousField) && schema.isRecordType(field)) {
             var getMapping = field.getMappingForRecordFieldOverride();
             var extractValue = field.isIterableWrapped() && !previousField.isIterableWrapped();
             if (extractValue) {

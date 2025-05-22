@@ -5,7 +5,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +31,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new UpdateClassGenerator(schema));
+        return List.of(new OperationClassGenerator(schema));
     }
 
     @Test

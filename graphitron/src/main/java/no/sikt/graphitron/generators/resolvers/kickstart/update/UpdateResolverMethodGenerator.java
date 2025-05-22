@@ -32,7 +32,7 @@ public abstract class UpdateResolverMethodGenerator extends KickstartResolverMet
         var specInputs = target.getArguments();
         specInputs.forEach(input -> spec.addParameter(iterableWrapType(input), input.getName()));
 
-        var methodCall = generateUpdateMethodCall(target); // Must happen before service declaration checks the found dependencies.
+        var methodCall = getMethodCall(target, parser, true); // Must happen before service declaration checks the found dependencies.
         var code = CodeBlock
                 .builder()
                 .add(transformInputs(specInputs, parser.hasRecords()))
@@ -62,11 +62,6 @@ public abstract class UpdateResolverMethodGenerator extends KickstartResolverMet
     public boolean generatesAll() {
         return localField.isGeneratedWithResolver() && (localField.hasServiceReference() || localField.hasMutationType());
     }
-
-    /**
-     * @return CodeBlock that either calls a service or a generated mutation query.
-     */
-    abstract protected CodeBlock generateUpdateMethodCall(ObjectField target);
 
     /**
      * @return Code that creates the appropriate schema objects.

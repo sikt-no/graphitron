@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.queries.mutation.MutationDBQueries;
+import fake.code.generated.queries.MutationDBQueries;
 import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.api.MutationMutationResolver;
 import fake.graphql.example.model.CustomerInputTable;
@@ -16,7 +16,7 @@ public class MutationGeneratedResolver implements MutationMutationResolver {
             throws Exception {
         var transform = new RecordTransformer(env);
         var inRecord = transform.customerInputTableToJOOQRecord(in, "in");
-        var rowsUpdated = MutationDBQueries.mutation(transform.getCtx(), inRecord);
+        var mutation = MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
         return CompletableFuture.completedFuture(inRecord.getId());
     }
 }

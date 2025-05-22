@@ -1,6 +1,6 @@
 package fake.code.generated.queries.query;
 
-import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.code.generated.queries.CustomerDBQueries;
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model._Entity;
 import graphql.schema.DataFetcher;

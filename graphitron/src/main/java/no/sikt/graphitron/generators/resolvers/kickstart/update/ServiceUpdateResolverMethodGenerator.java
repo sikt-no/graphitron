@@ -19,20 +19,8 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * This class generates the resolvers for update queries with the {@link GenerationDirective#SERVICE} directive set.
  */
 public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGenerator {
-    private boolean serviceReturnEndsWithRecord;
-
     public ServiceUpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
-    }
-
-    protected CodeBlock generateUpdateMethodCall(ObjectField target) {
-        if (!target.hasServiceReference()) {
-            return empty();
-        }
-
-        var dependency = createServiceDependency(target);
-        serviceReturnEndsWithRecord = dependency.getService().inferIsReturnTypeRecord();
-        return declare(asResultName(target.getName()), generateServiceCall(dependency.getService().getMethodName(), uncapitalize(dependency.getName())));
     }
 
     @NotNull
@@ -51,7 +39,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
         return CodeBlock
                 .builder()
-                .add(MappingCodeBlocks.generateSchemaOutputs(mapperContext, serviceReturnEndsWithRecord, processedSchema))
+                .add(MappingCodeBlocks.generateSchemaOutputs(mapperContext, processedSchema))
                 .add(returnCompletedFuture(getResolverResultName(target, processedSchema)))
                 .build();
     }

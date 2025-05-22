@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.query;
 
-import fake.code.generated.queries.query.WrapperDBQueries;
+import fake.code.generated.queries.WrapperDBQueries;
 import fake.graphql.example.model.CustomerTable;
 import fake.graphql.example.model.Wrapper;
 import graphql.schema.DataFetcher;

@@ -1,7 +1,7 @@
 package fake.code.generated.resolvers.mutation;
 
-import fake.code.generated.queries.mutation.MutationDBQueries;
-import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.code.generated.queries.MutationDBQueries;
+import fake.code.generated.queries.CustomerDBQueries;
 import fake.code.generated.transform.RecordTransformer;
 import fake.graphql.example.model.CustomerInputTable;
 import fake.graphql.example.model.Response;
@@ -19,7 +19,7 @@ public class MutationGeneratedDataFetcher {
 
             var inRecord = transform.customerInputTableToJOOQRecord(in, "in");
 
-            var rowsUpdated = MutationDBQueries.mutation(transform.getCtx(), inRecord);
+            var mutation = MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
 
             var response = new Response();
             if (inRecord != null && transform.getSelect().contains("customer")) {

@@ -41,21 +41,6 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
         return super.transformInputs(specInputs, parser.hasRecords());
     }
 
-    protected CodeBlock generateUpdateMethodCall(ObjectField target) {
-        var objectToCall = asQueryClass(target.getName());
-
-        var updateClass = getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + UpdateDBClassGenerator.SAVE_DIRECTORY_NAME, objectToCall);
-        return declare(
-                !localField.hasServiceReference() ? VARIABLE_ROWS : asResultName(target.getUnprocessedFieldOverrideInput()),
-                CodeBlock.of("$T.$L($L, $L)",
-                        updateClass,
-                        target.getName(), // Method name is expected to be the field's name.
-                        asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                        parser.getInputParamString()
-                )
-        );
-    }
-
     /**
      * @return Code that both fetches record data and creates the appropriate response objects.
      */
