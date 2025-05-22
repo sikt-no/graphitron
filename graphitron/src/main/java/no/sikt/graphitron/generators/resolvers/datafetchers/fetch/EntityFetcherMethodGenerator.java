@@ -1,12 +1,12 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -16,7 +16,8 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQuer
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.ENVIRONMENT_HANDLER;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 /**
@@ -43,8 +44,8 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                             getQueryClassName(asQueryClass(entity.getName())),
                             asEntityQueryMethodName(entity.getName()),
                             CONTEXT_NAME,
-                            VARIABLE_INTERNAL_ITERATION,
-                            NODE_ID_STRATEGY_NAME)
+                            NODE_ID_STRATEGY_NAME,
+                            VARIABLE_INTERNAL_ITERATION)
                     : CodeBlock.of(
                     "$T.$L($N, $N)",
                     getQueryClassName(asQueryClass(entity.getName())),

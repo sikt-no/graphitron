@@ -1,8 +1,5 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -11,6 +8,8 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -21,8 +20,8 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
 
 /**
  * Generator that creates methods for counting all available elements for a type.
@@ -123,10 +122,6 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 INTEGER.className
         );
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-        }
 
         if (!isRoot) {
             spec.addParameter(getStringSetTypeName(), idParamName);

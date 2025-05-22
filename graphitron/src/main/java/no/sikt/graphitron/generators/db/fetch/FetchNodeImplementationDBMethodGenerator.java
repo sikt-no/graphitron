@@ -1,14 +1,14 @@
 package no.sikt.graphitron.generators.db.fetch;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
@@ -22,8 +22,9 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
@@ -90,15 +91,10 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .unindent()
                 .unindent();
 
-        var spec = getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
+        return getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
                 .addParameter(getStringSetTypeName(), argumentName)
-                .addParameter(SELECTION_SET.className, VARIABLE_SELECT);
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-        }
-
-        return spec.addCode(code.build())
+                .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
+                .addCode(code.build())
                 .build();
     }
 

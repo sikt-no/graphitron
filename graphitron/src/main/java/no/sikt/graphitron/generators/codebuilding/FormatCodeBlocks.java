@@ -1,9 +1,5 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.definitions.fields.InputField;
@@ -18,6 +14,10 @@ import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -416,7 +416,6 @@ public class FormatCodeBlocks {
         if (!isService) {
             inputs.add(CONTEXT_NAME);
             params.add(CONTEXT_NAME);
-
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
                 params.add(NODE_ID_STRATEGY_NAME);
             }

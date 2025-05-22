@@ -1,13 +1,13 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.Comparator;
@@ -20,7 +20,8 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.ILLEGAL_ARGUMENT_EXCEPTION;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_HANDLER;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
@@ -109,7 +110,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 getQueryClassName(asQueryClass(implementationTypeName)),
                 asNodeQueryName(implementationTypeName),
                 GeneratorConfig.shouldMakeNodeStrategy() ?
-                        CodeBlock.of("$N, $N, $N, $N", CONTEXT_NAME, IDS_NAME, SELECTION_SET_NAME, NODE_ID_STRATEGY_NAME)
+                        CodeBlock.of("$N, $N, $N, $N", CONTEXT_NAME, NODE_ID_STRATEGY_NAME, IDS_NAME, SELECTION_SET_NAME)
                         : CodeBlock.of("$N, $N, $N", CONTEXT_NAME, IDS_NAME, SELECTION_SET_NAME)
             );
 
