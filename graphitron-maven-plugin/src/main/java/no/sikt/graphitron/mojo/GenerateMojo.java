@@ -32,10 +32,7 @@ import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURC
 /**
  * Mojo for a single run of the code generation.
  */
-@Mojo(
-        name = "generate",
-        defaultPhase = GENERATE_SOURCES
-)
+@Mojo(name = "generate", defaultPhase = GENERATE_SOURCES)
 public class GenerateMojo extends AbstractMojo implements Generator {
     /**
      * The Maven project.

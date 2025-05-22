@@ -71,7 +71,7 @@
 
             <plugin>
                 <groupId>no.sikt</groupId>
-                <artifactId>graphitron-schema-transformer-maven-plugin</artifactId>
+                <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${revision}${changelist}</version>
                 <configuration>
                     <schemaRootDirectories>
@@ -84,7 +84,7 @@
                         <id>transform-graphql-schema</id>
                         <phase>generate-sources</phase>
                         <goals>
-                            <goal>generate</goal>
+                            <goal>transform</goal>
                         </goals>
                         <configuration>
                             <outputSchema>schema.graphql</outputSchema>
@@ -95,51 +95,43 @@
                         <id>make-generator-schema</id>
                         <phase>generate-sources</phase>
                         <goals>
-                            <goal>generate</goal>
+                            <goal>transform</goal>
                         </goals>
                         <configuration>
                             <outputSchema>generator-schema.graphql</outputSchema>
                             <removeGeneratorDirectives>false</removeGeneratorDirectives>
                         </configuration>
                     </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <groupId>no.sikt</groupId>
-                <artifactId>graphitron-maven-plugin</artifactId>
-                <version>${revision}${changelist}</version>
-                <configuration>
-                    <schemaFiles>
-                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
-                    </schemaFiles>
-                    <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
-                    <maxAllowedPageSize>1000</maxAllowedPageSize>
-                    <recordValidation>
-                        <enabled>true</enabled>
-                        <schemaErrorType>UgyldigInput</schemaErrorType>
-                    </recordValidation>
-                    <outputPackage>${generatedGraphitronPackage}</outputPackage>
-                    <externalReferenceImports>
-                        <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
-                    </externalReferenceImports>
-                    <userSchemaFiles>
-                        <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/schema.graphql</schemaFile>
-                    </userSchemaFiles>
-                    <makeNodeStrategy>true</makeNodeStrategy>
-                    <scalars>
-                        <class>
-                            <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
-                        </class>
-                    </scalars>
-                </configuration>
-                <executions>
                     <execution>
-                        <id>generate-with-graphitron</id>
+                        <id>generate-java</id>
                         <phase>generate-sources</phase>
                         <goals>
                             <goal>generate</goal>
                         </goals>
+                        <configuration>
+                            <schemaFiles>
+                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/generator-schema.graphql</schemaFile>
+                            </schemaFiles>
+                            <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
+                            <maxAllowedPageSize>1000</maxAllowedPageSize>
+                            <recordValidation>
+                                <enabled>true</enabled>
+                                <schemaErrorType>UgyldigInput</schemaErrorType>
+                            </recordValidation>
+                            <outputPackage>${generatedGraphitronPackage}</outputPackage>
+                            <externalReferenceImports>
+                                <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
+                            </externalReferenceImports>
+                            <userSchemaFiles>
+                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/schema.graphql</schemaFile>
+                            </userSchemaFiles>
+                            <makeNodeStrategy>true</makeNodeStrategy>
+                            <scalars>
+                                <class>
+                                    <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
+                                </class>
+                            </scalars>
+                        </configuration>
                     </execution>
                 </executions>
                 <dependencies>

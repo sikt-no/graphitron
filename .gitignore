@@ -23,4 +23,4 @@ src/test/java/no/sikt/graphitron/jooq/generated/
 /graphitron-example/graphitron-example-server/.approval_tests**
 /graphitron/src/test/java/no/sikt/graphitron/jooq/generated/**
 graphitron-example/graphitron-example-server/src/test/resources/approval/approvals/*.received.json
-graphitron-schema-transformer/graphitron-schema-transformer/.approval_tests_temp/**
+graphitron-schema-transformer/.approval_tests_temp/**
