@@ -1,0 +1,14 @@
+type Query {
+    someUnion(first: Int = 100, after: String): SomeUnionConnection
+}
+
+union SomeUnion = PaymentTypeOne | PaymentTypeTwo
+
+type PaymentTypeOne @table(name: "PAYMENT_P2007_01") {
+    amount: Int
+}
+
+type PaymentTypeTwo @table(name: "PAYMENT_P2007_02") {
+    amount: Int
+}
+

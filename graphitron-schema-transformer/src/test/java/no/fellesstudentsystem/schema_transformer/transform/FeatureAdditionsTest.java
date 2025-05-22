@@ -105,6 +105,6 @@ public class FeatureAdditionsTest extends AbstractTest {
     private static String getDescriptionPattern(GraphQLNamedSchemaElement node, TraverserContext<GraphQLSchemaElement> context) {
         var path = getNodePath(context);
         var description = node.getDescription();
-        return "\u001B[0;35m" + path + "\u001B[0m" + (description == null || description.isEmpty() ? " with no description" : " with description\u001B[0;35m \"" + description.replaceAll("\\s+", " ") + "\"\u001B[0m");
+        return "\u001B[0;35m" + path + "\u001B[0m" + (description == null || description.isEmpty() ? " with no description" : " with description\u001B[0;35m \"" + description.trim().replaceAll("\\s+", " ") + "\"\u001B[0m");
     }
 }

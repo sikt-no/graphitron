@@ -45,7 +45,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField target) {
 
         var code = CodeBlock.builder();
-        if (processedSchema.isInterface(target.getTypeName()) && !processedSchema.getInterface(target.getTypeName()).hasDiscriminator()) {
+        if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
             code = getCodeForMultitableCountMethod(target);
         } else {
             var context = new FetchContext(processedSchema, target, getLocalObject(), true);
@@ -75,14 +75,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock.Builder getCodeForMultitableCountMethod(ObjectField target) {
         var code = CodeBlock.builder();
-        var interfaceDefinition = processedSchema.getInterface(target.getTypeName());
-
-        var implementations = processedSchema
-                .getObjects()
-                .values()
-                .stream()
-                .filter(it -> it.implementsInterface(interfaceDefinition.getName()))
-                .toList();
+        var implementations= processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
         implementations.forEach(implementation -> {
             var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
