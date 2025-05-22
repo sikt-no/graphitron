@@ -280,6 +280,12 @@ public class ProcessedSchema {
         return interfaces.containsKey(field.getTypeName()) || isConnectionObject(field) && isInterface(getConnectionObject(field).getNodeType());
     }
 
+    /*
+    *
+    * */
+    public boolean isMultiTableInterface(String name) {
+        return isInterface(name) && !getInterface(name).hasTable();
+    }
     /**
      * @return Get an interface with this name.
      */
@@ -332,10 +338,10 @@ public class ProcessedSchema {
 
     public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(String name) {
         if (isUnion(name)) {
-            return getUnionSubTypes(name);
+            return getUnionSubTypes(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
         }
         if (isInterface(name)) {
-            return getImplementationsForInterface(name);
+            return getImplementationsForInterface(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
         }
         return null;
     }

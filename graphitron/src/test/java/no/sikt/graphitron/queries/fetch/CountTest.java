@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.SOMEUNION_CONNECTION;
 
 @DisplayName("Query pagination - Count methods for paginated queries")
 public class CountTest extends GeneratorTest {
@@ -61,5 +62,14 @@ public class CountTest extends GeneratorTest {
                 ", String customerId){",
                 ".from(_paymentp2007_01).where(_paymentp2007_01.CUSTOMER_ID.eq(customerId))"
         );
+    }
+
+    @Test
+    @DisplayName("Connection on union")
+    void unionCountTest() {
+        assertGeneratedContentContains("unionConnection",
+                Set.of(SOMEUNION_CONNECTION),
+                ".from(_paymentp2007_01)",
+                "from(_paymentp2007_02)");
     }
 }
