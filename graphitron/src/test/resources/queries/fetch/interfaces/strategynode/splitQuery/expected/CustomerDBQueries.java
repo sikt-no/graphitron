@@ -15,8 +15,8 @@ import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
 public class CustomerDBQueries {
-    public static Map<String, Customer> customerForNode(DSLContext ctx, Set<String> ids,
-                                                        SelectionSet select, NodeIdStrategy nodeIdStrategy) {
+    public static Map<String, Customer> customerForNode(DSLContext ctx, NodeIdStrategy nodeIdStrategy, Set<String> ids,
+                                                        SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(
@@ -31,8 +31,8 @@ public class CustomerDBQueries {
                 .fetchMap(Record2::value1, Record2::value2);
     }
 
-    public static Map<String, Address> addressForCustomer(DSLContext ctx,
-                                                          NodeIdStrategy nodeIdStrategy, Set<String> customerIds, SelectionSet select) {
+    public static Map<String, Address> addressForCustomer(DSLContext ctx, NodeIdStrategy nodeIdStrategy,
+                                                          Set<String> customerIds, SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
         var customer_2952383337_address = _customer.address().as("address_1214171484");
         var orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray());

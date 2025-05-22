@@ -7,13 +7,15 @@ import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.EntityFetcherClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.FEDERATION_QUERY;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Interface resolvers - Resolvers for the Node strategy interface")
 public class StrategyNodeResolverTest extends GeneratorTest {
@@ -90,7 +92,17 @@ public class StrategyNodeResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "entity", Set.of(NODE, FEDERATION_QUERY),
                 "entityFetcher(NodeIdStrategy nodeIdStrategy)",
-                "customerAsEntity(ctx, internal_it_, nodeIdStrategy)"
+                "customerAsEntity(ctx, nodeIdStrategy, internal_it_)"
+        );
+    }
+
+    @Test
+    @DisplayName("Connection")
+    void connection() {
+        assertGeneratedContentContains(
+                "connection", Set.of(CUSTOMER_CONNECTION),
+                ".queryForQuery(ctx, nodeIdStrategy,",
+                ".countQueryForQuery(ctx, nodeIdStrategy)"
         );
     }
 }

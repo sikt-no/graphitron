@@ -1,9 +1,6 @@
 package no.sikt.graphitron.generators.db.fetch;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -11,6 +8,9 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
@@ -19,7 +19,6 @@ import java.util.List;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getObjectMapTypeName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INPUT_MAP;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
@@ -55,7 +54,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
                 .add(createSelectConditions(context.getConditionList(), true))
                 .add(fetchMapping(target.isIterableWrapped()));
 
-        MethodSpec.Builder spec = getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType)
+        return getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType)
                 .addParameter(mapType, VARIABLE_INPUT_MAP)
                 .addCode(createAliasDeclarations(context.getAliasSet()))
                 .addCode(declare(VARIABLE_RESULT, code.build()))
@@ -70,14 +69,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
                                         MAP.className
                                 )
                         )
-                );
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-        }
-
-        return spec
-                .build();
+                ).build();
     }
 
     /**

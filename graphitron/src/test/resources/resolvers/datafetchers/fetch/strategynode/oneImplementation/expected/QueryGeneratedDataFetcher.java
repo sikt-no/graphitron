@@ -24,7 +24,7 @@ public class QueryGeneratedDataFetcher {
             var _fetcher = new DataFetcherHelper(env);
 
             switch (_typeId) {
-                case "CUSTOMER": return _fetcher.loadInterface(_loaderName, id, (ctx, ids, selectionSet) -> CustomerDBQueries.customerForNode(ctx, ids, selectionSet, nodeIdStrategy));
+                case "CUSTOMER": return _fetcher.loadInterface(_loaderName, id, (ctx, ids, selectionSet) -> CustomerDBQueries.customerForNode(ctx, nodeIdStrategy, ids, selectionSet));
                 default: throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _typeId);
             }
         };

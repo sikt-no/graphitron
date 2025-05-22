@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Query node - Interface handling for types implementing node strategy interface")
 public class StrategyNodeInterfaceTest extends GeneratorTest {
@@ -77,5 +77,25 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @DisplayName("Root query")
     void rootQuery() {
         assertGeneratedContentMatches("rootQuery");
+    }
+
+    @Test
+    @DisplayName("Connection")
+    void connection() {
+        assertGeneratedContentContains(
+                "connection", Set.of(CUSTOMER_CONNECTION),
+                "countQueryForQuery(DSLContext ctx, NodeIdStrategy nodeIdStrategy)"
+        );
+    }
+
+    @Test
+    @DisplayName("Multitable query")
+    void multitable() {
+        assertGeneratedContentContains(
+                "multitable", Set.of(CUSTOMER_TABLE),
+                "customertableForQuery(nodeIdStrategy)",
+                "customertableForQuery( NodeIdStrategy nodeIdStrategy)",
+                "customertableSortFieldsForQuery()"
+        );
     }
 }

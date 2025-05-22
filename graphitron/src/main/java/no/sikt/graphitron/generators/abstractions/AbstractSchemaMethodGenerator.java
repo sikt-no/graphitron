@@ -1,13 +1,13 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;

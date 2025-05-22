@@ -1,11 +1,10 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.*;
+import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.fields.InputField;
+import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -18,6 +17,10 @@ import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -33,9 +36,9 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -882,11 +885,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
         );
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-
-        }
         if (!isRoot) {
             spec.addParameter(getStringSetTypeName(), idParamName);
         }
