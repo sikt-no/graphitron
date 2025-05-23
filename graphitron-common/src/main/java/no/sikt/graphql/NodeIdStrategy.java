@@ -1,6 +1,7 @@
 package no.sikt.graphql;
 
 import org.jooq.*;
+import org.jooq.impl.UpdatableRecordImpl;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -20,6 +21,12 @@ public class NodeIdStrategy {
                             .toArray(String[]::new);
                     return createId(typeId, stringValues);
                 }));
+    }
+
+    public String createId(UpdatableRecordImpl<?> record, String typeId, Field<?>... keyColumnFields) {
+        var values = new String[keyColumnFields.length];
+        record.into(keyColumnFields).into(values);
+        return createId(typeId, values);
     }
 
     protected String createId(String typeId, String... keyColumns) {
@@ -59,9 +66,26 @@ public class NodeIdStrategy {
         return hasIds(typeId, Set.of(base64Id), keyColumnFields);
     }
 
+    public Condition hasId(String typeId, UpdatableRecordImpl<?> record, Field<?>... keyColumnFields) {
+        return hasIds(typeId, Set.of(createId(record, typeId, keyColumnFields)), keyColumnFields);
+    }
+
+    public Condition hasIds(String typeId, List<UpdatableRecordImpl<?>> records, Field<?>... keyColumnFields) {
+        return hasIds(typeId, records.stream().map(it -> createId(it, typeId, keyColumnFields)).collect(Collectors.toSet()), keyColumnFields);
+    }
+
     public Condition hasIds(String typeId, Set<String> base64Ids, Field<?>... keyColumnFields) {
         var rows = getRows(typeId, keyColumnFields, base64Ids);
         return row(keyColumnFields).in(rows);
+    }
+
+    public void setId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
+        var values = new String[keyColumnFields.length];
+        if (id != null) {
+            values = unpack(typeId, keyColumnFields, id);
+        }
+        record.from(values, keyColumnFields);
+        for (var field : keyColumnFields) { record.changed(field, false); }
     }
 
     private static List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {
