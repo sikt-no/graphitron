@@ -1,12 +1,12 @@
-# Graphitron Schema Transformer
+# Graphitron Schema Transform
 
-Graphitron schema transformer is an integrated part of `graphitron-maven-plugin`, 
+Graphitron schema transform is an integrated part of `graphitron-maven-plugin`, 
 providing GraphQL schema transformation capabilities.
 
 ## Usage
 
 The transform functionality is available as the `transform` goal of the maven-plugin.
-To use the schema transformer, add the following to your Maven configuration:
+To use, add the following to your Maven configuration:
 
 ```xml
 <plugin>
@@ -30,7 +30,7 @@ To use the schema transformer, add the following to your Maven configuration:
 
 ## Plugin Configuration Parameters
 
-The schema-transformer provides a variety of configuration parameters to customize its behavior.
+The schema-transform goal provides a variety of configuration parameters to customize its behavior.
 For full documentation of all available parameters, see the Javadoc in the [TransformMojo.java](../graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/TransformMojo.java) file.
 
 Key configuration parameters include:
@@ -98,7 +98,7 @@ While feature flags don't have an inherent hierarchy, this technique can be used
 
 ### Automatic Feature Directive Application
 
-The schema-transformer Maven plugin automatically applies the `@feature` directive to fields, arguments, and enums
+The transform goal automatically applies the `@feature` directive to fields, arguments, and enums
 based on the file structure of the provided schemas. This works in tandem with feature flag transformation to include
 the correct schema parts based on active feature flags.
 
@@ -124,7 +124,7 @@ Important notes:
 
 ### Schema Splitting
 
-The schema-transformer maven plugin offers flexible schema generation through configurable outputs:
+The maven plugin offers flexible schema generation through configurable outputs:
 
 - You can define multiple schema files using either:
     - The `outputSchema` parameter for a single output

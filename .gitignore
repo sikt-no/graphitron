@@ -19,8 +19,7 @@ dist/
 # Local mise config
 .mise.local.toml
 
-src/test/java/no/sikt/graphitron/jooq/generated/
 /graphitron-example/graphitron-example-server/.approval_tests**
-/graphitron/src/test/java/no/sikt/graphitron/jooq/generated/**
+/graphitron-codegen-parent/graphitron-java-codegen/src/test/java/no/sikt/graphitron/jooq/generated/**
 graphitron-example/graphitron-example-server/src/test/resources/approval/approvals/*.received.json
-graphitron-schema-transformer/.approval_tests_temp/**
+graphitron-schema-transform/.approval_tests_temp/**

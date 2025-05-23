@@ -21,15 +21,12 @@
     <version>${revision}${changelist}</version>
 
     <modules>
-        <module>graphitron</module>
+        <module>graphitron-codegen-parent</module>
         <module>graphitron-common</module>
-        <module>graphitron-error-handling-jakarta</module>
-        <module>graphitron-error-handling-javax</module>
         <module>graphitron-example</module>
-        <module>graphitron-jakarta-servlet</module>
-        <module>graphitron-javapoet</module>
         <module>graphitron-maven-plugin</module>
-        <module>graphitron-schema-transformer</module>
+        <module>graphitron-servlet-parent</module>
+        <module>graphitron-schema-transform</module>
     </modules>
 
     <properties>
