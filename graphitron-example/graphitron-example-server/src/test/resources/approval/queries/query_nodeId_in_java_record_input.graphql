@@ -1,0 +1,7 @@
+{
+    customerWithJavaRecordInput(input: {id: "Q1VTVE9NRVI6MQ"}) {
+        nodes {
+            id
+        }
+    }
+}

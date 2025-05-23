@@ -1,0 +1,10 @@
+{
+    customersByAddress(addressId: "QUREUkVTUzo1") {
+        nodes {
+            id
+            address {
+                id
+            }
+        }
+    }
+}
