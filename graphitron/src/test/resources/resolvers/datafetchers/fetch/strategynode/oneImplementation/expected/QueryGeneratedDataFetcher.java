@@ -1,7 +1,7 @@
 
 package fake.code.generated.resolvers.query;
 
-import fake.code.generated.queries.query.CustomerDBQueries;
+import fake.code.generated.queries.CustomerDBQueries;
 import fake.graphql.example.model.Node;
 import graphql.schema.DataFetcher;
 import java.lang.IllegalArgumentException;

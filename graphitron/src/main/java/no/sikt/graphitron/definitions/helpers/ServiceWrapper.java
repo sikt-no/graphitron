@@ -15,7 +15,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Class that contains extended information about a mutation service.
  */
 public class ServiceWrapper {
-    private final Class<?> service, returnType;
+    private final Class<?> service;
     private final Method method;
     private final String methodName;
     private final ClassName serviceClassName;
@@ -30,20 +30,7 @@ public class ServiceWrapper {
                         " does not contain method named " + reference.getMethodName()
         ));
         serviceClassName = ClassName.get(service);
-
-        if (response != null && response.hasJavaRecordReference()) {
-            returnType = response.getRecordReference();
-        } else {
-            returnType = method != null ? TypeExtractor.extractType(method.getGenericReturnType()) : null;
-        }
         methodName = uncapitalize(method != null ? method.getName() : field.getName());
-    }
-
-    /**
-     * @return The class of the return type for this service method unpacked.
-     */
-    public boolean inferIsReturnTypeRecord() {
-        return returnType.getName().endsWith(RECORD_NAME_SUFFIX);
     }
 
     /**

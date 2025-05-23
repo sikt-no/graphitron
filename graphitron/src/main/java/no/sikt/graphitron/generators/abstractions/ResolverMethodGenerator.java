@@ -1,7 +1,5 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -13,6 +11,8 @@ import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.dependencies.ServiceDependency;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
@@ -67,7 +67,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         return dependency;
     }
 
-    protected CodeBlock queryMethodCall(ObjectField target, InputParser parser) {
+    protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutation) {
         var isService = target.hasServiceReference();
         var isRoot = localObject.isOperationRoot();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
@@ -84,6 +84,17 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                     .addStatement("return $L.$L($N, $L)", newDataFetcher(), "loadLookup", LOOKUP_KEYS_NAME, queryFunction)
                     .build();
         }
+
+        if (isMutation) {
+            var methodCall = CodeBlock
+                    .builder()
+                    .add(isService ? CodeBlock.of("$N", uncapitalize(objectToCall)) : CodeBlock.of("$T", getQueryClassName(objectToCall)))
+                    .add(".$L(", methodName)
+                    .add(isService ? empty() : CodeBlock.of("$L, ", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)))
+                    .add("$L)", parser.getInputParamString());
+            return declare(asResultName(target.getName()), methodCall.build());
+        }
+
         return callQueryBlock(target, objectToCall, methodName, parser, queryFunction);
     }
 

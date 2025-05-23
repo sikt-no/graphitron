@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.query;
 
-import fake.code.generated.queries.query.WrapperDBQueries;
+import fake.code.generated.queries.WrapperDBQueries;
 import fake.graphql.example.model.DummyConnection;
 import fake.graphql.example.model.DummyConnectionEdge;
 import fake.graphql.example.model.PageInfo;

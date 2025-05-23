@@ -1,21 +1,18 @@
 package no.sikt.graphitron.generators.db.update;
 
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 /**
  * Class generator for basic mutation classes.
  */
-public class UpdateDBClassGenerator extends DBClassGenerator<ObjectField> {
-    public static final String SAVE_DIRECTORY_NAME = "mutation";
-
+public class UpdateDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
     public UpdateDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }
@@ -23,26 +20,16 @@ public class UpdateDBClassGenerator extends DBClassGenerator<ObjectField> {
     @Override
     public List<TypeSpec> generateAll() {
         var mutation = processedSchema.getMutationType();
-        if (mutation != null && !mutation.isExplicitlyNotGenerated()) {
-            return mutation
-                    .getFields()
-                    .stream()
-                    .filter(ObjectField::isGeneratedWithResolver)
-                    .filter(ObjectField::hasMutationType)
-                    .map(this::generate)
-                    .filter(it -> !it.methodSpecs().isEmpty())
-                    .collect(Collectors.toList());
+        if (mutation == null || mutation.isExplicitlyNotGenerated()) {
+            return List.of();
         }
-        return List.of();
+
+        var spec = generate(mutation);
+        return !spec.methodSpecs().isEmpty() ? List.of(spec) : List.of();
     }
 
     @Override
-    public TypeSpec generate(ObjectField target) {
+    public TypeSpec generate(ObjectDefinition target) {
         return getSpec(capitalize(target.getName()), new UpdateDBMethodGenerator(target, processedSchema)).build();
-    }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
     }
 }

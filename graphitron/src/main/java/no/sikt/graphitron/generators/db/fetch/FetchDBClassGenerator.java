@@ -17,8 +17,6 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
  * Class generator for basic select query classes.
  */
 public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
-    public static final String SAVE_DIRECTORY_NAME = "query";
-
     protected final Set<ObjectField> objectFieldsReturningNode;
 
     public FetchDBClassGenerator(ProcessedSchema processedSchema) {
@@ -64,10 +62,5 @@ public class FetchDBClassGenerator extends DBClassGenerator<ObjectDefinition> {
                         new EntityDBFetcherMethodGenerator(target, processedSchema)
                 )
         ).build();
-    }
-
-    @Override
-    public String getDefaultSaveDirectoryName() {
-        return DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
     }
 }

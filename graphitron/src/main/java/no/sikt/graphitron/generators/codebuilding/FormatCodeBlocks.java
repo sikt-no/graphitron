@@ -13,7 +13,6 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -403,7 +402,7 @@ public class FormatCodeBlocks {
     }
 
     public static ClassName getQueryClassName(String queryLocation) {
-        return getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + FetchDBClassGenerator.SAVE_DIRECTORY_NAME, queryLocation);
+        return getGeneratedClassName(DBClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, queryLocation);
     }
 
     /**

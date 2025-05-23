@@ -1,13 +1,14 @@
 package no.sikt.graphitron.generators.db.update;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -32,11 +34,8 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
     private static final String VARIABLE_RECORD_LIST = "recordList";
 
-    private final ObjectField localField;
-
-    public UpdateDBMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
-        super(processedSchema.getMutationType(), processedSchema);
-        this.localField = localField;
+    public UpdateDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
+        super(localObject, processedSchema);
     }
 
     /**
@@ -52,7 +51,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
 
-        var spec = getDefaultSpecBuilder(target.getName(), TypeName.INT);
+        var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), TypeName.INT);
 
         var inputs = new InputParser(target, processedSchema).getMethodInputsWithOrderField();
         inputs.forEach((inputName, inputType) -> spec.addParameter(iterableWrapType(inputType), inputName));
@@ -92,9 +91,17 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (localField.isGeneratedWithResolver() && localField.hasMutationType() && !localField.hasServiceReference()) {
-            return List.of(generate(localField));
+        var localObject = getLocalObject();
+        if (localObject.isExplicitlyNotGenerated()) {
+            return List.of();
         }
-        return List.of();
+        return localObject
+                .getFields()
+                .stream()
+                .filter(ObjectField::isGeneratedWithResolver)
+                .filter(ObjectField::hasMutationType)
+                .map(this::generate)
+                .filter(it -> !it.code().isEmpty())
+                .collect(Collectors.toList());
     }
 }

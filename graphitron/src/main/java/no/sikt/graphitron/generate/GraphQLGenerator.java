@@ -13,10 +13,9 @@ import no.sikt.graphitron.generators.exception.MutationExceptionStrategyConfigur
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.EntityFetcherClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.fetch.FetchClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.operations.EntityFetcherClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers.TypeResolverClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.fetch.FetchResolverClassGenerator;
 import no.sikt.graphitron.generators.resolvers.kickstart.update.UpdateResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -60,9 +59,8 @@ public class GraphQLGenerator {
                 new UnionDTOGenerator(processedSchema),
                 new EnumDTOGenerator(processedSchema),
                 new FetchDBClassGenerator(processedSchema),
-                new FetchClassGenerator(processedSchema),
                 new UpdateDBClassGenerator(processedSchema),
-                new UpdateClassGenerator(processedSchema),
+                new OperationClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
                 new RecordMapperClassGenerator(processedSchema, true),
                 new RecordMapperClassGenerator(processedSchema, false),

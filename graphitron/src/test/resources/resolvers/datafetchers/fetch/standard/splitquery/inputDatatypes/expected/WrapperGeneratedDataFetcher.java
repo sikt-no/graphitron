@@ -1,6 +1,6 @@
 package fake.code.generated.resolvers.query;
 
-import fake.code.generated.queries.query.WrapperDBQueries;
+import fake.code.generated.queries.WrapperDBQueries;
 import fake.graphql.example.model.DummyEnum;
 import fake.graphql.example.model.DummyInput;
 import fake.graphql.example.model.DummyType;

@@ -3,7 +3,7 @@ package no.sikt.graphitron.wiring;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.update.UpdateClassGenerator;
+import no.sikt.graphitron.generators.resolvers.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,7 +23,7 @@ public class WiringBuilderMutationTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        var generator = new UpdateClassGenerator(schema);
+        var generator = new OperationClassGenerator(schema);
         return List.of(generator, new WiringClassGenerator(List.of(generator), schema));
     }
 

@@ -1,4 +1,4 @@
-package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
+package no.sikt.graphitron.generators.resolvers.datafetchers.operations;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;

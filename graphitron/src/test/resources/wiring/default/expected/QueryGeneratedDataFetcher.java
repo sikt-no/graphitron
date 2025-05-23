@@ -1,4 +1,4 @@
-import fake.code.generated.queries.query.QueryDBQueries;
+import fake.code.generated.queries.QueryDBQueries;
 import fake.graphql.example.model.Customer;
 import graphql.schema.DataFetcher;
 import java.util.concurrent.CompletableFuture;

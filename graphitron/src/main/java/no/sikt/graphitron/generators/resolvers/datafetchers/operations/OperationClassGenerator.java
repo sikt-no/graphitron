@@ -1,25 +1,23 @@
-package no.sikt.graphitron.generators.resolvers.datafetchers.fetch;
+package no.sikt.graphitron.generators.resolvers.datafetchers.operations;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
-import no.sikt.graphitron.generators.abstractions.KickstartResolverClassGenerator;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
-import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 
 /**
- * Class generator for select data fetchers classes.
+ * Class generator for any data fetchers classes.
  */
-public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinition> {
-    public final String SAVE_DIRECTORY_NAME = "query";
+public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectDefinition> {
+    public final String SAVE_DIRECTORY_NAME = "operations";
 
-    public FetchClassGenerator(ProcessedSchema processedSchema) {
+    public OperationClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }
 
@@ -30,7 +28,6 @@ public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinit
                 .values()
                 .stream()
                 .filter(ObjectDefinition::isGenerated)
-                .filter(obj -> !obj.getName().equals(SCHEMA_MUTATION.getName()))
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs().isEmpty())
                 .collect(Collectors.toList());
@@ -39,7 +36,7 @@ public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinit
     @Override
     public TypeSpec generate(ObjectDefinition target) {
         var generators = List.of(
-                new FetchMethodGenerator(target, processedSchema),
+                new OperationMethodGenerator(target, processedSchema),
                 new FetchNodeMethodGenerator(target, processedSchema)
         );
         var spec = getSpec(target.getName(), generators);
@@ -57,6 +54,6 @@ public class FetchClassGenerator extends DataFetcherClassGenerator<ObjectDefinit
 
     @Override
     public String getDefaultSaveDirectoryName() {
-        return KickstartResolverClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
+        return DataFetcherClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME + "." + SAVE_DIRECTORY_NAME;
     }
 }
