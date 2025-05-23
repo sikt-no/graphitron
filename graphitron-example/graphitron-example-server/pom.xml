@@ -40,7 +40,7 @@
         </dependency>
         <dependency>
             <groupId>no.sikt</groupId>
-            <artifactId>graphitron-jakarta-servlet</artifactId>
+            <artifactId>graphitron-servlet</artifactId>
             <version>${revision}${changelist}</version>
         </dependency>
         <dependency>

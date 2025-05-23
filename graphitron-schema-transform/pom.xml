@@ -9,7 +9,7 @@
         <version>${revision}${changelist}</version>
     </parent>
 
-    <artifactId>graphitron-schema-transformer</artifactId>
+    <artifactId>graphitron-schema-transform</artifactId>
 
     <dependencies>
         <dependency>

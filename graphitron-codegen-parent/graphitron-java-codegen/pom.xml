@@ -7,10 +7,10 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>no.sikt</groupId>
-        <artifactId>graphitron-parent</artifactId>
+        <artifactId>graphitron-codegen-parent</artifactId>
         <version>${revision}${changelist}</version>
     </parent>
-    <artifactId>graphitron</artifactId>
+    <artifactId>graphitron-java-codegen</artifactId>
 
     <dependencies>
         <dependency>
