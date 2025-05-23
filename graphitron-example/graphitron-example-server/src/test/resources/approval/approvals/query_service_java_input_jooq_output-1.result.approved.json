@@ -1,0 +1,9 @@
+{
+    "data": {
+        "customerServiceWithJavaRecordInput": {
+            "name": {
+                "firstName": "My Name"
+            }
+        }
+    }
+}

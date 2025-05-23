@@ -1,0 +1,7 @@
+{
+    "data": {
+        "helloWorldAgainWithJooqRecordInput": {
+            "greeting": "Hello, customer with CUSTOMER_ID 1!"
+        }
+    }
+}

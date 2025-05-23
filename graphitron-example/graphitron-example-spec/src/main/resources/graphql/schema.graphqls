@@ -7,11 +7,12 @@ scalar LocalDateTime
 
 type Query {
     helloWorld: String @notGenerated
-    helloWorldAgain(name: String!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
 
     customers(first: Int = 100, after: String): CustomerConnection
     activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
-#    customerFromService: CustomerRecord @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"}) # TODO: GGG-41
+    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
+    customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection
+    customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection
 
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
     filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
@@ -34,10 +35,6 @@ type Query {
 
 interface Node {
     id: ID!
-}
-
-type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
-    greeting: String
 }
 
 type CustomerConnection {
@@ -71,8 +68,8 @@ type CustomerName {
     lastName: String! @field(name: "LAST_NAME")
 }
 
-type Address @table @key(fields: "id", resolvable: false) {
-    id: ID
+type Address implements Node @node @table @key(fields: "id", resolvable: false) {
+    id: ID!
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")
     city: City!
@@ -108,7 +105,7 @@ type Language implements Node @table @node(keyColumns: ["NAME", "LANGUAGE_ID"]){
     films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
 }
 
-type Film implements Node @table {
+type Film implements Node @node @table {
     id: ID!
     title: String
 }
@@ -139,10 +136,6 @@ type Payment @table {
 #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 
-type CustomerRecord @table(name: "CUSTOMER") {
-    id: ID
-}
-
 input StaffInput {
     username: String
     isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
@@ -150,11 +143,15 @@ input StaffInput {
     withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(references: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
 }
 
-type Staff @table(name: "STAFF") {
-    id: ID
+type Staff implements Node @node @table(name: "STAFF") {
+    id: ID!
     email: String
     username: String
 }
 
 union LanguageStaffUnion = Language | Staff
 
+input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
+    id: ID! @nodeId(typeName: "Customer")
+    firstName: String @field(name: "FIRST_NAME")
+}
