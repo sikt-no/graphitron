@@ -38,12 +38,12 @@ mvn-build:
     when: always
     paths:
       # Results from test runs
-      - graphitron/**/target/*-reports/*.xml
+      - graphitron-codegen-parent/graphitron-java-codegen/**/target/*-reports/*.xml
     expire_in: 1 week
     reports:
       junit:
         # Results from test runs
-        - graphitron/**/*-reports/*.xml
+        - graphitron-codegen-parent/graphitron-java-codegen/**/*-reports/*.xml
   rules:
   - if: $CI_COMMIT_REF_NAME == "main"
     variables:
