@@ -24,4 +24,16 @@
         <generatedCodePackage>no.sikt.graphitron.example.generated</generatedCodePackage>
         <generatedJooqPackage>${generatedCodePackage}.jooq</generatedJooqPackage>
     </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip> <!-- Do not deploy/publish this example project -->
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
