@@ -9,6 +9,10 @@
 
     <version>${revision}${changelist}</version>
 
+    <name>Graphitron</name>
+    <description>Graphitron is a code generation tool that creates source code by linking GraphQL schemas to underlying database models</description>
+    <url>https://github.com/sikt-no/graphitron</url>
+
     <modules>
         <module>graphitron-codegen-parent</module>
         <module>graphitron-common</module>
@@ -20,8 +24,7 @@
 
     <properties>
         <revision>5.0</revision>
-        <!-- is overwritten by CI. Default is 999999-SNAPSHOT to ensure that the version is higher than the last release, when developing locally -->
-        <changelist>.999999-SNAPSHOT</changelist>
+        <changelist>.1</changelist>
 
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
@@ -167,21 +170,11 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-    <distributionManagement>
-        <repository>
-            <id>github</id>
-            <name>GitHub Packages</name>
-            <url>https://maven.pkg.github.com/sikt-no/graphitron</url>
-        </repository>
-        <snapshotRepository>
-            <id>github</id>
-            <name>GitHub Packages</name>
-            <url>https://maven.pkg.github.com/sikt-no/graphitron</url>
-        </snapshotRepository>
-    </distributionManagement>
+
     <scm>
+        <connection>scm:git:git://github.com/sikt-no/graphitron.git</connection>
+        <developerConnection>scm:git:ssh://github.com:sikt-no/graphitron.git</developerConnection>
         <url>https://github.com/sikt-no/graphitron.git</url>
-        <developerConnection>scm:git:git@git@github.com:sikt-no/graphitron.git</developerConnection>
     </scm>
     <licenses>
         <license>
@@ -190,6 +183,51 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+
+    <developers>
+        <developer>
+            <name>Alf Lervåg</name>
+            <email>alf.lervag@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>Andrea Nakstad</name>
+            <email>andrea.nakstad@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>A.C.</name>
+            <email>andrzej.cabala@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>Christoffer Hellerud Hansen</name>
+            <email>christoffer.hansen@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>Filip Folkesson</name>
+            <email>filip.folkesson@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>Jens Kilde Mjelva</name>
+            <email>jens.kilde.mjelva@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>Kenneth Pettersen Lund</name>
+            <email>kenneth.lund@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+    </developers>
 
     <build>
         <pluginManagement>
@@ -274,6 +312,12 @@
 
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-gpg-plugin</artifactId>
+                    <version>3.1.0</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-plugin-plugin</artifactId>
                     <version>3.15.1</version>
                 </plugin>
@@ -286,20 +330,28 @@
 
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-deploy-plugin</artifactId>
-                    <version>3.1.4</version>
-                </plugin>
-
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-clean-plugin</artifactId>
                     <version>3.4.1</version>
                 </plugin>
-
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>3.1.4</version>
+                </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-assembly-plugin</artifactId>
                     <version>3.7.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonatype.plugins</groupId>
+                    <artifactId>nexus-staging-maven-plugin</artifactId>
+                    <version>1.7.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -381,6 +433,89 @@
                 <maven.test.skip>true</maven.test.skip>
                 <maven.javadoc.skip>true</maven.javadoc.skip>
             </properties>
+        </profile>
+        <profile>
+            <!-- This profile is used to build the project for release to the Maven Central Repository (OSSRH).
+             It includes the necessary plugins and configurations for signing, generating sources and javadocs,
+            and deploying to OSSRH. -->
+            <id>release</id>
+            <distributionManagement>
+                <repository>
+                    <id>ossrh</id>
+                    <name>Central Repository OSSRH</name>
+                    <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+                </repository>
+                <snapshotRepository>
+                    <id>ossrh</id>
+                    <name>OSSRH Snapshots</name>
+                    <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+                </snapshotRepository>
+            </distributionManagement>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonatype.plugins</groupId>
+                        <artifactId>nexus-staging-maven-plugin</artifactId>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <serverId>ossrh</serverId>
+                            <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+                            <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-deploy-plugin</artifactId>
+                        <configuration>
+                            <!-- ensures that all artifacts will be deployed at the end (if successfull) or none at all -->
+                            <deployAtEnd>true</deployAtEnd>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>
