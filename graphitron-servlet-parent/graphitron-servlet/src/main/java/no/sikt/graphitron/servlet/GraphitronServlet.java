@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response.Status;
 import no.sikt.graphitron.servlet.GraphqlHttpRequest.Payload;
 import org.dataloader.DataLoaderRegistry;
 import org.slf4j.Logger;
@@ -49,7 +50,7 @@ public abstract class GraphitronServlet extends HttpServlet {
                 .addError(
                         t instanceof GraphQLError ? (GraphQLError) t
                                 : GraphQLError.newError().errorType(getClassificationFor(status))
-                                        .message(Optional.ofNullable(t.getMessage()).orElse("unknown")).build())
+                                        .message(Status.fromStatusCode(status).getReasonPhrase()).build())
                 .build();
     }
 
