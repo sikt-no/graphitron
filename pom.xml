@@ -484,6 +484,10 @@
                                 <goals>
                                     <goal>jar</goal>
                                 </goals>
+                                <configuration>
+                                    <!-- Only include main sources, not tests -->
+                                    <sourcepath>${project.build.sourceDirectory}</sourcepath>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>
