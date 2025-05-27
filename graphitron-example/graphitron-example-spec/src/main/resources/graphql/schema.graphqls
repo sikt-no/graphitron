@@ -28,6 +28,8 @@ type Query {
 
     node(id: ID!): Node
     cities: [City] @asConnection
+
+    languageOrStaff: [LanguageStaffUnion] @asConnection
 }
 
 interface Node {
@@ -154,4 +156,5 @@ type Staff @table(name: "STAFF") {
     username: String
 }
 
-union SomeUnion = Language | Staff
+union LanguageStaffUnion = Language | Staff
+

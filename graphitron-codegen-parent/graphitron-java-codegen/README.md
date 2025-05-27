@@ -1266,6 +1266,34 @@ type Query {
 }
 ```
 
+### Multitable Unions 
+
+Graphitron supports Union queries on the Query type. All of the union's sub-types needs to have the [table](#table-directive) directive set.
+
+**_Schema setup:_**
+```
+union LanguageStaffUnion = Language | Staff
+
+type Language @table {
+  name: String
+  ...
+}
+
+type Staff @table {
+  id: Int @field(name: "STAFF_ID") 
+  ...
+}
+
+```
+**_example:_**
+
+```
+type Query {
+  languageOrStaff: [LanguageStaffUnion]
+}
+```
+
+
 ##### Query conditions
 
 [Conditions](#Query-conditions) on queries returning multi table interfaces is also supported. Since the table is passed as a parameter to the condition method and each implementing type has a different table, a unique method for each implementation is necessary. These methods must all share the same method signature, except for the first table parameter.
