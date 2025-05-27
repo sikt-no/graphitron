@@ -453,13 +453,20 @@
                         <configuration>
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
+                            <excludeArtifacts>
+                                <excludeArtifact>graphitron-example</excludeArtifact>
+                                <excludeArtifact>graphitron-example-db</excludeArtifact>
+                                <excludeArtifact>graphitron-example-server</excludeArtifact>
+                                <excludeArtifact>graphitron-example-service</excludeArtifact>
+                                <excludeArtifact>graphitron-example-spec</excludeArtifact>
+                            </excludeArtifacts>
                         </configuration>
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-deploy-plugin</artifactId>
                         <configuration>
-                            <!-- ensures that all artifacts will be deployed at the end (if successfull) or none at all -->
+                            <!-- ensures that all artifacts will be deployed at the end (if successful) or none at all -->
                             <deployAtEnd>true</deployAtEnd>
                         </configuration>
                     </plugin>
