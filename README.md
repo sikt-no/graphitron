@@ -8,6 +8,6 @@ Graphitron is used as a Maven plugin, offering two main functionalities:
 
 For more information, see:
 -   [Online documentation](https://graphitron.sokrates.edupaas.no/)
--   [graphitron/README.md](./graphitron/README.md) for detailed information on how to configure and use the Graphitron Java Code Generator.
--   [graphitron-schema-transform/README.md](./graphitron-schema-transform/README.md) for information on how to transform GraphQL schemas.
--   [graphitron-example/README.md](./graphitron-example/README.md) for an example of how to use Graphitron.
+-   [Code-generator README](./graphitron-codegen-parent/graphitron-java-codegen/README.md) for detailed information on how to configure and use the Graphitron Java Code Generator.
+-   [Schema Transform README](./graphitron-schema-transform/README.md) for information on how to transform GraphQL schemas.
+-   [Example project README](./graphitron-example/README.md) for an example of how to use Graphitron.

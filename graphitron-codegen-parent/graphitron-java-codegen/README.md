@@ -13,7 +13,7 @@ using Java and [jOOQ](https://www.jooq.org/).
 * Error handling
 
 ## Usage
-See the [example project](../graphitron-example) for a complete example of how to set up and use Graphitron.
+See the [example project](../../graphitron-example) for a complete example of how to set up and use Graphitron.
 This project is also used for running integration tests ensuring that Graphitron generates resolvers that work as expected.
 The example project includes a [README.md](../graphitron-example/README.md) file detailing the setup and usage of the example project.
 
