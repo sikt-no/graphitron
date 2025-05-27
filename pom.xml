@@ -349,9 +349,9 @@
                     <version>3.3.1</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.sonatype.plugins</groupId>
-                    <artifactId>nexus-staging-maven-plugin</artifactId>
-                    <version>1.7.0</version>
+                    <groupId>org.sonatype.central</groupId>
+                    <artifactId>central-publishing-maven-plugin</artifactId>
+                    <version>0.7.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -435,32 +435,24 @@
             </properties>
         </profile>
         <profile>
-            <!-- This profile is used to build the project for release to the Maven Central Repository (OSSRH).
-             It includes the necessary plugins and configurations for signing, generating sources and javadocs,
-            and deploying to OSSRH. -->
+            <!-- This profile is used to build the project for release to the Maven Central Publisher Portal.
+             It includes the necessary plugins and configurations for signing, generating sources and Javadocs,
+            and deploying to the Central Portal. -->
             <id>release</id>
             <distributionManagement>
                 <repository>
-                    <id>ossrh</id>
-                    <name>Central Repository OSSRH</name>
-                    <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+                    <id>central</id>
                 </repository>
-                <snapshotRepository>
-                    <id>ossrh</id>
-                    <name>OSSRH Snapshots</name>
-                    <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-                </snapshotRepository>
             </distributionManagement>
             <build>
                 <plugins>
                     <plugin>
-                        <groupId>org.sonatype.plugins</groupId>
-                        <artifactId>nexus-staging-maven-plugin</artifactId>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
                         <extensions>true</extensions>
                         <configuration>
-                            <serverId>ossrh</serverId>
-                            <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
-                            <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
                         </configuration>
                     </plugin>
                     <plugin>
