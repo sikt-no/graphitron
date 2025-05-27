@@ -52,7 +52,7 @@ import java.util.Map;
  * <p>Instances of this class are immutable value objects that implement {@code equals()} and {@code
  * hashCode()} properly.
  *
- * <h3>Referencing existing types</h3>
+ * <h2>Referencing existing types</h2>
  *
  * <p>Primitives and void are constants that you can reference directly: see {@link #INT}, {@link
  * #DOUBLE}, and {@link #VOID}.
@@ -60,7 +60,7 @@ import java.util.Map;
  * <p>In an annotation processor you can get a type name instance for a type mirror by calling
  * {@link #get(TypeMirror)}. In reflection code, you can use {@link #get(Type)}.
  *
- * <h3>Defining new types</h3>
+ * <h2>Defining new types</h2>
  *
  * <p>Create new reference types like {@code com.example.HelloWorld} with {@link
  * ClassName#get(String, String, String...)}. To build composite types like {@code char[]} and
