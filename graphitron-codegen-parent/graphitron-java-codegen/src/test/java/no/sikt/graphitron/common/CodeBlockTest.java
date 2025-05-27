@@ -1,7 +1,7 @@
 package no.sikt.graphitron.common;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;

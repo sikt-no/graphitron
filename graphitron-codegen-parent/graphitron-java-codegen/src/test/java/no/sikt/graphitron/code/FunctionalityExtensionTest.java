@@ -31,7 +31,7 @@ public class FunctionalityExtensionTest extends GeneratorTest {
         }
 
         @Override
-        public void validateThatProcessedDefinitionsConformToJOOQNaming() {
+        public void validateDirectiveUsage() {
             throw new UnsupportedOperationException(EXCEPTION_MSG);
         }
     }

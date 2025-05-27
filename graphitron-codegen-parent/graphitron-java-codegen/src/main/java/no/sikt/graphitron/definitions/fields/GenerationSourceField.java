@@ -6,6 +6,7 @@ import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
@@ -19,8 +20,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentBoolean;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
+import static no.sikt.graphql.directives.DirectiveHelpers.*;
 import static no.sikt.graphql.directives.GenerationDirective.SERVICE;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
@@ -35,7 +35,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
-    private final CodeReference serviceReference;
+    private final ServiceWrapper serviceWrapper;
 
     public GenerationSourceField(T field, FieldType fieldType, String container) {
         super(field, fieldType, container);
@@ -57,7 +57,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
             condition = null;
         }
 
-        serviceReference = field.hasDirective(SERVICE.getName()) ? new CodeReference(field, SERVICE, GenerationDirectiveParam.SERVICE, field.getName()) : null;
+        serviceWrapper = field.hasDirective(SERVICE.getName()) ? new ServiceWrapper(field) : null;
         if (field.hasDirective(FIELD.getName())) {
             mappingForRecordFieldOverride = getJavaName().isEmpty() ? new MethodMapping(toCamelCase(getUpperCaseName())) : new MethodMapping(getJavaName());
         } else {
@@ -156,12 +156,12 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean hasServiceReference() {
-        return serviceReference != null;
+        return serviceWrapper != null;
     }
 
     @Override
-    public CodeReference getServiceReference() {
-        return serviceReference;
+    public ServiceWrapper getService() {
+        return serviceWrapper;
     }
 
     @Override

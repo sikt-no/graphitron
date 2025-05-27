@@ -14,11 +14,6 @@ public class TransformerDetectionMutationTest extends AbstractTransformerDetecti
         return super.getSubpath() + "/mutation";
     }
 
-    @Override
-    protected boolean validateSchema() {
-        return false;
-    }
-
     @Test
     @DisplayName("Java records in mutation services")
     public void serviceWithJavaRecordOutputs() {

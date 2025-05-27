@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_SERVICE;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_FETCH_SERVICE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
@@ -24,7 +25,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(RESOLVER_FETCH_SERVICE);
+        return makeReferences(RESOLVER_FETCH_SERVICE, CONTEXT_SERVICE);
     }
 
     @Override
@@ -47,6 +48,34 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Basic root service with a parameter")
     void withInput() {
         assertGeneratedContentContains("operation/withInput", "id = ((String) _args.get(\"id\"))", "resolverFetchService.query(id)");
+    }
+
+    @Test
+    @DisplayName("Basic root service with a context parameter")
+    void withContextInput() {
+        assertGeneratedContentContains(
+                "operation/withContextInput",
+                "_graphCtx = env.getGraphQlContext()",
+                "_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "query(_ctxField)"
+        );
+    }
+
+    @Test
+    @DisplayName("Basic root service with both a context parameter and a standard parameter")
+    void withContextInputAndArgument() {
+        assertGeneratedContentContains("operation/withContextInputAndArgument", "query(i, _ctxField)");
+    }
+
+    @Test
+    @DisplayName("Service with both a context parameter and a pagination parameters")
+    void withContextInputAndPagination() {
+        assertGeneratedContentContains(
+                "operation/withContextInputAndPagination",
+                Set.of(DUMMY_CONNECTION),
+                "query(pageSize, after, _ctxField)",
+                ".countQuery(_ctxField)"
+        );
     }
 
     @Test

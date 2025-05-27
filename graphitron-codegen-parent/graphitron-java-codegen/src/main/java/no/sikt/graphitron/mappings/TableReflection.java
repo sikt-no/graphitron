@@ -369,7 +369,7 @@ public class TableReflection {
 
     /**
      * @param table Table class to find paths for.
-     * @return @return Map containing all the foreign key references for the table and the corresponding method names to call them.
+     * @return Map containing all the foreign key references for the table and the corresponding method names to call them.
      */
     private static Map<String, String> getPathByFk(Table<?> table) {
         return Arrays

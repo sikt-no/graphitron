@@ -24,6 +24,11 @@ abstract public class ValidationTest extends GeneratorTest {
         return "validation/";
     }
 
+    @Override
+    protected boolean validateSchema() {
+        return true;
+    }
+
     protected String getWarning() {
         return logWatcher
                 .list
