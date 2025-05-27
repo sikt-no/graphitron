@@ -1,0 +1,12 @@
+{
+    languageOrStaff (first: 10) {
+        nodes {
+            ... on Staff {
+                email
+            }
+            ... on Language {
+                id
+            }
+        }
+    }
+}
