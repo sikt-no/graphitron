@@ -192,7 +192,7 @@ public class ProcessedSchema {
         if (checkTypes) {
             processedDefinitionsValidator.validateObjectFieldTypes();
         }
-        processedDefinitionsValidator.validateThatProcessedDefinitionsConformToJOOQNaming();
+        processedDefinitionsValidator.validateDirectiveUsage();
     }
 
     /**

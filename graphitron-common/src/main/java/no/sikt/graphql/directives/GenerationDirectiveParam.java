@@ -23,6 +23,7 @@ public enum GenerationDirectiveParam {
     HANDLERS("handlers"),
     HANDLER("handler"),
     CLASS_NAME("className"),
+    CONTEXT_ARGUMENTS("contextArguments"),
     CODE("code"),
     MATCHES("matches"),
     DESCRIPTION("description"),

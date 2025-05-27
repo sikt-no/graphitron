@@ -1,8 +1,8 @@
 package no.sikt.graphitron.definitions.interfaces;
 
-import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphql.directives.GenerationDirective;
@@ -38,9 +38,9 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     boolean hasServiceReference();
 
     /**
-     * @return The reference to the external service that this field is related to.
+     * @return The wrapper object for a service reference, if the field has a service set. Otherwise, null.
      */
-    CodeReference getServiceReference();
+    ServiceWrapper getService();
 
     /**
      * @return Does this field have a mutation operation defined?
