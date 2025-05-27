@@ -34,13 +34,26 @@ public class ExternalReferences {
      * @return The methods this reference points to.
      */
     public List<Method> getMethodsFrom(CodeReference reference) {
+        if (reference == null) {
+            return List.of();
+        }
+
+        var referenceClass = getClassFrom(reference);
+        if (referenceClass == null) {
+            return List.of();
+        }
+
         return Arrays
-                .stream(getClassFrom(reference).getMethods())
+                .stream(referenceClass.getMethods())
                 .filter(it -> it.getName().equalsIgnoreCase(reference.getMethodName()))
                 .collect(Collectors.toList());
     }
 
     public Class<?> getClassFrom(CodeReference reference) {
+        if (reference == null) {
+            return null;
+        }
+
         var className = reference.getClassName();
         if (className != null) {
             var cls = resolve(className);
@@ -52,7 +65,7 @@ public class ExternalReferences {
                     .map(pkg -> pkg + "." + className)
                     .map(this::resolve)
                     .filter(Objects::nonNull)
-                    .collect(Collectors.toList());
+                    .toList();
 
             if (resolved.isEmpty()) {
                 throw new IllegalArgumentException(

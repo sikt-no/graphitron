@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.mapping;
 
-import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
@@ -39,7 +38,7 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         var spec = getDefaultSpecBuilder(
                 methodName,
                 wrapListIf(type.asTargetClassName(toRecord), currentSource == null && target.isIterableWrapped()),
-                getSource(currentSource, target)
+                currentSource != null || !target.hasServiceReference() ? currentSource : target.getService().getGenericReturnType()
         );
         if (toRecord && useValidation(type)) {
             spec.addParameter(STRING.className, PATH_INDEX_NAME);
@@ -93,14 +92,6 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
 
     protected static CodeBlock validateCode(ClassName mapperClass) {
         return CodeBlock.of("$N.addAll($T.$L($N, $N, this))", VALIDATION_ERRORS_NAME, mapperClass, recordValidateMethod(), VARIABLE_RECORDS, PATH_INDEX_NAME);
-    }
-
-    protected TypeName getSource(ClassName currentSource, GenerationField target) {
-        if (currentSource != null || !target.hasServiceReference()) {
-            return currentSource;
-        }
-
-        return new ServiceWrapper(target, processedSchema.getObject(target)).getGenericReturnType();
     }
 
     protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {

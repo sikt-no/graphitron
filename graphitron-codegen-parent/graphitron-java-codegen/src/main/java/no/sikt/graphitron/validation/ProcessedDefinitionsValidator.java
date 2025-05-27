@@ -7,10 +7,14 @@ import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
-import no.sikt.graphitron.definitions.objects.*;
+import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
+import no.sikt.graphitron.definitions.objects.EnumDefinition;
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphql.naming.GraphQLReservedName;
@@ -64,9 +68,9 @@ public class ProcessedDefinitionsValidator {
     }
 
     /**
-     * Validate the various mappings set in the schema towards jOOQ tables and keys.
+     * Validate the directive usage in the schema.
      */
-    public void validateThatProcessedDefinitionsConformToJOOQNaming() {
+    public void validateDirectiveUsage() {
         schema.getObjects().values().forEach(it -> checkPaginationSpecs(it.getFields()));
 
         validateTablesAndKeys();
@@ -77,6 +81,7 @@ public class ProcessedDefinitionsValidator {
         validateTypesUsingNodeInterface();
         validateInputFields();
         validateExternalMappingReferences();
+        validateServiceMethods();
         validateMutationDirectives();
         validateMutationRequiredFields();
         validateMutationRecursiveRecordInputs();
@@ -379,18 +384,34 @@ public class ProcessedDefinitionsValidator {
 
         allFields
                 .stream()
+                .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasServiceReference)
-                .map(ObjectField::getServiceReference)
+                .map(ObjectField::getService)
+                .map(ServiceWrapper::getReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> errorMessages.add(String.format("No service with name '%s' found.", e.getSchemaClassReference())));
 
         allFields
                 .stream()
+                .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasCondition)
                 .map(ObjectField::getCondition)
                 .map(SQLCondition::getConditionReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e.getSchemaClassReference())));
+    }
+
+    private void validateServiceMethods() {
+        var referenceSet = GeneratorConfig.getExternalReferences();
+        allFields
+                .stream()
+                .filter(ObjectField::isGenerated)
+                .filter(ObjectField::hasServiceReference)
+                .map(GenerationSourceField::getService)
+                .map(ServiceWrapper::getReference)
+                .filter(referenceSet::contains)
+                .filter(it -> referenceSet.getMethodsFrom(it).stream().findFirst().isEmpty())
+                .forEach(it -> errorMessages.add(String.format("Service reference with name '%s' does not contain a method named '%s'.", referenceSet.getClassFrom(it), it.getMethodName())));
     }
 
     private void validateUnionFieldsTable() {
@@ -553,9 +574,6 @@ public class ProcessedDefinitionsValidator {
                     }
                 });
     }
-
-
-
 
     private void validateInterfacesReturnedInFields() {
         for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).toList()) {

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_CONDITION;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_MUTATION_SERVICE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_TYPE;
 
@@ -20,7 +21,7 @@ public class UnknownTest extends ValidationTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(DUMMY_CONDITION);
+        return makeReferences(DUMMY_CONDITION, RESOLVER_MUTATION_SERVICE);
     }
 
     @Test
@@ -231,5 +232,11 @@ public class UnknownTest extends ValidationTest {
     @DisplayName("Referencing unknown service")
     void service() {
         assertErrorsContain("service", "No service with name 'INVALID' found.");
+    }
+
+    @Test
+    @DisplayName("Service method that can not be found")
+    void undefinedServiceMethod() {
+        assertErrorsContain("undefinedServiceMethod", "Service reference with name 'class no.sikt.graphitron.codereferences.services.ResolverMutationService' does not contain a method named 'UNDEFINED'.");
     }
 }

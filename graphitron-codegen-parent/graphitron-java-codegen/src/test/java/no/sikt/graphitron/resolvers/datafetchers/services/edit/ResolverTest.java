@@ -13,9 +13,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_SERVICE;
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.RESOLVER_MUTATION_SERVICE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Mutation resolvers - Resolvers with services")
 public class ResolverTest extends GeneratorTest {
@@ -26,7 +26,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(RESOLVER_MUTATION_SERVICE);
+        return makeReferences(RESOLVER_MUTATION_SERVICE, CONTEXT_SERVICE);
     }
 
     @Override
@@ -44,6 +44,12 @@ public class ResolverTest extends GeneratorTest {
     @DisplayName("Single input")
     void oneInput() {
         assertGeneratedContentContains("oneInput", "in = ((String) _args.get(\"in\"))", ".mutation(in)");
+    }
+
+    @Test
+    @DisplayName("Single context input")
+    void contextInput() {
+        assertGeneratedContentContains("contextInput", "_graphCtx = env.getGraphQlContext()", "_ctxField = ((String) _graphCtx.get(\"ctxField\"))", "mutation(_ctxField)");
     }
 
     @Test
@@ -266,13 +272,5 @@ public class ResolverTest extends GeneratorTest {
     void validation() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
         assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), "transform.validate();");
-    }
-
-    @Test
-    @DisplayName("Service method that can not be found")
-    void undefinedServiceMethod() {
-        assertThatThrownBy(() -> generateFiles("undefinedServiceMethod"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Service reference no.sikt.graphitron.codereferences.services.ResolverMutationService does not contain method named UNDEFINED");
     }
 }
