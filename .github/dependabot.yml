@@ -1,0 +1,25 @@
+version: 2
+updates:
+- package-ecosystem: "maven"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  groups:
+    jackson-dependencies:
+      patterns:
+      - "com.fasterxml.jackson*"
+    maven-plugins:
+      patterns:
+      - "org.apache.maven.plugins:*"
+      - "org.codehaus.mojo:*"
+    test-dependencies:
+      patterns:
+      - "org.junit*"
+      - "org.assertj*"
+      - "org.mockito*"
+      - "com.approvaltests*"
+
+- package-ecosystem: "github-actions"
+  directory: "/"
+  schedule:
+    interval: "weekly"
