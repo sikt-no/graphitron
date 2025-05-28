@@ -36,8 +36,10 @@ directive @enum(enumReference: ExternalCodeReference!) on ENUM
 Use an external service to do the DB-operations.
 The signature of the method must match the inputs of the mutation or query.
 Available values are set in the plugin configuration.
+
+Context arguments must be added to the GraphQLContext at run-time.
 """
-directive @service(service: ExternalCodeReference!) on FIELD_DEFINITION
+directive @service(service: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
 
 """
 The @error directive serves to map specific Java exceptions to GraphQL errors.
