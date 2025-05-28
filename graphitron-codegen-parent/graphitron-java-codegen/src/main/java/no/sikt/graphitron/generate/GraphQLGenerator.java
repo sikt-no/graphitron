@@ -89,10 +89,14 @@ public class GraphQLGenerator {
      * @param generators The generators that should be executed.
      */
     public static void generate(List<ClassGenerator> generators) {
-        for (var g : generators) {
+        var last = generators.subList(generators.size() - 1, generators.size()).get(0); // The wiring generator must go last.
+        var other = generators.subList(0, generators.size() - 1);
+        other.stream().parallel().forEach(g -> {
             g.generateAllToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
             LOGGER.info("Generated sources to: {}.{}", GeneratorConfig.outputPackage(), g.getDefaultSaveDirectoryName());
-        }
+        });
+        last.generateAllToDirectory(GeneratorConfig.outputDirectory(), GeneratorConfig.outputPackage());
+        LOGGER.info("Generated sources to: {}.{}", GeneratorConfig.outputPackage(), last.getDefaultSaveDirectoryName());
     }
 
     public static Map<String, List<String>> generateAsStrings(List<ClassGenerator> generators) {
