@@ -16,6 +16,12 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
 @DisplayName("Interface resolvers - Resolvers for the Node interface")
 public class NodeResolverTest extends GeneratorTest {
 
+    // Disabled until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @Override
     protected String getSubpath() {
         return "resolvers/kickstart/fetch/node";

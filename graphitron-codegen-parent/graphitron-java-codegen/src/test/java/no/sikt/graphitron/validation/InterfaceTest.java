@@ -185,4 +185,5 @@ public class InterfaceTest extends ValidationTest {
                 .hasMessageContaining("Interface 'SomeInterface' is returned in field 'query', but implementing " +
                         "type 'PgUser' has table 'PG_USER' which does not have a primary key.");
     }
+
 }

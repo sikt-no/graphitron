@@ -10,6 +10,7 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_T
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 public class SingleTableInterfaceTest extends InterfaceTest {
+
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "/singleTableInterface";

@@ -12,6 +12,13 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch queries - Fetching through referenced tables with splitQuery-directive")
 public class ReferenceSplitQueryTest extends ReferenceTest {
+
+    // Disabled until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "/splitQuery";

@@ -1,0 +1,11 @@
+type Query {
+    someInterface: SomeInterface
+}
+
+interface SomeInterface {
+    id: Int
+}
+
+type Customer implements SomeInterface @table(name: "CUSTOMER"){
+    id: Int @field(name:"CUSTOMER_ID")
+}

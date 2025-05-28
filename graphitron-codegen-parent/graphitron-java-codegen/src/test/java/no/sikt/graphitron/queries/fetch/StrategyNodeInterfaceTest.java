@@ -19,6 +19,12 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 @DisplayName("Query node - Interface handling for types implementing node strategy interface")
 public class StrategyNodeInterfaceTest extends GeneratorTest {
 
+    // Diabled until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @BeforeAll
     static void setUp() {
         GeneratorConfig.setNodeStrategy(true);

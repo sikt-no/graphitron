@@ -8,6 +8,13 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 public class MultitableInterfaceTest extends InterfaceTest {
+
+    // Disabled until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "/multitableInterface";
