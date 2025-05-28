@@ -34,8 +34,7 @@ import static java.util.stream.Collectors.groupingBy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
-import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -84,6 +83,7 @@ public class ProcessedDefinitionsValidator {
         validateNotUsingBothExternalFieldAndField();
         validateExternalField();
         validateNodeDirective();
+        validateUnionAndInterfaceSubTypes();
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -92,6 +92,28 @@ public class ProcessedDefinitionsValidator {
         if (!errorMessages.isEmpty()) {
             throw new IllegalArgumentException("Problems have been found that prevent code generation:\n" + String.join("\n", errorMessages));
         }
+    }
+
+    /*
+    * This is a temporary validation until GGG-104 has been fixed.
+     */
+    private void validateUnionAndInterfaceSubTypes() {
+        schema.getObjects()
+                .values().stream()
+                .flatMap(o -> o.getFields().stream())
+                .filter(field -> (schema.isInterface(field) && !schema.getInterface(field).hasTable())
+                        || schema.isUnion(field))
+                .filter(field -> !field.getTypeName().equals(NODE_TYPE.getName()))
+                .filter(field -> !field.getTypeName().equals(FEDERATION_SERVICE_FIELD.getName()))
+                .filter(field -> !field.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
+                .forEach(field -> {
+                    var subTypes = schema.getTypesFromInterfaceOrUnion(field.getTypeName());
+                    if (subTypes.size() < 2) {
+                        errorMessages.add(String.format(
+                                "Multitable queries is currently only supported for interface and unions with more than one implementing type. \n" +
+                                        "The field %s's type %s has %d implementing type(s).", field.getName(), field.getTypeName(), subTypes.size()));
+                    }
+                });
     }
 
     private void validateNodeDirective() {

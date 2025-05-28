@@ -19,6 +19,13 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Interface resolvers - Resolvers for the Node strategy interface")
 public class StrategyNodeResolverTest extends GeneratorTest {
+
+    // Disabled until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @BeforeAll
     static void setUp() {
         GeneratorConfig.setNodeStrategy(true);

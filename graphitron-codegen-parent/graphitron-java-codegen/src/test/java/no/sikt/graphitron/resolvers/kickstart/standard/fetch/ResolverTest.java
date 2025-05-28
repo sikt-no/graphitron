@@ -16,6 +16,13 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch resolvers - Resolvers for queries")
 public class ResolverTest extends GeneratorTest {
+
+    // Disabled until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @Override
     protected String getSubpath() {
         return "resolvers/kickstart/fetch/standard";

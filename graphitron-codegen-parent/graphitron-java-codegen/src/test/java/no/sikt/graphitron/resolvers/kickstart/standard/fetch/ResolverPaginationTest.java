@@ -66,7 +66,7 @@ public class ResolverPaginationTest extends GeneratorTest {
 
     @Test
     @DisplayName("Root resolver returning multi-table interface")
-    @Disabled("Disablet inntil GGG-79")
+    @Disabled("Disabled until GGG-79")
     void multitableInterface() {
         assertGeneratedContentContains("operation/multitableInterface",
                 "CompletableFuture<TitledConnection>",

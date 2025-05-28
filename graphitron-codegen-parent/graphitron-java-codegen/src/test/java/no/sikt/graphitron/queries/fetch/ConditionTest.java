@@ -19,6 +19,7 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch query conditions - External conditions for queries")
 public class ConditionTest extends GeneratorTest {
+
     @Override
     protected String getSubpath() {
         return "queries/fetch/conditions";

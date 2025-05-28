@@ -2,8 +2,6 @@ package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
-import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.UnionOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +14,13 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Query outputs - Union types")
 public class UnionTest extends GeneratorTest {
+
+    // Disable validation until GGG-104
+    @Override
+    protected boolean validateSchema() {
+        return false;
+    }
+
     @Override
     protected String getSubpath() {
         return "queries/fetch/union";

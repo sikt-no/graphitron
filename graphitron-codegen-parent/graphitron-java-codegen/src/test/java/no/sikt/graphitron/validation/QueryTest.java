@@ -174,4 +174,17 @@ public class QueryTest extends ValidationTest {
                         "type 'Customer' implementing 'SomeInterface' does not have table set. This is not supported."
         );
     }
+
+
+    @Test
+    @DisplayName("Interface with one implementing type validation.")
+    void interfaceWithOneSubtype() {
+        assertErrorsContain("interfaceWithOneType", "The field someInterface's type SomeInterface has 1 implementing type(s).");
+    }
+
+    @Test
+    @DisplayName("Union with one implementing type validation.")
+    void unionWithOneSubtype() {
+        assertErrorsContain("unionWithOneType", "The field someUnion's type SomeUnion has 1 implementing type(s).");
+    }
 }
