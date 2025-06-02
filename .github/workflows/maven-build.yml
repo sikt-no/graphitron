@@ -3,6 +3,9 @@
 
 name: CI build
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ "main" ]
