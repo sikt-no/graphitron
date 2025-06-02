@@ -41,11 +41,14 @@ public class InputParser {
                 .filter(it -> schema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         var inputsJoined = String.join(", ", methodInputsWithOrderField.keySet());
+        var contextParams = target.hasServiceReference() ? String.join(", ", target.getService().getContextFields().keySet().stream().map(it -> "_" + it).toList()) : "";
         if (target.hasForwardPagination()) {
-            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + ", " + PAGINATION_AFTER.getName();
+            var contextParamsOrEmpty = contextParams.isEmpty() ? "" : ", " + contextParams;
+            serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + ", " + PAGINATION_AFTER.getName() + contextParamsOrEmpty;
         } else {
-            serviceInputString = inputsJoined;
+            serviceInputString = inputsJoined.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsJoined : inputsJoined + ", " + contextParams);
         }
+
         if (schema.isObject(target) && schema.isInterface(ERROR_TYPE.getName())) {
             allErrors = schema.getAllErrors(target.getTypeName());
         } else {

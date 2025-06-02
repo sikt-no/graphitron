@@ -1,13 +1,11 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -51,7 +49,8 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
 
         var fillCode = iterateRecords(context); // Note, do before declaring dependencies.
         var type = processedSchema.getRecordType(target);
-        var source = wrapListIf(getSource(type.asSourceClassName(toRecord), target), context.hasSourceName());
+        var currentSource = type.asSourceClassName(toRecord);
+        var source = wrapListIf(currentSource != null ? currentSource : target.getService().getGenericReturnType(), context.hasSourceName());
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
                 .addCode(declare(toRecord ? VARIABLE_ARGS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME)))
@@ -62,14 +61,6 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
                 .addCode(fillCode)
                 .addCode("\n")
                 .addCode(context.getReturnBlock());
-    }
-
-    private TypeName getSource(ClassName currentSource, GenerationField target) {
-        if (currentSource != null) {
-            return currentSource;
-        }
-
-        return new ServiceWrapper(target, processedSchema.getObject(target)).getGenericReturnType();
     }
 
     @Override

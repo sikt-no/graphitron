@@ -28,11 +28,6 @@ public class ConfigurationTest extends GeneratorTest {
     }
 
     @Override
-    protected boolean validateSchema() {
-        return false;
-    }
-
-    @Override
     protected Set<ExternalReference> getExternalReferences() {
         return makeReferences(DUMMY_SERVICE);
     }

@@ -922,6 +922,27 @@ public class CustomerService {
 }
 ```
 
+#### Context variables
+Using the _contextArguments_ parameter on the **service** directive, one can specify which context values should be passed to the service.
+The names correspond to the keys of the values as found in the `graphql.GraphQLContext` for the current operation.
+Graphitron will fetch these values and try to cast them to the matching datatypes in the service method arguments.
+Note that context arguments are always placed at the end of the method arguments, in the order specified by the _contextArguments_ parameter.
+
+_Schema:_
+```graphql
+customer(name: String): Customer @service(service: {name: "SERVICE_CUSTOMER"}, contextArguments: "someCtxField")
+```
+
+_Required service code_:
+```java
+public class CustomerService {
+    // The context value will be cast to String as the last parameter type here is String.
+    // This inference is necessary because the GraphQLContext does not retain the type information.
+    // Context arguments always come last in the signature, even after pagination-related parameters.
+    public String customer(String name, String someCtxField) { … }
+}
+```
+
 #### Response mapping
 By default, Graphitron inspects the return type of the service method for mutations to decide how it should be mapped to the
 schema response type.

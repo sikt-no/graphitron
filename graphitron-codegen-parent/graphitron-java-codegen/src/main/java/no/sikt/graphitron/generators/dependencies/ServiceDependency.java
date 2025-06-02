@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.dependencies;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 
 import javax.lang.model.element.Modifier;
 
@@ -12,11 +12,8 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * A dependency on a manually defined service class. Intended for mutation resolvers.
  */
 public class ServiceDependency extends NamedDependency {
-    private final ServiceWrapper service;
-
-    public ServiceDependency(ServiceWrapper service) {
-        super(service.getServiceClassName());
-        this.service = service;
+    public ServiceDependency(ClassName className) {
+        super(className);
     }
 
     @Override
@@ -25,9 +22,5 @@ public class ServiceDependency extends NamedDependency {
                 .builder(getTypeName(), uncapitalize(getName()), Modifier.PRIVATE)
                 .initializer("new $T($N)", getTypeName(), CONTEXT_NAME)
                 .build();
-    }
-
-    public ServiceWrapper getService() {
-        return service;
     }
 }

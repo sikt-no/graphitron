@@ -16,13 +16,11 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.makeResponses;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnCompletedFuture;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asResultName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 /**
@@ -46,12 +44,25 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
+                .addCode(declareContextArgs(target))
                 .addCode(transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
                 .addCode(methodCall)
                 .addCode(isMutation ? generateSchemaOutputs(target, parser) : empty())
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
+    }
+
+    private CodeBlock declareContextArgs(ObjectField target) {
+        if (!target.hasServiceReference() || target.getService().getContextFields().isEmpty()) {
+            return empty();
+        }
+
+        var code = CodeBlock
+                .builder()
+                .add(declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT)));
+        target.getService().getContextFields().forEach((name, type) -> code.add(declare("_" + name, asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name)))));
+        return code.build();
     }
 
     /**

@@ -26,6 +26,7 @@ public enum ReferencedEntry {
     // Mapping services.
     MAPPER_FETCH_SERVICE("MAPPER_FETCH_SERVICE", MapperFetchService.class),
     MAPPER_ID_SERVICE("MAPPER_ID_SERVICE", IDMapperService.class),
+    CONTEXT_SERVICE("CONTEXT_SERVICE", ContextService.class),
     RESOLVER_FETCH_SERVICE("RESOLVER_FETCH_SERVICE", ResolverFetchService.class),
 
     // Mutation services.
