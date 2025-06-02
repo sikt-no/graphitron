@@ -187,4 +187,10 @@ public class QueryTest extends ValidationTest {
     void unionWithOneSubtype() {
         assertErrorsContain("unionWithOneType", "The field someUnion's type SomeUnion has 1 implementing type(s).");
     }
+
+    @Test
+    @DisplayName("Union with one error type should not throw error")
+    void errorUnionWithOneSubtype() {
+        getProcessedSchema("errorUnionWithOneSubtype", Set.of(ERROR));
+    }
 }
