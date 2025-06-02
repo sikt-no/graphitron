@@ -108,7 +108,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(field -> !field.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
                 .forEach(field -> {
                     var subTypes = schema.getTypesFromInterfaceOrUnion(field.getTypeName());
-                    if (subTypes.size() < 2) {
+                    if (subTypes.size() < 2 && subTypes.stream().noneMatch(type -> type.implementsInterface(ERROR_TYPE.getName()))) {
                         errorMessages.add(String.format(
                                 "Multitable queries is currently only supported for interface and unions with more than one implementing type. \n" +
                                         "The field %s's type %s has %d implementing type(s).", field.getName(), field.getTypeName(), subTypes.size()));

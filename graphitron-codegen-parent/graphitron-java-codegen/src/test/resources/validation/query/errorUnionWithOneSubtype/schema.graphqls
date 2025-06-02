@@ -1,0 +1,14 @@
+type Mutation {
+    mutation: Response @mutation(typeName: UPDATE) @notGenerated
+}
+
+type Response {
+    errors: [ErrorUnion]
+}
+
+union ErrorUnion = Error1
+
+type Error1 implements Error {
+    path: [String!]!
+    message: String!
+}
