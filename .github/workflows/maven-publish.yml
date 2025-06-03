@@ -53,11 +53,7 @@ jobs:
         mvn versions:set-property -Dproperty=changelist -DnewVersion=".$PATCH_VERSION" -DgenerateBackupPoms=false -Dorg.slf4j.simpleLogger.log.org.apache.maven=info
 
     - name: Build and publish to Maven Central
-      # TEMPORARY: Using 'verify' instead of 'deploy' for testing the workflow
-      # without actually publishing artifacts to Maven Central.
-      # Change to 'deploy' when ready for actual release:
-      #run: mvn --batch-mode --errors clean deploy -P release
-      run: mvn --batch-mode --errors clean verify -P release
+      run: mvn --batch-mode --errors clean deploy -P release
       env:
         MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
         MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
@@ -111,19 +107,22 @@ jobs:
         git commit -m "Bump development version to $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT [skip ci]"
         git push origin $BRANCH_NAME
 
-    - name: Create Pull Request
-      env:
-        GH_TOKEN: ${{ secrets.PAT_FOR_PR }}
-      run: |
-        # Get version values from the publish job outputs
-        MAIN_VERSION=${{ needs.publish.outputs.main_version }}
-        PATCH_VERSION=${{ needs.publish.outputs.patch_version }}
-        NEXT_PATCH=$((PATCH_VERSION + 1))
-        BRANCH_NAME="version-bump-$MAIN_VERSION.$NEXT_PATCH-snapshot"
-        
-        # Create a PR using GitHub CLI
-        gh pr create \
-          --title "Bump version to $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT" \
-          --body "Automated version bump after release" \
-          --base main \
-          --head $BRANCH_NAME
+#    Commented out the PR creation step for now, as it requires the organization to allow GitHub Actions to create pull requests.
+#    See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests
+#
+#    - name: Create Pull Request
+#      env:
+#        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#      run: |
+#        # Get version values from the publish job outputs
+#        MAIN_VERSION=${{ needs.publish.outputs.main_version }}
+#        PATCH_VERSION=${{ needs.publish.outputs.patch_version }}
+#        NEXT_PATCH=$((PATCH_VERSION + 1))
+#        BRANCH_NAME="version-bump-$MAIN_VERSION.$NEXT_PATCH-snapshot"
+#
+#        # Create a PR using GitHub CLI
+#        gh pr create \
+#          --title "Bump version to $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT" \
+#          --body "Automated version bump after release" \
+#          --base main \
+#          --head $BRANCH_NAME
