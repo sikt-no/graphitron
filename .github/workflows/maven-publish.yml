@@ -32,16 +32,25 @@ jobs:
       run: |
         # Extract version from GitHub release tag (e.g. v5.0.1 -> 5.0.1)
         VERSION=${GITHUB_REF#refs/tags/v}
+        echo "Extracted VERSION: $VERSION"
+
         # Split into major.minor and patch
         MAIN_VERSION=$(echo $VERSION | sed -E 's/([0-9]+\.[0-9]+)\.[0-9]+.*/\1/')
         PATCH_VERSION=$(echo $VERSION | sed -E 's/[0-9]+\.[0-9]+\.([0-9]+).*/\1/')
 
+        echo "Calculated MAIN_VERSION: $MAIN_VERSION"
+        echo "Calculated PATCH_VERSION: $PATCH_VERSION"
+
+        # Set outputs with proper GitHub Actions syntax
         echo "main_version=$MAIN_VERSION" >> $GITHUB_OUTPUT
         echo "patch_version=$PATCH_VERSION" >> $GITHUB_OUTPUT
 
+        # Debug - verify the output was set
+        cat $GITHUB_OUTPUT
+        
         # Update properties using versions-maven-plugin
-        mvn versions:set-property -Dproperty=revision -DnewVersion=$MAIN_VERSION -DgenerateBackupPoms=false
-        mvn versions:set-property -Dproperty=changelist -DnewVersion=.$PATCH_VERSION -DgenerateBackupPoms=false
+        mvn versions:set-property -Dproperty=revision -DnewVersion=$MAIN_VERSION -DgenerateBackupPoms=false -Dorg.slf4j.simpleLogger.log.org.apache.maven=info
+        mvn versions:set-property -Dproperty=changelist -DnewVersion=".$PATCH_VERSION" -DgenerateBackupPoms=false -Dorg.slf4j.simpleLogger.log.org.apache.maven=info
 
     - name: Build and publish to Maven Central
       # TEMPORARY: Using 'verify' instead of 'deploy' for testing the workflow
