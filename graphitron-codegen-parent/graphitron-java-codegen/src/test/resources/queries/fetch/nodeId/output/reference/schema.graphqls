@@ -1,0 +1,7 @@
+type Customer implements Node @node @table {
+  id: ID @nodeId(typeName: "Address") @reference(references: [{table: "ADDRESS"}])
+}
+
+type Address implements Node @node @table {
+  id: ID!
+}

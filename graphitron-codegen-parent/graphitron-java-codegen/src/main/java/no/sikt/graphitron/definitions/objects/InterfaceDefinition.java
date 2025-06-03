@@ -128,4 +128,24 @@ public class InterfaceDefinition extends AbstractObjectDefinition<InterfaceTypeD
     public boolean isExplicitlyNotGenerated() {
         return !isGenerated;
     }
+
+    @Override
+    public boolean hasNodeDirective() {
+        return false;
+    }
+
+    @Override
+    public String getTypeId() {
+        return null;
+    }
+
+    @Override
+    public boolean hasCustomKeyColumns() {
+        return false;
+    }
+
+    @Override
+    public List<String> getKeyColumns() {
+        return null;
+    }
 }

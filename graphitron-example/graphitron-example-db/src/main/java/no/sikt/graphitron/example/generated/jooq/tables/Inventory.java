@@ -329,47 +329,4 @@ public class Inventory extends TableImpl<InventoryRecord> {
     public Inventory whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.InventoryRecord, ?>> getIdFields() {
-        return java.util.List.of(INVENTORY_ID);
-    }
-
-    public org.jooq.SelectField<String> getFilmId() {
-        return DSL.row(FILM_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("film_id"));
-    }
-
-    public org.jooq.Condition hasFilmId(String id) {
-        return hasFilmIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasFilmIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(FILM_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    public org.jooq.SelectField<String> getStoreId() {
-        return DSL.row(STORE_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("store_id"));
-    }
-
-    public org.jooq.Condition hasStoreId(String id) {
-        return hasStoreIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasStoreIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(STORE_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.ofEntries(
-        java.util.Map.entry("inventory_film_id_fkey", "FilmId"),
-        java.util.Map.entry("inventory_store_id_fkey", "StoreId")
-    );
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

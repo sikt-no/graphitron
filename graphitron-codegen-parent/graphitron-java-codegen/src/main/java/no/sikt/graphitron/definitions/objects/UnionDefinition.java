@@ -30,8 +30,6 @@ public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinitio
                 .map(it -> ((TypeName)it).getName())
                 .collect(Collectors.toList());
         isGenerated = !typeDefinition.hasDirective(NOT_GENERATED.getName());
-
-
     }
 
     /**
@@ -76,6 +74,26 @@ public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinitio
 
     @Override
     public EntityKeySet getEntityKeys() {
+        return null;
+    }
+
+    @Override
+    public boolean hasNodeDirective() {
+        return false;
+    }
+
+    @Override
+    public String getTypeId() {
+        return null;
+    }
+
+    @Override
+    public boolean hasCustomKeyColumns() {
+        return false;
+    }
+
+    @Override
+    public List<String> getKeyColumns() {
         return null;
     }
 

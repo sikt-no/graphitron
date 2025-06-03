@@ -5,6 +5,8 @@ import no.sikt.graphitron.definitions.keys.EntityKeySet;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphql.directives.GenerationDirective;
 
+import java.util.List;
+
 /**
  * Specifies that this Java object represents a GraphQL object.
  */
@@ -69,4 +71,12 @@ public interface RecordObjectSpecification<T extends GenerationField> extends Ob
      * @return Apollo federation entity keys for this type.
      */
     EntityKeySet getEntityKeys();
+
+    public boolean hasNodeDirective();
+
+    public String getTypeId();
+
+    public boolean hasCustomKeyColumns();
+
+    public List<String> getKeyColumns();
 }

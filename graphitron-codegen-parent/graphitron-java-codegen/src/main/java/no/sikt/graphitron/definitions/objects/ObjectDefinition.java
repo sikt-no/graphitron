@@ -25,11 +25,10 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This is typically the only object type used in table referencing and joining operations.
  */
 public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinition, ObjectField> {
-    private final boolean isRoot, hasResolvers, hasDiscriminator, hasNodeDirective;
+    private final boolean isRoot, hasResolvers, hasDiscriminator;
     private final LinkedHashSet<String> implementsInterfaces;
     private final ObjectTypeDefinition objectTypeDefinition;
-    private final String discriminator, typeId;
-    private final List<String> keyColumns;
+    private final String discriminator;
 
     public ObjectDefinition(ObjectTypeDefinition objectDefinition) {
         super(objectDefinition);
@@ -42,14 +41,6 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
         objectTypeDefinition = objectDefinition;
         hasDiscriminator = objectDefinition.hasDirective(GenerationDirective.DISCRIMINATOR.getName());
         discriminator = hasDiscriminator ? getDirectiveArgumentString(objectDefinition, GenerationDirective.DISCRIMINATOR, VALUE) : null;
-
-        hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
-        typeId = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID)
-                        .orElse(getTable() != null ? getTable().getName() : null);
-        keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
-                .stream()
-                .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
-                .toList();
     }
 
     @Override
@@ -111,22 +102,5 @@ public class ObjectDefinition extends RecordObjectDefinition<ObjectTypeDefinitio
 
     public boolean hasDiscriminator() {
         return hasDiscriminator;
-    }
-
-
-    public boolean hasNodeDirective() {
-        return hasNodeDirective;
-    }
-
-    public String getTypeId() {
-        return typeId;
-    }
-
-    public boolean hasCustomKeyColumns() {
-        return !keyColumns.isEmpty();
-    }
-
-    public List<String> getKeyColumns() {
-        return keyColumns;
     }
 }

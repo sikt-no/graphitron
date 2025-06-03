@@ -1,0 +1,11 @@
+type Query {
+  query(addressId: ID! @nodeId(typeName: "Address")): Customer
+}
+
+type Customer implements Node @node @table {
+  id: ID!
+}
+
+type Address implements Node @node @table {
+  id: ID!
+}

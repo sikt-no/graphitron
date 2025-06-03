@@ -1,0 +1,7 @@
+type Query {
+  query(category: ID! @nodeId(typeName: "Category")): CustomerNode
+}
+
+type Category implements Node @table @node {
+  id: ID!
+}

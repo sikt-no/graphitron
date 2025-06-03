@@ -282,12 +282,4 @@ public class Country extends TableImpl<CountryRecord> {
     public Country whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.CountryRecord, ?>> getIdFields() {
-        return java.util.List.of(COUNTRY_ID);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.of();
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

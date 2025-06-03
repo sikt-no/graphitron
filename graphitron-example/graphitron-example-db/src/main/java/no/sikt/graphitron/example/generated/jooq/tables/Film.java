@@ -437,47 +437,4 @@ public class Film extends TableImpl<FilmRecord> {
     public Film whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.FilmRecord, ?>> getIdFields() {
-        return java.util.List.of(FILM_ID);
-    }
-
-    public org.jooq.SelectField<String> getLanguageId() {
-        return DSL.row(LANGUAGE_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("language_id"));
-    }
-
-    public org.jooq.Condition hasLanguageId(String id) {
-        return hasLanguageIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasLanguageIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(LANGUAGE_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    public org.jooq.SelectField<String> getOriginalLanguageId() {
-        return DSL.row(ORIGINAL_LANGUAGE_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("original_language_id"));
-    }
-
-    public org.jooq.Condition hasOriginalLanguageId(String id) {
-        return hasOriginalLanguageIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasOriginalLanguageIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(ORIGINAL_LANGUAGE_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.ofEntries(
-        java.util.Map.entry("film_language_id_fkey", "LanguageId"),
-        java.util.Map.entry("film_original_language_id_fkey", "OriginalLanguageId")
-    );
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

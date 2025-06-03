@@ -316,30 +316,4 @@ public class City extends TableImpl<CityRecord> {
     public City whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.CityRecord, ?>> getIdFields() {
-        return java.util.List.of(CITY_ID);
-    }
-
-    public org.jooq.SelectField<String> getCountryId() {
-        return DSL.row(COUNTRY_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("country_id"));
-    }
-
-    public org.jooq.Condition hasCountryId(String id) {
-        return hasCountryIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasCountryIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(COUNTRY_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.ofEntries(
-        java.util.Map.entry("city_country_id_fkey", "CountryId")
-    );
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

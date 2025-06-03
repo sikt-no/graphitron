@@ -1,0 +1,11 @@
+type Query {
+    query(filter: CustomerFilter!): Customer
+}
+
+type Customer implements Node @node @table {
+    id: ID!
+}
+
+input CustomerFilter @table(name: "CUSTOMER") {
+    customerId: ID! @nodeId(typeName: "Customer")
+}

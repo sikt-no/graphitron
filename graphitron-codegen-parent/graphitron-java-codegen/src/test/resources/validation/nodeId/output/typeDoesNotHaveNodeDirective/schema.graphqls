@@ -1,0 +1,7 @@
+type Customer implements Node @node @table {
+  addressId: ID @nodeId(typeName: "Address")
+}
+
+type Address @table {
+  id: ID!
+}
