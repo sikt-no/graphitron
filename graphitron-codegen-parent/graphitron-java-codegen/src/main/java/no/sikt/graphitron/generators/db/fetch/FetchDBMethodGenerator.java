@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
@@ -105,7 +106,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         CodeBlock.Builder select = CodeBlock.builder();
         select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : empty());
 
-        if (context.getReferenceObject() == null) {
+        if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
         } else {
             select.add(generateSelectRow(context));
@@ -202,7 +203,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     field.getName(),
                     context.getTargetAlias());
         }
-        else if (field.hasFieldReferences()) {
+        else if (field.hasFieldReferences() || (field.hasNodeID() && !field.getNodeIdTypeName().equals(field.getContainerTypeName()))) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
@@ -448,11 +449,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.renderQuerySource(getLocalTable());
         if (field.isID()) {
-
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
                 return createNodeIdBlock(((ObjectDefinition) context.getReferenceObject()), context.getTargetAlias());
             }
-
             return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
@@ -546,13 +545,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     conditionBuilder.add(checks + " ? ");
                 }
 
-                conditionBuilder.add(renderedSequence);
-
                 if (field.isID()) {
-                    conditionBuilder
-                            .add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
+                    if (shouldMakeNodeStrategy() && field.hasNodeID()) {
+                        conditionBuilder.add(hasIdsBlock(name.toString(), processedSchema.getObject(field.getNodeIdTypeName()), renderedSequence.toString(), field.isIterableWrapped()));
+                    } else {
+                        conditionBuilder
+                                .add(renderedSequence)
+                                .add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
+                    }
                 } else {
                     conditionBuilder
+                            .add(renderedSequence)
                             .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(
                                     field.getTypeName(), processedSchema))
                             .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);

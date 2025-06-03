@@ -172,3 +172,13 @@ directive @node(
   """
   keyColumns: [String!]
 ) on OBJECT
+
+"""
+Specifies that the field is a globally unique ID in accordance with our implementation of [Global Object Identification](https://graphql.org/learn/global-object-identification/).
+"""
+directive @nodeId(
+  """
+  Name of the type the ID belongs to. The type must have the @node-directive set. This is case sensitive.
+  """
+  typeName: String!
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION

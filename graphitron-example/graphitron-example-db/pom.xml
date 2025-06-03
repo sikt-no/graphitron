@@ -63,7 +63,6 @@
                                         <password>${db.password}</password>
                                     </jdbc>
                                     <generator>
-                                        <name>no.sikt.jooq.IdBasedGenerator</name>
                                         <database>
                                             <inputSchema>public</inputSchema>
                                             <includeIndexes>true</includeIndexes>

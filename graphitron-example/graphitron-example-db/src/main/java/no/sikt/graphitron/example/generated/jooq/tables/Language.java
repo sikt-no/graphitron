@@ -296,12 +296,4 @@ public class Language extends TableImpl<LanguageRecord> {
     public Language whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.LanguageRecord, ?>> getIdFields() {
-        return java.util.List.of(LANGUAGE_ID);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.of();
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

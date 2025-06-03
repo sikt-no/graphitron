@@ -304,47 +304,4 @@ public class FilmActor extends TableImpl<FilmActorRecord> {
     public FilmActor whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.FilmActorRecord, ?>> getIdFields() {
-        return java.util.List.of(ACTOR_ID, FILM_ID);
-    }
-
-    public org.jooq.SelectField<String> getActorId() {
-        return DSL.row(ACTOR_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("actor_id"));
-    }
-
-    public org.jooq.Condition hasActorId(String id) {
-        return hasActorIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasActorIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(ACTOR_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    public org.jooq.SelectField<String> getFilmId() {
-        return DSL.row(FILM_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("film_id"));
-    }
-
-    public org.jooq.Condition hasFilmId(String id) {
-        return hasFilmIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasFilmIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(FILM_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.ofEntries(
-        java.util.Map.entry("film_actor_actor_id_fkey", "ActorId"),
-        java.util.Map.entry("film_actor_film_id_fkey", "FilmId")
-    );
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

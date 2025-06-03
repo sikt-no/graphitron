@@ -24,4 +24,7 @@ public class ReferenceCustomerCondition {
     public static Condition email(Address a, Customer c) {
         return null;
     }
+    public static Condition addressId(Customer c, Address a) {
+        return null;
+    }
 }

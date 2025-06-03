@@ -38,6 +38,14 @@ public class OperationField implements FieldSpecification {
         return fieldType.isID();
     }
 
+    public boolean hasNodeID() {
+        return false;
+    }
+
+    public String getNodeIdTypeName() {
+        return null;
+    }
+
     @Override
     public boolean isIterableWrapped() {
         return fieldType.isIterableWrapped();

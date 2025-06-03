@@ -1,10 +1,7 @@
 package no.sikt.graphitron.validation;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.definitions.fields.InputField;
-import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
@@ -36,9 +33,12 @@ import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.groupingBy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
+import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -89,6 +89,7 @@ public class ProcessedDefinitionsValidator {
         validateExternalField();
         validateNodeDirective();
         validateUnionAndInterfaceSubTypes();
+        validateNodeId();
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -146,6 +147,68 @@ public class ProcessedDefinitionsValidator {
                 });
     }
 
+    private void validateNodeId() {
+        Stream<? extends GenerationSourceField<?>> inputStream =
+                Stream.concat(
+                        schema.getInputTypes().values().stream().flatMap(it -> it.getFields().stream()),
+                        allFields.stream().flatMap(it -> it.getNonReservedArguments().stream())
+                );
+        Stream.concat(allFields.stream(), inputStream)
+                .filter(GenerationSourceField::hasNodeID)
+                .forEach(field -> {
+                    var fieldName = field instanceof ArgumentField ?
+                                    String.format("argument '%s' on a field in type '%s'", field.getName(), field.getContainerTypeName())
+                                    : String.format("field %s.%s", field.getContainerTypeName(), field.getName());
+
+                    if (!(field.isID() || field.getTypeName().equals(STRING.className.simpleName()))) {
+                        errorMessages.add(String.format(
+                                "%s has %s directive, but is not an ID or String field.",
+                                capitalize(fieldName),
+                                NODE_ID.getName()
+                        ));
+                    }
+
+                    var referencedType = schema.getObject(field.getNodeIdTypeName());
+
+                    if (referencedType == null) {
+                        errorMessages.add(String.format(
+                                "Type with name '%s' referenced in the %s directive for %s does not exist.",
+                                field.getNodeIdTypeName(),
+                                NODE_ID.getName(),
+                                fieldName
+                        ));
+                    } else if (!referencedType.hasNodeDirective()) {
+                        errorMessages.add(String.format(
+                                "Referenced type '%s' referenced in the %s directive for %s is missing the necessary %s directive.",
+                                field.getNodeIdTypeName(),
+                                NODE_ID.getName(),
+                                fieldName,
+                                NODE.getName()
+                        ));
+                    } else if (field instanceof ObjectField && (!field.getNodeIdTypeName().equals(field.getContainerTypeName()) || field.hasFieldReferences())) {
+                        // Only filter object fields because we currently don't have reference validation on input (GGG-209)
+                        validateReferencePath(field, schema.getRecordType(field.getContainerTypeName()).getTable().getMappingName(), referencedType.getTable().getMappingName());
+                    }
+
+                    if (field.hasFieldDirective()) {
+                        errorMessages.add(String.format(
+                                "%s has both the '%s' and '%s' directives, which is not supported.",
+                                capitalize(fieldName),
+                                NODE_ID.getName(),
+                                FIELD.getName()
+                        ));
+                    }
+                    if (field.isExternalField()) {
+                        errorMessages.add(String.format(
+                                "%s has both the '%s' and '%s' directives, which is not supported.",
+                                capitalize(fieldName),
+                                NODE_ID.getName(),
+                                EXTERNAL_FIELD.getName()
+                        ));
+                    }
+                });
+    }
+
     private void validateTablesAndKeys() {
         var recordTypes = schema.getRecordTypes();
         recordTypes
@@ -199,7 +262,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {
-        if (sourceTable.equals(targetTable) && !field.isResolver() && !field.hasFieldReferences()) { return; }
+        if (sourceTable.equals(targetTable) && !field.isResolver() && !field.hasFieldReferences() && !field.hasNodeID()) { return; }
         for(FieldReference fieldReference : field.getFieldReferences()) {
             if (fieldReference.hasTableCondition() && !fieldReference.hasKey()){
                 return;

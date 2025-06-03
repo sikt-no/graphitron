@@ -95,7 +95,6 @@
                                 <password>${db.password}</password>
                             </jdbc>
                             <generator>
-                                <name>no.sikt.jooq.IdBasedGenerator</name>
                                 <database>
                                     <includes>public.*|pg_catalog\.(pg_user|pg_user_mapping|pg_depend)</includes>
                                     <schemata>

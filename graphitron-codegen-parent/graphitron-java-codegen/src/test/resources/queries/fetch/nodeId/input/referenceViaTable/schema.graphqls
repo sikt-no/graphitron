@@ -1,0 +1,11 @@
+type Query {
+  query(cityId: ID! @nodeId(typeName: "City") @reference(references: [{table: "ADDRESS"}])): Customer
+}
+
+type Customer implements Node @node @table {
+  id: ID!
+}
+
+type City implements Node @node @table {
+  id: ID!
+}

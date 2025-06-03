@@ -1,0 +1,3 @@
+type Query {
+  query(parentId: ID! @nodeId(typeName: "CustomerNode") @reference(references: [{table: "CUSTOMER"}])): CustomerNode
+}

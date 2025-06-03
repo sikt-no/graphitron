@@ -936,6 +936,10 @@ public class FormatCodeBlocks {
         );
     }
 
+    public static CodeBlock hasIdsBlock(String idParamName, ObjectDefinition obj, String targetAlias, boolean isIterableWrapped) {
+        return isIterableWrapped ? hasIdsBlock(idParamName, obj, targetAlias) : hasIdBlock(idParamName, obj, targetAlias);
+    }
+
     public static CodeBlock hasIdBlock(String id, ObjectDefinition obj, String targetAlias) {
         return CodeBlock.of("$N.hasId($S, $L, $L)",
                 NODE_ID_STRATEGY_NAME,

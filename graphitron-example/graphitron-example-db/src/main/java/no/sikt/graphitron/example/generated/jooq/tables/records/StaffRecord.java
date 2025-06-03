@@ -213,15 +213,4 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
         setPicture(picture);
         resetChangedOnNotNull();
     }
-
-    public String getId() {
-        return "" + (Long) get(0);
-    }
-
-    public void setId(String id) {
-        String[] split = id.split(",");
-        for (int i = 0; i < split.length; i++) {
-            set(i, split[i]);
-        }
-    }
 }

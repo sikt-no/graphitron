@@ -1,7 +1,13 @@
 package no.sikt.graphitron.definitions.fields;
 
+import graphql.language.Argument;
+import graphql.language.ArrayValue;
+import graphql.language.DirectivesContainer;
+import graphql.language.FieldDefinition;
+import graphql.language.NamedNode;
 import graphql.language.ObjectField;
-import graphql.language.*;
+import graphql.language.ObjectValue;
+import graphql.language.Value;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
@@ -20,10 +26,18 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
-import static no.sikt.graphql.directives.DirectiveHelpers.*;
+import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentBoolean;
+import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
+import static no.sikt.graphql.directives.GenerationDirective.EXTERNAL_FIELD;
+import static no.sikt.graphql.directives.GenerationDirective.FIELD;
+import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
+import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
 import static no.sikt.graphql.directives.GenerationDirective.SERVICE;
-import static no.sikt.graphql.directives.GenerationDirective.*;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
+import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.OVERRIDE;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.REFERENCES;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
@@ -31,11 +45,12 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective;
+    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective, hasNodeID;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
     private final ServiceWrapper serviceWrapper;
+    private final String nodeIdTypeName;
 
     public GenerationSourceField(T field, FieldType fieldType, String container) {
         super(field, fieldType, container);
@@ -71,6 +86,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                 || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
 
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
+
+        hasNodeID = field.hasDirective(GenerationDirective.NODE_ID.getName());
+        nodeIdTypeName = hasNodeID ? getDirectiveArgumentString(field, GenerationDirective.NODE_ID, GenerationDirectiveParam.TYPE_NAME) : null;
     }
 
     /**
@@ -182,5 +200,19 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public boolean isExplicitlyNotGenerated() {
         return !isGenerated;
+    }
+
+    /**
+     * @return Does this field have the @nodeId directive?
+     */
+    public boolean hasNodeID() {
+        return hasNodeID;
+    }
+
+    /**
+     * @return The type name configured in the @nodeId directive
+     */
+    public String getNodeIdTypeName() {
+        return nodeIdTypeName;
     }
 }

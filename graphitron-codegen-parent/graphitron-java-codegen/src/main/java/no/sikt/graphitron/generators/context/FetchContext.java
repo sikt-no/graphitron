@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.context;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -8,13 +7,15 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
-import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Table;
 
 import java.util.*;
+import java.util.stream.Stream;
 
+import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -75,6 +76,8 @@ public class FetchContext {
              referenceObject = processedSchema.getInterface(referenceObjectField);
          } else if (processedSchema.isUnion(referenceObjectField)) {
              referenceObject = processedSchema.getUnion(referenceObjectField);
+         } else if (referenceObjectField.hasNodeID()) {
+             referenceObject = processedSchema.getObject(referenceObjectField.getNodeIdTypeName());
          } else {
              referenceObject = processedSchema.getObjectOrConnectionNode(referenceObjectField);
          }
@@ -281,14 +284,26 @@ public class FetchContext {
      */
     public JoinListSequence iterateJoinSequenceFor(GenerationField field) {
         var currentSequence = getCurrentJoinSequence();
-        if (!field.hasFieldReferences()) {
+        List<FieldReference> fieldReferences;
+
+        if (field.hasNodeID() && !field.getNodeIdTypeName().equals(getReferenceObjectField().getTypeName())) {
+            // Add implicit table reference from typeName in @nodeId directive
+            fieldReferences = Stream.of(
+                            field.getFieldReferences(),
+                            List.of(new FieldReference(fromTable(processedSchema.getObject(field.getNodeIdTypeName()).getTable().getName()))))
+                    .flatMap(Collection::stream).toList();
+        } else {
+            fieldReferences = field.getFieldReferences();
+        }
+
+        if (fieldReferences.isEmpty()) {
             return currentSequence;
         }
 
         var newJoinSequence = processFieldReferences(
                 getCurrentJoinSequence(),
                 getReferenceTable(),
-                field.getFieldReferences(),
+                fieldReferences,
                 true,
                 false
         );
