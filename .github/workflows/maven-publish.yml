@@ -113,7 +113,7 @@ jobs:
 
     - name: Create Pull Request
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.PAT_FOR_PR }}
       run: |
         # Get version values from the publish job outputs
         MAIN_VERSION=${{ needs.publish.outputs.main_version }}
