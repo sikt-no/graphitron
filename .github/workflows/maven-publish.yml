@@ -71,6 +71,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
+        ref: main
         fetch-depth: 0 # Ensure we have the full history for version bumping
         token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -86,9 +87,18 @@ jobs:
         MAIN_VERSION=${{ needs.publish.outputs.main_version }}
         PATCH_VERSION=${{ needs.publish.outputs.patch_version }}
 
+        echo "Retrieved MAIN_VERSION: $MAIN_VERSION"
+        echo "Retrieved PATCH_VERSION: $PATCH_VERSION"
+        
+        # Output current git status
+        echo "Current git branch:"
+        git branch --show-current
+        
         # Increment patch version for next development cycle
         NEXT_PATCH=$((PATCH_VERSION + 1))
 
+        echo "Bumping version to: $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT"
+        
         # Set the next SNAPSHOT version
         mvn versions:set-property -Dproperty=revision -DnewVersion=$MAIN_VERSION -DgenerateBackupPoms=false
         mvn versions:set-property -Dproperty=changelist -DnewVersion=".$NEXT_PATCH-SNAPSHOT" -DgenerateBackupPoms=false
@@ -98,4 +108,4 @@ jobs:
         git config --global user.email "actions@github.com"
         git add pom.xml
         git commit -m "Bump development version to $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT [skip ci]"
-        git push
+        git push origin main
