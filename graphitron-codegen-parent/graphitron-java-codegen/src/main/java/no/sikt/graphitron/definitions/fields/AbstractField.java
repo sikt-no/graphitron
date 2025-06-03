@@ -6,6 +6,8 @@ import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
+import no.sikt.graphql.directives.GenerationDirective;
+import no.sikt.graphql.directives.GenerationDirectiveParam;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;

@@ -21,11 +21,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldName;
 import static no.sikt.graphitron.mappings.TableReflection.getRequiredFields;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
-import static no.sikt.graphql.directives.DirectiveHelpers.getRepeatableDirectiveArgumentString;
-import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
-import static no.sikt.graphql.directives.GenerationDirective.RECORD;
+import static no.sikt.graphql.directives.DirectiveHelpers.*;
+import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.NAME;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_ARGUMENT;
@@ -35,11 +34,13 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_ARGUMENT
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
     private final EntityKeySet keys;
+    private final String typeId;
+    private final List<String> keyColumns;
 
     public RecordObjectDefinition(T objectDefinition) {
         super(objectDefinition);
@@ -63,6 +64,14 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         inputsSortedByNullability = sortInputsByNullability();
         hasKeys = objectDefinition.hasDirective(FEDERATION_KEY.getName());
         keys = hasKeys ? new EntityKeySet(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
+
+        hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
+        typeId = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID)
+                .orElse(getTable() != null ? getTable().getName() : null);
+        keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
+                .stream()
+                .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))
+                .toList();
     }
 
     @NotNull
@@ -172,5 +181,21 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
     @Override
     public EntityKeySet getEntityKeys() {
         return keys;
+    }
+
+    public boolean hasNodeDirective() {
+        return hasNodeDirective;
+    }
+
+    public String getTypeId() {
+        return typeId;
+    }
+
+    public boolean hasCustomKeyColumns() {
+        return !keyColumns.isEmpty();
+    }
+
+    public List<String> getKeyColumns() {
+        return keyColumns;
     }
 }

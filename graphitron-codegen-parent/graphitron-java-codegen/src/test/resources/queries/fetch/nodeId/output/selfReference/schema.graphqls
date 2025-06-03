@@ -1,0 +1,7 @@
+type Query {
+  query: Film
+}
+
+type Film implements Node @node @table {
+  sequelId: ID @nodeId(typeName: "Film") @reference(references: [{table: "FILM"}])
+}

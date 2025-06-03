@@ -21,4 +21,14 @@ public class EnumField extends AbstractField<EnumValueDefinition> {
     public static List<EnumField> from(EnumTypeDefinition e, String container) {
         return e.getEnumValueDefinitions().stream().map(it -> new EnumField(it, container)).collect(Collectors.toList());
     }
+
+    @Override
+    public boolean hasNodeID() {
+        return false;
+    }
+
+    @Override
+    public String getNodeIdTypeName() {
+        return null;
+    }
 }

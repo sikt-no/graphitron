@@ -297,47 +297,4 @@ public class FilmCategory extends TableImpl<FilmCategoryRecord> {
     public FilmCategory whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.FilmCategoryRecord, ?>> getIdFields() {
-        return java.util.List.of(FILM_ID, CATEGORY_ID);
-    }
-
-    public org.jooq.SelectField<String> getCategoryId() {
-        return DSL.row(CATEGORY_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("category_id"));
-    }
-
-    public org.jooq.Condition hasCategoryId(String id) {
-        return hasCategoryIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasCategoryIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(CATEGORY_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    public org.jooq.SelectField<String> getFilmId() {
-        return DSL.row(FILM_ID)
-            .mapping(String.class, org.jooq.Functions.nullOnAnyNull((s0) -> s0.toString()))
-            .as(DSL.name("film_id"));
-    }
-
-    public org.jooq.Condition hasFilmId(String id) {
-        return hasFilmIds(java.util.Set.of(id));
-    }
-
-    public org.jooq.Condition hasFilmIds(java.util.Set<String> ids) {
-        var field = java.util.List.of(FILM_ID).get(0);
-        var converted = ids.stream().map(it -> field.getDataType().convert(it)).collect(java.util.stream.Collectors.toList());
-        return field.in(converted);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.ofEntries(
-        java.util.Map.entry("film_category_category_id_fkey", "CategoryId"),
-        java.util.Map.entry("film_category_film_id_fkey", "FilmId")
-    );
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

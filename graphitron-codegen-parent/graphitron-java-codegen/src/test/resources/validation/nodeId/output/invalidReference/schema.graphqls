@@ -1,0 +1,5 @@
+type Category implements Node @table @node {
+  id: ID!
+  customerId: ID! @nodeId(typeName: "CustomerNode") @reference(references: [{table: "CUSTOMER"}])
+}
+

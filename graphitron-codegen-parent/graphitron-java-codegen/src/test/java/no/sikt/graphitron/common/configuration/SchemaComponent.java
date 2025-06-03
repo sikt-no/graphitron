@@ -23,6 +23,7 @@ public enum SchemaComponent {
     DUMMY_ENUM_CONVERTED("enums/DummyEnumConverted", Set.of(ReferencedEntry.DUMMY_JOOQ_ENUM)),
 
     CUSTOMER("basic/Customer"),
+    CUSTOMER_NODE("basic/CustomerNode", NODE),
     CUSTOMER_QUERY("basic/CustomerQuery"),
     CUSTOMER_NOT_GENERATED("basic/CustomerNotGenerated"),
     CUSTOMER_TABLE("basic/CustomerTable"),

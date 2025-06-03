@@ -29,7 +29,8 @@ public enum GenerationDirectiveParam {
     ON("on"),
     VALUE("value"),
     TYPE_ID("typeId"),
-    KEY_COLUMNS("keyColumns");
+    KEY_COLUMNS("keyColumns"),
+    TYPE_NAME("typeName");
 
     private final String name;
 

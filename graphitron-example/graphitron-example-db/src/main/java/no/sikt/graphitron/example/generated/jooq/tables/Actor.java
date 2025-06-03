@@ -306,12 +306,4 @@ public class Actor extends TableImpl<ActorRecord> {
     public Actor whereNotExists(Select<?> select) {
         return where(DSL.notExists(select));
     }
-
-    public java.util.List<TableField<no.sikt.graphitron.example.generated.jooq.tables.records.ActorRecord, ?>> getIdFields() {
-        return java.util.List.of(ACTOR_ID);
-    }
-
-    private static final java.util.Map<String, String> qualifiers = java.util.Map.of();
-
-    public String getQualifier(String keyName) { return qualifiers.get(keyName); }
 }

@@ -39,4 +39,14 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
     public Optional<String> getIndexName() {
         return Optional.ofNullable(indexName);
     }
+
+    @Override
+    public boolean hasNodeID() {
+        return false;
+    }
+
+    @Override
+    public String getNodeIdTypeName() {
+        return null;
+    }
 }

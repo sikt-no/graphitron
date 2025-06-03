@@ -14,6 +14,16 @@ public interface FieldSpecification {
     boolean isID();
 
     /**
+     * @return Does this field have the @nodeId directive?
+     */
+    boolean hasNodeID();
+
+    /**
+     * @return The type name configured in the @nodeId directive
+     */
+    String getNodeIdTypeName();
+
+    /**
      * @return The name of the object as specified in the schema.
      */
     String getName();

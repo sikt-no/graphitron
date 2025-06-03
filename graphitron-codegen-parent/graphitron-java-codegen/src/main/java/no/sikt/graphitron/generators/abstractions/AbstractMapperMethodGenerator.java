@@ -1,13 +1,14 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -17,8 +18,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<?>> {

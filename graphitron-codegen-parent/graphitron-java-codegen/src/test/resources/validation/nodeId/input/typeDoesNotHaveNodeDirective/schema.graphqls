@@ -1,0 +1,7 @@
+type Query {
+  query(addressId: ID @nodeId(typeName: "Address")): CustomerNode
+}
+
+type Address @table {
+  id: ID!
+}

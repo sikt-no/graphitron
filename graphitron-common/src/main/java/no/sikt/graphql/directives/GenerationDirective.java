@@ -25,7 +25,8 @@ public enum GenerationDirective {
     DISCRIMINATE("discriminate", EnumSet.of(GenerationDirectiveParam.ON)),
     DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE)),
     EXTERNAL_FIELD("externalField"),
-    NODE("node", EnumSet.of(GenerationDirectiveParam.TYPE_ID, GenerationDirectiveParam.KEY_COLUMNS));
+    NODE("node", EnumSet.of(GenerationDirectiveParam.TYPE_ID, GenerationDirectiveParam.KEY_COLUMNS)),
+    NODE_ID("nodeId", EnumSet.of(GenerationDirectiveParam.TYPE_NAME));
 
     private final String name;
 
