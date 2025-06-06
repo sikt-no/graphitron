@@ -1360,23 +1360,97 @@ interface Error {
 This may be removed/changed in the near future as it may not be flexible enough.
 
 ## Global node identification
+> **Note:** This feature is a work in progress and can be enabled with the temporary `generate.makeNodeStrategy` parameter.
+
 If your schema includes [Global Object Identification](https://graphql.org/learn/global-object-identification/),
-you need to implement a [NodeIdHandler](../graphitron-common/src/main/java/no/sikt/graphql/NodeIdHandler.java)
-in order to make Graphitron generate code that supports this.
+you need to have an instance of a class extending [NodeIdStrategy](../graphitron-common/src/main/java/no/sikt/graphql/NodeIdStrategy.java), 
+optionally overriding methods for custom ID encoding/decoding, and pass it to the wiring builder in order to resolve `node` queries on your server.
 
-This is work in progress and is subject to change.
-
-TODO: write more about this when solving [GGG-123](https://sikt.atlassian.net/browse/GGG-123),
-
-An example implementation of a NodeIdHandler:
-
-```java 
+```java
 @Singleton
-public class MyNodeIdHandler implements NodeIdHandler {
-    @Override
-    public Table<?> getTable(String id) {
-        return IdHelpers.getTable(id);
-    }
+public class MyNodeIdStrategy extends NodeIdStrategy {
+  // Optionally override methods for custom ID encoding/decoding
+}
+```
+
+Then, inject your node ID strategy and pass it to the runtime wiring:
+```java
+Graphitron.getRuntimeWiring(nodeIdStrategy);
+```
+
+### node directive
+The **node** directive marks a type as globally identifiable by its ID, following your custom node ID strategy. To use this directive, the type must:
+
+- Have the [table](#table-directive) directive.
+- Implement the [Node](#node) interface.
+
+The **node** directive supports two parameters for ID configuration:
+
+- _typeId_: Sets the type identifier which is embedded in the ID  and used to determine the correct type given an ID. Defaults to the GraphQL type name if not specified.
+- _keyColumns_: Lists the table columns to include in the ID, in order. If omitted, Graphitron uses the table's primary key.
+  - **Note:** If the primary key changes, the generated ID will also change. To ensure stable IDs, we therefore recommend hard coding the primary key columns.
+
+
+Given this schema:
+```graphql
+type Customer implements Node @node @table {
+  id: ID!
+}
+```
+Graphitron will pass these default arguments to the _createId_ method in your node strategy:
+
+```java
+nodeIdStrategy.createId("Customer", CUSTOMER.getPrimaryKey().getFieldsArray())
+```
+
+And with a custom configuration like this:
+```graphql
+type Customer implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @table {
+  id: ID!
+}
+```
+
+Graphitron will instead pass these arguments:
+
+```java
+nodeIdStrategy.createId("C", CUSTOMER.CUSTOMER_ID)
+```
+
+### nodeId directive
+> **Note:** This directive is not currently supported when combined with [services](#services).
+
+The `@nodeId` directive can be placed on fields and arguments to indicate that they represent a globally unique ID, following your node ID strategy. This directive requires one parameter:
+
+- `typeName` — The name of the globally identifiable type the ID refers to.
+  - This type must have the [`@node`](#node-directive) directive.
+
+For types with the **node** directive, the _id_ field implicitly has **nodeId**, so you do not need to add it. The following schemas are equivalent:
+
+```graphql
+type Customer implements Node @node @table {
+  id: ID!
+}
+```
+```graphql
+type Customer implements Node @node @table {
+  id: ID! @nodeId(typeName: "Customer")
+}
+```
+
+#### Referencing another type's ID
+It is possible to reference another type's node ID. This could be done by combining the **nodeId** directive with the [reference](#reference-directive) directive.
+Additionally, the _typeName_ may also imply a reference to another table when it doesn't match the field's containing type.
+
+For example, if you have a `Customer` type that has a field referring to an `Address` ID, you can use the following schema:
+
+```graphql
+type Customer implements Node @node @table {
+  id: ID!
+  addressId: ID @nodeId(typeName: "Address") # Implicit reference to the 'ADDRESS' table
+}
+
+type Address implements Node @node @table {
+  id: ID!
 }
 ```
 
