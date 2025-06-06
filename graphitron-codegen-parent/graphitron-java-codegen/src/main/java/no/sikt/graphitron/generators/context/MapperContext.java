@@ -11,9 +11,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
-import org.jooq.ForeignKey;
-
-import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
@@ -24,7 +21,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
-import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.mappings.TableReflection.recordUsesFSHack;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_ID;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -373,14 +370,14 @@ public class MapperContext {
             var nodeType = schema.getRecordType(target.getNodeIdTypeName());
             var foreignKey = getForeignKeyForNodeIdReference(target, schema);
 
-            return CodeBlock.of("$N.$L($N, $L, $S, $L);",
+            return CodeBlock.builder().addStatement("$N.$L($N, $L, $S, $L)",
                     NODE_ID_STRATEGY_NAME,
                     foreignKey.isPresent() ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
                     previousContext.targetName,
                     valueToSet,
                     nodeType.getTypeId(),
                     foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
-            );
+            ).build();
         }
         return setValue(previousContext.targetName, setTargetMapping, valueToSet);
     }

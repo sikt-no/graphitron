@@ -28,7 +28,7 @@ public class ReadingTest extends ValidationTest {
         var testDirectory = getSourceTestPath() + "logReadSchemaFiles";
         GeneratorConfig.setGeneratorSchemaFiles(testDirectory + "/schema1.graphqls", testDirectory + "/subdir/schema2.graphqls", testDirectory + "/subdir/subsubdir/schema3.graphqls");
 
-        GraphQLGenerator.getProcessedSchema(true).validate();
+        GraphQLGenerator.getProcessedSchema(true);
         assertThat(getInfo())
                 .contains("Reading graphql schemas", "schema1.graphqls", "schema2.graphqls", "schema3.graphqls")
                 .doesNotContain("notASchema");

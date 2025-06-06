@@ -10,21 +10,27 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
  * Stores operations related to rendering get and set method calls.
  */
 public class MethodMapping {
-    private final String name, get, set, setCallPart, hasCallPart, hasIterableCallPart;
+    private final String name, get, camelGet, set, has, camelHas, setCallPart, hasCallPart, hasIterableCallPart, camelHasCallPart, camelHasIterableCallPart;
     private final CodeBlock getCall;
 
     public MethodMapping(String name) {
         this.name = name;
         get = "get" + capitalize(name);
         getCall = CodeBlock.of(".$L()", get);
+        camelGet = "get" + capitalize(toCamelCase(name));
 
         set = "set" + capitalize(name);
         setCallPart = "." + set + "(";
 
-        var has = "has" + capitalize(toCamelCase(name));
+        has = "has" + capitalize(name);
         var hasIterable = has + "s";
         hasCallPart = "." + has + "(";
         hasIterableCallPart = "." + hasIterable + "(";
+
+        camelHas = "has" + capitalize(toCamelCase(name));
+        var camelHasIterable = camelHas + "s";
+        camelHasCallPart = "." + camelHas + "(";
+        camelHasIterableCallPart = "." + camelHasIterable + "(";
     }
 
     /**
@@ -39,6 +45,13 @@ public class MethodMapping {
      */
     public String asGet() {
         return get;
+    }
+
+    /**
+     * @return The name for a get[name] method call.
+     */
+    public String asCamelGet() {
+        return camelGet;
     }
 
     /**
@@ -70,6 +83,20 @@ public class MethodMapping {
     }
 
     /**
+     * @return The name for a has[name] method call.
+     */
+    public String asHas() {
+        return has;
+    }
+
+    /**
+     * @return The name for a has[name] method call.
+     */
+    public String asCamelHas() {
+        return camelHas;
+    }
+
+    /**
      * @return Format this name as a .has[name][s]([input]) method call.
      */
     public CodeBlock asHasCall(CodeBlock input, boolean iterable) {
@@ -77,5 +104,15 @@ public class MethodMapping {
             return CodeBlock.of("$L$L)", hasIterableCallPart, CodeBlock.of("$L.stream().collect($T.toSet())", input, COLLECTORS.className));
         }
         return CodeBlock.of("$L$L)", hasCallPart, input);
+    }
+
+    /**
+     * @return Format this name as a .has[name][s]([input]) method call.
+     */
+    public CodeBlock asCamelHasCall(CodeBlock input, boolean iterable) {
+        if (iterable) {
+            return CodeBlock.of("$L$L)", camelHasIterableCallPart, CodeBlock.of("$L.stream().collect($T.toSet())", input, COLLECTORS.className));
+        }
+        return CodeBlock.of("$L$L)", camelHasCallPart, input);
     }
 }

@@ -1,0 +1,7 @@
+type Query {
+  query(in: CustomerNodeInputTable!): CustomerNoTable
+}
+
+type CustomerNoTable {
+  id: ID! @nodeId(typeName: "CustomerNode")
+}

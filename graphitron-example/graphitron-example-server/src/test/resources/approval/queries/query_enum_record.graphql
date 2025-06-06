@@ -1,0 +1,6 @@
+{
+    filmListsWithEnumRecord(input: {category: COMEDY, description: "A Astounding Panorama of a Car And a Mad Scientist who must Battle a Lumberjack in A MySQL Convention"}) {
+        description,
+        category
+    }
+}

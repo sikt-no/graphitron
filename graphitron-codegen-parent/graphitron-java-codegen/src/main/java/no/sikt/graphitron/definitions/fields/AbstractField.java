@@ -1,13 +1,11 @@
 package no.sikt.graphitron.definitions.fields;
 
-import no.sikt.graphitron.javapoet.TypeName;
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
-import no.sikt.graphql.directives.GenerationDirective;
-import no.sikt.graphql.directives.GenerationDirectiveParam;
+import no.sikt.graphitron.javapoet.TypeName;
 
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentString;
@@ -122,9 +120,7 @@ public abstract class AbstractField<T extends NamedNode<T> & DirectivesContainer
         return mappingFromFieldOverride;
     }
 
-    /**
-     * @return Is this object field a Query or Mutation root field?
-     */
+    @Override
     public boolean isRootField() {
         return containerType.equals(SCHEMA_QUERY.getName()) || containerType.equals(SCHEMA_MUTATION.getName());
     }

@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_QUERY;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Node ID output - fields with nodeId directive as output")
 public class NodeIdOutputTest extends NodeIdDirectiveTest {
@@ -27,6 +27,15 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     void reference() {
         assertGeneratedContentContains("reference", Set.of(CUSTOMER_QUERY),
                 "field(DSL.select(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.fields"
+        );
+    }
+
+    @Test
+    @DisplayName("With reference and where statement")
+    void referenceAndInput() {
+        assertGeneratedContentContains("referenceAndInput", Set.of(CUSTOMER_NODE),
+                "_customer.getPrimaryKey().getFieldsArray()))).from(_customer).where(_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
+                "CustomerNoTable::new))).fetchOne("
         );
     }
 
@@ -68,6 +77,18 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     void selfReference() {
         assertGeneratedContentContains("selfReference",
                 "createId(\"Film\", film_3747728953_film.fields"
+        );
+    }
+
+    @Test
+    @DisplayName("Returning ID without type wrapping")
+    void noWrapping() {
+        assertGeneratedContentContains(
+                "noWrapping", Set.of(CUSTOMER_NODE_INPUT_TABLE, CUSTOMER_NODE),
+                "String queryForQuery(",
+                ".select(nodeIdStrategy.createId(\"CustomerNode\"",
+                ".where(nodeIdStrategy.hasId(\"CustomerNode\"",
+                ".fetchOne(it -> it.into(String.class));"
         );
     }
 }

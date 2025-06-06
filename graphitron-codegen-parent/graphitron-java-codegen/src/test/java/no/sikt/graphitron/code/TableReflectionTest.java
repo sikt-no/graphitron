@@ -41,7 +41,7 @@ public class TableReflectionTest {
     @DisplayName("Can find a method name for a key or table that exists")
     public void findMethodForExistingKeyOrTable() {
         assertThat(searchTableForMethodWithName("CUSTOMER", "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY")).hasValue("address");
-        assertThat(searchTableForMethodWithName("RENTAL", "INVENTORY")).hasValue("inventory");
+        assertThat(searchTableForMethodWithName("RENTAL", "inventory")).hasValue("inventory");
     }
 
     @Test

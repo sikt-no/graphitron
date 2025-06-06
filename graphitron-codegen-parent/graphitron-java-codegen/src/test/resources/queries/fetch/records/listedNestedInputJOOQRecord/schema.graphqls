@@ -1,0 +1,12 @@
+type Query {
+  customer(in: [CustomerInput]): [CustomerTable]
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+  id: ID!
+  nested: Nested
+}
+
+input Nested {
+  first: String! @field(name: "FIRST_NAME")
+}

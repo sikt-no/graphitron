@@ -1,0 +1,12 @@
+type Query {
+  query(in: [CustomerInputTable!]!): CustomerNoTable
+}
+
+type CustomerNoTable {
+  customers: [Customer!]!
+}
+
+type Customer @table {  # Note that if table is not set here, which would be a valid configuration, the query will generate an incorrect where statement!
+  id: ID
+  district: String! @reference(references: [{table: "ADDRESS"}])
+}

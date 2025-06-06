@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_RECORD;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
 @DisplayName("Fetch queries - Queries using input records")
@@ -55,7 +56,7 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
                 "DSL.row(_customer.getId(), _customer.getId()).in(" +
-                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).toList()" +
+                        "inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).toList()" +
                         ") : DSL.noCondition()"
         );
     }
@@ -78,8 +79,76 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
                 "DSL.row(_customer.getId(), _customer.FIRST_NAME).in(" +
-                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).toList()" +
+                        "inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).toList()" +
                         ") : DSL.noCondition()"
+        );
+    }
+
+    @Test // Special case where nesting path should not be used since the records are flat structures.
+    @DisplayName("Listed input jOOQ records with an extra input type inside")
+    void listedNestedInputJOOQRecord() {
+        assertGeneratedContentContains("listedNestedInputJOOQRecord", ".inline(internal_it_.getFirstName())");
+    }
+
+    @Test // Not sure if this is allowed.
+    @DisplayName("Input type with an ID field annotated with @field without @nodeId")
+    void fieldOverrideID() {
+        assertGeneratedContentContains("fieldOverrideID", "_payment.getCustomerId()", "_payment.getPaymentId()");
+    }
+
+    @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.
+    @DisplayName("Returns a type without a table set")
+    void returningTypeWithoutTable() {
+        assertGeneratedContentContains(
+                "returningTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE),
+                ".row(_customer.getId(),_customer.FIRST_NAME",
+                "CustomerNoTable::new",
+                ".from(_customer)",
+                "_customer.hasId(inRecord.getId()",
+                ".into(CustomerNoTable.class"
+        );
+    }
+
+    @Test
+    @DisplayName("Returns a type without a table set, which contains a table field")
+    void returningTypeWithoutTableWithTableField() {
+        assertGeneratedContentContains(
+                "returningTypeWithoutTableWithTableField", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
+                ".row(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).mapping(",
+                ".where(_customer.hasId(inRecord.getId())).fetchOne(" // Makes sure there is no duplicated condition.
+        );
+    }
+
+    @Test
+    @DisplayName("Returns a listed type without a table set")
+    void returningListedTypeWithoutTable() {
+        assertGeneratedContentContains(
+                "returningListedTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE),
+                ".row(DSL.row(DSL.multiset(" +
+                        "DSL.select(_customer.getId())" +
+                        ".from(_customer).where(inRecordList",
+                ".mapping(Functions.nullOnAllNull((internal_it_) -> new CustomerNoTable(internal_it_)))).fetchOne(it -> it.into(CustomerNoTable"
+        );
+    }
+
+    @Test
+    @DisplayName("Returns a listed type without a table set, which contains a table field")
+    void returningListedTypeWithoutTableWithTableField() {
+        assertGeneratedContentContains(
+                "returningListedTypeWithoutTableWithTableField", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
+                ".row(DSL.row(DSL.multiset(" +
+                        "DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                        ".from(_customer).where(inRecordList",
+                "new CustomerNoTable(internal_it_)))).fetchOne(it -> it.into(CustomerNoTable"
+        );
+    }
+
+    @Test // A too long and incorrect join path may occur here.
+    @DisplayName("A listed type without a table set, which contains a table field and additional nesting layers with references")
+    void returningListedTypeWithoutTableWithNestedTableField() {
+        assertGeneratedContentContains(
+                "returningListedTypeWithoutTableWithNestedTableField", Set.of(CUSTOMER_INPUT_TABLE),
+                ".select(customer_2952383337_address.DISTRICT).from(customer_2952383337_address))).mapping"
         );
     }
 }

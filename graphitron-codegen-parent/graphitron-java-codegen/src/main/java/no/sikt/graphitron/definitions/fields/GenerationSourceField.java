@@ -64,7 +64,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         isExternalField = field.hasDirective(EXTERNAL_FIELD.getName());
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
-                || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
+                || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !container.equals(SCHEMA_MUTATION.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
 
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
 
@@ -121,6 +121,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public boolean isResolver() {
         return isResolver;
+    }
+
+    @Override
+    public boolean invokesSubquery() {
+        return !isResolver && (hasFieldReferences() || (hasNodeID() && !getNodeIdTypeName().equals(getContainerTypeName())) || isIterableWrapped());
     }
 
     public boolean isExternalField() {

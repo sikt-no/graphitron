@@ -79,4 +79,26 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
         assertGeneratedContentContains("unorderedConnectionType", Set.of(DUMMY_TYPE, PAGE_INFO),
                 "DummyConnection(List<DummyConnectionEdge> edges, PageInfo pageInfo, List<DummyType> nodes, Integer totalCount)");
     }
+
+    @Test // New constructor that skips error fields so queries can use them without making up new empty fields.
+    @DisplayName("Contains an errors field")
+    void withErrors() {
+        assertGeneratedContentContains(
+                "withErrors", Set.of(ERROR),
+                "Customer(String id, List<ValidationError> errors)",
+                "this.errors = errors",
+                "Customer(String id) {this.id = id;this.errors = null"
+        );
+    }
+
+    @Test
+    @DisplayName("Contains an errors union field")
+    void withErrorsUnion() {
+        assertGeneratedContentContains(
+                "withErrorsUnion", Set.of(ERROR),
+                "Customer(String id, List<ErrorUnion> errors)",
+                "this.errors = errors",
+                "Customer(String id){this.id = id;this.errors = null"
+        );
+    }
 }

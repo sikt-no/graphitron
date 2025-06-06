@@ -1,0 +1,11 @@
+type Customer {
+    id: ID
+    errors: [ErrorUnion]
+}
+
+union ErrorUnion = ValidationError
+
+type ValidationError implements Error {
+    path: [String]
+    message: String
+}

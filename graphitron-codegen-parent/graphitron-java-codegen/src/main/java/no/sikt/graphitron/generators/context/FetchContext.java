@@ -8,9 +8,9 @@ import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
+import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jooq.Key;
 import org.jooq.Table;
 
 import java.util.*;
@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.findKeyForResolverField;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -28,17 +28,20 @@ import static no.sikt.graphitron.mappings.TableReflection.*;
 public class FetchContext {
     private final FetchContext previousContext;
     private final GenerationField referenceObjectField;
-    private final RecordObjectSpecification<?> referenceObject, previousTableObject;
+    private final RecordObjectSpecification<?> referenceObject;
+    private final JOOQMapping referenceTable, previousTable, inputTable;
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
     private final LinkedHashSet<Alias> aliasSet;
+    private final List<GenerationField> conditionSourceFields;
     private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
-    private Key<?> resolverKey;
+    private final KeyWrapper resolverKey;
     private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
+    private final boolean hasApplicableTable;
     private final ProcessedSchema processedSchema;
 
     /* Midlertidig hack på count for paginerte kanter, som ikke bruker subspørringer enda */
@@ -86,14 +89,36 @@ public class FetchContext {
         this.conditionList = conditionList;
 
         this.referenceObjectField = referenceObjectField;
-        this.previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
+        var optionalPrevious = Optional.ofNullable(previousContext);
+        var previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
+        this.previousTable = previousTableObject != null ? previousTableObject.getTable() : null;
+        this.referenceTable = referenceObject != null ? referenceObject.getTable() : null;
+
+        // For more complex cases, the input table may need to be expanded to a sequence.
+        var allFoundInputTables = processedSchema.findInputTables(referenceObjectField);
+        var foundInputTable = allFoundInputTables.stream().findFirst().orElse(null);
+        var inputTable = foundInputTable != null ? foundInputTable : optionalPrevious.map(it -> it.inputTable).orElse(null);
+
         graphPath = pastGraphPath;
 
         this.previousContext = previousContext;
         this.shouldUseOptional = shouldUseOptional;
         this.resolverKey = findKeyForResolverField(referenceObjectField, processedSchema);
-        currentJoinSequence = iterateJoinSequence(pastJoinSequence);
 
+        hasApplicableTable = previousTable != null || referenceTable != null;
+        var hasPreviousApplicableTable = optionalPrevious.map(FetchContext::hasApplicableTable).orElse(false);
+        var previousSourceFields = optionalPrevious.map(FetchContext::getConditionSourceFields).orElse(List.of());
+        if (!previousSourceFields.isEmpty() && hasPreviousApplicableTable) {
+            this.conditionSourceFields = List.of();
+            this.inputTable = null;  // Note that this is important in order to not break longer join sequences by accidentally reusing this table.
+        } else if (!hasApplicableTable) {
+            this.conditionSourceFields = Stream.concat(previousSourceFields.stream(), Stream.of(referenceObjectField)).toList();
+            this.inputTable = inputTable;
+        } else {
+            this.conditionSourceFields = previousSourceFields;
+            this.inputTable = inputTable;
+        }
+        currentJoinSequence = iterateJoinSequence(pastJoinSequence);
     }
 
     /**
@@ -168,7 +193,7 @@ public class FetchContext {
      * @return The reference table the reference field points to.
      */
     public JOOQMapping getReferenceTable() {
-        return referenceObject != null ? referenceObject.getTable() : null;
+        return referenceTable;
     }
 
     /**
@@ -178,7 +203,7 @@ public class FetchContext {
         if (previousContext != null) {
             return previousContext.getTargetTable();
         } else {
-            return previousTableObject != null ? previousTableObject.getTable() : null;
+            return previousTable;
         }
     }
 
@@ -207,7 +232,7 @@ public class FetchContext {
      * @return The reference table which fields on this layer are taken from.
      */
     public JOOQMapping getReferenceOrPreviousTable() {
-        return (referenceObject != null && referenceObject.hasTable()) ? referenceObject.getTable() : previousTableObject != null ? previousTableObject.getTable() : null;
+        return (referenceObject != null && referenceObject.hasTable()) ? referenceObject.getTable() : previousTable;
     }
 
     /**
@@ -217,8 +242,23 @@ public class FetchContext {
         return referenceObjectField;
     }
 
-    public Key<?> getResolverKey() {
+    /**
+     * @return The sources for conditions that could not be applied in previous steps.
+     */
+    public List<GenerationField> getConditionSourceFields() {
+        return conditionSourceFields;
+    }
+
+    public KeyWrapper getResolverKey() {
         return resolverKey;
+    }
+
+    public boolean hasApplicableTable() {
+        return hasApplicableTable;
+    }
+
+    public boolean hasPreviousContext() {
+        return previousContext != null;
     }
 
     public boolean getShouldUseOptional() {
@@ -260,6 +300,9 @@ public class FetchContext {
             if ((refTable == null || refTable.equals(getReferenceTable())) && !currentJoinSequence.isEmpty()) {
                 newJoinListSequence.add(currentJoinSequence.getLast());
             }
+        } else if (!processedSchema.isObject(referenceObjectField) && referenceObjectField.isIterableWrapped()
+                && !referenceObjectField.hasFieldReferences() && !currentJoinSequence.isEmpty()) {
+            newJoinListSequence.addAll(currentJoinSequence);
         }
 
         return new FetchContext(
@@ -269,7 +312,7 @@ public class FetchContext {
                 referenceObject,
                 new LinkedHashSet<>(),
                 aliasSet,
-                (ArrayList<CodeBlock>) conditionList.clone(),
+                new ArrayList<>(conditionList),
                 previousGraphPath,
                 recCounter + 1,
                 this,
@@ -316,7 +359,7 @@ public class FetchContext {
      * or other appropriate start points for a sequence.
      */
     public JoinListSequence iterateJoinSequence(JoinListSequence previousSequence) {
-        var refTable = getReferenceTable();
+        var refTable = Optional.ofNullable(getReferenceTable()).orElse(inputTable);
         if (refTable == null && !referenceObjectField.hasFieldReferences()) {
             return previousSequence;
         }
@@ -331,7 +374,6 @@ public class FetchContext {
 
         var lastTable = !updatedSequence.isEmpty() ? updatedSequence.getLast().getTable() : getPreviousTable(); // Wrong if key was reverse.
         if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))) {
-
             if (updatedSequence.isEmpty()) {
                 var alias = new Alias(asInternalName(refTable.getCodeName()), JoinListSequence.of(refTable), false);
                 aliasSet.add(alias);

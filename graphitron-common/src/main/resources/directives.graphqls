@@ -125,7 +125,7 @@ directive @index(name: String) on ENUM_VALUE
 """Wrap type in the given Java record. Currently, this can only be used with services."""
 directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 
-"""Temporary directive annotating that this object should be fetched by IDs rather than be set from user-defined records."""
+"""Deprecated temporary directive annotating that this object should be fetched by IDs rather than be set from user-defined records."""
 directive @fetchByID on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }

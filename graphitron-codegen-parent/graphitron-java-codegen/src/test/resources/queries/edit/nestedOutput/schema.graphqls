@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: [CustomerInputTable!]!): Outer @mutation(typeName: UPDATE)
+}
+
+type Outer {
+  customers: [CustomerTable!]!
+}

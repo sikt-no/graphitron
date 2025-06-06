@@ -4,27 +4,18 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.context.MapperContext;
-import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asResultName;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_CONTEXT_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
 
 /**
  * This class generates the resolvers for update queries with the {@link GenerationDirective#MUTATION} directive set.
  */
 public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGenerator {
-    private static final String VARIABLE_ROWS = "rowsUpdated";
-
     public MutationTypeResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
     }

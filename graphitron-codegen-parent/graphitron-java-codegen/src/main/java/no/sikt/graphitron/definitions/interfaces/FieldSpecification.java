@@ -77,4 +77,9 @@ public interface FieldSpecification {
      * @return DB-side method name mappings based on the database equivalent of this field.
      */
     MethodMapping getMappingFromFieldOverride();
+
+    /**
+     * @return Is this object field a Query or Mutation root field?
+     */
+    boolean isRootField();
 }

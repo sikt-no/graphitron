@@ -48,6 +48,42 @@ public class EnumTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Input jOOQ record containing an enum")
+    void jOOQRecord() {
+        assertGeneratedContentContains(
+                "input/jOOQRecord", Set.of(DUMMY_ENUM_CONVERTED),
+                "inRecord.getRating() != null ? _film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Input jOOQ record containing a string enum")
+    void jOOQRecordString() {
+        assertGeneratedContentContains(
+                "input/jOOQRecordString", Set.of(DUMMY_ENUM),
+                "inRecord.getRating() != null ? _film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed input jOOQ record containing an enum")
+    void listedJOOQRecord() {
+        assertGeneratedContentContains(
+                "input/listedJOOQRecord", Set.of(DUMMY_ENUM_CONVERTED),
+                "_film.RATING).in(inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getRating()))"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed input jOOQ record containing an enum with additional schema layers")
+    void listedJOOQRecordNested() {
+        assertGeneratedContentContains(
+                "input/listedJOOQRecordNested", Set.of(DUMMY_ENUM_CONVERTED),
+                "_film.RATING).in(inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getRating()))"
+        );
+    }
+
+    @Test
     @DisplayName("Output JOOQ enum")
     void outputJOOQ() {
         assertGeneratedContentContains(

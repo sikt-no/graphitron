@@ -1,0 +1,5 @@
+{
+    filmWrappedWithInputTable(input: {filmId: "RmlsbTox"}) {
+        id
+    }
+}

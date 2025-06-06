@@ -1,16 +1,18 @@
 package no.sikt.graphitron.generators.dto;
 
+import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
+import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jooq.Key;
 import org.jooq.UniqueKey;
 
 import javax.lang.model.element.Modifier;
-import java.util.*;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.*;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class InterfaceDTOGenerator extends DTOGenerator {
@@ -22,13 +24,13 @@ public class InterfaceDTOGenerator extends DTOGenerator {
     protected TypeSpec generate(InterfaceDefinition target) {
         var interfaceBuilder = TypeSpec.interfaceBuilder(target.getName()).addModifiers(Modifier.PUBLIC);
 
-        var keyMap = target.hasTable() ? getKeyMapForResolverFields(target.getFields(), processedSchema) : new HashMap<String, Key<?>>();
+        var keyMap = target.hasTable() ? getKeyMapForResolverFields(target.getFields(), processedSchema) : new HashMap<String, KeyWrapper>();
 
         (new LinkedHashSet<>(keyMap.values()))
                 .forEach(( key) -> {
                     interfaceBuilder.addMethod(
-                            MethodSpec.methodBuilder("get" + capitalize(key instanceof UniqueKey ? PRIMARY_KEY : key.getName()))
-                                    .returns(getKeyTypeName(key))
+                            MethodSpec.methodBuilder("get" + capitalize(key.key() instanceof UniqueKey ? PRIMARY_KEY : key.key().getName()))
+                                    .returns(key.getTypeName())
                                     .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                                     .build()
                     );

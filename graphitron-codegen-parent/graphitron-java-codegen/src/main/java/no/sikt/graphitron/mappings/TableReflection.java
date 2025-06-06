@@ -5,7 +5,6 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
-import org.jooq.Record;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.InvocationTargetException;
@@ -250,11 +249,8 @@ public class TableReflection {
      * @return The name of a method that matches the provided name if it exists.
      */
     public static Optional<String> searchTableForMethodWithName(String tableName, String name) {
-        var adjustedName = name.replace("_", "");
         return searchTableForKeyMethodName(tableName, name)
-                .or(() -> getMethodName(tableName, name))
-                .or(() -> getMethodName(tableName, name.toLowerCase()))
-                .or(() -> getMethodName(tableName, adjustedName));
+                .or(() -> getMethodName(tableName, name));
     }
 
     @NotNull
@@ -263,20 +259,10 @@ public class TableReflection {
                 .map(Method::getName);
     }
 
-    /**
-     * @deprecated Denne metoden skal ikke lenger være public.
-     */
     @NotNull
-    @Deprecated
-    public static Optional<Method> getMethod(String tableName, String name) {
+    private static Optional<Method> getMethod(String tableName, String name) {
         return getTable(tableName)
-                .flatMap(table -> {
-                    try {
-                        return Optional.of(table.getClass().getMethod(name));
-                    } catch (NoSuchMethodException e) {
-                        return Optional.empty();
-                    }
-                });
+                .flatMap(table -> Arrays.stream(table.getClass().getMethods()).filter(it -> name.equals(it.getName())).findFirst());
     }
 
     /**

@@ -18,7 +18,9 @@ type Query {
     filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
     filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
+
     filmLists(category: String): [FilmList]
+    filmListsWithEnumRecord(input: FilmListEnumInput!): FilmList
 
     languages: [Language] @asConnection
 
@@ -32,6 +34,16 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
+}
+
+type Mutation {
+    # TODO: This case fails if the inputs are not in a record. Technically, we have the table in Film, and that should suffice to resolve this.
+    updateFilmName(in: FilmNameInput): Film @mutation(typeName: UPDATE)
+    updateFilmNames(in: [FilmNameInput]): [Film] @mutation(typeName: UPDATE)
+    insertFilm(in: FilmCreateInput): Film @mutation(typeName: INSERT)
+
+    deleteFilmID(in: FilmInput): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
+    deleteFilmIDListed(in: [FilmInput!]!): [ID] @nodeId(typeName: "Film") @mutation(typeName: DELETE)
 }
 
 interface Node {
@@ -98,6 +110,11 @@ type FilmList @table(name: "FILM_LIST") {
     category: FilmCategory @field(name: "CATEGORY")
 }
 
+input FilmListEnumInput @table(name: "FILM_LIST") {
+    description: String  # Redundant, but we do not want the test to fetch too much data.
+    category: FilmCategory @field(name: "CATEGORY")
+}
+
 enum FilmCategory { # Note that this enum is not complete, and other values are also present in the database
     SPORTS @field(name: "Sports")
     CLASSICS @field(name: "Classics")
@@ -114,6 +131,7 @@ type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
 type Film implements Node @node @table {
     id: ID!
     title: String
+    language: Language @reference(references: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
 }
 
 input FilmLookupInput {
@@ -124,6 +142,21 @@ input FilmLookupInput {
 input FilmsOrderByInput {
     orderByField: FilmsOrderByFields!
     direction: OrderDirection!
+}
+
+# If the table directive is missing here, we get a bad crash without useful feedback.
+input FilmInput @table(name: "FILM") {
+    filmId: ID! @nodeId(typeName: "Film")
+}
+
+input FilmNameInput @table(name: "FILM") {
+    filmId: ID! @nodeId(typeName: "Film")
+    title: String
+}
+
+input FilmCreateInput @table(name: "FILM") {
+    languageId: ID! @nodeId(typeName: "Language") @reference(references: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    title: String!
 }
 
 enum FilmsOrderByFields {

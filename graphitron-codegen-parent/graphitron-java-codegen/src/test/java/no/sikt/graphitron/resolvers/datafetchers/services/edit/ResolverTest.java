@@ -61,73 +61,43 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Two inputs")
     void multipleInputs() {
-        assertGeneratedContentContains(
-                "multipleInputs",
-                "in0 = ((String) _args.get(\"in0\"))",
-                "in1 = ((String) _args.get(\"in1\"))",
-                ".mutation(in0, in1)"
-        );
+        assertGeneratedContentContains("multipleInputs", ".mutation(in0, in1)");
     }
 
     @Test
     @DisplayName("Record input")
     void recordInput() {
-        assertGeneratedContentContains(
-                "recordInput", Set.of(CUSTOMER_INPUT_TABLE),
-                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), CustomerInputTable.class)",
-                "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                ".mutation(inRecord)"
-        );
+        assertGeneratedContentContains("recordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(inRecord)");
     }
 
     @Test // Tests this only once as it is treated the same as jOOQ records otherwise.
     @DisplayName("Java record input")
     void javaRecordInput() {
-        assertGeneratedContentContains(
-                "javaRecordInput", Set.of(DUMMY_INPUT_RECORD),
-                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), DummyInputRecord.class)",
-                "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
-                ".mutation(inRecord)"
-        );
+        assertGeneratedContentContains("javaRecordInput", Set.of(DUMMY_INPUT_RECORD), ".mutation(inRecord)");
     }
 
     @Test
     @DisplayName("Two record inputs")
     void multipleRecordInputs() {
-        assertGeneratedContentContains(
-                "multipleRecordInputs", Set.of(CUSTOMER_INPUT_TABLE),
-                "in0Record = transform.customerInputTableToJOOQRecord(in0, \"in0\")",
-                "in1Record = transform.customerInputTableToJOOQRecord(in1, \"in1\")",
-                ".mutation(in0Record, in1Record)"
-        );
+        assertGeneratedContentContains("multipleRecordInputs", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(in0Record, in1Record)");
     }
 
     @Test
     @DisplayName("Listed record input")
     void listedRecordInput() {
-        assertGeneratedContentContains(
-                "listedRecordInput", Set.of(CUSTOMER_INPUT_TABLE),
-                "inRecordList = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                ".mutation(inRecordList)"
-        );
+        assertGeneratedContentContains("listedRecordInput", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(inRecordList)");
     }
 
     @Test  // Not sure if this is the intended behaviour for such cases. The service will not be able to handle this type.
     @DisplayName("Input with non-record wrapper")
     void wrappedInput() {
-        assertGeneratedContentContains("wrappedInput", "in = ResolverHelpers.transformDTO(_args.get(\"in\"), Input.class)", ".mutation(in)");
+        assertGeneratedContentContains("wrappedInput", ".mutation(in)");
     }
 
     @Test
     @DisplayName("JOOQ input record containing another input jOOQ record")
     void nestedInputRecord() {
-        assertGeneratedContentContains(
-                "nestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in0Record = transform.",
-                "in1Record = new CustomerRecord();in1Record.attach(transform.getCtx().configuration()",
-                "if (in0 != null) {var in1 = in0.getIn1();in1Record = transform.customerInputTableToJOOQRecord(in1, \"in0/in1\")",
-                ".mutation(in0Record, in1Record)"
-        );
+        assertGeneratedContentContains("nestedInputRecord", Set.of(CUSTOMER_INPUT_TABLE), ".mutation(in0Record, in1Record)");
     }
 
     @Test
@@ -172,98 +142,16 @@ public class ResolverTest extends GeneratorTest {
     void returningJOOQRecord() {
         assertGeneratedContentContains(
                 "returningJOOQRecord", Set.of(CUSTOMER_TABLE),
-                "customerTable = transform.customerTableRecordToGraphType(mutation, \"\")",
-                ".completedFuture(customerTable)"
+                ".customerTableRecordToGraphType(response, \"\")"
         );
     }
 
     @Test
-    @DisplayName("With service that returns a jOOQ record")
+    @DisplayName("Service that returns a Java record")
     void returningJavaRecord() {
         assertGeneratedContentContains(
                 "returningJavaRecord", Set.of(DUMMY_TYPE_RECORD),
-                "dummyTypeRecord = transform.dummyTypeRecordToGraphType(mutation, \"\")",
-                ".completedFuture(dummyTypeRecord)"
-        );
-    }
-
-    @Test  // The only difference right now is that the helper variable appends "List" to the name.
-    @DisplayName("With service that returns a listed record")
-    void returningListedRecord() {
-        assertGeneratedContentContains(
-                "returningListedRecord", Set.of(CUSTOMER_TABLE),
-                "customerTableList =",
-                ".completedFuture(customerTableList)"
-        );
-    }
-
-    @Test
-    @DisplayName("Response containing one ID")
-    void responseID() {
-        assertGeneratedContentContains(
-                "responseID",
-                "DataFetcher<CompletableFuture<Response>>",
-                "response = new Response()",
-                "if (mutation != null && transform.getSelect().contains(\"id\")) {response.setId(mutation);}",
-                ".completedFuture(response)"
-        );
-    }
-
-    @Test
-    @DisplayName("Listed response")
-    void listedResponse() {
-        assertGeneratedContentContains(
-                "listedResponse",
-                "DataFetcher<CompletableFuture<List<Response>>>",
-                "response = new Response()", // TODO: Does not actually declare and fill a list.
-                ".contains(\"id\")",
-                "response.setId(itMutation)",
-                ".completedFuture(responseList)"
-        );
-    }
-
-    @Test
-    @DisplayName("Response containing a record")
-    void responseRecord() {
-        assertGeneratedContentContains(
-                "responseRecord", Set.of(CUSTOMER_TABLE),
-                ".contains(\"customer\"",
-                "response.setCustomer(transform.customerTableRecordToGraphType(mutation, \"customer\")"
-        );
-    }
-
-    @Test
-    @DisplayName("Response containing a record fetched by ID")
-    void responseFetchByID() {
-        assertGeneratedContentContains(
-                "responseFetchByID", Set.of(NODE),
-                "response.setCustomer(CustomerDBQueries.customerForNode(" +
-                        "transform.getCtx(), Set.of(mutation.getId()), transform.getSelect().withPrefix(\"customer\")).values().stream().findFirst().orElse(null));"
-        );
-    }
-
-    @Test
-    @DisplayName("Response containing a list of records fetched by ID")
-    void responseFetchByIDList() {
-        assertGeneratedContentContains(
-                "responseFetchByIDList", Set.of(NODE),
-                "customerForNode = CustomerDBQueries.customerForNode(" +
-                        "transform.getCtx(), mutation.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
-                "response.setCustomer(mutation.stream().map(it -> customerForNode.get(it.getId())).toList()"
-        );
-    }
-
-    @Test
-    @DisplayName("Response with non-record wrapper")
-    void wrappedResponse() {
-        assertGeneratedContentContains(
-                "wrappedResponse",
-                "wrapper = new Wrapper()",
-                ".contains(\"response\"",
-                "response = new Response()",
-                ".contains(\"response/id\")",
-                "response.setId(response)",  // TODO: This should set "mutation", not "response". This code will not work. Also, the wrapper is never filled.
-                ".completedFuture(wrapper)"
+                ".dummyTypeRecordToGraphType(response, \"\")"
         );
     }
 

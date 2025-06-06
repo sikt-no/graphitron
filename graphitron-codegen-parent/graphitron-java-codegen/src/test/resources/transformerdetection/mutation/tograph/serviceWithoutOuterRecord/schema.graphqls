@@ -8,7 +8,7 @@ type Response1 {
 }
 
 type Response2 {
-  customer2: [Customer2] @fetchByID
+  customer2: [Customer2] @splitQuery
 }
 
 type Customer1 @table(name: "CUSTOMER") {

@@ -13,6 +13,7 @@ import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.validation.ProcessedDefinitionsValidator;
 import no.sikt.graphql.directives.GenerationDirective;
@@ -691,6 +692,13 @@ public class ProcessedSchema {
     }
 
     /**
+     * @return Is this field a scalar in the schema?
+     */
+    public boolean isScalar(GenerationField field) {
+        return scalarTypes.contains(field.getTypeName());
+    }
+
+    /**
      * @return The Query type.
      */
     public ObjectDefinition getQueryType() {
@@ -814,11 +822,54 @@ public class ProcessedSchema {
         return objectWithPreviousTable.get(object.getName());
     }
 
-    /*
+    /**
     * @return Returns whether the object has a table on or above it.
     * */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
         return objectWithPreviousTable.containsKey(object.getName());
+    }
+
+    /**
+     * Simple method that tries to find a table reference in the input records.
+     * This is not very robust, but we need this to not break existing things.
+     * @return Table mapping for this context based on input records, if any exists.
+     */
+    public List<JOOQMapping> findInputTables(GenerationField field) {
+        if (!(field instanceof ObjectField objectField)) {
+            return List.of();
+        }
+
+        return objectField
+                .getArguments()
+                .stream()
+                .filter(this::isRecordType)
+                .map(this::getRecordType)
+                .filter(RecordObjectSpecification::hasTable)
+                .map(RecordObjectSpecification::getTable)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * Simple method that tries to find a table reference the field's type.
+     * @return Table mapping for this context based on the contents of the field's type records, if any exists.
+     */
+    public boolean nextTypeTableExists(GenerationField field, Set<String> seen) {
+        if (!(field instanceof ObjectField objectField) || !isRecordType(objectField) || seen.contains(field.getName() + field.getContainerTypeName())) {
+            return false;
+        }
+
+        var type = getRecordType(field);
+        if (type.hasTable()) {
+            return true;
+        }
+        seen.add(field.getName() + field.getContainerTypeName());
+
+        return getRecordType(objectField)
+                .getFields()
+                .stream()
+                .filter(this::isRecordType)
+                .anyMatch(it -> nextTypeTableExists(it, seen));
     }
 
     /**

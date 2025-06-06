@@ -5,6 +5,6 @@ type Query {
 type Address @table {
   id: ID!
   customers(
-    staffId: ID! @field(name: "STAFF_ID") @reference(references: [{table: "STORE"}])
+    staffId: ID! @reference(references: [{table: "STORE"}])
   ): [CustomerTable] @splitQuery
 }
