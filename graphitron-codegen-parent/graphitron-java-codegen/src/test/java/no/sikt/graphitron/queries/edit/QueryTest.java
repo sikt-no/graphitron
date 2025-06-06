@@ -3,7 +3,7 @@ package no.sikt.graphitron.queries.edit;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.UpdateOnlyDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ public class QueryTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new UpdateDBClassGenerator(schema));
+        return List.of(new UpdateOnlyDBClassGenerator(schema));
     }
 
     @Test

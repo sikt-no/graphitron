@@ -5,10 +5,8 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
-import no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -16,8 +14,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedNameIf;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asResultName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -37,44 +33,19 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
-        var methodCall = getMethodCall(target, parser, isMutation); // Note, do this before declaring services.
+        var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
+        var mutationMethodCall = isMutation ? getMethodCall(target, parser, true) : empty();
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
-        var returnType = isMutation ? iterableWrapType(target) : getReturnTypeName(target);
-        return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(returnType)))
+        return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
                 .addCode(transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
+                .addCode(mutationMethodCall)
                 .addCode(methodCall)
-                .addCode(isMutation ? generateSchemaOutputs(target, parser) : empty())
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
-                .build();
-    }
-
-    /**
-     * @return Code that both fetches record data and creates the appropriate response objects.
-     */
-    protected CodeBlock generateSchemaOutputs(ObjectField target, InputParser parser) {
-        if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
-            return empty();
-        }
-
-        var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);
-        var resolverResultName = processedSchema.isObject(target)
-                ? asListedNameIf(target.getTypeName(), target.isIterableWrapped())
-                : asResultName(target.getUnprocessedFieldOverrideInput());
-        var returnValue = processedSchema.isObject(target) || target.hasServiceReference()
-                ? CodeBlock.of(resolverResultName)
-                : getIDMappingCode(mapperContext, target, processedSchema, parser);
-        var outputBlock = target.hasServiceReference()
-                ? MappingCodeBlocks.generateSchemaOutputs(mapperContext, processedSchema)
-                : makeResponses(mapperContext, target, processedSchema, parser);
-        return CodeBlock
-                .builder()
-                .add(outputBlock)
-                .add(returnCompletedFuture(returnValue))
                 .build();
     }
 

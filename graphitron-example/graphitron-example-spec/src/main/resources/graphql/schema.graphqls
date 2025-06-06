@@ -20,6 +20,10 @@ type Query {
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
     filmLists(category: String): [FilmList]
 
+    # These structures are relevant for both queries and mutations.
+    filmWrapped(filmId: String @field(name: "FILM_ID")): FilmContainer
+    filmWrappedListed(filmId: [String!]! @field(name: "FILM_ID")): FilmContainerListed
+
     languages: [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
@@ -129,6 +133,14 @@ input FilmsOrderByInput {
 enum FilmsOrderByFields {
     TITLE @index(name: "IDX_TITLE")
     LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
+}
+
+type FilmContainer {
+    films: Film
+}
+
+type FilmContainerListed {
+    films: [Film]
 }
 
 enum OrderDirection {
