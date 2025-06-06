@@ -1,0 +1,16 @@
+type Query {
+  query(in: FilmInput): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input FilmInput @table(name: "FILM") {
+  id: ID! @nodeId(typeName: "Film")
+  languageId: ID! @nodeId(typeName: "Language") @reference(references: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+}
+
+type Film @node @table {
+  id: ID @nodeId(typeName: "Film")
+}
+
+type Language @node @table {
+  id: ID @nodeId(typeName: "Language")
+}

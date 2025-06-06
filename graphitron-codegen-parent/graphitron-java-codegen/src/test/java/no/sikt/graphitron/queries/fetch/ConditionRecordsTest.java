@@ -3,7 +3,7 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +36,7 @@ public class ConditionRecordsTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new FetchDBClassGenerator(schema));
+        return List.of(new DBClassGenerator(schema));
     }
 
     @Test

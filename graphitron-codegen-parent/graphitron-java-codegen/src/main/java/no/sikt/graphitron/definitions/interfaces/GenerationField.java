@@ -26,6 +26,11 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      */
     boolean isResolver();
 
+    /**
+     * @return Does this field fulfill the conditions for initiating a subquery?
+     */
+    boolean invokesSubquery();
+
     boolean hasCondition();
 
     boolean hasOverridingCondition();
@@ -68,4 +73,6 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      * @return Record-side method mapping based on the name of the field or the directive {@link GenerationDirective#FIELD} set on this type.
      */
     MethodMapping getMappingForRecordFieldOverride();
+
+    boolean hasFieldDirective();
 }

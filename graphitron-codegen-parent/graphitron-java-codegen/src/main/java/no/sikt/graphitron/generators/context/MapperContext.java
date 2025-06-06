@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
@@ -269,10 +268,6 @@ public class MapperContext {
         return asIterableIf(previousContext.sourceName, previousContext.isIterable).equals(asIterableIf(secondLastContext.sourceName, secondLastContext.isIterable));
     }
 
-    public boolean shouldUseStandardRecordFetch() {
-        return hasRecordReference && !(schema.implementsNode(target.getTypeName()) && !target.isInput() && ((ObjectField) target).isFetchByID());
-    }
-
     public boolean shouldUseException() {
         return schema.isExceptionOrExceptionUnion(target) && previousContext.isTopLevelContext();
     }
@@ -367,13 +362,13 @@ public class MapperContext {
     public CodeBlock getSetMappingBlock(CodeBlock valueToSet) {
         if (schema.isNodeIdField(target) && toRecord && !mapsJavaRecord) {
             var nodeType = schema.getRecordType(target.getNodeIdTypeName());
-            return CodeBlock.of("$N.setId($N, $L, $S, $L);",
+            return CodeBlock.builder().addStatement("$N.setId($N, $L, $S, $L)",
                     NODE_ID_STRATEGY_NAME,
                     previousContext.targetName,
                     valueToSet,
                     nodeType.getTypeId(),
                     nodeIdColumnsBlock(nodeType)
-            );
+            ).build();
         }
         return setValue(previousContext.targetName, setTargetMapping, valueToSet);
     }

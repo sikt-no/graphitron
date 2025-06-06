@@ -1,8 +1,12 @@
 package no.sikt.graphitron.generators.abstractions;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -17,6 +21,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
@@ -27,6 +32,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
 import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -34,7 +40,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * This class contains common information and operations shared by resolver method generators.
  */
 abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenerator<ObjectField, ObjectDefinition> {
-    protected static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response", TRANSFORMER_LAMBDA_NAME = "recordTransform";
+    protected static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response", RESULT_NAME = "_result", TRANSFORMER_LAMBDA_NAME = "recordTransform";
 
     public ResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -81,26 +87,42 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         }
 
         if (isMutation) {
-            var methodCall = CodeBlock
+            if (isService) {
+                return empty();
+            }
+
+            return CodeBlock
                     .builder()
-                    .add(isService ? CodeBlock.of("$N", uncapitalize(objectToCall)) : CodeBlock.of("$T", getQueryClassName(objectToCall)))
-                    .add(".$L(", methodName)
-                    .add(isService ? empty() : CodeBlock.of("$L, ", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)))
-                    .add("$L)", parser.getInputParamString());
-            return declare(asResultName(target.getName()), methodCall.build());
+                    .addStatement(
+                            "$T.$L($L$L, $L)",
+                            getQueryClassName(objectToCall),
+                            methodName,
+                            asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
+                            GeneratorConfig.shouldMakeNodeStrategy() ? CodeBlock.of(", $L", NODE_ID_STRATEGY_NAME) : empty(),
+                            parser.getInputParamString()
+                    )
+                    .build();
         }
 
         return callQueryBlock(target, objectToCall, methodName, parser, queryFunction);
     }
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
-        var isService = target.hasServiceReference();
         var dataBlock = CodeBlock
                 .builder()
-                .add(fetcherCodeInit(target, localObject, isService ? newServiceDataFetcherWithTransform() : newDataFetcher()));
+                .add(fetcherCodeInit(target, localObject));
 
         var object = processedSchema.getObjectOrConnectionNode(target);
-        var transformFunction = isService && object != null
+        if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
+            return dataBlock
+                    .add("$L,\n$L", queryFunction, filterDeleteIDsFunction(target))
+                    .unindent()
+                    .unindent()
+                    .addStatement(")")
+                    .build();
+        }
+
+        var transformFunction = target.hasServiceReference() && object != null
                 ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
                 : empty();
         var transformWrap = transformFunction.isEmpty() ? empty() : CodeBlock.of(",\n$L", transformFunction);
@@ -125,7 +147,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
         var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(NameFormat::asContextFieldName).toList());
         var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
-        var countFunction = countFunction(objectToCall, method, allParams, isService);
+        var countFunction = countFunction(objectToCall, method, allParams, target.hasServiceReference());
         var connectionFunction = connectionFunction(processedSchema.getConnectionObject(target), processedSchema.getObject(CONNECTION_PAGE_INFO_NODE.getName()));
         return dataBlock
                 .add(" $N, $L,\n$L,\n$L$L,\n$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, transformWrap, connectionFunction)
@@ -148,19 +170,114 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         );
     }
 
-    private static CodeBlock fetcherCodeInit(ObjectField target, RecordObjectSpecification<?> localObject, CodeBlock fetcher) {
-        var methodName = !localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable()
-                ? "loadNonNullable"
-                : target.hasForwardPagination() ? "loadPaginated" : "load";
+    /**
+     * @return CodeBlock for the filtering of IDs. Does not use recursion to check for arbitrarily deep nesting.
+     */
+    private CodeBlock filterDeleteIDsFunction(ObjectField target) {
+        var isRecord = processedSchema.isRecordType(target);
+        var recordType = processedSchema.getRecordType(target);
+        var outputIDFieldOptional = isRecord
+                ? recordType.getFields().stream().filter(FieldSpecification::isID).findFirst()
+                : Optional.of(target);
+
+        var argIDField = deduceIDInputFieldFromArgs(target);
+        GenerationField idContainerField, idField;
+        if (argIDField != null) {
+            idContainerField = null;
+            idField = argIDField;
+        } else {
+            idContainerField = deduceIDInputFieldType(target);
+            idField = idContainerField == null ? null : processedSchema
+                    .getRecordType(idContainerField)
+                    .getFields()
+                    .stream()
+                    .filter(FieldSpecification::isID)
+                    .findFirst()
+                    .orElseThrow();  // This will not happen, already checked in previous filter that this exists.
+        }
+
+        if (outputIDFieldOptional.isEmpty() || idField == null || !outputIDFieldOptional.get().isID()) {
+            return CodeBlock.of("$L.identity()", FUNCTION.className);
+        }
+
+        var outputIDField = outputIDFieldOptional.get();
+
+        var extraction = CodeBlock.builder().add(RESULT_NAME);
+        if (isRecord) {
+            extraction.add(outputIDField.getMappingFromSchemaName().asGetCall());
+        }
+
+        var filter = CodeBlock.builder();
+        if (outputIDField.isIterableWrapped()) {
+            filter.add(
+                    "$1L.stream().map($2L -> $2N$3L).filter($2L -> !$4L.contains($2N))$5L",
+                    idContainerField == null ? idField.getName() : idContainerField.getName(),
+                    VARIABLE_INTERNAL_ITERATION,
+                    idField.getMappingFromSchemaName().asGetCall(),
+                    extraction.build(),
+                    collectToList()
+            );
+        } else {
+            filter.add(
+                    "$L == null ? $L : null",
+                    extraction.build(),
+                    idContainerField == null
+                            ? idField.getName()
+                            : CodeBlock.of("$N$L", idContainerField.getName(), idField.getMappingFromSchemaName().asGetCall()));
+        }
+
+        var reWrapping = CodeBlock.builder().add("($L) -> ", RESULT_NAME);
+        if (isRecord) {
+            return reWrapping.add("new $T($L)", recordType.getGraphClassName(), filter.build()).build();
+        }
+
+        return reWrapping.add(filter.build()).build();
+    }
+
+    private ArgumentField deduceIDInputFieldType(ObjectField target) {
+        return target
+                .getArguments()
+                .stream()
+                .filter(it ->
+                        Optional
+                                .of(processedSchema.getRecordType(it))
+                                .map(record -> record.getFields().stream().anyMatch(FieldSpecification::isID))
+                                .orElse(false)
+                )
+                .findFirst()
+                .orElse(null);
+    }
+
+    private ArgumentField deduceIDInputFieldFromArgs(ObjectField target) {
+        return target.getArguments().stream().filter(AbstractField::isID).findFirst().orElse(null);
+    }
+
+    private static CodeBlock fetcherCodeInit(ObjectField target, RecordObjectSpecification<?> localObject) {
         var code = CodeBlock
                 .builder()
-                .add("return $L.$L(\n", fetcher, methodName)
+                .add(
+                        "return $L.$L(\n",
+                        target.hasServiceReference() ? newServiceDataFetcherWithTransform() : newDataFetcher(),
+                        getFetcherMethodName(target, localObject)
+                )
                 .indent()
                 .indent();
         if (!localObject.isOperationRoot()) {
             code.add("$N.$L(),", uncapitalize(localObject.getName()), getDTOGetterMethodNameForField(target));
         }
         return code.build();
+    }
+
+    private static String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
+        if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
+            return "loadDelete";
+        }
+
+        if (!localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable())  {
+            return "loadNonNullable";
+        }
+
+        return target.hasForwardPagination() ? "loadPaginated" : "load";
     }
 
     /**

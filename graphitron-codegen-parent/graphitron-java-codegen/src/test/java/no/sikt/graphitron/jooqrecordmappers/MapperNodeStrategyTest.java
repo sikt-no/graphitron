@@ -81,4 +81,12 @@ public class MapperNodeStrategyTest extends GeneratorTest {
                 ".toJOOQRecord(input, nodeIdStrategy, path, this)"
         );
     }
+
+    @Test
+    @DisplayName("To record with node strategy and an ID field that uses references with multiple available keys")
+    void toRecordReferenceMultikeyID() {
+        assertGeneratedContentContains("toRecord/referenceMultikeyID", Set.of(CUSTOMER_NODE),
+                ".setId(filmRecord, itFilmInput.getLanguageId(), \"Language\", Language.LANGUAGE.getPrimaryKey().getFieldsArray())"
+        );
+    }
 }

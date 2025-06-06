@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import org.apache.commons.lang3.StringUtils;
@@ -271,9 +271,9 @@ public class NameFormat {
     public static String toCamelCase(String name) {
         return uncapitalize(
                 Stream
-                .of(name.toLowerCase().split("_(?![0-9_]+)"))
-                .map(StringUtils::capitalize)
-                .collect(Collectors.joining())
+                        .of(name.toLowerCase().split("_(?![0-9_]+)"))
+                        .map(StringUtils::capitalize)
+                        .collect(Collectors.joining())
         );
     }
 }

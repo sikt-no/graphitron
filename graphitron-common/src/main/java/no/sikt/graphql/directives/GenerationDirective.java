@@ -14,7 +14,6 @@ public enum GenerationDirective {
     INDEX("index", EnumSet.of(GenerationDirectiveParam.NAME)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
     RECORD("record", EnumSet.of(GenerationDirectiveParam.RECORD)),
-    FETCH_BY_ID("fetchByID"),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.HANDLERS)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
     LOOKUP_KEY("lookupKey"),

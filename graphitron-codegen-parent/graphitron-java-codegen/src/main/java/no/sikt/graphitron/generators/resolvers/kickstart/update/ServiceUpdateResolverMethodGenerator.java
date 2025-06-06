@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.resolvers.kickstart.update;
 
+import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -7,12 +8,10 @@ import no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asResultName;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 /**
@@ -21,6 +20,14 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGenerator {
     public ServiceUpdateResolverMethodGenerator(ObjectField localField, ProcessedSchema processedSchema) {
         super(localField, processedSchema);
+    }
+
+    @Override
+    protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutation) {
+        return CodeBlock
+                .builder()
+                .addStatement("$N.$L($L)", uncapitalize(createServiceDependency(target).getName()), target.getService().getMethodName(), parser.getInputParamString())
+                .build();
     }
 
     /**

@@ -1,0 +1,7 @@
+type Query {
+  customer(in: [CustomerInput]): [CustomerTable]
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+  district: String! @reference(references: [{table: "ADDRESS"}])
+}
