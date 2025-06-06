@@ -57,7 +57,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     }
 
     protected ServiceDependency createServiceDependency(GenerationField target) {
-        var dependency = new ServiceDependency(target.getService().getServiceClassName());
+        var dependency = new ServiceDependency(target.getService().getClassName());
         dependencyMap.computeIfAbsent(target.getName(), (s) -> new ArrayList<>()).add(dependency);
         return dependency;
     }
@@ -122,7 +122,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
         var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
-        var contextParams = isService ? String.join(", ", target.getService().getContextFields().keySet().stream().map(it -> "_" + it).toList()) : "";
+        var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(it -> "_" + it).toList());
         var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
         var countFunction = countFunction(objectToCall, method, allParams, isService);
         var connectionFunction = connectionFunction(processedSchema.getConnectionObject(target), processedSchema.getObject(CONNECTION_PAGE_INFO_NODE.getName()));
@@ -310,14 +310,15 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     }
 
     protected CodeBlock declareContextArgs(ObjectField target) {
-        if (!target.hasServiceReference() || target.getService().getContextFields().isEmpty()) {
+        var contextFields = processedSchema.getAllContextFields(target);
+        if (contextFields.isEmpty()) {
             return empty();
         }
 
         var code = CodeBlock
                 .builder()
                 .add(declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT)));
-        target.getService().getContextFields().forEach((name, type) -> code.add(declare("_" + name, asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name)))));
+        contextFields.forEach((name, type) -> code.add(declare("_" + name, asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name)))));
         return code.build();
     }
 }
