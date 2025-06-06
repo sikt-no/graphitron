@@ -1,0 +1,9 @@
+type Customer {
+    id: ID
+    errors: [ValidationError]
+}
+
+type ValidationError implements Error {
+    path: [String]
+    message: String
+}

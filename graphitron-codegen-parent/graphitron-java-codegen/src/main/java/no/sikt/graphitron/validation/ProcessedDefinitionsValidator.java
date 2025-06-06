@@ -172,58 +172,71 @@ public class ProcessedDefinitionsValidator {
                 );
         Stream.concat(allFields.stream(), inputStream)
                 .filter(GenerationSourceField::hasNodeID)
-                .forEach(field -> {
-                    var fieldName = field instanceof ArgumentField ?
-                                    String.format("argument '%s' on a field in type '%s'", field.getName(), field.getContainerTypeName())
-                                    : String.format("field %s.%s", field.getContainerTypeName(), field.getName());
+                .forEach(this::checkNodeId);
+    }
 
-                    if (!(field.isID() || field.getTypeName().equals(STRING.className.simpleName()))) {
-                        errorMessages.add(String.format(
-                                "%s has %s directive, but is not an ID or String field.",
-                                capitalize(fieldName),
-                                NODE_ID.getName()
-                        ));
-                    }
+    private void checkNodeId(GenerationField field) {
+        var fieldName = field instanceof ArgumentField
+                ? String.format("argument '%s' on a field in type '%s'", field.getName(), field.getContainerTypeName())
+                : String.format("field %s.%s", field.getContainerTypeName(), field.getName());
 
-                    var referencedType = schema.getObject(field.getNodeIdTypeName());
+        if (!(field.isID() || field.getTypeName().equals(STRING.className.simpleName()))) {
+            errorMessages.add(String.format(
+                    "%s has %s directive, but is not an ID or String field.",
+                    capitalize(fieldName),
+                    NODE_ID.getName()
+            ));
+        }
 
-                    if (referencedType == null) {
-                        errorMessages.add(String.format(
-                                "Type with name '%s' referenced in the %s directive for %s does not exist.",
-                                field.getNodeIdTypeName(),
-                                NODE_ID.getName(),
-                                fieldName
-                        ));
-                    } else if (!referencedType.hasNodeDirective()) {
-                        errorMessages.add(String.format(
-                                "Referenced type '%s' referenced in the %s directive for %s is missing the necessary %s directive.",
-                                field.getNodeIdTypeName(),
-                                NODE_ID.getName(),
-                                fieldName,
-                                NODE.getName()
-                        ));
-                    } else if (field instanceof ObjectField && (!field.getNodeIdTypeName().equals(field.getContainerTypeName()) || field.hasFieldReferences())) {
-                        // Only filter object fields because we currently don't have reference validation on input (GGG-209)
-                        validateReferencePath(field, schema.getRecordType(field.getContainerTypeName()).getTable().getMappingName(), referencedType.getTable().getMappingName());
-                    }
+        var referencedType = schema.getObject(field.getNodeIdTypeName());
 
-                    if (field.hasFieldDirective()) {
-                        errorMessages.add(String.format(
-                                "%s has both the '%s' and '%s' directives, which is not supported.",
-                                capitalize(fieldName),
-                                NODE_ID.getName(),
-                                FIELD.getName()
-                        ));
-                    }
-                    if (field.isExternalField()) {
-                        errorMessages.add(String.format(
-                                "%s has both the '%s' and '%s' directives, which is not supported.",
-                                capitalize(fieldName),
-                                NODE_ID.getName(),
-                                EXTERNAL_FIELD.getName()
-                        ));
-                    }
-                });
+        if (referencedType == null) {
+            errorMessages.add(String.format(
+                    "Type with name '%s' referenced in the %s directive for %s does not exist.",
+                    field.getNodeIdTypeName(),
+                    NODE_ID.getName(),
+                    fieldName
+            ));
+        } else if (!referencedType.hasNodeDirective()) {
+            errorMessages.add(String.format(
+                    "Referenced type '%s' referenced in the %s directive for %s is missing the necessary %s directive.",
+                    field.getNodeIdTypeName(),
+                    NODE_ID.getName(),
+                    fieldName,
+                    NODE.getName()
+            ));
+        } else if (field instanceof ObjectField && (!field.getNodeIdTypeName().equals(field.getContainerTypeName()) || field.hasFieldReferences())) {
+            // Only filter object fields because we currently don't have reference validation on input (GGG-209)
+            var recordType = Optional
+                    .ofNullable(schema.getRecordType(field.getContainerTypeName()))
+                    .flatMap(it -> Optional.ofNullable(it.getTable()));
+
+            var referenceTable = referencedType.getTable();
+            recordType.ifPresent(it -> validateReferencePath(field, it.getMappingName(), referenceTable.getMappingName()));
+            if (recordType.isEmpty()) {
+                var inputMapping = Optional.ofNullable(schema.findInputTable(field));
+                if (inputMapping.isPresent() && !inputMapping.get().equals(referenceTable)) {
+                    validateReferencePath(field, inputMapping.get().getMappingName(), referenceTable.getMappingName());
+                }
+            }
+        }
+
+        if (field.hasFieldDirective()) {
+            errorMessages.add(String.format(
+                    "%s has both the '%s' and '%s' directives, which is not supported.",
+                    capitalize(fieldName),
+                    NODE_ID.getName(),
+                    FIELD.getName()
+            ));
+        }
+        if (field.isExternalField()) {
+            errorMessages.add(String.format(
+                    "%s has both the '%s' and '%s' directives, which is not supported.",
+                    capitalize(fieldName),
+                    NODE_ID.getName(),
+                    EXTERNAL_FIELD.getName()
+            ));
+        }
     }
 
     private void validateNodeIdReferenceInJooqRecordInput() {

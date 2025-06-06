@@ -1,13 +1,12 @@
 package no.sikt.graphitron.generators.dto;
 
-import no.sikt.graphitron.javapoet.*;
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
-import org.jooq.Key;
-import org.jooq.UniqueKey;
 
 import javax.lang.model.element.Modifier;
 import java.io.Serializable;
@@ -17,10 +16,8 @@ import java.util.Objects;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyMapForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
 import static org.apache.commons.lang3.StringUtils.capitalize;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public abstract class DTOGenerator extends AbstractClassGenerator {
     public static final String HASH_CODE = "hashCode", OBJ = "obj", EQUALS = "equals", PRIMARY_KEY = "primaryKey";
@@ -38,44 +35,59 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
 
         classBuilder.addSuperinterface(ClassName.get(Serializable.class));
 
-        var constructorBuilder = MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC);
+        var constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
+
+        // New constructor that skips error fields so queries can use them without making up new empty fields.
+        var constructorNoErrorsBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
 
         List<String> allVariableNames = new ArrayList<>();
 
+        var hasErrors = fields.stream().anyMatch(processedSchema::isExceptionOrExceptionUnion);
         keyMap.values()
                 .stream()
                 .distinct()
                 .forEach((key) -> {
-                    allVariableNames.add(getDTOVariableNameForKey(key));
-                    addKeyVariable(getKeyTypeName(key), getDTOVariableNameForKey(key), classBuilder, constructorBuilder);
+                    var dtoVarName = key.getDTOVariableName();
+                    allVariableNames.add(dtoVarName);
+                    var typeName = key.getTypeName();
+                    addClassKeyVariable(typeName, dtoVarName, classBuilder);
+                    addConstructorKeyVariable(typeName, dtoVarName, constructorBuilder);
+                    if (hasErrors) {
+                        addConstructorKeyVariable(typeName, dtoVarName, constructorNoErrorsBuilder);
+                    }
                 });
 
-        fields.stream()
+        fields
+                .stream()
                 .filter(it -> !(it.isExplicitlyNotGenerated()))
                 .forEach(field -> {
                     var key = keyMap.getOrDefault(field.getName(), null);
                     var variableName = getDTOVariableNameForField(field);
+                    var typeName = getTypeNameForField(field, key);
+                    var setValue = field.isResolver() ? key.getDTOVariableName() : field.getName();
                     allVariableNames.add(variableName);
 
-                    addFieldVariable(
-                            getTypeNameForField(field, key),
-                            variableName,
-                            classBuilder,
-                            constructorBuilder,
-                            field.isResolver() ? getDTOVariableNameForKey(key) : field.getName(),
-                            field.isResolver()
-                    );
+                    addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
+                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver());
+                    if (hasErrors) {
+                        addConstructorFieldVariable(
+                                typeName,
+                                variableName,
+                                constructorNoErrorsBuilder,
+                                setValue,
+                                processedSchema.isExceptionOrExceptionUnion(field),
+                                field.isResolver()
+                        );
+                    }
                 });
 
+        if (hasErrors) {
+            classBuilder.addMethod(constructorNoErrorsBuilder.build());
+        }
         return classBuilder
                 .addMethod(constructorBuilder.build())
                 .addMethod(getHashCodeMethod(allVariableNames))
                 .addMethod(getEqualsMethod(targetName, allVariableNames));
-    }
-
-    protected static String getDTOVariableNameForKey(Key<?> key) {
-        return key instanceof UniqueKey ? PRIMARY_KEY : uncapitalize(key.getName());
     }
 
     protected static String getDTOVariableNameForField(GenerationSourceField<? extends NamedNode<?>> field) {
@@ -86,45 +98,40 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
         return "get" + capitalize(getDTOVariableNameForField(field));
     }
 
-    protected TypeName getTypeNameForField(GenerationSourceField<?> field, Key<?> firstStepKeyForField) {
-        if (!field.isGeneratedWithResolver()) {
-            TypeName typeClass = field.getTypeClass() != null ?
-                    field.getTypeClass()
-                    : ClassName.get(generatedModelsPackage(), field.getTypeName());
-
-            return field.isIterableWrapped() ?
-                    ParameterizedTypeName.get(ClassName.get(List.class), typeClass)
-                    : typeClass;
-
-        } else { // Fields with @splitQuery
-            return getKeyTypeName(firstStepKeyForField);
-        }
+    private void addClassKeyVariable(TypeName fieldType, String name, TypeSpec.Builder classBuilder) {
+        classBuilder
+                .addField(fieldType, name, Modifier.PRIVATE)
+                .addMethod(getGetterMethod(fieldType, name));
     }
 
-    private void addKeyVariable(TypeName fieldType, String keyVariableName, TypeSpec.Builder classBuilder, MethodSpec.Builder constructorBuilder) {
-        addVariable(fieldType, keyVariableName, classBuilder, constructorBuilder, keyVariableName);
-        classBuilder.addMethod(getGetterMethod(fieldType, keyVariableName));
-        constructorBuilder.addParameter(ParameterSpec.builder(fieldType, keyVariableName).build());
+    private void addConstructorKeyVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder) {
+        constructorBuilder
+                .addStatement("this.$N = $N", name, name)
+                .addParameter(ParameterSpec.builder(fieldType, name).build());
     }
 
-    private void addFieldVariable(TypeName fieldType, String fieldName, TypeSpec.Builder classBuilder, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isResolver) {
-        addVariable(fieldType, fieldName, classBuilder, constructorBuilder, setValueInConstructor);
-        classBuilder.addMethod(getGetterMethod(fieldType, fieldName));
+    private void addClassFieldVariable(TypeName fieldType, String name, TypeSpec.Builder classBuilder, boolean isResolver) {
+        classBuilder
+                .addField(fieldType, name, Modifier.PRIVATE)
+                .addMethod(getGetterMethod(fieldType, name));
 
         if (!isResolver) {
-            constructorBuilder.addParameter(ParameterSpec.builder(fieldType, fieldName).build());
-            classBuilder.addMethod(getSetterMethod(fieldType, fieldName));
+            classBuilder.addMethod(getSetterMethod(fieldType, name));
         }
     }
 
-    private void addVariable(TypeName fieldType, String fieldName, TypeSpec.Builder classBuilder, MethodSpec.Builder constructorBuilder, String setValueInConstructor) {
-        classBuilder.addField(fieldType, fieldName, Modifier.PRIVATE);
-        constructorBuilder.addStatement("this.$N = $N", fieldName, setValueInConstructor);
+    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver) {
+        constructorBuilder.addStatement("this.$N = $N", name, isError ? "null" : setValueInConstructor);
+
+        if (!isResolver && !isError) {
+            constructorBuilder.addParameter(fieldType, name);
+        }
     }
 
     private MethodSpec getGetterMethod(TypeName fieldType, String fieldName) {
-        return MethodSpec.methodBuilder("get" + capitalize(fieldName))
-                .addStatement("return $N", fieldName)
+        return MethodSpec
+                .methodBuilder("get" + capitalize(fieldName))
+                .addCode(returnWrap(fieldName))
                 .returns(fieldType)
                 .addModifiers(Modifier.PUBLIC)
                 .build();
@@ -172,6 +179,21 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                 .addStatement("final $L that = ($L) $N", targetName, targetName, OBJ)
                 .addCode(returnWrap(returnCodeBlock))
                 .build();
+    }
+
+    protected TypeName getTypeNameForField(GenerationSourceField<?> field, KeyWrapper firstStepKeyForField) {
+        if (!field.isGeneratedWithResolver()) {
+            TypeName typeClass = field.getTypeClass() != null ?
+                    field.getTypeClass()
+                    : ClassName.get(generatedModelsPackage(), field.getTypeName());
+
+            return field.isIterableWrapped() ?
+                    ParameterizedTypeName.get(ClassName.get(List.class), typeClass)
+                    : typeClass;
+
+        } else { // Fields with @splitQuery
+            return firstStepKeyForField.getTypeName();
+        }
     }
 
     @Override
