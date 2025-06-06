@@ -1,0 +1,12 @@
+type Query {
+  query(in: [PaymentInput]): Payment
+}
+
+input PaymentInput @table(name: "Payment") {
+  customerID: ID @field(name: "customerId")
+  paymentID: ID @field(name: "paymentId")
+}
+
+type Payment @table {
+  id: ID
+}

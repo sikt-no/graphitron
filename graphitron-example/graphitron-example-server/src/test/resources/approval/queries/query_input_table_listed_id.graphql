@@ -1,0 +1,5 @@
+{
+    filmWrappedWithInputTableListed(input: [{filmId: "RmlsbTox"}, {filmId: "RmlsbToy"}]) {
+        ids
+    }
+}

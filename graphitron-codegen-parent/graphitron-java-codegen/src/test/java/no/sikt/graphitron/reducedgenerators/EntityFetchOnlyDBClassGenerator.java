@@ -1,12 +1,12 @@
 package no.sikt.graphitron.reducedgenerators;
 
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.db.fetch.EntityDBFetcherMethodGenerator;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.sikt.graphitron.generators.db.EntityDBFetcherMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-public class EntityFetchOnlyDBClassGenerator extends FetchDBClassGenerator {
+public class EntityFetchOnlyDBClassGenerator extends DBClassGenerator {
     public EntityFetchOnlyDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }

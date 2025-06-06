@@ -6,6 +6,7 @@ import fake.graphql.example.model.CustomerInputTable;
 import graphql.schema.DataFetcher;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
+import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
 public class MutationGeneratedDataFetcher {
@@ -17,9 +18,8 @@ public class MutationGeneratedDataFetcher {
 
             var inRecord = transform.customerInputTableToJOOQRecord(in, "in");
 
-            var mutation = MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
-
-            return CompletableFuture.completedFuture(inRecord.getId());
+            MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
+            return new DataFetcherHelper(env).load((ctx, selectionSet) -> MutationDBQueries.mutationForMutation(ctx, inRecord, selectionSet));
         };
     }
 }

@@ -5,7 +5,6 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
-import org.jooq.Record;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.InvocationTargetException;
@@ -15,6 +14,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 
 /**
  * Helper class that takes care of any table reflection operations the code generator might require towards the jOOQ source.
@@ -250,11 +251,35 @@ public class TableReflection {
      * @return The name of a method that matches the provided name if it exists.
      */
     public static Optional<String> searchTableForMethodWithName(String tableName, String name) {
-        var adjustedName = name.replace("_", "");
         return searchTableForKeyMethodName(tableName, name)
                 .or(() -> getMethodName(tableName, name))
-                .or(() -> getMethodName(tableName, name.toLowerCase()))
-                .or(() -> getMethodName(tableName, adjustedName));
+                .or(() -> getMethodName(tableName, toCamelCase(name)))
+                .or(() -> getMethodName(tableName, name.replace("_", "")));
+    }
+
+    /**
+     * Search this jOOQ table for a field that matches this name.
+     * @param tableName Name of the jOOQ table.
+     * @param name Name that might have a field associated with it.
+     * @return The name of a field that matches the provided name if it exists.
+     */
+    private static Optional<String> searchTableForFieldWithName(String tableName, String name) {
+        return searchTableForKeyMethodName(tableName, name)
+                .or(() -> getMethodName(tableName, name))
+                .or(() -> getMethodName(tableName, toCamelCase(name)))
+                .or(() -> getMethodName(tableName, name.replace("_", "")));
+    }
+
+    /**
+     * Search this jOOQ table for a method or field that matches this name.
+     * @param tableName Name of the jOOQ table.
+     * @param name Name that might have a method or field associated with it.
+     * @return The name of a method or field that matches the provided name if it exists.
+     */
+    public static Optional<String> searchTableForMethodOrFieldWithName(String tableName, String name) {
+        return searchTableForKeyMethodName(tableName, name)
+                .or(() -> searchTableForFieldWithName(tableName, name))
+                .or(() -> searchTableForMethodWithName(tableName, name));
     }
 
     @NotNull
@@ -263,20 +288,10 @@ public class TableReflection {
                 .map(Method::getName);
     }
 
-    /**
-     * @deprecated Denne metoden skal ikke lenger være public.
-     */
     @NotNull
-    @Deprecated
-    public static Optional<Method> getMethod(String tableName, String name) {
+    private static Optional<Method> getMethod(String tableName, String name) {
         return getTable(tableName)
-                .flatMap(table -> {
-                    try {
-                        return Optional.of(table.getClass().getMethod(name));
-                    } catch (NoSuchMethodException e) {
-                        return Optional.empty();
-                    }
-                });
+                .flatMap(table -> Arrays.stream(table.getClass().getMethods()).filter(it -> name.equalsIgnoreCase(it.getName())).findFirst());
     }
 
     /**

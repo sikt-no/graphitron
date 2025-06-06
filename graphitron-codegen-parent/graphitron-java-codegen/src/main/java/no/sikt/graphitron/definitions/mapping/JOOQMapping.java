@@ -93,8 +93,7 @@ public class JOOQMapping extends MethodMapping implements JoinElement {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof JOOQMapping)) return false;
-        JOOQMapping that = (JOOQMapping) o;
+        if (!(o instanceof JOOQMapping that)) return false;
         return Objects.equals(name, that.name) && underlyingTable.getName().equalsIgnoreCase(that.underlyingTable.getName());
     }
 

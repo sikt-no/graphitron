@@ -9,7 +9,7 @@ import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_I
 import static no.sikt.graphitron.common.configuration.SchemaComponent.ERROR;
 
 @DisplayName("Schema validation - Checks run when building the schema for mutations")
-public class MutationTest extends ValidationTest {
+public class MutationTest extends ValidationTest { // TODO: Some of these tests can be generalised, as they also apply to queries.
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "mutation";
@@ -145,6 +145,15 @@ public class MutationTest extends ValidationTest {
         assertErrorsContain("wrappedInput", Set.of(CUSTOMER_INPUT_TABLE),
                 "Problems have been found that prevent code generation:\n" +
                         "Mutations must have at least one table attached when generating resolvers with queries. Mutation 'mutation' has no tables attached."
+        );
+    }
+
+    @Test
+    @DisplayName("Input table is required but unresolvable")
+    void multipleInputRecords() {
+        assertErrorsContain(
+                "multipleInputRecords", Set.of(CUSTOMER_INPUT_TABLE),
+                "Query.query is a field of a type without a table, and has 2 potential input records to use as a source for the table in queries. In such cases, there must be exactly one input table so that it can be resolved unambiguously."
         );
     }
 

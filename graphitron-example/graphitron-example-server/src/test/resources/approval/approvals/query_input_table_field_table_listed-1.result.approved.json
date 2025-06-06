@@ -1,0 +1,14 @@
+{
+    "data": {
+        "filmWrappedWithInputTableAndTableFieldListed": {
+            "films": [
+                {
+                    "id": "RmlsbTox"
+                },
+                {
+                    "id": "RmlsbToy"
+                }
+            ]
+        }
+    }
+}
