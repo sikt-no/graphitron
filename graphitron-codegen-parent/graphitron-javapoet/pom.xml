@@ -7,6 +7,8 @@
         <version>${revision}${changelist}</version>
     </parent>
     <artifactId>graphitron-javapoet</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <url>https://github.com/sikt-no/graphitron</url>
 
     <properties>
         <argLine/>

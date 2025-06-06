@@ -11,6 +11,8 @@
         <version>${revision}${changelist}</version>
     </parent>
     <artifactId>graphitron-maven-plugin</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <url>https://github.com/sikt-no/graphitron</url>
     <packaging>maven-plugin</packaging>
     <properties>
         <processedSchemaDirectory>${project.build.directory}/generated-resources/graphql_transformer</processedSchemaDirectory>

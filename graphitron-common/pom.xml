@@ -10,6 +10,8 @@
     </parent>
 
     <artifactId>graphitron-common</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <url>https://github.com/sikt-no/graphitron</url>
 
     <dependencies>
         <dependency>

@@ -9,6 +9,9 @@
         <version>${revision}${changelist}</version>
     </parent>
     <artifactId>graphitron-error-handling-javax</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <url>https://github.com/sikt-no/graphitron</url>
+
     <dependencies>
         <dependency>
             <groupId>com.graphql-java</groupId>
