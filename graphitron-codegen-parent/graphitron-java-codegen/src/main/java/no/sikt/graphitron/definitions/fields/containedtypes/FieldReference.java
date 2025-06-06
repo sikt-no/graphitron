@@ -99,7 +99,7 @@ public class FieldReference {
      */
     public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
         return createJoinFor(
-                tableCondition.getConditionReference().getMethodName().toLowerCase(),
+                tableCondition.getReference().getMethodName().toLowerCase(),
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnCondition(tableCondition),

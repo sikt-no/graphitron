@@ -34,6 +34,22 @@ public class NameFormat {
             TYPE_RESOLVER_SUFFIX = "TypeResolver";
 
     /**
+     * @return Format this name to not block schema namespace.
+     */
+    @NotNull
+    public static String asInternalName(String name) {
+        return "_" + uncapitalize(name);
+    }
+
+    /**
+     * @return Format this name to not block schema namespace.
+     */
+    @NotNull
+    public static String asContextFieldName(String name) {
+        return "_c_" + uncapitalize(name);
+    }
+
+    /**
      * @return Inputs formatted as a get call, but without the get element of the string.
      */
     @NotNull

@@ -1,0 +1,6 @@
+type Query {
+  query(
+    email1: String! @condition(condition: {name: "CONTEXT_CONDITION", method: "email"}, contextArguments: "ctxField")
+    email2: String! @condition(condition: {name: "CONTEXT_CONDITION", method: "email"}, contextArguments: "ctxField")
+  ): CustomerTable
+}

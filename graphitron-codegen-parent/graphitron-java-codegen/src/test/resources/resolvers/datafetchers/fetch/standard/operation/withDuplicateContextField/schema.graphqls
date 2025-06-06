@@ -1,0 +1,5 @@
+type Query {
+  query(
+    email: String @condition(condition: {name: "CONTEXT_CONDITION"}, contextArguments: "ctxField")
+  ): String @condition(condition: {name: "CONTEXT_CONDITION"}, contextArguments: "ctxField")
+}

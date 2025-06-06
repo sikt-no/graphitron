@@ -58,8 +58,7 @@ public class CodeReference {
     @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;
-        if (obj instanceof CodeReference) {
-            CodeReference codeRef = (CodeReference) obj;
+        if (obj instanceof CodeReference codeRef) {
             return codeRef.getMethodName().equals(this.getMethodName())
                     && (codeRef.hasClassName() == this.hasClassName() && (!this.hasClassName() || codeRef.getClassName().equals(this.getClassName())))
                     && (codeRef.hasSchemaClassReference() == this.hasSchemaClassReference() && (!this.hasSchemaClassReference() || codeRef.getSchemaClassReference().equals(this.getSchemaClassReference())));

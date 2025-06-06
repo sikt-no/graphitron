@@ -5,6 +5,7 @@ import graphql.language.SchemaDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
@@ -894,6 +895,34 @@ public class ProcessedSchema {
                 .collect(Collectors.toList());
     }
 
+    public Map<String, no.sikt.graphitron.javapoet.TypeName> getAllContextFields(GenerationField field) {
+        var otherFields = field.getContextFields();
+        var argumentFields = findNestedContextFields(!(field instanceof ObjectField) ? List.of() : ((ObjectField) field).getArguments(), 0);
+        return Stream
+                .concat(otherFields.entrySet().stream(), argumentFields)
+                .sorted(Map.Entry.comparingByKey())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y, LinkedHashMap::new));
+    }
+
+    private Stream<Map.Entry<String, no.sikt.graphitron.javapoet.TypeName>> findNestedContextFields(List<? extends InputField> fields, int recursion) {
+        recursionCheck(recursion);
+        if (fields.isEmpty()) {
+            return Stream.of();
+        }
+        var nextFields = fields
+                .stream()
+                .filter(this::isInputType)
+                .map(this::getInputType)
+                .map(AbstractObjectDefinition::getFields)
+                .flatMap(Collection::stream)
+                .toList();
+        var foundContext = fields.stream()
+                .map(GenerationSourceField::getContextFields)
+                .map(Map::entrySet)
+                .flatMap(Collection::stream);
+        return Stream.concat(foundContext, findNestedContextFields(nextFields, recursion + 1));
+    }
+
     /**
      * @return List of fields in the schema that may be used to generate transforms.
      */
@@ -985,7 +1014,7 @@ public class ProcessedSchema {
                             hadTable || type.hasTable(),
                             true,
                             recursion + 1
-                    ).stream()).collect(Collectors.toList())
+                    ).stream()).toList()
             );
         }
 
@@ -998,7 +1027,7 @@ public class ProcessedSchema {
                         !canMapTableHere && (hadTable || type.hasTable()) && !it.isResolver(),
                         false,
                         recursion + 1
-                ).stream()).collect(Collectors.toList())
+                ).stream()).toList()
         );
 
         return array;

@@ -56,15 +56,15 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withContextInput",
                 "_graphCtx = env.getGraphQlContext()",
-                "_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
-                "query(_ctxField)"
+                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "query(_c_ctxField)"
         );
     }
 
     @Test
     @DisplayName("Basic root service with both a context parameter and a standard parameter")
     void withContextInputAndArgument() {
-        assertGeneratedContentContains("operation/withContextInputAndArgument", "query(i, _ctxField)");
+        assertGeneratedContentContains("operation/withContextInputAndArgument", "query(i, _c_ctxField)");
     }
 
     @Test
@@ -73,8 +73,8 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/withContextInputAndPagination",
                 Set.of(DUMMY_CONNECTION),
-                "query(pageSize, after, _ctxField)",
-                ".countQuery(_ctxField)"
+                "query(pageSize, after, _c_ctxField)",
+                ".countQuery(_c_ctxField)"
         );
     }
 
