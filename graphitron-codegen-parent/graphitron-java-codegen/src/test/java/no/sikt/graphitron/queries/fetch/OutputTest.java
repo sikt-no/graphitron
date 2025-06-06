@@ -117,17 +117,34 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRow() {
         assertGeneratedContentContains(
                 "outerNestedRow", Set.of(CUSTOMER_TABLE),
-                ".field(DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).from(_customer))).mapping(Functions.nullOnAllNull(Wrapper::new"
+                ".row(DSL.field(DSL.select(DSL.row(_customer.getId())" +
+                        ".mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                        ".from(_customer)))" +
+                        ".mapping(Functions.nullOnAllNull(Wrapper::new)))" +
+                        ".fetchOne(it -> it.into(Wrapper.class))"
         );
     }
 
-    @Test // TODO: Should result in an error.
+    @Test
+    @DisplayName("Type without a table on root level wrapping a listed one that has table set")
+    void outerNestedListedRow() {
+        assertGeneratedContentContains(
+                "outerNestedListedRow", Set.of(CUSTOMER_TABLE),
+                ".row(DSL.row(DSL.multiset(DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                        ".from(_customer)" +
+                        ".orderBy(_customer.fields(_customer.getPrimaryKey().getFieldsArray()))))" +
+                        ".mapping(a0 -> a0.map(Record1::value1)))" +
+                        ".mapping(Functions.nullOnAllNull(Wrapper::new)))" +
+                        ".fetchOne(it -> it.into(Wrapper.class))"
+        );
+    }
+
+    @Test  // TODO: Should result in an error. Email has no source.
     @DisplayName("Type without a table on root level wrapping one that has table set with an extra intermediate field")
     void outerNestedRowExtraField() {
         assertGeneratedContentContains(
                 "outerNestedRowExtraField", Set.of(CUSTOMER_TABLE),
-                ".row(.EMAIL, DSL.field(DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).from(_customer)",
-                ".from()"
+                ".row(.EMAIL,DSL.field(DSL.select(DSL.row(_customer.getId())"
         );
     }
 
@@ -136,11 +153,48 @@ public class OutputTest extends GeneratorTest {
     void outerDoubleNestedRow() {
         assertGeneratedContentContains(
                 "outerDoubleNestedRow", Set.of(CUSTOMER_TABLE),
-                ".row(DSL.row(DSL.field(DSL.select(DSL.row(_customer.getId())" +
-                        ".mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                ".row(DSL.row(DSL.field(DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
                         ".from(_customer)))" +
                         ".mapping(Functions.nullOnAllNull(Wrapper2::new)))" +
-                        ".mapping(Functions.nullOnAllNull(Wrapper1::new"
+                        ".mapping(Functions.nullOnAllNull(Wrapper1::new)))" +
+                        ".fetchOne(it -> it.into(Wrapper1.class));"
+        );
+    }
+
+    @Test
+    @DisplayName("Nested output with an argument")
+    void outerNestedWithArgument() {
+        assertGeneratedContentContains(
+                "outerNestedWithArgument", Set.of(CUSTOMER_TABLE),
+                "ctx, String firstName,",
+                "CustomerTable::new))).from(_customer)" +
+                        ".where(firstName != null ? _customer.FIRST_NAME.eq(firstName) : DSL.noCondition())",
+                "Outer::new))).fetchOne" // Checks that no outer where statement exists.
+        );
+    }
+
+    @Test
+    @DisplayName("Nested output with a listed argument")
+    void outerNestedWithArgumentListed() {
+        assertGeneratedContentContains(
+                "outerNestedWithArgumentListed", Set.of(CUSTOMER_TABLE),
+                "ctx, List<String> firstName,",
+                "CustomerTable::new))).from(_customer)" +
+                        ".where(firstName.size() > 0 ? _customer.FIRST_NAME.in(firstName) : DSL.noCondition())" +
+                        ".orderBy(_customer.fields(_customer.getPrimaryKey().getFieldsArray()))",
+                "Outer::new))).fetchOne"
+        );
+    }
+
+    @Test
+    @DisplayName("Double nested output with an argument")
+    void outerDoubleNestedWithArgument() {
+        assertGeneratedContentContains(
+                "outerDoubleNestedWithArgument", Set.of(CUSTOMER_TABLE),
+                "ctx, String firstName,",
+                "CustomerTable::new))).from(_customer)" +
+                        ".where(firstName != null ? _customer.FIRST_NAME.eq(firstName) : DSL.noCondition())",
+                "Wrapper1::new))).fetchOne"
         );
     }
 
@@ -210,7 +264,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains("over22FieldsWithSplitQuery",
                 "new Film( (Record1<Long>) r[0], _film.TITLE.getDataType().convert(r[1])",
                 "r[22]))"
-                );
+        );
     }
 
     @Test // Enhanced null check treats empty objects as null.

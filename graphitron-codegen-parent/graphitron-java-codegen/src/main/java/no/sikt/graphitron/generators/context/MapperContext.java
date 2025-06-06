@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
@@ -267,10 +266,6 @@ public class MapperContext {
             return false;
         }
         return asIterableIf(previousContext.sourceName, previousContext.isIterable).equals(asIterableIf(secondLastContext.sourceName, secondLastContext.isIterable));
-    }
-
-    public boolean shouldUseStandardRecordFetch() {
-        return hasRecordReference && !(schema.implementsNode(target.getTypeName()) && !target.isInput() && ((ObjectField) target).isFetchByID());
     }
 
     public boolean shouldUseException() {

@@ -814,7 +814,7 @@ public class ProcessedSchema {
         return objectWithPreviousTable.get(object.getName());
     }
 
-    /*
+    /**
     * @return Returns whether the object has a table on or above it.
     * */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {

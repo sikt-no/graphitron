@@ -15,7 +15,7 @@ public class MutationGeneratedResolver implements MutationMutationResolver {
             Exception {
         var transform = new RecordTransformer(env);
         var resolverMutationService = new ResolverMutationService(transform.getCtx());
-        var mutation = resolverMutationService.mutation();
+        resolverMutationService.mutation();
         return CompletableFuture.completedFuture(mutation);
     }
 }

@@ -36,7 +36,7 @@ public enum GraphQLReservedName {
     NODE_TYPE(NODE),
     NODE_ID("id"),
     ERROR_TYPE("Error"),
-    ERROR_FIELD("Errors"),
+    ERROR_FIELD("errors"),
     SCHEMA_CONNECTION_SUFFIX("Connection"),
     SCHEMA_QUERY("Query"),
     SCHEMA_MUTATION("Mutation"),

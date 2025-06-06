@@ -27,8 +27,9 @@ import static no.sikt.graphitron.mappings.TableReflection.*;
  */
 public class FetchContext {
     private final FetchContext previousContext;
-    private final GenerationField referenceObjectField;
+    private final GenerationField referenceObjectField, conditionSourceField;
     private final RecordObjectSpecification<?> referenceObject, previousTableObject;
+    private final JOOQMapping referenceTable;
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
@@ -36,9 +37,10 @@ public class FetchContext {
     private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
-    private Key<?> resolverKey;
+    private final Key<?> resolverKey;
     private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
+    private final boolean hasApplicableTable;
     private final ProcessedSchema processedSchema;
 
     /* Midlertidig hack på count for paginerte kanter, som ikke bruker subspørringer enda */
@@ -57,6 +59,7 @@ public class FetchContext {
     private FetchContext(
             ProcessedSchema processedSchema,
             GenerationField referenceObjectField,
+            GenerationField conditionSourceField,
             JoinListSequence pastJoinSequence,
             RecordObjectSpecification<?> previousObject,
             LinkedHashSet<SQLJoinStatement> joinSet,
@@ -87,6 +90,7 @@ public class FetchContext {
 
         this.referenceObjectField = referenceObjectField;
         this.previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
+        this.referenceTable = findReferenceTable();
         graphPath = pastGraphPath;
 
         this.previousContext = previousContext;
@@ -94,6 +98,14 @@ public class FetchContext {
         this.resolverKey = findKeyForResolverField(referenceObjectField, processedSchema);
         currentJoinSequence = iterateJoinSequence(pastJoinSequence);
 
+        hasApplicableTable = previousTableObject != null || getReferenceTable() != null;
+        if (conditionSourceField != null && previousContext.hasApplicableTable()) {
+            this.conditionSourceField = null;
+        } else if (!hasApplicableTable && conditionSourceField == null) {
+            this.conditionSourceField = referenceObjectField;
+        } else {
+            this.conditionSourceField = conditionSourceField;
+        }
     }
 
     /**
@@ -109,6 +121,7 @@ public class FetchContext {
         this(
                 processedSchema,
                 referenceObjectField,
+                null,
                 new JoinListSequence(),
                 previousObject,
                 new LinkedHashSet<>(),
@@ -164,11 +177,15 @@ public class FetchContext {
         return conditionList;
     }
 
+    private JOOQMapping findReferenceTable() {
+        return referenceObject != null ? referenceObject.getTable() : null;
+    }
+
     /**
      * @return The reference table the reference field points to.
      */
     public JOOQMapping getReferenceTable() {
-        return referenceObject != null ? referenceObject.getTable() : null;
+        return referenceTable;
     }
 
     /**
@@ -217,8 +234,19 @@ public class FetchContext {
         return referenceObjectField;
     }
 
+    /**
+     * @return The source for conditions that could not be applied in previous steps.
+     */
+    public GenerationField getConditionSourceField() {
+        return conditionSourceField;
+    }
+
     public Key<?> getResolverKey() {
         return resolverKey;
+    }
+
+    public boolean hasApplicableTable() {
+        return hasApplicableTable;
     }
 
     public boolean getShouldUseOptional() {
@@ -265,6 +293,7 @@ public class FetchContext {
         return new FetchContext(
                 processedSchema,
                 referenceObjectField,
+                conditionSourceField,
                 newJoinListSequence,
                 referenceObject,
                 new LinkedHashSet<>(),

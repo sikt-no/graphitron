@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.codebuilding;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -62,7 +63,10 @@ public class ResolverKeyHelpers {
 
         var containerTypeTable = container.hasTable() ?
                 container.getTable()
-                : processedSchema.getPreviousTableObjectForObject(container).getTable();
+                : Optional.ofNullable(processedSchema.getPreviousTableObjectForObject(container)).map(RecordObjectSpecification::getTable).orElse(null);
+        if (containerTypeTable == null) {
+            return null;
+        }
 
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 

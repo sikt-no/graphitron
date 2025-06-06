@@ -81,13 +81,14 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         }
 
         if (isMutation) {
-            var methodCall = CodeBlock
+            if (isService) {
+                return empty();
+            }
+
+            return CodeBlock
                     .builder()
-                    .add(isService ? CodeBlock.of("$N", uncapitalize(objectToCall)) : CodeBlock.of("$T", getQueryClassName(objectToCall)))
-                    .add(".$L(", methodName)
-                    .add(isService ? empty() : CodeBlock.of("$L, ", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)))
-                    .add("$L)", parser.getInputParamString());
-            return declare(asResultName(target.getName()), methodCall.build());
+                    .addStatement("$T.$L($L, $L)", getQueryClassName(objectToCall), methodName, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME), parser.getInputParamString())
+                    .build();
         }
 
         return callQueryBlock(target, objectToCall, methodName, parser, queryFunction);

@@ -1,0 +1,9 @@
+# query can filter on custom scalar, LocalDateTime
+{
+    filmWrapped(filmId: "1") {
+        films {
+            id
+            title
+        }
+    }
+}
