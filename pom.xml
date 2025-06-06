@@ -174,7 +174,7 @@
     <scm>
         <connection>scm:git:git://github.com/sikt-no/graphitron.git</connection>
         <developerConnection>scm:git:ssh://github.com:sikt-no/graphitron.git</developerConnection>
-        <url>https://github.com/sikt-no/graphitron.git</url>
+        <url>https://github.com/sikt-no/graphitron/tree/main</url>
     </scm>
     <licenses>
         <license>

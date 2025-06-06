@@ -11,6 +11,8 @@
     </parent>
 
     <artifactId>graphitron-codegen-parent</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <url>https://github.com/sikt-no/graphitron</url>
     <packaging>pom</packaging>
 
     <modules>
