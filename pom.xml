@@ -35,7 +35,7 @@
         <version.jakarta>8.0.0</version.jakarta>
         <version.jakarta.validation>3.1.1</version.jakarta.validation>
         <version.org.jooq>3.19.18</version.org.jooq>
-        <version.org.junit>5.13.0</version.org.junit>
+        <version.org.junit>5.13.1</version.org.junit>
         <version.ch.qos.logback>1.5.18</version.ch.qos.logback>
 
         <version.postgresql>42.6.0</version.postgresql>
