@@ -23,8 +23,8 @@
     </modules>
 
     <properties>
-        <revision>5.1</revision>
-        <changelist>.1-SNAPSHOT</changelist>
+        <revision>5</revision>
+        <changelist>-SNAPSHOT</changelist>
 
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
