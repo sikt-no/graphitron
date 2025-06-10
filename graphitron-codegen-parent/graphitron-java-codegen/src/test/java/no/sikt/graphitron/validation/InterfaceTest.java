@@ -162,6 +162,12 @@ public class InterfaceTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Matching reference directive on field in type implementing single table interface")
+    void referenceMatches() {
+        assertDoesNotThrow(() -> generateFiles("singleTableInterface/referenceMatches"));
+    }
+
+    @Test
     @DisplayName("Mismatch in reference directive on field in type implementing single table interface")
     void referenceInTypeConflict() {
         assertErrorsContain("singleTableInterface/referenceInTypeConflict",

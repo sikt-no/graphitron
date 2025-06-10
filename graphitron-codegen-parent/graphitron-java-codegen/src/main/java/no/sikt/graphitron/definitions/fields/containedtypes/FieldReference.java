@@ -159,7 +159,7 @@ public class FieldReference {
             var ref = (FieldReference) obj;
             return ref.hasTable() == this.hasTable() && (!this.hasTable() || ref.getTable().equals(this.getTable()))
                     && ref.hasKey() == this.hasKey() && (!this.hasKey() || ref.getKey().equals(this.getKey()))
-                    && ref.getTableCondition().equals(this.tableCondition);
+                    && ref.hasTableCondition() == this.hasTableCondition() && (!this.hasTableCondition() || ref.getTableCondition().equals(this.tableCondition));
         } else {
             return false;
         }
