@@ -10,9 +10,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      main_version: ${{ steps.extract-version.outputs.main_version }}
-      patch_version: ${{ steps.extract-version.outputs.patch_version }}
     steps:
     - uses: actions/checkout@v4
 
@@ -27,30 +24,22 @@ jobs:
         gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
         gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-    - name: Set version from release tag
-      id: extract-version
+    - name: Validate and extract version from release tag
       run: |
         # Extract version from GitHub release tag (e.g. v5.0.1 -> 5.0.1)
-        VERSION=${GITHUB_REF#refs/tags/v}
+        TAG=${GITHUB_REF#refs/tags/}
+        
+        # Validate the tag format (should be v<MAJOR>.<MINOR>.<PATCH>)
+        if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "ERROR: Tag format is invalid. Must be v<MAJOR>.<MINOR>.<PATCH> (e.g. v7.1.2)"
+          exit 1
+        fi
+        
+        VERSION=${TAG#v}
         echo "Extracted VERSION: $VERSION"
 
-        # Split into major.minor and patch
-        MAIN_VERSION=$(echo $VERSION | sed -E 's/([0-9]+\.[0-9]+)\.[0-9]+.*/\1/')
-        PATCH_VERSION=$(echo $VERSION | sed -E 's/[0-9]+\.[0-9]+\.([0-9]+).*/\1/')
-
-        echo "Calculated MAIN_VERSION: $MAIN_VERSION"
-        echo "Calculated PATCH_VERSION: $PATCH_VERSION"
-
-        # Set outputs with proper GitHub Actions syntax
-        echo "main_version=$MAIN_VERSION" >> $GITHUB_OUTPUT
-        echo "patch_version=$PATCH_VERSION" >> $GITHUB_OUTPUT
-
-        # Debug - verify the output was set
-        cat $GITHUB_OUTPUT
-        
-        # Update properties using versions-maven-plugin
-        mvn versions:set-property -Dproperty=revision -DnewVersion=$MAIN_VERSION -DgenerateBackupPoms=false -Dorg.slf4j.simpleLogger.log.org.apache.maven=info
-        mvn versions:set-property -Dproperty=changelist -DnewVersion=".$PATCH_VERSION" -DgenerateBackupPoms=false -Dorg.slf4j.simpleLogger.log.org.apache.maven=info
+        # Update the version for release
+        mvn versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false
 
     - name: Build and publish to Maven Central
       run: mvn --batch-mode --errors clean deploy -P release
@@ -58,71 +47,3 @@ jobs:
         MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
         MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
         MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
-  bump-version:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: main
-        fetch-depth: 0 # Ensure we have the full history for version bumping
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Set up Java
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Bump version for next development cycle
-      run: |
-        # Get version values from the publish job outputs
-        MAIN_VERSION=${{ needs.publish.outputs.main_version }}
-        PATCH_VERSION=${{ needs.publish.outputs.patch_version }}
-
-        echo "Retrieved MAIN_VERSION: $MAIN_VERSION"
-        echo "Retrieved PATCH_VERSION: $PATCH_VERSION"
-  
-        # Increment patch version for next development cycle
-        NEXT_PATCH=$((PATCH_VERSION + 1))
-
-        echo "Bumping version to: $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT"
-        
-        # Create a branch for the version bump
-        BRANCH_NAME="version-bump-$MAIN_VERSION.$NEXT_PATCH-snapshot"
-        git checkout -b $BRANCH_NAME
-        
-        # Set the next SNAPSHOT version
-        mvn versions:set-property -Dproperty=revision -DnewVersion=$MAIN_VERSION -DgenerateBackupPoms=false
-        mvn versions:set-property -Dproperty=changelist -DnewVersion=".$NEXT_PATCH-SNAPSHOT" -DgenerateBackupPoms=false
-  
-        # Commit and push changes
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
-        git add pom.xml
-        git commit -m "Bump development version to $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT [skip ci]"
-        git push origin $BRANCH_NAME
-
-#    Commented out the PR creation step for now, as it requires the organization to allow GitHub Actions to create pull requests.
-#    See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests
-#
-#    - name: Create Pull Request
-#      env:
-#        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#      run: |
-#        # Get version values from the publish job outputs
-#        MAIN_VERSION=${{ needs.publish.outputs.main_version }}
-#        PATCH_VERSION=${{ needs.publish.outputs.patch_version }}
-#        NEXT_PATCH=$((PATCH_VERSION + 1))
-#        BRANCH_NAME="version-bump-$MAIN_VERSION.$NEXT_PATCH-snapshot"
-#
-#        # Create a PR using GitHub CLI
-#        gh pr create \
-#          --title "Bump version to $MAIN_VERSION.$NEXT_PATCH-SNAPSHOT" \
-#          --body "Automated version bump after release" \
-#          --base main \
-#          --head $BRANCH_NAME
