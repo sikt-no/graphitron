@@ -42,7 +42,7 @@ jobs:
         mvn versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false
 
     - name: Build and publish to Maven Central
-      run: mvn --batch-mode --errors clean deploy -P release
+      run: mvn --batch-mode --errors clean deploy -P verify
       env:
         MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
         MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
