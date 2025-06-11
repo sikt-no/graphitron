@@ -158,7 +158,7 @@ public class NodeDirectiveTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "entity/default", Set.of(FEDERATION_QUERY),
                 ".objectRow(\"id\", nodeIdStrategy.createId(\"CUSTOMER\", _customer.fields(_customer.getPrimaryKey().getFieldsArray())))).",
-                ".where(nodeIdStrategy.hasId(\"CUSTOMER\", (java.lang.String) _inputMap.get(\"id\"), _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).fetch"
+                ".where(nodeIdStrategy.hasId(\"CUSTOMER\", (String) _inputMap.get(\"id\"), _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).fetch"
         );
     }
 
@@ -168,7 +168,7 @@ public class NodeDirectiveTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "entity/custom", Set.of(FEDERATION_QUERY),
                 "objectRow(\"id\", nodeIdStrategy.createId(\"C\", _customer.CUSTOMER_ID)",
-                ".where(nodeIdStrategy.hasId(\"C\", (java.lang.String) _inputMap.get(\"id\"), _customer.CUSTOMER_ID"
+                ".where(nodeIdStrategy.hasId(\"C\", (String) _inputMap.get(\"id\"), _customer.CUSTOMER_ID"
         );
     }
 }

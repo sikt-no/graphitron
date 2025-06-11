@@ -31,6 +31,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.TableReflection.getTable;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -928,24 +929,33 @@ public class FormatCodeBlocks {
         return returnWrap(CodeBlock.of("$T.completedFuture($L)", COMPLETABLE_FUTURE.className, code));
     }
 
-    public static CodeBlock createNodeIdBlock(ObjectDefinition obj, String targetAlias) {
+    public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
         return CodeBlock.of("$N.createId($S, $L)",
                 NODE_ID_STRATEGY_NAME,
                 obj.getTypeId(),
-                nodeIdColumnsBlock(targetAlias, obj)
+                nodeIdColumnsWithAliasBlock(targetAlias, obj)
         );
     }
 
-    public static CodeBlock hasIdsBlock(String idParamName, ObjectDefinition obj, String targetAlias, boolean isIterableWrapped) {
-        return isIterableWrapped ? hasIdsBlock(idParamName, obj, targetAlias) : hasIdBlock(idParamName, obj, targetAlias);
+    public static CodeBlock createNodeIdBlockForRecord(RecordObjectSpecification<?> obj, String recordVariableName) {
+        return CodeBlock.of("$N.createId($N, $S, $L)",
+                NODE_ID_STRATEGY_NAME,
+                recordVariableName,
+                obj.getTypeId(),
+                nodeIdColumnsBlock(obj)
+        );
     }
 
-    public static CodeBlock hasIdBlock(String id, ObjectDefinition obj, String targetAlias) {
+    public static CodeBlock hasIdsBlock(CodeBlock idsOrRecord, ObjectDefinition obj, String targetAlias, boolean isIterableWrapped) {
+        return isIterableWrapped ? hasIdsBlock(idsOrRecord, obj, targetAlias) : hasIdBlock(idsOrRecord, obj, targetAlias);
+    }
+
+    public static CodeBlock hasIdBlock(CodeBlock id, ObjectDefinition obj, String targetAlias) {
         return CodeBlock.of("$N.hasId($S, $L, $L)",
                 NODE_ID_STRATEGY_NAME,
                 obj.getTypeId(),
                 id,
-                nodeIdColumnsBlock(targetAlias, obj)
+                nodeIdColumnsWithAliasBlock(targetAlias, obj)
         );
     }
 
@@ -954,23 +964,49 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock hasIdsBlock(String idParamName, ObjectDefinition obj, String targetAlias) {
-        return CodeBlock.of("$N.hasIds($S, $N, $L)",
+        return hasIdsBlock(CodeBlock.of(idParamName), obj, targetAlias);
+    }
+    public static CodeBlock hasIdsBlock(CodeBlock idOrRecordParamName, ObjectDefinition obj, String targetAlias) {
+        return CodeBlock.of("$N.hasIds($S, $L, $L)",
                 NODE_ID_STRATEGY_NAME,
                 obj.getTypeId(),
-                idParamName,
-                nodeIdColumnsBlock(targetAlias, obj)
+                idOrRecordParamName,
+                nodeIdColumnsWithAliasBlock(targetAlias, obj)
         );
     }
 
-    private static CodeBlock nodeIdColumnsBlock(String targetAlias, ObjectDefinition obj) {
+    public static CodeBlock nodeIdColumnsBlock(RecordObjectSpecification<?> obj) {
+        if (obj.hasCustomKeyColumns()) {
+            return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$N.$L", staticTableInstanceBlock(obj.getTable().getName()), it))
+                    .collect(CodeBlock.joining(", "));
+        }
+        return getPrimaryKeyFieldsBlock(staticTableInstanceBlock(obj.getTable().getName()));
+    }
+
+    private static CodeBlock staticTableInstanceBlock(String tableName) {
+        var tableClass = getTable(tableName)
+                .orElseThrow(() -> new RuntimeException("Unknown table " + tableName))
+                .getClass();
+        return CodeBlock.of("$T.$N", tableClass, tableName);
+    }
+
+    public static CodeBlock nodeIdColumnsWithAliasBlock(String targetAlias, RecordObjectSpecification<?> obj) {
         if (obj.hasCustomKeyColumns()) {
             return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$N.$L", targetAlias, it))
                     .collect(CodeBlock.joining(", "));
         }
-        return getPrimaryKeyFieldsBlock(targetAlias);
+        return getPrimaryKeyFieldsWithTableAliasBlock(targetAlias);
     }
 
-    public static CodeBlock getPrimaryKeyFieldsBlock(String targetAlias) {
-        return CodeBlock.of("$N.fields($N.getPrimaryKey().getFieldsArray())", targetAlias, targetAlias);
+    public static CodeBlock getPrimaryKeyFieldsWithTableAliasBlock(String targetAlias) {
+        return CodeBlock.of("$N.fields($L)", targetAlias, getPrimaryKeyFieldsBlock(targetAlias));
+    }
+
+    private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(String target) {
+        return getPrimaryKeyFieldsBlock(CodeBlock.of(target));
+    }
+
+    private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(CodeBlock target) {
+        return CodeBlock.of("$L.getPrimaryKey().getFieldsArray()", target);
     }
 }

@@ -1,0 +1,3 @@
+input CustomerNodeInputTable @table(name: "CUSTOMER") {
+  id: ID! @nodeId(typeName: "CustomerNode")
+}
