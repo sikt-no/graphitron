@@ -2,6 +2,6 @@ type Query {
   customers: [Customer]
 }
 
-type Customer implements Node @table {
+type Customer implements Node @node @table {
   id: ID!
 }

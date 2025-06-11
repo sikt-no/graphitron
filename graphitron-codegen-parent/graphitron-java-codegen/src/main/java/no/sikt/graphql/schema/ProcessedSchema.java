@@ -1,7 +1,7 @@
 package no.sikt.graphql.schema;
 
-import graphql.language.SchemaDefinition;
 import graphql.language.*;
+import graphql.language.SchemaDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
@@ -750,6 +750,21 @@ public class ProcessedSchema {
      */
     public Map<String, RecordObjectSpecification<? extends GenerationField>> getRecordTypes() {
         return recordTypes;
+    }
+
+    /**
+     * @return Whether a field is a node ID field using NodeIdStrategy
+     */
+    public boolean isNodeIdField(GenerationField field) {
+        return GeneratorConfig.shouldMakeNodeStrategy() && (field.hasNodeID() || isImplicitNodeIdField(field));
+    }
+
+    /**
+     * @return Whether a field implicitly is a node ID field using NodeIdStrategy
+     */
+    private boolean isImplicitNodeIdField(GenerationField field) {
+        return field.isID() && field.getName().equals(NODE_ID.getName())
+                && isRecordType(field.getContainerTypeName()) && getRecordType(field.getContainerTypeName()).hasNodeDirective();
     }
 
     /**

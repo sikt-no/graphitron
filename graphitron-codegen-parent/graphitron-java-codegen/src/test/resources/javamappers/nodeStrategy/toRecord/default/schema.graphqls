@@ -1,0 +1,7 @@
+type Query {
+  query(in: DummyInputRecord): CustomerNode @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input DummyInputRecord @record(record: {name: "ID_RECORD"}) {
+  id: ID @nodeId(typeName: "CustomerNode")
+}

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.abstractions;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.context.MapperContext;
@@ -11,23 +12,11 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.addStringIfNotEmpty;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_ARGS_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_CONTEXT_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_SELECT_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.PATH_HERE_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.PATH_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ARGS;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD_TRANSFORMER;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<?>> {
@@ -46,9 +35,14 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
     }
 
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, String inputName, TypeName inputType, TypeName returnType) {
-        return getDefaultSpecBuilder(methodName, returnType)
+        var builder = getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
-                .addParameter(inputType, uncapitalize(inputName))
+                .addParameter(inputType, uncapitalize(inputName));
+
+        if (GeneratorConfig.shouldMakeNodeStrategy() && !methodName.equals(METHOD_VALIDATE_NAME)) {
+            builder.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+        }
+        return builder
                 .addParameter(STRING.className, PATH_NAME)
                 .addParameter(RECORD_TRANSFORMER.className, TRANSFORMER_NAME)
                 .addCode(declare(PATH_HERE_NAME, addStringIfNotEmpty(PATH_NAME, "/")));

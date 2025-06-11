@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.mapping;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
@@ -13,14 +14,14 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<GenerationField, RecordObjectSpecification<GenerationField>> {
     protected static final String VARIABLE_INPUT = "input", VARIABLE_RECORDS = "records";
@@ -69,10 +70,11 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         }
 
         return code.addStatement(
-                "return $N($T.of($N), $N$L).stream().findFirst().orElse($L)",
+                "return $N($T.of($N)$L, $N$L).stream().findFirst().orElse($L)",
                 recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord),
                 LIST.className,
                 VARIABLE_INPUT,
+                shouldMakeNodeStrategy() ? CodeBlock.of(", $N", NODE_ID_STRATEGY_NAME) : empty(),
                 PATH_NAME,
                 useValidation ? CodeBlock.of(", $N", PATH_INDEX_NAME) : empty(),
                 toRecord ? CodeBlock.of("new $T()", type.getRecordClassName()) : CodeBlock.of("null")
@@ -81,11 +83,12 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
 
     protected static CodeBlock transformCallCode(boolean useValidation, ClassName mapperClass, boolean hasReference, boolean toRecord) {
         return CodeBlock.of(
-                "$L$T.$L($N, $N, this)",
+                "$L$T.$L($N,$L $N, this)",
                 useValidation ? CodeBlock.of("var $L = ", VARIABLE_RECORDS) : CodeBlock.of("return "),
                 mapperClass,
                 recordTransformMethod(hasReference, toRecord),
                 VARIABLE_INPUT,
+                shouldMakeNodeStrategy() ? CodeBlock.of(" $N,", NODE_ID_STRATEGY_NAME) : empty(),
                 PATH_NAME
         );
     }
@@ -95,9 +98,14 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
     }
 
     protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {
-        return getDefaultSpecBuilder(methodName, returnType)
-                .addParameter(source, VARIABLE_INPUT)
-                .addParameter(STRING.className, PATH_NAME);
+        var spec = getDefaultSpecBuilder(methodName, returnType)
+                .addParameter(source, VARIABLE_INPUT);
+
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
+        }
+
+        return spec.addParameter(STRING.className, PATH_NAME);
     }
 
     protected static boolean useValidation(RecordObjectSpecification<?> type) {
