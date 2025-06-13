@@ -1,18 +1,19 @@
 package no.sikt.graphitron.generators.context;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -279,8 +280,9 @@ public class MapperContext {
     public CodeBlock getSourceGetCallBlock() {
         if (isSimpleIDMode) {
             return CodeBlock.of(asRecordName(previousContext.targetName));
+        } else if (!toRecord && schema.isNodeIdField(target)) {
+            return createNodeIdBlockForRecord(schema.getRecordType(target.getContainerTypeName()), asIterableIf(previousContext.sourceName, previousContext.isIterable));
         }
-
         return getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), getSourceMapping);
     }
 
@@ -362,12 +364,22 @@ public class MapperContext {
                 .build();
     }
 
-    public CodeBlock getSetMappingBlock(String valueToSet) {
+    public CodeBlock getSetMappingBlock(CodeBlock valueToSet) {
+        if (schema.isNodeIdField(target) && toRecord && !mapsJavaRecord) {
+            var nodeType = schema.getRecordType(target.getNodeIdTypeName());
+            return CodeBlock.of("$N.setId($N, $L, $S, $L);",
+                    NODE_ID_STRATEGY_NAME,
+                    previousContext.targetName,
+                    valueToSet,
+                    nodeType.getTypeId(),
+                    nodeIdColumnsBlock(nodeType)
+            );
+        }
         return setValue(previousContext.targetName, setTargetMapping, valueToSet);
     }
 
-    public CodeBlock getSetMappingBlock(CodeBlock valueToSet) {
-        return setValue(previousContext.targetName, setTargetMapping, valueToSet);
+    public CodeBlock getSetMappingBlock(String valueToSet) {
+        return getSetMappingBlock(CodeBlock.of(valueToSet));
     }
 
     public CodeBlock getFieldSetMappingBlock() {
@@ -399,8 +411,9 @@ public class MapperContext {
      */
     public CodeBlock transformInputRecord() {
         return CodeBlock.of(
-                "$L\"$L\"$L)",
+                "$L$L$S$L)",
                 recordTransformPart(sourceName, targetType.getName()),
+                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : empty(),
                 path,
                 recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : empty()
         );

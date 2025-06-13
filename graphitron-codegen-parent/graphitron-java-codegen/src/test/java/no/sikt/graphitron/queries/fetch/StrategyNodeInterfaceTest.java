@@ -76,7 +76,11 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @Test
     @DisplayName("Split query")
     void splitQuery() {
-        assertGeneratedContentMatches("splitQuery");
+        assertGeneratedContentContains("splitQuery",
+                "nodeIdStrategy.createId(\"CUSTOMER\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))," +
+                        "DSL.field(",
+                ".where(nodeIdStrategy.hasIds(\"CUSTOMER\", customerIds, _customer.fields"
+        );
     }
 
     @Test

@@ -115,7 +115,7 @@
                             <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                             <maxAllowedPageSize>1000</maxAllowedPageSize>
                             <recordValidation>
-                                <enabled>true</enabled>
+                                <enabled>false</enabled>
                                 <schemaErrorType>UgyldigInput</schemaErrorType>
                             </recordValidation>
                             <outputPackage>${generatedGraphitronPackage}</outputPackage>

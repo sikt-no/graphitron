@@ -119,7 +119,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         var mapEntries = implementations.stream()
                 .map(implementation ->
-                        CodeBlock.of("\n$S, $L", implementation.getName(), getPrimaryKeyFieldsBlock(implementation.getTable().getName())))
+                        CodeBlock.of("\n$S, $L", implementation.getName(), getPrimaryKeyFieldsWithTableAliasBlock(implementation.getTable().getName())))
                 .collect(Collectors.toList());
 
         return code
@@ -289,7 +289,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .add(target.hasForwardPagination() ? CodeBlock.of("$T.row(\n", DSL.className) : empty())
                 .add(target.hasForwardPagination() ? CodeBlock.of("$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
-                        QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsBlock(context.getTargetAlias()), implementation.getName()) : empty())
+                        QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName()) : empty())
                 .add("$T.select($L)", DSL.className, indentIfMultiline(selectCode))
                 .unindent()
                 .add(target.hasForwardPagination() ? CodeBlock.of(")\n") : empty())
@@ -311,7 +311,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         String implName = implementation.getName();
 
         code.add(createAliasDeclarations(context.getAliasSet()))
-                .add(declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsBlock(alias)))
+                .add(declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsWithTableAliasBlock(alias)))
                 .add("return $T.select(\n", DSL.className)
                 .indent()
                 .add("$T.inline($S).as($S),\n", DSL.className, implName, TYPE_FIELD)
@@ -328,7 +328,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("($N == null ? $T.noCondition() : $T.inline($S).greaterOrEqual($N.typeName()))",
                         TOKEN, DSL.className, DSL.className, implementation.getName(), TOKEN)
                 .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $T.noCondition())",
-                        TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsBlock(alias), DSL.className, TOKEN, DSL.className);
+                        TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(alias), DSL.className, TOKEN, DSL.className);
         }
         return code.add(".orderBy($L)", ORDER_FIELDS_NAME)
                     .add(isConnection ? CodeBlock.of("\n.limit($N + 1);", PAGE_SIZE_NAME) : CodeBlock.of(";"))

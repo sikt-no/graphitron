@@ -1,0 +1,23 @@
+extend type Query {
+    helloWorldAgain(name: String!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldAgainWithJooqRecordInput(input: CustomerInput!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldAgainWithJavaRecordInput(input: HelloWorldInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+
+    customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+    customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+    customerServiceWithJavaRecordInput(input: HelloWorldInputObject!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+}
+
+type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
+    greeting: String
+}
+
+input HelloWorldInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldInput"}){
+    name: String
+    customerId: ID @nodeId(typeName: "Customer")
+}
+
+input CustomerInput @table(name: "CUSTOMER") {
+    id: ID! @nodeId(typeName: "Customer")
+    firstName: String @field(name: "FIRST_NAME")
+}

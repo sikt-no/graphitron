@@ -1,0 +1,5 @@
+{
+    customerServiceWithJooqRecordInput(input: {id: "Q1VTVE9NRVI6MQ"}) {
+        id
+    }
+}
