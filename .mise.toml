@@ -6,7 +6,7 @@ java = "17"
 description = "Maven clean"
 run = "mvn clean"
 
-[tasks.build]
+[tasks.build-all]
 description = "Run maven install"
 run = "mvn install"
 
