@@ -40,15 +40,8 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
     }
 
     private Set<ObjectDefinition> getComponents(TypeResolverTarget target) {
-        if (processedSchema.isInterface(target.getName())) {
-            return processedSchema.getImplementationsForInterface((InterfaceDefinition) target);
-        }
-        if (processedSchema.isUnion(target.getName())) {
-            return ((UnionDefinition) target)
-                    .getFieldTypeNames()
-                    .stream()
-                    .map(processedSchema::getObject)
-                    .collect(Collectors.toSet());
+        if (processedSchema.isInterface(target.getName()) || processedSchema.isUnion(target.getName())) {
+            return processedSchema.getTypesFromInterfaceOrUnion(target.getName());
         }
         return Set.of();
     }
