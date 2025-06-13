@@ -107,8 +107,7 @@ public class ProcessedDefinitionsValidator {
         schema.getObjects()
                 .values().stream()
                 .flatMap(o -> o.getFields().stream())
-                .filter(field -> (schema.isInterface(field) && !schema.getInterface(field).hasTable())
-                        || schema.isUnion(field))
+                .filter(schema::isMultiTableField)
                 .filter(field -> !field.getTypeName().equals(NODE_TYPE.getName()))
                 .filter(field -> !field.getTypeName().equals(FEDERATION_SERVICE_FIELD.getName()))
                 .filter(field -> !field.getTypeName().equals(FEDERATION_ENTITY_UNION.getName()))
@@ -649,7 +648,7 @@ public class ProcessedDefinitionsValidator {
 
                     var singleTableInterfaces = implementedInterfaces.stream()
                             .filter(it -> !it.equals(NODE_TYPE.getName()))
-                            .filter(it -> schema.getInterface(it).hasDiscriminator())
+                            .filter(schema::isSingleTableInterface)
                             .toList();
 
                     if (singleTableInterfaces.isEmpty() && objectDefinition.hasDiscriminator()) {

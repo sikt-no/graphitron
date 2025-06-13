@@ -48,12 +48,6 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         if (processedSchema.isRecordType(field)) {
             return processedSchema.getRecordType(field).getGraphClassName();
         }
-        if (processedSchema.isInterface(field)) {
-            return processedSchema.getInterface(field).getGraphClassName();
-        }
-        if (processedSchema.isUnion(field)) {
-            return processedSchema.getUnion(field).getGraphClassName();
-        }
         if (processedSchema.isEnum(field)) {
             return processedSchema.getEnum(field).getGraphClassName();
         }

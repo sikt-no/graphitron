@@ -148,7 +148,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .stream()
                 .filter(processedSchema::isInterface)
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(it -> processedSchema.getInterface(it.getTypeName()).hasDiscriminator())
+                .filter(processedSchema::isSingleTableInterface)
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .map(this::generate)
