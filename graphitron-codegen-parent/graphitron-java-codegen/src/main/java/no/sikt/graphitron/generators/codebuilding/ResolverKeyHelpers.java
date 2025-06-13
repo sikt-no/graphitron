@@ -57,9 +57,7 @@ public class ResolverKeyHelpers {
      * @return The key used in the first step when resolving a resolver field
      */
     public static Key<?> findKeyForResolverField(GenerationField field, ProcessedSchema processedSchema) {
-        var container = processedSchema.isInterface(field.getContainerTypeName()) ?
-                processedSchema.getInterface(field.getContainerTypeName())
-                : processedSchema.getObjectOrConnectionNode(field.getContainerTypeName());
+        var container = processedSchema.getRecordType(field.getContainerTypeName());
 
         var containerTypeTable = container.hasTable() ?
                 container.getTable()

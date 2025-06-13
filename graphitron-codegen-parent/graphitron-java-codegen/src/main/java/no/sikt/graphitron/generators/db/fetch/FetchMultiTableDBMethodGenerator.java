@@ -169,7 +169,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock createMapping(ObjectField target, Set<ObjectDefinition> implementations) {
         var code = CodeBlock.builder();
-        var graphClassName = processedSchema.isInterface(target) ? processedSchema.getInterface(target).getGraphClassName() : processedSchema.getUnion(target).getGraphClassName();
+        var graphClassName = processedSchema.getRecordType(target).getGraphClassName();
         var mapping = createMappingContent(graphClassName, implementations, target.hasForwardPagination());
         if (target.isIterableWrapped() || target.hasForwardPagination()) {
             code.add(".map(\n$L\n);", mapping);
@@ -403,13 +403,13 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         return getLocalObject()
                 .getFields()
                 .stream()
-                .filter(it -> processedSchema.isInterface(it) || (processedSchema.isUnion(it) && !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName())))
+                .filter(processedSchema::isMultiTableField)
+                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(it-> !processedSchema.isInterface(it) || !processedSchema.getInterface(it).hasDiscriminator())
                 .filter(GenerationField::isGeneratedWithResolver)
                 .filter(it -> !it.hasServiceReference())
                 .flatMap(it -> generateWithSubselectMethods(it).stream())
                 .filter(it -> !it.code().isEmpty())
-                .collect(Collectors.toList());
+                .toList();
     }
 }
