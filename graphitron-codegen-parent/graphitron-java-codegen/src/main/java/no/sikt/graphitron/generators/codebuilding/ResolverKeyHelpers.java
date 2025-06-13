@@ -63,9 +63,7 @@ public class ResolverKeyHelpers {
                 container.getTable()
                 : processedSchema.getPreviousTableObjectForObject(container).getTable();
 
-        var tableFromFieldType = processedSchema.isObject(field.getTypeName()) ?
-                processedSchema.getObjectOrConnectionNode(field.getTypeName()).getTable()
-                : processedSchema.isInterface(field.getTypeName()) ? processedSchema.getInterface(field.getTypeName()).getTable() : null;
+        var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 
         ForeignKey<?, ?> foreignKey;
         var primaryKeyOptional = getPrimaryKeyForTable(containerTypeTable.getName());
