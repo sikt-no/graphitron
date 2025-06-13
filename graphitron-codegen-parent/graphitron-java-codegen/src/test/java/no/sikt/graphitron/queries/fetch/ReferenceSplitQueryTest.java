@@ -67,6 +67,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning single table interface")
+    void previousQuerySingleTableInterface() {
+        assertGeneratedContentContains(
+                "previousQuerySingleTableInterface", Set.of(ADDRESS_BY_DISTRICT),
+                "row(DSL.row(_city.CITY_ID)).mapping"
+        );
+    }
+
+    @Test
     @DisplayName("Table path")
     void table() {
         assertGeneratedContentContains(

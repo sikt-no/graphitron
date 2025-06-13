@@ -11,8 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class DTOSplitQueryTest extends DTOGeneratorTest {
@@ -180,5 +179,23 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
         assertThatThrownBy(() -> generateFiles("subtype"))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Cannot find implicit key for field 'someType' in type 'VacationDestination'.");
+    }
+
+    @Test
+    @DisplayName("Field referencing single table interface")
+    void referencingSingleTableInterface() {
+        assertGeneratedContentContains("referencingSingleTableInterface", Set.of(ADDRESS_BY_DISTRICT),
+                "City(Record1<Long> primaryKey)",
+                "this.addressesKey = primaryKey;"
+        );
+    }
+
+    @Test
+    @DisplayName("Field referencing single table interface connection")
+    void referencingSingleTableInterfaceConnection() {
+        assertGeneratedContentContains("referencingSingleTableInterfaceConnection", Set.of(ADDRESS_BY_DISTRICT, ADDRESS_BY_DISTRICT_CONNECTION),
+                "City(Record1<Long> primaryKey)",
+                "this.addressesKey = primaryKey;"
+        );
     }
 }

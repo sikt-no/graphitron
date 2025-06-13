@@ -41,6 +41,9 @@ public enum SchemaComponent {
     DUMMY_INPUT_RECORD("basic/DummyInputRecord", Set.of(ID_RECORD)),
     DUMMY_CONNECTION("basic/DummyConnection", DUMMY_TYPE, PAGE_INFO),
 
+    ADDRESS_BY_DISTRICT("basic/AddressByDistrict"),
+    ADDRESS_BY_DISTRICT_CONNECTION("basic/AddressByDistrictConnection"),
+
     SOMEUNION_CONNECTION("basic/SomeUnionConnection"),
 
     MUTATION_RESPONSE("basic/MutationResponse"),
