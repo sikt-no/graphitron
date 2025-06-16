@@ -121,8 +121,13 @@ public class ProcessedSchema {
                 .map(this::getSearchObjectDefinitionFor)
                 .collect(Collectors.toMap(ConnectionObjectDefinition::getName, Function.identity()));
 
+        unions = UnionDefinition.processUnionDefinitions(typeRegistry.getTypes(UnionTypeDefinition.class))
+                .stream()
+                .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
+
         recordTypes = Stream
-                .concat(objects.values().stream(), inputs.values().stream())
+                .concat(Stream.concat(objects.values().stream(), inputs.values().stream()),
+                        Stream.concat(interfaces.values().stream(), unions.values().stream().filter(it -> !isExceptionUnion(it.getName()))))
                 .collect(Collectors.toMap(AbstractObjectDefinition::getName, Function.identity()));
         tableTypesWithTable = recordTypes
                 .values()
@@ -130,10 +135,6 @@ public class ProcessedSchema {
                 .filter(RecordObjectSpecification::hasTable)
                 .map(RecordObjectSpecification::getName)
                 .collect(Collectors.toSet());
-
-        unions = UnionDefinition.processUnionDefinitions(typeRegistry.getTypes(UnionTypeDefinition.class))
-                .stream()
-                .collect(Collectors.toMap(UnionDefinition::getName, Function.identity()));
 
         scalarTypes = typeRegistry.scalars().keySet();
         validFieldTypes = Stream.concat(scalarTypes.stream(), typeNames.stream()).collect(Collectors.toSet());
@@ -280,12 +281,42 @@ public class ProcessedSchema {
         return interfaces.containsKey(field.getTypeName()) || isConnectionObject(field) && isInterface(getConnectionObject(field).getNodeType());
     }
 
-    /*
-    *
-    * */
-    public boolean isMultiTableInterface(String name) {
-        return isInterface(name) && !getInterface(name).hasTable();
+    /**
+     * @return Does this field return a multi-table interface type in the schema?
+     */
+    public boolean isMultiTableInterface(GenerationField field) {
+        return isMultiTableInterface(field.getTypeName());
     }
+
+    /**
+    * @return Does this name belong to a multi-table interface type in the schema?
+    */
+    public boolean isMultiTableInterface(String name) {
+        return isInterface(name) && getInterface(name).isMultiTableInterface();
+    }
+
+    /**
+     * @return Does this field return a single table interface type in the schema?
+     */
+    public boolean isSingleTableInterface(GenerationField field) {
+        return isSingleTableInterface(field.getTypeName());
+    }
+
+    /**
+     * @return Does this name belong to a single table interface type in the schema?
+     */
+    public boolean isSingleTableInterface(String name) {
+        return isInterface(name) && !getInterface(name).isMultiTableInterface();
+    }
+
+    /**
+     * @return Does this field return rows from multiple tables?
+     */
+    public boolean isMultiTableField(GenerationField field) {
+        return isMultiTableInterface(field)|| isUnion(field);
+    }
+
+
     /**
      * @return Get an interface with this name.
      */
