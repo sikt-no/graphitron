@@ -7,6 +7,14 @@ import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
 import jakarta.inject.Inject;
+import jakarta.json.bind.Jsonb;
+import jakarta.json.bind.JsonbBuilder;
+import no.sikt.graphitron.example.generated.graphitron.model.Address;
+import no.sikt.graphitron.example.generated.graphitron.model.Customer;
+import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnection;
+import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnectionEdge;
+import no.sikt.graphitron.example.generated.graphitron.model.CustomerName;
+import no.sikt.graphitron.example.server.frontgen.graphql.GraphQLResponse;
 import no.sikt.graphitron.example.server.frontgen.graphql.GraphQLService;
 
 import java.util.ArrayList;
@@ -22,8 +30,8 @@ public class MainView extends VerticalLayout {
 
     public MainView() {
         Button graphqlButton = new Button("List customers");
+        Jsonb jsonb = JsonbBuilder.create();
 
-        // Set the click listener for the button
         graphqlButton.addClickListener(e -> {
             String query =
                     """
@@ -37,53 +45,76 @@ public class MainView extends VerticalLayout {
                               firstName
                               lastName
                             }
+                            address {
+                              addressLine1
+                              addressLine2
+                              city {
+                                name
+                                countryName
+                              }
+                            }
                           }
                         }
                       }
                     }
                     """;
-            Map<String, Object> response = graphQLService.executeQuery(query, Map.class);
 
-            // Create a grid to display the data
-            Grid<Map<String, Object>> grid = new Grid<>();
-            grid.addColumn(customer -> customer.get("id")).setHeader("ID").setFlexGrow(0).setWidth("200px");
-            grid.addColumn(customer -> customer.get("email")).setHeader("Email").setFlexGrow(1);
+            // Use raw type for now to parse the JSON structure
+            GraphQLResponse<Map<String, Object>> response = graphQLService.executeQuery(query, GraphQLResponse.class);
+
+            Grid<Customer> grid = new Grid<>(Customer.class);
+            grid.setColumns("id", "email");
+
             grid.addColumn(customer -> {
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> name = (Map<String, Object>) customer.get("name");
-                    return name.get("firstName") + " " + name.get("lastName");
-                } catch (Exception ex) {
-                    return "N/A";
+                CustomerName name = customer.getName();
+                return name != null ? name.getFirstName() + " " + name.getLastName() : "N/A";
+            }).setHeader("Full Name").setFlexGrow(1);
+
+            grid.addColumn(customer -> {
+                Address address = customer.getAddress();
+                if (address != null) {
+                    StringBuilder addressText = new StringBuilder();
+                    if (address.getAddressLine1() != null) {
+                        addressText.append(address.getAddressLine1());
+                    }
+                    if (address.getAddressLine2() != null && !address.getAddressLine2().isEmpty()) {
+                        addressText.append(", ").append(address.getAddressLine2());
+                    }
+                    if (address.getCity() != null) {
+                        addressText.append(", ").append(address.getCity().getName());
+                        if (address.getCity().getCountryName() != null) {
+                            addressText.append(", ").append(address.getCity().getCountryName());
+                        }
+                    }
+                    return addressText.toString();
                 }
-            }).setHeader("Name").setFlexGrow(1);
+                return "N/A";
+            }).setHeader("Address").setFlexGrow(1);
 
             // Make the grid take full width
             grid.setWidthFull();
 
-            if (response.containsKey("data")) {
+            if (response.getData() != null) {
                 try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> data = (Map<String, Object>) response.get("data");
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> customers = (Map<String, Object>) data.get("customers");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> edges = (List<Map<String, Object>>) customers.get("edges");
+                    Map<String, Object> data = response.getData();
+                    // Convert the customers part to JSON and then to CustomerConnection
+                    CustomerConnection customers = jsonb.fromJson(
+                            jsonb.toJson(data.get("customers")),
+                            CustomerConnection.class
+                    );
 
-                    // Extract the node data from each edge
-                    List<Map<String, Object>> customerNodes = new ArrayList<>();
-                    for (Map<String, Object> edge : edges) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> node = (Map<String, Object>) edge.get("node");
-                        customerNodes.add(node);
+                    List<CustomerConnectionEdge> edges = customers.getEdges();
+
+                    List<Customer> customerList = new ArrayList<>();
+                    for (CustomerConnectionEdge edge : edges) {
+                        customerList.add(edge.getNode());
                     }
 
                     // Clear any previous results
                     removeAll();
                     add(graphqlButton);
 
-                    // Set the items and add the grid
-                    grid.setItems(customerNodes);
+                    grid.setItems(customerList);
                     add(grid);
                 } catch (Exception ex) {
                     removeAll();

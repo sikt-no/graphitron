@@ -1,7 +1,5 @@
 package no.sikt.graphitron.example.server.frontgen.graphql;
 
-import java.util.Map;
-
 public class GraphQLResponse<T> {
     private T data;
     private Object[] errors;
