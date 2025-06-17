@@ -45,6 +45,7 @@ public class FetchResolverMethodGenerator extends KickstartResolverMethodGenerat
         var parser = new InputParser(target, processedSchema);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
         return spec
+                .addCode(declareContextArgs(target))
                 .addCode(transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
                 .addCode(methodCall)
