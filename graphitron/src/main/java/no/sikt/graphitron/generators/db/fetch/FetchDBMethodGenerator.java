@@ -95,15 +95,30 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
-        Optional<CodeBlock> maybeOrderByFields = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName()) ? Optional.of(CodeBlock.of(ORDER_FIELDS_NAME)) : maybeCreateOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
+
+        Optional<CodeBlock> maybeOrderByFields =
+                field.isResolver() && tableHasPrimaryKey(context.getTargetTableName())
+                ? Optional.of(CodeBlock.of(ORDER_FIELDS_NAME))
+                : maybeCreateOrderFieldsBlock(
+                        (ObjectField) field,
+                        context.getTargetAlias(),
+                        context.getTargetTableName());
+
         var shouldBeOrdered = isMultiset && maybeOrderByFields.isPresent();
         var shouldHaveOrderByToken = isConnection && maybeOrderByFields.isPresent();
 
         CodeBlock.Builder select = CodeBlock.builder();
-        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : empty());
+        select.add(shouldHaveOrderByToken
+                   ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n",
+                                  QUERY_HELPER.className,
+                                  context.getTargetAlias(),
+                                  maybeOrderByFields.get())
+                   : empty());
 
         if (context.getReferenceObject() == null) {
-            select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
+            select.add((processedSchema.isUnion(field))
+                       ? generateForUnionField(field, context)
+                       : generateForScalarField(field, context));
         } else {
             select.add(generateSelectRow(context));
         }
@@ -111,7 +126,23 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
         var joins = createSelectJoins(context.getJoinSet());
 
-        var contents = CodeBlock.builder()
+        CodeBlock.Builder contents = null;
+
+        if (field.hasSplitQueryDirective()/* && field.hasFieldReferencesWithAllConditions()*/) {
+            contents = CodeBlock
+                    .builder()
+                    .add(!isMultiset
+                         ? select.build()
+                         : CodeBlock.of("$T.select($L)", DSL.className, indentIfMultiline(select.build())))
+                    .add(!isMultiset
+                         ? empty()
+                         : CodeBlock.of("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName()))
+                    .add(shouldBeOrdered
+                         ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get())
+                         : empty());
+//                    .add(!isMultiset ? select.build() : CodeBlock.of("$T.select($)", DSL.className, indentIfMultiline(select.build()))));
+        } else {
+            contents = CodeBlock.builder()
                 .add("$T.select($L)", DSL.className, indentIfMultiline(select.build()))
                 .add("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
                 .add(joins)
@@ -119,16 +150,30 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
                 .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : empty())
                 .add(isConnection ? createSeekAndLimitBlock() : empty());
+        }
 
-
-        return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken) : wrapInField(contents.build());
+        return isMultiset
+               ? field.isResolver()
+                 ? wrapInMultiset(contents.build())
+                 : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken)
+               : field.hasSplitQueryDirective()
+                 ? contents.build()
+                 : wrapInField(contents.build());
     }
 
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
         if (hasOrderByToken) {
-            return CodeBlock.of("$T.row($L).mapping(a0 -> a0.map($T::value2))", DSL.className, indentIfMultiline(wrapInMultiset(contents)), RECORD2.className);
+            return CodeBlock.of(
+                    "$T.row($L).mapping(a0 -> a0.map($T::value2))",
+                    DSL.className,
+                    indentIfMultiline(wrapInMultiset(contents)),
+                    RECORD2.className);
         }
-        return CodeBlock.of("$T.row($L).mapping(a0 -> a0.map($T::value1))", DSL.className, indentIfMultiline(wrapInMultiset(contents)), RECORD1.className);
+        return CodeBlock.of(
+                "$T.row($L).mapping(a0 -> a0.map($T::value1))",
+                DSL.className,
+                indentIfMultiline(wrapInMultiset(contents)),
+                RECORD1.className);
     }
 
     private CodeBlock wrapInMultiset(CodeBlock contents) {
@@ -185,7 +230,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (processedSchema.isObject(field)) {
             var table = processedSchema.getObject(field.getTypeName()).getTable();
-            innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field));
+            innerRowCode = table != null && !table.equals(context.getTargetTable())
+                           ? generateCorrelatedSubquery(field, context.nextContext(field))
+                           : generateSelectRow(context.nextContext(field));
         } else if (field.isExternalField()) {
             JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
 
@@ -204,7 +251,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
         } else {
-            innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
+            innerRowCode = (processedSchema.isUnion(field.getTypeName()))
+                           ? generateForUnionField(field, context)
+                           : generateForScalarField(field, context);
         }
         return Pair.of(innerRowCode, fieldSource);
     }
@@ -223,11 +272,30 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<Key<?>> keySet) {
+    /**
+     * This method is used to create the mapping function for the row call.
+     * It will either use the enhanced null safety or the regular mapping function.
+     *
+     * @param context The context of the fetch operation.
+     * @param fieldsWithoutSplitting The fields that are not split into multiple queries (by the split query directive).
+     * @param referenceFieldSources The sources of the reference fields.
+     * @param rowElements The elements of the row.
+     * @return A code block containing the mapping function.
+     */
+     protected CodeBlock createMapping(
+             FetchContext context,
+             List<? extends GenerationField> fieldsWithoutSplitting,
+             HashMap<String, String> referenceFieldSources,
+             List<CodeBlock> rowElements, LinkedHashSet<Key<?>> keySet
+     ) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
-                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded, keySet.size())
+                ? createMappingFunctionWithEnhancedNullSafety(
+                        fieldsWithoutSplitting,
+                        context.getReferenceObject().getGraphClassName(),
+                        maxTypeSafeFieldSizeIsExceeded,
+                        keySet.size())
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
         var mappingContent = maxTypeSafeFieldSizeIsExceeded
@@ -330,7 +398,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return codeBlockConditions.build();
     }
 
-    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<? extends GenerationField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExceeded, int keyCount) {
+    private CodeBlock createMappingFunctionWithEnhancedNullSafety(
+            List<? extends GenerationField> fieldsWithoutTable,
+            TypeName graphClassName,
+            boolean maxTypeSafeFieldSizeIsExceeded,
+            int keyCount
+    ) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
@@ -391,7 +464,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<Key<?>> keySet) {
+    private CodeBlock wrapWithExplicitMapping(
+            CodeBlock mappingFunction,
+            FetchContext context,
+            List<? extends GenerationField> fieldsWithoutTable,
+            HashMap<String, String> sourceForReferenceFields,
+            LinkedHashSet<Key<?>> keySet
+    ) {
         var innerMappingCode = new ArrayList<CodeBlock>();
 
         int i = 0;
@@ -457,7 +536,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), processedSchema));
-        return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
+        return context.getShouldUseOptional() && useOptionalSelects()
+               ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content))
+               : content;
     }
 
     /**

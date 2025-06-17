@@ -205,7 +205,10 @@ public abstract class GeneratorTest {
     }
 
     public ProcessedSchema getProcessedSchema(String schemaParentFolder, Set<SchemaComponent> extraComponents) {
-        return TestConfiguration.getProcessedSchema(sourceTestPath + schemaParentFolder, mergeComponentsAndSetConfig(extraComponents), checkProcessedSchemaDefault);
+        return TestConfiguration.getProcessedSchema(
+                sourceTestPath + schemaParentFolder,
+                mergeComponentsAndSetConfig(extraComponents),
+                checkProcessedSchemaDefault);
     }
 
     protected Set<String> mergeComponentsAndSetConfig(Set<SchemaComponent> extraComponents) {

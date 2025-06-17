@@ -17,6 +17,7 @@ import no.sikt.graphql.directives.GenerationDirectiveParam;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentBoolean;
@@ -31,7 +32,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective;
+    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective, hasSplitQueryDirective;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
@@ -65,6 +66,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         }
 
         hasFieldDirective = field.hasDirective(FIELD.getName());
+        hasSplitQueryDirective = field.hasDirective(SPLIT_QUERY.getName());
         isExternalField = field.hasDirective(EXTERNAL_FIELD.getName());
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
@@ -112,6 +114,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     public boolean hasFieldDirective() {
         return hasFieldDirective;
+    }
+
+    public boolean hasSplitQueryDirective() {
+        return hasSplitQueryDirective;
     }
 
     @Override
@@ -182,5 +188,15 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public boolean isExplicitlyNotGenerated() {
         return !isGenerated;
+    }
+
+    @Override
+    public boolean hasFieldReferencesWithAllConditions() {
+        var tableConditions = fieldReferences
+                .stream()
+                .filter(fieldRef -> fieldRef.hasTableCondition() && !fieldRef.hasKey())
+                .toList();
+
+        return fieldReferences.size() == tableConditions.size();
     }
 }

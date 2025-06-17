@@ -27,6 +27,8 @@ type Query {
     staff(input: StaffInput!): [Staff] @asConnection
 
     node(id: ID!): Node
+
+#    film_c: [FilmC]
 }
 
 interface Node {
@@ -150,5 +152,11 @@ type Staff @table(name: "STAFF") {
     email: String
     username: String
 }
+
+#type FilmC @table(name: "FILM") {
+#    id: ID!
+#    title: String!
+#    sameReleaseYear: [FilmC] @splitQuery @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.ReferenceFilmCondition", method: "releaseYear"}}])
+#}
 
 union SomeUnion = Language | Staff
