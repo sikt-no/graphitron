@@ -23,7 +23,13 @@ public class SQLJoinStatement extends SQLJoin {
      * @param joinFields List of any conditions for the join operation.
      * @param nullable What kind of join operation is to be used.
      */
-    public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, AliasWrapper joinAlias, List<SQLJoinField> joinFields, boolean nullable) {
+    public SQLJoinStatement(
+            JoinListSequence joinSequence,
+            JoinElement joinTargetTable,
+            AliasWrapper joinAlias,
+            List<SQLJoinField> joinFields,
+            boolean nullable
+    ) {
         super(joinSequence, joinFields, nullable);
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;
