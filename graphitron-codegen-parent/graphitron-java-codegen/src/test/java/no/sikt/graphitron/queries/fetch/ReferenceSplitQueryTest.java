@@ -1,6 +1,7 @@
 package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,11 +31,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Foreign key columns should be selected in previous query")
     void previousQuery() {
         assertGeneratedContentContains(
                 "previousQuery", Set.of(CUSTOMER_QUERY),
                 "DSL.row(DSL.row(_customer.ADDRESS_ID)).mapping(Functions.nullOnAllNull(Customer::new"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query")
+    void previousQueryOnlyPrimaryKey() {
+        assertGeneratedContentContains(
+                "previousQuery", Set.of(CUSTOMER_QUERY),
+                "DSL.row(DSL.row(_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new"
         );
     }
 
@@ -57,11 +68,22 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Foreign key columns should be selected in previous query in nested type")
     void previousQueryNested() {
         assertGeneratedContentContains(
                 "previousQueryNested", Set.of(CUSTOMER_QUERY),
                 "row(customer_2952383337_address.CITY_ID), customer_2952383337_address.getId())" +
+                        ".mapping(Functions.nullOnAllNull(Address::"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query in nested type")
+    void previousQueryNestedOnlySplitQuery() {
+        assertGeneratedContentContains(
+                "previousQueryNested", Set.of(CUSTOMER_QUERY),
+                "row(customer_2952383337_address.ADDRESS_ID), customer_2952383337_address.getId())" +
                         ".mapping(Functions.nullOnAllNull(Address::"
         );
     }

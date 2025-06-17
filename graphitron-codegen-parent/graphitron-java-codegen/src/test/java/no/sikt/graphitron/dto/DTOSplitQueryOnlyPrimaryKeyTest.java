@@ -1,36 +1,29 @@
 package no.sikt.graphitron.dto;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.dto.InterfaceDTOGenerator;
 import no.sikt.graphitron.generators.dto.TypeDTOGenerator;
 import no.sikt.graphitron.generators.dto.UnionDTOGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class DTOSplitQueryTest extends DTOGeneratorTest {
+@DisplayName("Temporary test class for only using primary key in splitQuery fields")
+/*
+* This class is mostly a copy of DTOSplitQueryTest, but only keeping primary keys.
+* The option to only use primary keys for the generator is temporary and will be removed.
+* */
+public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new TypeDTOGenerator(schema), new InterfaceDTOGenerator(schema), new UnionDTOGenerator(schema));
-    }
-
-    @BeforeAll
-    static void setUp() {
-        GeneratorConfig.setAlwaysUsePrimaryKeyInSplitQueries(false);
-    }
-
-    @AfterAll
-    static void tearDown() {
-        GeneratorConfig.setAlwaysUsePrimaryKeyInSplitQueries(true);
     }
 
     @Override
@@ -39,18 +32,21 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     }
 
     @Test
-    @DisplayName("Scalar field with splitQuery referencing another table should store foreign key fields")
+    @DisplayName("Scalar field with splitQuery referencing another table should store primary key fields")
     void scalarReference() {
-        assertGeneratedContentMatches("scalarReference");
+        assertGeneratedContentContains("scalarReference",
+                "VacationDestination(Record2<Long, String> primaryKey)",
+                "this.vacationDescriptionKey = primaryKey;"
+                );
     }
 
     @Test
-    @DisplayName("Field with splitQuery referencing another table should store foreign key fields")
+    @DisplayName("Field with splitQuery referencing another table should store primary key fields")
     void reference() {
         assertGeneratedContentContains("reference",
-                "Record1<Long> vacationKey",
-                "VacationDestination(Record1<Long> vacation_destination_vacation_fkey)",
-                "this.vacationKey = vacation_destination_vacation_fkey"
+                "Record2<Long, String> primaryKey",
+                "VacationDestination(Record2<Long, String> primaryKey)",
+                "this.vacationKey = primaryKey"
         );
     }
 
@@ -94,10 +90,10 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     }
 
     @Test
-    @DisplayName("Field reference with both condition and implicit key should store foreign key fields")
+    @DisplayName("Field reference with both condition and implicit key should store primary key fields")
     void conditionWithImplicitKey() {
         assertGeneratedContentContains("conditionWithImplicitKey",
-                "this.vacationsKey = vacation_destination_vacation_fkey"
+                "this.vacationsKey = primaryKey"
         );
     }
 
@@ -113,8 +109,8 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Reference via tables should keep fields for first key")
     void referenceViaTable() {
         assertGeneratedContentContains("referenceViaTable",
-                "Inventory(Record1<Long> inventory_store_id_fkey)",
-                "this.staffForInventoryKey = inventory_store_id_fkey"
+                "Inventory(Record1<Long> primaryKey)",
+                "this.staffForInventoryKey = primaryKey"
         );
     }
 
@@ -122,26 +118,26 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Key fields should be reused when multiple splitQuery fields use the same key")
     void multipleFieldsWithSameKey() {
         assertGeneratedContentContains("multipleFieldsWithSameKey",
-                "Inventory(Record1<Long> inventory_store_id_fkey)",
-                "this.store1Key = inventory_store_id_fkey",
-                "this.store2Key = inventory_store_id_fkey"
+                "Inventory(Record1<Long> primaryKey)",
+                "this.store1Key = primaryKey",
+                "this.store2Key = primaryKey"
         );
     }
 
     @Test
-    @DisplayName("Subtype with splitQuery reference should store foreign key fields")
+    @DisplayName("Subtype with splitQuery reference should store primary key fields")
     void referenceInSubtype() {
         assertGeneratedContentContains("referenceInSubtype",
-                "SomeType(Record1<Long> customer_address_id_fkey)"
+                "SomeType(Record1<Long> primaryKey)"
         );
     }
 
     @Test
-    @DisplayName("Field with self reference should store foreign key fields")
+    @DisplayName("Field with self reference should store primary key fields")
     void selfReference() {
         assertGeneratedContentContains("selfReference",
                 "Record1<Long> sequelKey",
-                "this.sequel_fkey = sequel_fkey; this.sequelKey = sequel_fkey;"
+                "this.sequelKey = primaryKey;"
         );
     }
 
@@ -149,7 +145,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Single table interface with splitQuery field")
     void interfaceWithTable() {
         assertGeneratedContentContains("interfaceWithTable",
-                "Record1<Long> getSomeStringKey()"
+                "Record2<Long, String> getSomeStringKey()"
         );
     }
 
@@ -175,40 +171,6 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void multiTableUnion() {
         assertGeneratedContentContains("multiTableUnion",
                 "interface CustomerUnion { }"
-        );
-    }
-
-    @Test
-    @DisplayName("Scalar field from same table with splitQuery should throw error")
-    void scalarSameTable() {
-        assertThatThrownBy(() -> generateFiles("scalarSameTable"))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("Cannot resolve reference for scalar field 'someString' in type 'Vacation'.");
-    }
-
-    @Test
-    @DisplayName("Subtype field with splitQuery should throw error")
-    void subtype() {
-        assertThatThrownBy(() -> generateFiles("subtype"))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("Cannot find implicit key for field 'someType' in type 'VacationDestination'.");
-    }
-
-    @Test
-    @DisplayName("Field referencing single table interface")
-    void referencingSingleTableInterface() {
-        assertGeneratedContentContains("referencingSingleTableInterface", Set.of(ADDRESS_BY_DISTRICT),
-                "City(Record1<Long> primaryKey)",
-                "this.addressesKey = primaryKey;"
-        );
-    }
-
-    @Test
-    @DisplayName("Field referencing single table interface connection")
-    void referencingSingleTableInterfaceConnection() {
-        assertGeneratedContentContains("referencingSingleTableInterfaceConnection", Set.of(ADDRESS_BY_DISTRICT, ADDRESS_BY_DISTRICT_CONNECTION),
-                "City(Record1<Long> primaryKey)",
-                "this.addressesKey = primaryKey;"
         );
     }
 }

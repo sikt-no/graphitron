@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.codebuilding;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.wrapRow;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 
 public class ResolverKeyHelpers {
 
@@ -67,6 +69,13 @@ public class ResolverKeyHelpers {
 
         ForeignKey<?, ?> foreignKey;
         var primaryKeyOptional = getPrimaryKeyForTable(containerTypeTable.getName());
+
+        if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries()) {
+            return primaryKeyOptional
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",
+                                    field.getContainerTypeName(), field.getName(), containerTypeTable.getName(), SPLIT_QUERY.getName())));
+        }
 
         if (processedSchema.isScalar(field.getTypeName()) && !field.hasFieldReferences()) {
             throw new RuntimeException("Cannot resolve reference for scalar field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.");

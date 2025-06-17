@@ -6,10 +6,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.reducedgenerators.NodeStrategyInterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.Set;
@@ -74,6 +71,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     }
 
     @Test
+    @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Split query")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
@@ -81,6 +79,12 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
                         "DSL.field(",
                 ".where(nodeIdStrategy.hasIds(\"CUSTOMER\", customerIds, _customer.fields"
         );
+    }
+
+    @Test
+    @DisplayName("Split query")
+    void splitQueryOnlyPrimaryKey() {
+        assertGeneratedContentMatches("splitQueryOnlyPrimaryKey");
     }
 
     @Test

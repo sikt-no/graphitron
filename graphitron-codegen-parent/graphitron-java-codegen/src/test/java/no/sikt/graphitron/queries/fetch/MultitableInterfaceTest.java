@@ -1,5 +1,6 @@
 package no.sikt.graphitron.queries.fetch;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -72,12 +73,23 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
+    @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Interface with type reference with splitQuery should have reference key fields in subquery")
     void interfaceWithTypeSplitQuery() {
         assertGeneratedContentContains(
                 "interfaceWithTypeSplitQuery",
                 Set.of(CUSTOMER_TABLE),
                 "row(DSL.row(_payment.CUSTOMER_ID), _payment.getId()).mapping"
+        );
+    }
+
+    @Test
+    @DisplayName("Interface with type reference with splitQuery should have primary key fields in subquery")
+    void interfaceWithTypeSplitQueryOnlyPrimaryKey() {
+        assertGeneratedContentContains(
+                "interfaceWithTypeSplitQuery",
+                Set.of(CUSTOMER_TABLE),
+                "row(DSL.row(_payment.PAYMENT_ID), _payment.getId()).mapping"
         );
     }
 
