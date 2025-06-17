@@ -31,52 +31,61 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     /**
-     * @param target A {@link ObjectField} for which a method should be generated for.
+     * @param targetField A {@link ObjectField} for which a method should be generated for.
      *                       This must reference an object with the
      *                       "{@link GenerationDirective#TABLE table}" directive set.
      * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
      */
     @Override
-    public MethodSpec generate(ObjectField target) {
-        var localObject = getLocalObject();
-        var context = new FetchContext(processedSchema, target, localObject, false);
+    public MethodSpec generate(ObjectField targetField) {
+        var targetOwner = getLocalObject();
+        var context = new FetchContext(processedSchema, targetField, targetOwner, false);
 
         // Note that this must happen before alias declaration.
-        var selectRowBlock = getSelectRowOrField(target, context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+        var selectRowBlock = getSelectRowOrField(targetField, context);
+        var querySource = context.renderQuerySource(getLocalTable());
+        var whereBlock = formatWhereContents(
+                context,
+                resolverKeyParamName,
+                isRoot,
+                targetField.isResolver());
+
         for (var alias: context.getAliasSet()) {
             if (alias.hasTableMethod()){
                 createServiceDependency(alias.getReferenceObjectField());
             }
         }
-        var querySource = context.renderQuerySource(getLocalTable());
-        var refContext = target.isResolver() ? context.nextContext(target) : context;
+
+        var refContext = isIterableWrappedResolverWithPagination(targetField)
+                         ? context.nextContext(targetField)
+                         : context;
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
-        var orderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
-                ? createOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
+
+        var orderFields = !LookupHelpers.lookupExists(targetField, processedSchema) && (targetField.isIterableWrapped() || targetField.hasForwardPagination() || !isRoot)
+                ? createOrderFieldsDeclarationBlock(targetField, actualRefTable, actualRefTableName)
                 : CodeBlock.empty();
 
-        var returnType = processedSchema.isRecordType(target)
-                ? processedSchema.getRecordType(target).getGraphClassName()
+        var returnType = processedSchema.isRecordType(targetField)
+                ? processedSchema.getRecordType(targetField).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
 
-        return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
+        return getSpecBuilder(targetField, returnType, new InputParser(targetField, processedSchema))
                 .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet()))
                 .addCode(selectAliasesBlock)
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.VAR_CONTEXT)
                 .indent()
                 .indent()
-                .addCode(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
+                .addCode(".select($L)\n", createSelectBlock(targetField, context, actualRefTable, selectRowBlock))
                 .addCodeIf(!querySource.isEmpty() && (context.hasNonSubqueryFields() || context.hasApplicableTable()), ".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)
                 .addCode(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .addCodeIf(!target.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", VAR_ORDER_FIELDS)
-                .addCodeIf(target.hasForwardPagination() && !target.isResolver(), this::createSeekAndLimitBlock)
-                .addCode(setFetch(target))
+                .addCodeIf(!targetField.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", VAR_ORDER_FIELDS)
+                .addCodeIf(targetField.hasForwardPagination() && !targetField.isResolver(), this::createSeekAndLimitBlock)
+                .addCode(setFetch(targetField))
                 .unindent()
                 .unindent()
                 .build();
@@ -181,5 +190,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
+    }
+
+    private boolean isIterableWrappedResolverWithPagination(ObjectField field) {
+        return field.isResolver() &&
+               field.isIterableWrapped() &&
+               field.hasForwardPagination();
     }
 }

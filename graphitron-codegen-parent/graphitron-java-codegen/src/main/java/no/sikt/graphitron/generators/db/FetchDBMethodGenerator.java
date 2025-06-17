@@ -291,11 +291,21 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
+     protected CodeBlock createMapping(
+             FetchContext context,
+             List<? extends GenerationField> fieldsWithoutSplitting,
+             HashMap<String, String> referenceFieldSources,
+             List<CodeBlock> rowElements,
+             LinkedHashSet<KeyWrapper> keySet
+     ) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
-                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded, keySet.size())
+                ? createMappingFunctionWithEnhancedNullSafety(
+                        fieldsWithoutSplitting,
+                        context.getReferenceObject().getGraphClassName(),
+                        maxTypeSafeFieldSizeIsExceeded,
+                        keySet.size())
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
         var mappingContent = maxTypeSafeFieldSizeIsExceeded
@@ -402,7 +412,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return codeBlockConditions.build();
     }
 
-    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<? extends GenerationField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExceeded, int keyCount) {
+    private CodeBlock createMappingFunctionWithEnhancedNullSafety(
+            List<? extends GenerationField> fieldsWithoutTable,
+            TypeName graphClassName,
+            boolean maxTypeSafeFieldSizeIsExceeded,
+            int keyCount
+    ) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
@@ -462,7 +477,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<KeyWrapper> keySet) {
+    private CodeBlock wrapWithExplicitMapping(
+            CodeBlock mappingFunction,
+            FetchContext context,
+            List<? extends GenerationField> fieldsWithoutTable,
+            HashMap<String, String> sourceForReferenceFields,
+            LinkedHashSet<KeyWrapper> keySet
+    ) {
         var innerMappingCode = new ArrayList<CodeBlock>();
 
         int i = 0;
@@ -556,7 +577,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
                     renderedSource,
-                    generateGetForID(field.getMappingFromFieldOverride(), context.getCurrentJoinSequence().isEmpty() ? null : context.getCurrentJoinSequence().getLast().getTable())
+                    generateGetForID(
+                            field.getMappingFromFieldOverride(),
+                            context.getCurrentJoinSequence().isEmpty()
+                            ? null
+                            : context.getCurrentJoinSequence().getLast().getTable())
             );
         }
 
@@ -567,8 +592,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
         );
 
-
-        return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VAR_SELECT, context.getGraphPath() + field.getName(), content)) : content;
+        return context.getShouldUseOptional() && useOptionalSelects()
+               ? (CodeBlock.of("$N.optional($S, $L)", VAR_SELECT, context.getGraphPath() + field.getName(), content))
+               : content;
     }
 
     private CodeBlock generateGetForID(MethodMapping mapping, JOOQMapping table) {
