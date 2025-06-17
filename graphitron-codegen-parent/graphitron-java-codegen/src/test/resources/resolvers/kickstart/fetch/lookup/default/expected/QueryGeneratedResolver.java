@@ -16,6 +16,6 @@ public class QueryGeneratedResolver implements QueryResolver {
     public CompletableFuture<DummyType> query(List<String> id, DataFetchingEnvironment env) throws
             Exception {
         var keys = List.of(id);
-        return new DataFetcherHelper(env).loadLookup(keys, (ctx, ids, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, selectionSet));
+        return new DataFetcherHelper(env).loadLookup(keys, (ctx, resolverKeys, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, selectionSet));
     }
 }

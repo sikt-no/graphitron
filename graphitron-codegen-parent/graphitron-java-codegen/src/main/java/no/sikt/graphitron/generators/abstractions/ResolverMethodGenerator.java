@@ -25,6 +25,7 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphql.naming.GraphQLReservedName.CONNECTION_PAGE_INFO_NODE;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -120,9 +121,9 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 .stream()
                 .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
-        var inputsWithId = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? IDS_NAME : IDS_NAME + ", " + filteredInputs);
+        var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
         var contextParams = isService ? String.join(", ", target.getService().getContextFields().keySet().stream().map(it -> "_" + it).toList()) : "";
-        var allParams = inputsWithId.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithId : inputsWithId + ", " + contextParams);
+        var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
         var countFunction = countFunction(objectToCall, method, allParams, isService);
         var connectionFunction = connectionFunction(processedSchema.getConnectionObject(target), processedSchema.getObject(CONNECTION_PAGE_INFO_NODE.getName()));
         return dataBlock
@@ -156,7 +157,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 .indent()
                 .indent();
         if (!localObject.isOperationRoot()) {
-            code.add("$N.getId(),", uncapitalize(localObject.getName()));
+            code.add("$N.$L(),", uncapitalize(localObject.getName()), getDTOGetterMethodNameForField(target));
         }
         return code.build();
     }

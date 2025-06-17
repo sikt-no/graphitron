@@ -91,7 +91,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitquery/withInput", Set.of(SPLIT_QUERY_WRAPPER),
                 "query(Wrapper wrapper, String id,",
-                "resolverFetchService.query(ids, id)"
+                "resolverFetchService.query(resolverKeys, id)"
         );
     }
 
@@ -108,8 +108,8 @@ public class ResolverTest extends GeneratorTest {
                 "splitquery/withPaginationAndRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
                 "query(Wrapper wrapper, Integer first, String after, CustomerInputTable in,",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "resolverFetchService.queryMap(ids, inRecord, pageSize, after",
-                "resolverFetchService.countQueryMap(ids, inRecord"
+                "resolverFetchService.queryMap(resolverKeys, inRecord, pageSize, after",
+                "resolverFetchService.countQueryMap(resolverKeys, inRecord"
         );
     }
 }

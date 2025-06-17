@@ -88,7 +88,7 @@ public class RecordTest extends GeneratorTest {
     void splitQueryInputJavaRecord() {
         assertGeneratedContentContains(
                 "splitquery/inputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
-                "queryForWrapper(ctx, ids, inRecord,"
+                "queryForWrapper(ctx, resolverKeys, inRecord,"
         );
     }
 
@@ -97,7 +97,7 @@ public class RecordTest extends GeneratorTest {
     void splitQueryInputJOOQRecord() {
         assertGeneratedContentContains(
                 "splitquery/inputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
-                "queryForWrapper(ctx, ids, inRecord,"
+                "queryForWrapper(ctx, resolverKeys, inRecord,"
         );
     }
 

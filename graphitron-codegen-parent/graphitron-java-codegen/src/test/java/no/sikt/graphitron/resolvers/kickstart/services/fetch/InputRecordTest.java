@@ -66,7 +66,7 @@ public class InputRecordTest extends GeneratorTest {
                 "splitquery/withInputJavaRecord", Set.of(SPLIT_QUERY_WRAPPER, DUMMY_INPUT_RECORD),
                 "query(Wrapper wrapper, DummyInputRecord in,",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
-                "resolverFetchService.query(ids, inRecord)"
+                "resolverFetchService.query(resolverKeys, inRecord)"
         );
     }
 
@@ -77,7 +77,7 @@ public class InputRecordTest extends GeneratorTest {
                 "splitquery/withInputJOOQRecord", Set.of(SPLIT_QUERY_WRAPPER, CUSTOMER_INPUT_TABLE),
                 "query(Wrapper wrapper, CustomerInputTable in,",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
-                "resolverFetchService.query(ids, inRecord)"
+                "resolverFetchService.query(resolverKeys, inRecord)"
         );
     }
 }

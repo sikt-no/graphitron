@@ -64,7 +64,7 @@ public class ResolverPaginationTest extends GeneratorTest {
                 "Integer) _args.get(\"first\"",
                 "String) _args.get(\"after\"",
                 "String) _args.get(\"other\"",
-                "queryForWrapper(ctx, ids, other, pageSize, after,"
+                "queryForWrapper(ctx, resolverKeys, other, pageSize, after,"
         );
     }
 

@@ -14,6 +14,6 @@ public class WrapperGeneratedResolver implements WrapperResolver {
     @Override
     public CompletableFuture<CustomerTable> customer(Wrapper wrapper, DataFetchingEnvironment env)
             throws Exception {
-        return new DataFetcherHelper(env).load(wrapper.getId(), (ctx, ids, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, ids, selectionSet));
+        return new DataFetcherHelper(env).load(wrapper.getCustomerKey(), (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, resolverKeys, selectionSet));
     }
 }

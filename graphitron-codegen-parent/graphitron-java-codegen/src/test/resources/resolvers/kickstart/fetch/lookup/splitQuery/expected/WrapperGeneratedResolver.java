@@ -17,6 +17,6 @@ public class WrapperGeneratedResolver implements WrapperResolver {
     public CompletableFuture<DummyType> query(Wrapper wrapper, List<String> id,
                                               DataFetchingEnvironment env) throws Exception {
         var keys = List.of(id);
-        return new DataFetcherHelper(env).loadLookup(keys, (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
+        return new DataFetcherHelper(env).loadLookup(keys, (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
     }
 }

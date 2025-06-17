@@ -395,7 +395,7 @@ public class FormatCodeBlocks {
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
                 includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : empty(),
-                IDS_NAME,
+                RESOLVER_KEYS_NAME,
                 isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
                 String.join(", ", params)
@@ -410,7 +410,7 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds, boolean isService) {
+    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, String inputList, boolean hasKeyValues, boolean usesKeyValues, boolean isService) {
         var inputs = new ArrayList<String>();
         var params = new ArrayList<String>();
         if (!isService) {
@@ -420,11 +420,11 @@ public class FormatCodeBlocks {
                 params.add(NODE_ID_STRATEGY_NAME);
             }
         }
-        if (hasIds) {
-            inputs.add(IDS_NAME);
+        if (hasKeyValues) {
+            inputs.add(RESOLVER_KEYS_NAME);
         }
-        if (usesIds) {
-            params.add(IDS_NAME);
+        if (usesKeyValues) {
+            params.add(RESOLVER_KEYS_NAME);
         }
         if (!inputList.isEmpty()) {
             params.add(inputList);

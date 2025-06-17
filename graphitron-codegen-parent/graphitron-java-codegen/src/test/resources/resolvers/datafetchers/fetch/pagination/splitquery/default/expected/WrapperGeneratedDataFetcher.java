@@ -22,9 +22,9 @@ public class WrapperGeneratedDataFetcher {
             var after = ((String) _args.get("after"));
             int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
             return new DataFetcherHelper(env).loadPaginated(
-                    wrapper.getId(), pageSize, 1000,
-                    (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, pageSize, after, selectionSet),
-                    (ctx, ids) -> WrapperDBQueries.countQueryForWrapper(ctx, ids),
+                    wrapper.getQueryKey(), pageSize, 1000,
+                    (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, resolverKeys, pageSize, after, selectionSet),
+                    (ctx, resolverKeys) -> WrapperDBQueries.countQueryForWrapper(ctx, resolverKeys),
                     (connection) ->  {
                         var edges = connection.getEdges().stream().map(it -> new DummyConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());
                         var page = connection.getPageInfo();

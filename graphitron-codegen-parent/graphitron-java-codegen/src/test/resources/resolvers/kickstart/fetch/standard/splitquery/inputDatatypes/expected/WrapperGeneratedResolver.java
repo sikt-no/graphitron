@@ -22,8 +22,8 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                                               Integer i, DummyEnum e, DummyInput in, List<String> idList, List<DummyInput> inList,
                                               DataFetchingEnvironment env) throws Exception {
         return new DataFetcherHelper(env).load(
-                wrapper.getId(),
-                (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet));
+                wrapper.getQueryKey(),
+                (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, resolverKeys, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
 
     @Override
@@ -31,7 +31,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                                                          Boolean bool, Integer i, DummyEnum e, DummyInput in, List<String> idList,
                                                          List<DummyInput> inList, DataFetchingEnvironment env) throws Exception {
         return new DataFetcherHelper(env).load(
-                wrapper.getId(),
-                (ctx, ids, selectionSet) -> WrapperDBQueries.queryNonNullableForWrapper(ctx, ids, id, str, bool, i, e, in, idList, inList, selectionSet));
+                wrapper.getQueryNonNullableKey(),
+                (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryNonNullableForWrapper(ctx, resolverKeys, id, str, bool, i, e, in, idList, inList, selectionSet));
     }
 }

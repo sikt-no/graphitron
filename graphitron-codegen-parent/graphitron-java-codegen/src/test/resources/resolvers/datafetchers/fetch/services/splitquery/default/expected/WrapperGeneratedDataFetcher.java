@@ -15,8 +15,8 @@ public class WrapperGeneratedDataFetcher {
             var transform = new RecordTransformer(env);
             var resolverFetchService = new ResolverFetchService(transform.getCtx());
             return new ServiceDataFetcherHelper<>(transform).load(
-                    wrapper.getId(),
-                    (ids) -> resolverFetchService.query(ids),
+                    wrapper.getQueryKey(),
+                    (resolverKeys) -> resolverFetchService.query(resolverKeys),
                     (recordTransform, response) -> recordTransform.customerRecordToGraphType(response, ""));
         };
     }

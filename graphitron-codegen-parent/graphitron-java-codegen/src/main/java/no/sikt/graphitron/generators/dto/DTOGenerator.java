@@ -82,6 +82,10 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
         return field.isResolver() ? field.getName() + "Key" : field.getName();
     }
 
+    public static String getDTOGetterMethodNameForField(GenerationSourceField<?> field) {
+        return "get" + capitalize(getDTOVariableNameForField(field));
+    }
+
     protected TypeName getTypeNameForField(GenerationSourceField<?> field, Key<?> firstStepKeyForField) {
         if (!field.isGeneratedWithResolver()) {
             TypeName typeClass = field.getTypeClass() != null ?

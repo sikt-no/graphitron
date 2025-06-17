@@ -22,7 +22,7 @@ public class QueryGeneratedDataFetcher {
             return new DataFetcherHelper(env).loadPaginated(
                     pageSize, 1000,
                     (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, pageSize,after, selectionSet),
-                    (ctx, ids) -> QueryDBQueries.countQueryForQuery(ctx),
+                    (ctx, resolverKeys) -> QueryDBQueries.countQueryForQuery(ctx),
                     (connection) ->  {
                         var edges = connection.getEdges().stream().map(it -> new DummyConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());
                         var page = connection.getPageInfo();
