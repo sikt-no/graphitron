@@ -32,33 +32,43 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     /**
-     * @param target A {@link ObjectField} for which a method should be generated for.
+     * @param targetField A {@link ObjectField} for which a method should be generated for.
      *                       This must reference an object with the
      *                       "{@link GenerationDirective#TABLE table}" directive set.
      * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
      */
     @Override
-    public MethodSpec generate(ObjectField target) {
-        var localObject = getLocalObject();
-        var context = new FetchContext(processedSchema, target, localObject, false);
+    public MethodSpec generate(ObjectField targetField) {
+        var targetOwner = getLocalObject();
+        var context = new FetchContext(processedSchema, targetField, targetOwner, false);
 
         // Note that this must happen before alias declaration.
-        var selectRowBlock = getSelectRowOrField(target, context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-
+//        var selectRowBlock = getSelectRowOrField(targetField, context);
+        var selectRowBlock = isIterableWrappedResolverWithPagination(targetField)
+                             ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
+                             : generateSelectRow(context);
         var querySource = context.renderQuerySource(getLocalTable());
+        var whereBlock = formatWhereContents(
+                context,
+                resolverKeyParamName,
+                isRoot,
+                targetField.isResolver());
 
-        var refContext = target.isResolver() ? context.nextContext(target) : context;
+        var refContext = isIterableWrappedResolverWithPagination(targetField)
+                         ? context.nextContext(targetField)
+                         : context;
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
-        Optional<CodeBlock> maybeOrderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
-                ? maybeCreateOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
+        Optional<CodeBlock> maybeOrderFields =
+                !LookupHelpers.lookupExists(targetField, processedSchema) &&
+                (targetField.isIterableWrapped() || targetField.hasForwardPagination() || !isRoot)
+                ? maybeCreateOrderFieldsDeclarationBlock(targetField, actualRefTable, actualRefTableName)
                 : Optional.empty();
 
-        var hasNonSubqueryFields = !processedSchema.isRecordType(target) || processedSchema.getRecordType(target)
+        var hasNonSubqueryFields = !processedSchema.isRecordType(targetField) || processedSchema.getRecordType(targetField)
                 .getFields()
                 .stream()
                 .anyMatch(it -> !it.invokesSubquery() || processedSchema.isRecordType(it) && processedSchema.getRecordType(it).hasTable() && !processedSchema.getRecordType(it).getTable().equals(context.getTargetTable()));
@@ -69,26 +79,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .add(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
+                .add(".select($L)\n", createSelectBlock(targetField, context, actualRefTable, selectRowBlock))
                 .addIf(!querySource.isEmpty() && (hasNonSubqueryFields || context.hasApplicableTable()), ".from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(target.isResolver() ? CodeBlock.empty() : maybeOrderFields
+                .add(targetField.isResolver() ? CodeBlock.empty() : maybeOrderFields
                         .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
                         .orElse(CodeBlock.empty()))
-                .add(target.hasForwardPagination() && !target.isResolver()
+                .add(targetField.hasForwardPagination() && !targetField.isResolver()
                         ? createSeekAndLimitBlock()
                         : CodeBlock.empty())
-                .add(setFetch(target))
+                .add(setFetch(targetField))
                 .unindent()
                 .unindent();
 
-        var parser = new InputParser(target, processedSchema);
-        var returnType = processedSchema.isRecordType(target)
-                ? processedSchema.getRecordType(target).getGraphClassName()
+        var parser = new InputParser(targetField, processedSchema);
+        var returnType = processedSchema.isRecordType(targetField)
+                ? processedSchema.getRecordType(targetField).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
-        return getSpecBuilder(target, returnType, parser)
+        return getSpecBuilder(targetField, returnType, parser)
                 .addCode(code.build())
                 .build();
     }
@@ -193,5 +203,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
+    }
+
+    private boolean isIterableWrappedResolverWithPagination(ObjectField field) {
+        return field.isResolver() &&
+               field.isIterableWrapped() &&
+               field.hasForwardPagination();
     }
 }
