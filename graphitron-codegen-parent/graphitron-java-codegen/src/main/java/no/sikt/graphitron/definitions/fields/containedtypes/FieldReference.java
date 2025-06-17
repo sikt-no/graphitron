@@ -15,6 +15,11 @@ import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveAr
 import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 
+/**
+ * This class represents a reference to another table in the database, and it's use is related to the reference
+ * directive. It contains information about the table to be referenced, the key to be used for the join,
+ * and any conditions that should be applied to the join.
+ */
 public class FieldReference {
     private final JOOQMapping table;
     private final JOOQMapping key;
@@ -83,7 +88,9 @@ public class FieldReference {
         var targetTable = hasTable() ? getTable() : tableNameBackup;
         var secondLast = joinSequence.getSecondLast();
         var adjustedReference = joinSequence.getLast().equals(targetTable)
-                ? secondLast != null ? secondLast.getCodeName() : targetTable.getCodeName()
+                ? secondLast != null
+                  ? secondLast.getCodeName()
+                  : targetTable.getCodeName()
                 : joinSequence.render() + (joinName.isEmpty() ? "" : "_" + joinName);
         return new SQLJoinStatement(
                 joinSequence,
@@ -105,6 +112,16 @@ public class FieldReference {
                 new SQLJoinOnCondition(tableCondition),
                 isNullable
         );
+    }
+
+    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, Alias alias, JOOQMapping tableNameBackup, boolean isNullable) {
+       return new SQLJoinStatement(
+               joinSequence, // Left side of the join
+               hasTable() ? getTable() : tableNameBackup,
+               alias,
+               List.of(new SQLJoinOnCondition(tableCondition)),
+               isNullable
+       );
     }
 
     /**
@@ -136,11 +153,16 @@ public class FieldReference {
     /**
      * @return A join statement based on a key reference using path
      */
-
-    public SQLJoinStatement createJoinOnExplicitPathFor(JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
-
+    public SQLJoinStatement createJoinOnExplicitPathFor(
+            JOOQMapping keyOverride,
+            JoinListSequence joinSequence,
+            JOOQMapping tableNameBackup,
+            boolean isNullable
+    ) {
         var targetTable = hasTable() ? getTable() : tableNameBackup;
-        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_") ? joinSequence.getSecondLast().getMappingName() : joinSequence.getSecondLast().getCodeName();
+        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_")
+                     ? joinSequence.getSecondLast().getMappingName()
+                     : joinSequence.getSecondLast().getCodeName();
         var alias = new Alias(prefix + "_" + keyOverride.getCodeName(), joinSequence, isNullable);
 
         return new SQLJoinStatement(
