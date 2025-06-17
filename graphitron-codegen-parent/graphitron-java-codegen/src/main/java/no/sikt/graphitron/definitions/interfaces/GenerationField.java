@@ -15,11 +15,19 @@ import java.util.List;
 public interface GenerationField extends GenerationTarget, FieldSpecification {
     boolean hasFieldReferences();
 
+    boolean hasSplitQueryDirective();
+
     boolean isExternalField();
 
     boolean isInput();
 
     /**
+     * A field is considered a resolver if at least one of the following conditions is met:
+     * - it has applied a @splitDirective
+     * - it is a field in root type Query
+     * - it is a field in type Mutation
+     * - it is a field with arguments
+     *
      * @return Does this field point to a resolver method?
      */
     boolean isResolver();
@@ -61,4 +69,7 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      * @return Record-side method mapping based on the name of the field or the directive {@link GenerationDirective#FIELD} set on this type.
      */
     MethodMapping getMappingForRecordFieldOverride();
+
+
+    boolean hasFieldReferencesWithAllConditions();
 }

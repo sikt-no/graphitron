@@ -34,29 +34,39 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     /**
-     * @param target A {@link ObjectField} for which a method should be generated for.
+     * @param targetField A {@link ObjectField} for which a method should be generated for.
      *                       This must reference an object with the
      *                       "{@link GenerationDirective#TABLE table}" directive set.
      * @return The complete javapoet {@link MethodSpec} based on the provided reference field.
      */
     @Override
-    public MethodSpec generate(ObjectField target) {
-        var localObject = getLocalObject();
-        var context = new FetchContext(processedSchema, target, localObject, false);
-        // Note that this must happen before alias declaration.
-        var selectRowBlock = target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+    public MethodSpec generate(ObjectField targetField) {
+        var targetOwner = getLocalObject();
+        var context = new FetchContext(processedSchema, targetField, targetOwner, false);
+        // Create nextContext only once, as it is used multiple times (maybe)
+        var resolverContext = targetField.isResolver()
+                              ? context.nextContext(targetField)
+                              : null;
 
+        // Note that this must happen before alias declaration.
+        var selectRowBlock = /*targetField.isResolver()*/ resolverContext != null
+                             ? generateCorrelatedSubquery(targetField, /*context.nextContext(targetField)*/resolverContext)
+                             : generateSelectRow(context);
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, targetField.isResolver());
         var querySource = context.renderQuerySource(getLocalTable());
 
-        var refContext = target.isResolver() ? context.nextContext(target) : context;
-        var actualRefTable = refContext.getTargetAlias();
-        var actualRefTableName = refContext.getTargetTableName();
+        // context.nextContext(targetField) are called here and above. Unnecessary to call it twice?
+        var refContext = /*targetField.isResolver()*/resolverContext != null ? /*context.nextContext(targetField)*/ resolverContext : context;
+        var actualRefTable = refContext.getTargetAlias(); // TODO: film_followup_follow_up_film //film_followup
+        var actualRefTableName = refContext.getTargetTableName(); // TODO: "FILM"
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
-        Optional<CodeBlock> maybeOrderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
-                ? maybeCreateOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
+        // TODO: targetField: followUp, actualRefTable: film_followup_follow_up_film
+        Optional<CodeBlock> maybeOrderFields =
+                !LookupHelpers.lookupExists(targetField, processedSchema) &&
+                (targetField.isIterableWrapped() || targetField.hasForwardPagination() || !isRoot)
+                ? maybeCreateOrderFieldsDeclarationBlock(targetField, actualRefTable, actualRefTableName)
                 : Optional.empty();
 
         var code = CodeBlock
@@ -67,23 +77,23 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent()
                 .add(".select(")
-                .add(createSelectBlock(target, context, actualRefTable, selectRowBlock))
+                .add(createSelectBlock(targetField, context, actualRefTable, selectRowBlock))
                 .add(")\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(target.isResolver() ? empty() : maybeOrderFields
+                .add(targetField.isResolver() ? empty() : maybeOrderFields
                         .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
                         .orElse(empty()))
-                .add(target.hasForwardPagination() && !target.isResolver()
+                .add(targetField.hasForwardPagination() && !targetField.isResolver()
                         ? createSeekAndLimitBlock()
                         : empty())
-                .add(setFetch(target))
+               .add(setFetch(targetField))
                 .unindent()
                 .unindent();
 
-        var parser = new InputParser(target, processedSchema);
-        return getSpecBuilder(target, context.getReferenceObject().getGraphClassName(), parser)
+        var parser = new InputParser(targetField, processedSchema);
+        return getSpecBuilder(targetField, context.getReferenceObject().getGraphClassName(), parser)
                 .addCode(code.build())
                 .build();
     }

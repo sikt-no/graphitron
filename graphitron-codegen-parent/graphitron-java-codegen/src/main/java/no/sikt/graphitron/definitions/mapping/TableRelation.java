@@ -52,7 +52,6 @@ public class TableRelation {
                 return JoinListSequence.of(from);
         }
     }
-
     public JOOQMapping getFrom() {
         return from;
     }
