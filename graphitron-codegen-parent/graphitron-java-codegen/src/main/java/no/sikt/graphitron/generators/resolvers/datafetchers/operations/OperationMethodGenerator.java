@@ -53,18 +53,6 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .build();
     }
 
-    private CodeBlock declareContextArgs(ObjectField target) {
-        if (!target.hasServiceReference() || target.getService().getContextFields().isEmpty()) {
-            return empty();
-        }
-
-        var code = CodeBlock
-                .builder()
-                .add(declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT)));
-        target.getService().getContextFields().forEach((name, type) -> code.add(declare("_" + name, asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name)))));
-        return code.build();
-    }
-
     /**
      * @return Code that both fetches record data and creates the appropriate response objects.
      */

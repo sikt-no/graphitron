@@ -33,17 +33,14 @@ public abstract class UpdateResolverMethodGenerator extends KickstartResolverMet
         specInputs.forEach(input -> spec.addParameter(iterableWrapType(input), input.getName()));
 
         var methodCall = getMethodCall(target, parser, true); // Must happen before service declaration checks the found dependencies.
-        var code = CodeBlock
-                .builder()
-                .add(transformInputs(specInputs, parser.hasRecords()))
-                .add(declareAllServiceClasses(target.getName()))
-                .add(methodCall)
-                .add("\n")
-                .add(generateSchemaOutputs(target));
-
         return spec
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addCode(code.build())
+                .addCode(declareContextArgs(target))
+                .addCode(transformInputs(specInputs, parser.hasRecords()))
+                .addCode(declareAllServiceClasses(target.getName()))
+                .addCode(methodCall)
+                .addCode("\n")
+                .addCode(generateSchemaOutputs(target))
                 .build();
     }
 
