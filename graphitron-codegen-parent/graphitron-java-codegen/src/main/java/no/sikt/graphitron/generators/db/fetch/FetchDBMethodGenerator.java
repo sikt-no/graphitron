@@ -38,7 +38,8 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelect
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.*;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeySetForResolverFields;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -893,7 +894,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 getReturnType(referenceField, refTypeName)
         );
         if (!isRoot) {
-            spec.addParameter(ParameterizedTypeName.get(SET.className, getKeyTypeName(referenceField, processedSchema)), resolverKeyParamName);
+            spec.addParameter(wrapSet(getKeyTypeName(referenceField, processedSchema)), resolverKeyParamName);
         }
 
         parser.getMethodInputsWithOrderField().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));

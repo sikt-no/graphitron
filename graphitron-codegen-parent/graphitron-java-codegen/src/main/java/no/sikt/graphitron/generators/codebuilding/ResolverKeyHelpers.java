@@ -1,15 +1,12 @@
 package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jooq.ForeignKey;
 import org.jooq.Key;
 import org.jooq.Typed;
 
@@ -19,7 +16,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.wrapRow;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 
@@ -70,7 +66,7 @@ public class ResolverKeyHelpers {
 
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 
-        ForeignKey<?, ?> foreignKey;
+        String foreignKeyName;
         var primaryKeyOptional = getPrimaryKeyForTable(containerTypeTable.getName());
 
         if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries()) {
@@ -84,28 +80,26 @@ public class ResolverKeyHelpers {
             throw new RuntimeException("Cannot resolve reference for scalar field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.");
         } else if (field.hasFieldReferences()) {
             var firstRef = field.getFieldReferences().stream().findFirst().get();
-            String keyName;
             Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(containerTypeTable.getName(), firstRef.getTable().getName()) : Optional.empty();
 
             if (firstRef.hasKey()) {
-                keyName = firstRef.getKey().getName();
+                foreignKeyName = firstRef.getKey().getName();
             } else if (firstRef.hasTableCondition() && implicitKey.isEmpty()) {
                     return primaryKeyOptional
                             .orElseThrow(() -> new IllegalArgumentException(
                                     String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
                                             field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
             } else {
-                keyName = implicitKey.stream().findFirst()
+                foreignKeyName = implicitKey.stream().findFirst()
                         .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
             }
-
-            foreignKey = getForeignKey(keyName)
-                    .orElseThrow(() -> new RuntimeException("Cannot find key with name " + firstRef.getKey().getName()));
         } else {
-            foreignKey = getForeignKey(findImplicitKey(containerTypeTable.getName(), (tableFromFieldType != null ? tableFromFieldType : containerTypeTable).getName())
-                    .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.")))
-                    .orElseThrow();
+            foreignKeyName = findImplicitKey(containerTypeTable.getName(), (tableFromFieldType != null ? tableFromFieldType : containerTypeTable).getName())
+                    .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
         }
+
+        var foreignKey = getForeignKey(foreignKeyName)
+                .orElseThrow(() -> new RuntimeException("Cannot find key with name " + foreignKeyName));
 
         if (!foreignKey.getTable().getName().equalsIgnoreCase(containerTypeTable.getName())) { // Reverse reference
             return primaryKeyOptional
