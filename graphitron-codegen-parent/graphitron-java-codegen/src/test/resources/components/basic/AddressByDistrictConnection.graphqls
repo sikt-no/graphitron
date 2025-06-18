@@ -1,0 +1,10 @@
+type AddressByDistrictConnection {
+  edges: [AddressByDistrictConnectionEdge]
+  pageInfo: PageInfo
+  nodes: [AddressByDistrict!]!
+}
+
+type AddressByDistrictConnectionEdge {
+  cursor: String
+  node: AddressByDistrict
+}
