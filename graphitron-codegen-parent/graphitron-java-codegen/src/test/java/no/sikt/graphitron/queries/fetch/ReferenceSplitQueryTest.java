@@ -131,7 +131,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     @DisplayName("Table path")
     void table() {
         assertGeneratedContentContains(
-               "table", Set.of(CUSTOMER_NOT_GENERATED),
+                "table", Set.of(CUSTOMER_NOT_GENERATED),
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 """
@@ -157,7 +157,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     @DisplayName("Reverse table path")
     void tableBackwards() {
         assertGeneratedContentContains(
-               "tableBackwards", Set.of(CUSTOMER_TABLE),
+                "tableBackwards", Set.of(CUSTOMER_TABLE),
                 "_address = ADDRESS.as",
                 "address_2030472956_customer = _address.customer().as",
                 """
@@ -180,7 +180,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     @DisplayName("Reference on a nullable field")
     void nullableField() {
         assertGeneratedContentContains(
-               "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
+                "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 """
