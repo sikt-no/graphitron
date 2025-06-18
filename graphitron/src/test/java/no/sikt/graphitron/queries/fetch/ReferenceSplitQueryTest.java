@@ -166,6 +166,33 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    //    @DisplayName("Table path to the same table as source")
+    @DisplayName("Given that A has a field that refers to the same type A, and this field has a single reference " +
+                 "directive that only specifies table A, while a relation already exists from A to A, when a new " +
+                 "resolver is generated, we expect that an explicit JOIN containing A path to A is used")
+    void selfTableReference() {
+        assertGeneratedContentContains(
+                "selfTableReference",
+                //                "_film.film().as(",
+                //                "film_3747728953_film.getId()",
+                //                ".from(film_3747728953_film"
+                "_film = FILM.as",
+                "film_3747728953_film = _film.film().as",
+                """
+                .select(
+                _film.getId(),
+                DSL.row(
+                DSL.row(film_3747728953_film.FILM_ID),
+                film_3747728953_film.getId()
+                ).mapping(Functions.nullOnAllNull(Film::new)))
+                .from(_film)
+                .join(film_3747728953_film)
+                .where(_film.hasIds(filmIds))
+                """
+        );
+    }
+
+    @Test
 //    @DisplayName("Table path on a list with split query")
     @DisplayName("Given that A has a field that refers to a list of B, and this field has a single reference " +
                  "directive that only specifies B, while a relation already exists from A to B, when a new resolver" +
@@ -200,30 +227,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void nullableList() {
         assertGeneratedContentContains(
                 "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
-//                "X.from(customer_2952383337_address)"
-                        "_customer = CUSTOMER.as",
-                        "customer_2952383337_address = _customer.address().as",
-                        """
-                        .select(
-                        _customer.getId(),
-                        DSL.multiset(
-                        DSL.select(DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
-                        .from(customer_2952383337_address)
-                        .orderBy(orderFields)))
-                        .from(_customer)
-                        .where(_customer.hasIds(customerIds))
-                        .fetchMap(Record2::value1, r -> r.value2().map(Record1::value1));"""
-        );
-    }
-
-    @Test
-    @DisplayName("Table path to the same table as source")
-    void selfTableReference() {
-        assertGeneratedContentContains(
-                "selfTableReference",
-                "_film.film().as(",
-                "film_3747728953_film.getId()",
-                ".from(film_3747728953_film"
+//                ".from(customer_2952383337_address)"
+                    "_customer = CUSTOMER.as",
+                 "customer_2952383337_address = _customer.address().as",
+                 """
+                 .select(
+                 _customer.getId(),
+                 DSL.multiset(
+                 DSL.select(DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                 .from(customer_2952383337_address)
+                 .orderBy(orderFields)))
+                 .from(_customer)
+                 .where(_customer.hasIds(customerIds))
+                 .fetchMap(Record2::value1, r -> r.value2().map(Record1::value1));
+                 """
         );
     }
 
@@ -232,9 +249,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Test
 //    @DisplayName("Key path with only one possible path between the tables")
-     @DisplayName("When A has a field that refers to B and that field has a reference directive containing a key" +
-                  "defined from same A to B, and a relation already exists from A to B, then an implicit join " +
-                  "between these two tables using the key, should be generated for the new resolver")
+     @DisplayName("Given that A has a field that refers to B and this field has a reference directive containing a key" +
+                  "defined from same A to B, while a relation already exists from A to B, when a new resolver is " +
+                  "generated, we expect that an explicit JOIN between these two tables using the key, is created")
         // TODO: Alias name is not using name based on key. Is this correct? What is the rule here?
     void keyWithSinglePath() {
         assertGeneratedContentContains(
@@ -242,38 +259,40 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //                ".from(customer_2952383337_address"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))" +
-                ")" +
-                ".from(_customer)" +
-                ".where(_customer.hasIds(customerIds))"
+                """
+                .select(
+                _customer.getId(),
+                DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
     @Test
 //    @DisplayName("Key path with multiple possible paths between the tables")
-    @DisplayName("When A has a field that refers to B and that field has a reference directive containing a key, " +
-                 "and multiple relations exists between A and B, then the chosen key will be used to create an " +
-                 "implicit join between these two tables for the new resolver")
+    @DisplayName("Given that A has a field that refers to B and that field has a reference directive containing a " +
+                 "key, and multiple relations exists between A and B, when a new resolver is generated, we expect " +
+                 "that the chosen key will be used to create an explicit JOIN between these two tables")
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-//                "X.from(film_3747728953_filmoriginallanguageidfkey"
+//                ".from(film_3747728953_filmoriginallanguageidfkey"
                 "_film = FILM.as",
                 "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as",
                 ".select(" +
                 "_film.getId()," +
-                "DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))" +
-                ")" +
+                "DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new)))" +
                 ".from(_film)" +
+                ".join(film_3747728953_filmoriginallanguageidfkey)" +
                 ".where(_film.hasIds(filmIds))"
         );
     }
 
     @Test
 //    @DisplayName("Reverse key path")
-    @DisplayName("When A has a field that refers to B and that field has a reference directive containing a key " +
+    @DisplayName("Given that A has a field that refers to B and that field has a reference directive containing a key " +
                  "defined from the inverse B to A, and no relation exist from A to B, then an implicit join between" +
                  "these two tables using the key should be generated for the new resolver")
         // TODO: Alias name is not using name based on key. Is this correct? What is the rule here?
@@ -285,11 +304,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "address_2030472956_customer = _address.customer().as",
                 ".select(" +
                 "_address.getId()," +
-                "DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))" +
-                ")" +
+                "DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
                 ".from(_address)" +
+                ".join(address_2030472956_customer)" +
                 ".where(_address.hasIds(addressIds))"
-
         );
     }
 
@@ -298,8 +316,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void throughKey() {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address",
-                ".join(address_1214171484_city"
+//                ".from(customer_2952383337_address",
+//                ".join(address_1214171484_city"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                "address_1214171484_city = customer_2952383337_address.city().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .join(address_1214171484_city)
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
@@ -308,9 +339,23 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfKeyReference() {
         assertGeneratedContentContains(
                 "selfKeyReference",
-                "_film.film().as(",
-                "film_3747728953_film.getId()",
-                ".Xfrom(film_3747728953_film"
+//                "_film.film().as(",
+//                "film_3747728953_film.getId()",
+//                ".from(film_3747728953_film"
+               "_film = FILM.as",
+               "film_3747728953_film = _film.film().as",
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(
+                                DSL.row(film_3747728953_film.FILM_ID),
+                                film_3747728953_film.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
+                )
+                .from(_film)
+                .join(film_3747728953_film)
+                .where(_film.hasIds(filmIds))
+                """
         );
     }
 
@@ -339,7 +384,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 ")" +
                 ".from(_customer)" +
                 ".join(customer_address)" +
-                "X.on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))"
+                ".on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))"
         );
     }
 
@@ -348,8 +393,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                ".join(customer_city_citycustomer_city).on(",
-                ".cityCustomer(customer_city, customer_city_citycustomer_city)"
+//                ".join(customer_city_citycustomer_city).on(",
+//                ".cityCustomer(customer_city, customer_city_citycustomer_city)"
+                "_customer = CUSTOMER.as",
+                "customer_city = CITY.as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_city.getId()).mapping(Functions.nullOnAllNull(City::new))
+                )
+                .from(_customer)
+                .join(customer_city)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
@@ -358,25 +415,51 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfConditionReference() {
         assertGeneratedContentContains(
                 "selfConditionReference",
-                "FILM.as(",
-                "film_sequel_sequel_film.getId()",
-                ".join(film_sequel_sequel_film).on(",
-                ".sequel(film_sequel, film_sequel_sequel_film"
+//                "FILM.as(",
+//                "film_sequel_sequel_film.getId()",
+//                ".join(film_sequel_sequel_film).on(",
+//                ".sequel(film_sequel, film_sequel_sequel_film"
+                "_film = FILM.as",
+                "film_sequel = FILM.as",
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(
+                                DSL.row(film_sequel.FILM_ID),
+                                film_sequel.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
+                )
+                .from(_film)
+                .join(film_sequel)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_sequel))
+                .where(_film.hasIds(filmIds))
+                """
         );
     }
 
 
     // ===== Reference directive with table and condition =====
 
-    // Both a table and a condition set on the same path element will generate
     @Test
     @DisplayName("Both a table and a condition set on the same path element")
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_address_addresscustomer_address = ADDRESS.as(", // Note, no implicit join anymore.
+               /* "customer_address_addresscustomer_address = ADDRESS.as(", // Note, no implicit join anymore.
                 ".join(customer_address_addresscustomer_address).on(",
-                ".addressCustomer(customer_address, customer_address_addresscustomer_address)" // Note, condition overrides as it uses "on".
+                ".addressCustomer(customer_address, customer_address_addresscustomer_address)" // Note, condition overrides as it uses "on".*/
+                "_customer = CUSTOMER.as",
+                "customer_address = ADDRESS.as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_address)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
@@ -388,27 +471,24 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
-                ".from(customer_2952383337_address).where(",
+                "customer_2952383337_address = _customer.address().as(",// Note, implicit join is present when we use a key, but not table.
+                /*".from(customer_2952383337_address).where(",
                 ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
-                ".where(_customer.hasIds(customerIds"
+                ".where(_customer.hasIds(customerIds"*/
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))
+                """
         );
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     // ===== Other combinations of directives =====
@@ -418,59 +498,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-                "_payment.getId(), DSL.field(",
-                "CustomerTable::new))).from(payment_425747824_customer)",
-                ".from(_payment).where(_payment.hasIds(paymentIds))"
-        );
-    }
-
-
-
-
-
-    @Test
-     @DisplayName("When A has a field that refers to A and that field has a single reference directive containing " +
-                  "only a condition, and no relation exists from A to A, then JOIN and ON clauses " +
-                  "should be generated. The JOIN clause should contain table A, and the ON clause should use the " +
-                  "condition method with tables A and A as arguments for the new resolver")
-    void generateDslRowInMainSelectWhenHacingCondition() {
-        assertGeneratedContentContains(
-                "test_split01",
-                "var _film = FILM.as(\"film_3747728953\");" +
-                "var film_followup = FILM.as(\"followUp_706318832\");",
-                ".select(" +
-                "_film.getId()," +
-                "DSL.row(" +
-                "DSL.row(film_followup.FILM_ID)," +
-                "film_followup.getId()," +
-                "film_followup.TITLE" +
-                ").mapping(Functions.nullOnAllNull(Film::new))",
-                ".from(_film)" +
-                ".join(film_followup)" +
-                ".on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_followup))"
-        );
-    }
-
-    @Test
-    @DisplayName("When A has a field that refers to B and that field has a single reference directive containing " +
-                 "only a condition, and no implicit relations exists between A and B, then JOIN and ON clauses " +
-                 "should be generated. The JOIN clause should contain table B, and the ON clause should use the " +
-                 "condition method with tables A and B as arguments for the new resolver")
-    void generateJoinOForDistinctTypesUsingConditionAndNoRelations() {
-        assertGeneratedContentContains(
-                "test_split02",
-                "var _customer = CUSTOMER.as(\"customer_2952383337\");" +
-                "var customer_city = CITY.as(\"city_2043323971\");",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.row(" +
-                "customer_city.getId()," +
-                "customer_city.CITY" +
-                ").mapping(Functions.nullOnAllNull(City::new)))" +
-                ".from(_customer)" +
-                ".join(customer_city)" +
-                ".on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))" +
-                "X.where(_customer.hasIds(customerIds))"
+//                "_payment.getId(), DSL.field(",
+//                "CustomerTable::new))).from(payment_425747824_customer)",
+//                ".from(_payment).where(_payment.hasIds(paymentIds))"
+               "_payment = PAYMENT.as",
+               "payment_425747824_customer = _payment.customer().as",
+                """
+                .select(
+                        _payment.getId(),
+                        DSL.row(payment_425747824_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_payment)
+                .join(payment_425747824_customer)
+                .where(_payment.hasIds(paymentIds))
+                """
         );
     }
 }

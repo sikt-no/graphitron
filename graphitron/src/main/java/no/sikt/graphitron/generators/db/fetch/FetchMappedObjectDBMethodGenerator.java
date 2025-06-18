@@ -45,7 +45,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField targetField) {
         var targetOwner = getLocalObject();
         var context = new FetchContext(processedSchema, targetField, targetOwner, false);
-        // Create nextContext only once, as it is used multiple times (maybe)
         var resolverContext = targetField.isResolver()
                               ? context.nextContext(targetField)
                               : null;
@@ -57,14 +56,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var whereBlock = formatWhereContents(context, idParamName, isRoot, targetField.isResolver());
         var querySource = context.renderQuerySource(getLocalTable());
 
-        // context.nextContext(targetField) are called here and above. Unnecessary to call it twice?
         var refContext = /*targetField.isResolver()*/resolverContext != null ? /*context.nextContext(targetField)*/ resolverContext : context;
         var actualRefTable = refContext.getTargetAlias(); // TODO: film_followup_follow_up_film //film_followup
         var actualRefTableName = refContext.getTargetTableName(); // TODO: "FILM"
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
-        // TODO: targetField: followUp, actualRefTable: film_followup_follow_up_film
         Optional<CodeBlock> maybeOrderFields =
                 !LookupHelpers.lookupExists(targetField, processedSchema) &&
                 (targetField.isIterableWrapped() || targetField.hasForwardPagination() || !isRoot)
@@ -91,8 +88,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                         ? createSeekAndLimitBlock()
                         : empty())
                .add(setFetch(targetField))
-                .unindent()
-                .unindent();
+               .unindent()
+               .unindent();
 
         var parser = new InputParser(targetField, processedSchema);
         return getSpecBuilder(targetField, context.getReferenceObject().getGraphClassName(), parser)
