@@ -364,10 +364,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Test
 //    @DisplayName("Condition path")
-    @DisplayName("When A has a field that refers to B and that field has a single reference directive containing " +
-                 "only a condition, and no implicit relations exists between A and B, then JOIN and ON clauses " +
-                 "should be generated. The JOIN clause should contain table B, and the ON clause should use the " +
-                 "condition method with tables A and B as arguments for the new resolver")
+    @DisplayName("""
+                 Given that A has a field referencing B, and this field includes a single reference directive
+                 with only a condition, and there exists a relation from A to B, when a new resolver is
+                 generated, we expect that JOIN and ON clauses are created. The JOIN clause should contain
+                 table B, and the ON clause should use the condition method with tables A and B as arguments
+                 """)
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
