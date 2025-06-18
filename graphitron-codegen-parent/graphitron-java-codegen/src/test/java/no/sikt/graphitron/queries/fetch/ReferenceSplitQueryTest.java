@@ -310,20 +310,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void nullableList() {
         assertGeneratedContentContains(
                 "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
-                "orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())",
+                    "_customer = CUSTOMER.as",
+                 "customer_2952383337_address = _customer.address().as",
+                 "orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())",
+                 """
+                 .select(
+                        DSL.row(_customer.CUSTOMER_ID),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .orderBy(orderFields)
+                .fetchGroups(Record2::value1, Record2::value2);
                 """
-                .select(
-                       DSL.row(_customer.CUSTOMER_ID),
-                       DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
-               )
-               .from(_customer)
-               .join(customer_2952383337_address)
-               .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-               .orderBy(orderFields)
-               .fetchGroups(Record2::value1, Record2::value2);
-               """
         );
     }
 
@@ -393,7 +393,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-                "_address = ADDRESS.as",
+               "_address = ADDRESS.as",
                 "address_2030472956_customer = _address.customer().as",
                 """
                 .select(
@@ -442,8 +442,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void selfKeyReference() {
         assertGeneratedContentContains(
                 "selfKeyReference",
-                "_film = FILM.as",
-                "film_3747728953_film = _film.film().as",
+               "_film = FILM.as",
+               "film_3747728953_film = _film.film().as",
                 """
                 .select(
                         DSL.row(_film.FILM_ID),
@@ -610,8 +610,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-                "_payment = PAYMENT.as",
-                "payment_425747824_customer = _payment.customer().as",
+               "_payment = PAYMENT.as",
+               "payment_425747824_customer = _payment.customer().as",
                 """
                 .select(
                         DSL.row(_payment.PAYMENT_ID),
