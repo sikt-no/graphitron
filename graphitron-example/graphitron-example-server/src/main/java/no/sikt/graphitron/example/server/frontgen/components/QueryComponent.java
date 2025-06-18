@@ -1,0 +1,19 @@
+package no.sikt.graphitron.example.server.frontgen.components;
+
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import no.sikt.graphitron.example.server.frontgen.QueryBackedView;
+
+public abstract class QueryComponent extends VerticalLayout {
+
+    protected final QueryBackedView queryView;
+
+    public QueryComponent(QueryBackedView queryView) {
+        this.queryView = queryView;
+    }
+
+    public abstract void load();
+
+    public abstract String getButtonText();
+
+    public abstract Runnable getLoadAction();
+}

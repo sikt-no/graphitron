@@ -17,12 +17,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 @ApplicationScoped
-public class GraphQLService {
-    private static final Logger LOG = LoggerFactory.getLogger(GraphQLService.class);
+public class GraphQLQueryAdapter {
+    private static final Logger LOG = LoggerFactory.getLogger(GraphQLQueryAdapter.class);
     private final HttpClient httpClient;
     private final Jsonb jsonb;
 
-    public GraphQLService() {
+    public GraphQLQueryAdapter() {
         this.httpClient = HttpClient.newHttpClient();
         this.jsonb = JsonbBuilder.create();
     }
