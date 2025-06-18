@@ -470,7 +470,6 @@ public class FetchContext {
     ) {
         var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
 
-        // If split directive has been used or, get instead previous table from the previous context if possible.
         if (getReferenceObjectField().isResolver() && this.previousContext != null && checkLastRef)
             previousTable = this.previousContext.getPreviousTable();
 
@@ -486,12 +485,9 @@ public class FetchContext {
         }
 
         for (int i = 0; i < directiveReferences.size(); i++) {
-            // Make sure we just iterate the first field reference assigned by reference directive if this context is
-            // a top level context and current field has a split query directive.
             if (getReferenceObjectField().isResolver() && this.previousContext == null && i > 0)
                 break;
 
-            // TODO: Legg ved referanse til directiveReferences og heller legg ved indeksnr som skal brukes
             joinSequence = resolveNextSequence(directiveReferences.get(i), relations.get(i), joinSequence, requiresLeftJoin);
         }
 
@@ -596,7 +592,7 @@ public class FetchContext {
             return newSequence;
         }
 
-        // TODO: If key is used, aliasname is not necessarily named after that key used (ReferenceSplityQueryTest->keyBackwards() and )
+        // TODO: If key is used, aliasname is not necessarily named after the key used (ReferenceSplityQueryTest->keyBackwards())
 
         if (keyToUse != null) {
             var aliasJoinSequence = newSequence.clone();

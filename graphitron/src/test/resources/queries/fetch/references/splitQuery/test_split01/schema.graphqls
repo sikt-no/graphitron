@@ -1,9 +1,0 @@
-type Query {
-  film: Film
-}
-
-type Film @table(name: "FILM") {
-  id: ID!
-  title: String!
-  followUp: Film @splitQuery @reference(references: [{condition: {name: "REFERENCE_FILM_CONDITION", method: "sequel"}}])
-}
