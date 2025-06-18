@@ -29,6 +29,7 @@ type Query {
 
     node(id: ID!): Node
     cities: [City] @asConnection
+    citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
 }
@@ -85,6 +86,11 @@ type City implements Node @table @node(typeId: "CityType"){
     addresses: [Address] @splitQuery
     addressesPaginated: [Address] @splitQuery @asConnection
     payments: [Payment] @reference(references: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+}
+
+type CityWithoutID @table(name: "CITY") {
+    cityId: Int @field(name: "CITY_ID")
+    addresses: [Address]
 }
 
 type FilmList @table(name: "FILM_LIST") {
