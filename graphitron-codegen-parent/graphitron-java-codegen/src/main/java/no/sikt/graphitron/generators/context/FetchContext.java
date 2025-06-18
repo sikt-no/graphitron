@@ -283,6 +283,7 @@ public class FetchContext {
 
     /**
      * Iterate the table sequence as if several context layers were traversed with the provided references.
+     *
      * @return The new join sequence, with the provided join sequence extended by all references in this layer's
      * reference field, or other appropriate start points for a sequence.
      */
@@ -476,18 +477,14 @@ public class FetchContext {
         if (fieldRef.hasTableCondition() && keyToUse == null) {
             if (newSequence.isEmpty()) {
 
-                // Original ->
                 var alias = new Alias(
                         previous.getCodeName() + "_" + getReferenceObjectField().getName(),
-                        JoinListSequence.of(target),  // Changed from previous to target. Might be dependent on where we
-                        // are in the sequence.
+                        JoinListSequence.of(target),  // Changed from previous to target. Correct?
                         false
                 );
 
                 newSequence.add(alias);
                 this.aliasSet.add(alias);
-                // <--
-
 
                 // No keys found in combination with a condition, indicates a join (JOIN ON) in the previous context
                 // between that source and this table.
@@ -524,7 +521,7 @@ public class FetchContext {
             }
 
 
-            // TODO: Is this necessary if only one condition in split query? Creates new alias
+            // TODO: Is this necessary if only one condition in split query? Creates an extra new alias
 //            var join = fieldRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
 //            if (!newSequence.isEmpty() || this.addAllJoinsToJoinSet) {
 //                this.joinSet.add(join);
@@ -554,8 +551,10 @@ public class FetchContext {
 
             // The following is not correct
             if (!newSequence.isEmpty() || this.addAllJoinsToJoinSet) {
-                this.previousContext.joinSet.add(join);
-
+                if (this.previousContext != null)
+                    this.previousContext.joinSet.add(join);
+                } else {
+                this.joinSet.add(join);
             }
 
             if (newSequence.isEmpty()) {
@@ -566,7 +565,6 @@ public class FetchContext {
                     this.previousContext.joinSet.add(join);
                 }
             }
-
 
 
             this.aliasSet.add(join.getJoinAlias());
@@ -583,7 +581,10 @@ public class FetchContext {
                                          : newSequence.render(newSequence.getSecondLast());
 
             // If splitQuery directive is used, the condition should be handled in the parent context
-            if (this.previousContext != null && this.referenceObjectField.hasSplitQueryDirective() && this.referenceObjectField.isResolver()) {
+            if (this.previousContext != null &&
+                this.referenceObjectField.hasSplitQueryDirective() &&
+                this.referenceObjectField.isResolver()
+            ) {
                 this.previousContext.conditionList.add(
                         fieldRef.getTableCondition().formatToString(
                                 List.of(previousTableWithAlias, newSequence.render())));
