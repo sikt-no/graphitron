@@ -19,7 +19,8 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
-import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
 
@@ -50,7 +51,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         } else {
             var context = new FetchContext(processedSchema, target, getLocalObject(), true);
             var targetSource = context.renderQuerySource(getLocalTable());
-            var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
             if (target.isResolver()) context = context.nextContext(target);
 
             code.add(createAliasDeclarations(context.getAliasSet()))
@@ -80,7 +81,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         implementations.forEach(implementation -> {
             var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
             var context = new FetchContext(processedSchema, virtualReference, implementation, false);
-            var where = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
             var countForImplementation = CodeBlock.builder()
                     .add("$T.select($T.count().as($S))", DSL.className, DSL.className, COUNT_FIELD_NAME)
                     .add("\n.from($L)\n", context.getTargetAlias())
@@ -117,7 +118,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         );
 
         if (!isRoot) {
-            spec.addParameter(getStringSetTypeName(), idParamName);
+            spec.addParameter(wrapSet(getKeyTypeName(referenceField, processedSchema)), resolverKeyParamName);
         }
 
         parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));

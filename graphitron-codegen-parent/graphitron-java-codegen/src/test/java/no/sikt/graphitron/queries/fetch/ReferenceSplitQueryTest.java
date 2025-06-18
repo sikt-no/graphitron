@@ -181,7 +181,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
                 ".from(customer_2952383337_address).where(",
                 ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
-                ".where(_customer.hasIds(customerIds"
+                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream"
         );
     }
 
@@ -284,9 +284,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-                "_payment.getId(), DSL.field(",
+                "DSL.row(_payment.PAYMENT_ID), DSL.field(",
                 "CustomerTable::new))).from(payment_425747824_customer)",
-                ".from(_payment).where(_payment.hasIds(paymentIds))"
+                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream()"
         );
     }
 }

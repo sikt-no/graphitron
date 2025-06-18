@@ -1,6 +1,7 @@
 package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -59,6 +60,8 @@ public class ResolverKeyHelpers {
      * @return The key used in the first step when resolving a resolver field
      */
     public static Key<?> findKeyForResolverField(GenerationField field, ProcessedSchema processedSchema) {
+        if (!field.isResolver()) return null;
+
         var container = processedSchema.getRecordType(field.getContainerTypeName());
 
         var containerTypeTable = container.hasTable() ?
@@ -114,19 +117,13 @@ public class ResolverKeyHelpers {
     }
 
     /**
-     * Returns the select code for the columns of a key.
+     * Get the TypeName for the key used for a resolver field
      *
-     * @param key               The key
-     * @param aliasVariableName The variable name for the table alias
-     * @return Select code for the columns in the key
+     * @param field The resolver field
+     * @return TypeName of the key variable
      */
-    public static CodeBlock getSelectKeyColumnRow(Key<?> key, String tableName, String aliasVariableName) {
-        return wrapRow(
-                getJavaFieldNamesForKey(tableName, key)
-                        .stream()
-                        .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
-                        .collect(CodeBlock.joining(", "))
-        );
+    public static TypeName getKeyTypeName(GenerationField field, ProcessedSchema schema) {
+        return getKeyTypeName(findKeyForResolverField(field, schema));
     }
 
     /**
@@ -136,14 +133,26 @@ public class ResolverKeyHelpers {
      * @return TypeName of the key variable
      */
     public static TypeName getKeyTypeName(Key<?> key) {
+        return getKeyTypeName(key, true);
+    }
+
+    /**
+     * Get the TypeName for the key variable in the DTO
+     *
+     * @param key The key
+     * @return TypeName of the key variable
+     */
+    public static TypeName getKeyTypeName(Key<?> key, boolean parameterized) {
         var keyFields = key.getFields();
 
         if (keyFields.size() > 22) {
             throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
         }
-        return ParameterizedTypeName.get(
-                ClassName.get("org.jooq", String.format("Record%d", keyFields.size())),
-                keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
-        );
+        var recordClassName = ClassName.get("org.jooq", String.format("Record%d", keyFields.size()));
+        return parameterized ?
+                ParameterizedTypeName.get(
+                        recordClassName,
+                        keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
+                ) : recordClassName;
     }
 }

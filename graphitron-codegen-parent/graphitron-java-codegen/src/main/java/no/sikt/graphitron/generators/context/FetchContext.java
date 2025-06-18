@@ -10,12 +10,14 @@ import no.sikt.graphitron.definitions.mapping.TableRelation;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.jooq.Key;
 import org.jooq.Table;
 
 import java.util.*;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.findKeyForResolverField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -33,7 +35,7 @@ public class FetchContext {
     private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
-    private JOOQMapping keyForMapping;
+    private Key<?> resolverKey;
     private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
     private final ProcessedSchema processedSchema;
@@ -88,6 +90,7 @@ public class FetchContext {
 
         this.previousContext = previousContext;
         this.shouldUseOptional = shouldUseOptional;
+        this.resolverKey = findKeyForResolverField(referenceObjectField, processedSchema);
         currentJoinSequence = iterateJoinSequence(pastJoinSequence);
 
     }
@@ -213,8 +216,8 @@ public class FetchContext {
         return referenceObjectField;
     }
 
-    public JOOQMapping getKeyForMapping() {
-        return keyForMapping;
+    public Key<?> getResolverKey() {
+        return resolverKey;
     }
 
     public boolean getShouldUseOptional() {
@@ -404,8 +407,6 @@ public class FetchContext {
         var keyToUse = fRef.hasKey() || fRef.hasTableCondition()
                 ? fRef.getKey()
                 : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName()).map(JOOQMapping::fromKey).orElse(null);
-
-        keyForMapping = keyToUse;
 
         if (keyToUse != null && !keyToUse.getTable().equals(target)) {
             keyToUse = keyToUse.getInverseKey();

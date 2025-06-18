@@ -51,7 +51,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Abstract generator for various database fetching methods.
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    protected final String idParamName = uncapitalize(getLocalObject().getName()) + "Ids";
+    protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + "ResolverKeys";
     protected final boolean isRoot = getLocalObject().isOperationRoot();
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
 
@@ -474,7 +474,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String idParamName, boolean isRoot, boolean isResolverRoot) {
+    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isResolverRoot) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {
@@ -495,12 +495,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        if (!isRoot && !idParamName.isEmpty()) {
-            if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                conditionList.add(hasIdsBlock(idParamName, getLocalObject(), context.getTargetAlias()));
-            } else {
-                conditionList.add(CodeBlock.of("$L.hasIds($N)", context.renderQuerySource(getLocalTable()), idParamName));
-            }
+        if (!isRoot && !resolverKeyParamName.isEmpty()) {
+            conditionList.add(inResolverKeysBlock(resolverKeyParamName, context)
+            );
         }
         if (!isResolverRoot) {
             conditionList.addAll(getInputConditions(context));
@@ -896,7 +893,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 getReturnType(referenceField, refTypeName)
         );
         if (!isRoot) {
-            spec.addParameter(getStringSetTypeName(), idParamName);
+            spec.addParameter(ParameterizedTypeName.get(SET.className, getKeyTypeName(referenceField, processedSchema)), resolverKeyParamName);
         }
 
         parser.getMethodInputsWithOrderField().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
@@ -917,6 +914,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (isRoot && !lookupExists) {
             return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
+        } else if (!isRoot) {
+            return wrapMap(getKeyTypeName(referenceField, processedSchema), wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
         }

@@ -1,4 +1,4 @@
-type Wrapper {
+type Wrapper @table(name: "ADDRESS") {
   id: ID
 
   query: [CustomerTable] @splitQuery
