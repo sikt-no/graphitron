@@ -25,3 +25,10 @@ graphitron-example/graphitron-example-server/src/test/resources/approval/approva
 graphitron-schema-transform/.approval_tests_temp/**
 /graphitron-example/graphitron-example-server/src/main/frontend/generated/
 /graphitron-example/graphitron-example-server/src/main/frontend/index.html
+/graphitron-example/graphitron-example-server/node_modules/
+/graphitron-example/graphitron-example-server/package.json
+/graphitron-example/graphitron-example-server/package-lock.json
+/graphitron-example/graphitron-example-server/tsconfig.json
+/graphitron-example/graphitron-example-server/types.d.ts
+/graphitron-example/graphitron-example-server/vite.config.ts
+/graphitron-example/graphitron-example-server/vite.generated.ts

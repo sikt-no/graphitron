@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ResolverHelpers {
@@ -34,5 +35,22 @@ public class ResolverHelpers {
         }
 
         return ((List<Object>) data).stream().map(it -> MAPPER.convertValue(it, targetClass)).toList();
+    }
+
+    public static <T, R> List<R> extractNodesFromConnection(T connection, Function<T, List<?>> edgesGetter, Function<Object, R> nodeGetter) {
+        if (connection == null) {
+            return List.of();
+        }
+
+        List<?> edges = edgesGetter.apply(connection);
+        if (edges == null) {
+            return List.of();
+        }
+
+        return edges.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(nodeGetter)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toList());
     }
 }
