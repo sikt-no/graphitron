@@ -60,41 +60,52 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Test
 //    @DisplayName("Table path")
-    @DisplayName("Given that A has a field that refers to B and that field has a single reference directive " +
-                 "containing only a table B, and a relation exists from A to B, then an explicit join should be " +
-                 "generated for the new resolver")
+    @DisplayName("""
+                 Given that A has a field referencing B and this field includes a single reference directive with only
+                 a table parameter B, and there exists a relation from A to B, when a new resolver is generated, then a
+                 JOIN clause should be created. The JOIN clause must include table B retrieved through A
+                 """)
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_NOT_GENERATED),
 //                ".from(customer_2952383337_address"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))" +
-                ".from(_customer)" +
-                ".join(customer_2952383337_address)" +
-                ".where(_customer.hasIds"
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
     @Test
 //    @DisplayName("Reverse table path")
-    @DisplayName("Given that A has a field that refers to B and that field has a single reference directive " +
-                 "containing only a table B, and a relation does not exist from A to B, but the (inverse) relation " +
-                 "from B to A do, then an implicit join should be generated for the new resolver")
+    @DisplayName("""
+                 Given that A has a field referencing B and this field includes a single reference directive with only a
+                 table parameter B, and there does not exist a relation from A to B, but the (inverse) relation from B
+                 to A do, when a new resolver is generated, then a JOIN clause should be created. The JOIN clause must
+                 include table B retrieved through inverse relation
+                 """)
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
 //                ".from(address_2030472956_customer"
                 "_address = ADDRESS.as",
                 "address_2030472956_customer = _address.customer().as",
-                ".select(" +
-                "_address.getId(), " +
-                "DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                ".from(_address)" +
-                ".join(address_2030472956_customer)" +
-                ".where(_address.hasIds(addressIds))"
+                """
+                .select(
+                        _address.getId(),
+                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_address)
+                .join(address_2030472956_customer)
+                .where(_address.hasIds(addressIds))
+                """
         );
     }
 
@@ -109,12 +120,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //                ".from(customer_2952383337_address"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))" +
-                ".from(_customer)" +
-                ".join(customer_2952383337_address)" +
-                ".where(_customer.hasIds(customerIds))"
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
@@ -128,16 +142,19 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
 //                ".from(customer_2952383337_address",
 //                ".join(address_1214171484_city"
-                "_customer = CUSTOMER.as(\"customer_2952383337\")",
-                "customer_2952383337_address = _customer.address().as(\"address_1214171484\")",
-                "address_1214171484_city = customer_2952383337_address.city().as(\"city_2554114265\")",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new)))" +
-                ".from(_customer)" +
-                ".join(customer_2952383337_address)" +
-                ".join(address_1214171484_city)" +
-                ".where(_customer.hasIds(customerIds)"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                "address_1214171484_city = customer_2952383337_address.city().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .join(address_1214171484_city)
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
@@ -152,16 +169,18 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
 //                ".from(city_1887334959_address",
 //                ".join(address_1356285680_customer"
-                "_city = CITY.as(\"city_1887334959\")",
-                "city_1887334959_address = _city.address().as(\"address_1356285680\")",
-                "address_1356285680_customer = city_1887334959_address.customer().as(\"customer_2335947072\")",
-                ".select(" +
-                "_city.getId()," +
-                "DSL.row(address_1356285680_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                ".from(_city)" +
-                ".join(city_1887334959_address)" +
-                ".join(address_1356285680_customer)" +
-                ".where(_city.hasIds(cityIds))"
+                "_city = CITY.as",
+                "city_1887334959_address = _city.address().as",
+                """
+                .select(
+                        _city.getId(),
+                        DSL.row(address_1356285680_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_city)
+                .join(city_1887334959_address)
+                .join(address_1356285680_customer)
+                .where(_city.hasIds(cityIds))
+                """
         );
     }
 
@@ -180,11 +199,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "film_3747728953_film = _film.film().as",
                 """
                 .select(
-                _film.getId(),
-                DSL.row(
-                DSL.row(film_3747728953_film.FILM_ID),
-                film_3747728953_film.getId()
-                ).mapping(Functions.nullOnAllNull(Film::new)))
+                        _film.getId(),
+                        DSL.row(
+                                DSL.row(film_3747728953_film.FILM_ID),
+                                film_3747728953_film.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
+                )
                 .from(_film)
                 .join(film_3747728953_film)
                 .where(_film.hasIds(filmIds))
@@ -206,15 +226,18 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.multiset(" +
-                "DSL.select(DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))" +
-                ".from(customer_2952383337_address)" +
-                ".orderBy(orderFields)))" +
-                ".from(_customer)" +
-                ".where(_customer.hasIds(customerIds))" +
-                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1));"
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.multiset(
+                                DSL.select(DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                .from(customer_2952383337_address)
+                                .orderBy(orderFields)
+                        )
+                )
+                .from(_customer)
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
@@ -232,15 +255,17 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                  "customer_2952383337_address = _customer.address().as",
                  """
                  .select(
-                 _customer.getId(),
-                 DSL.multiset(
-                 DSL.select(DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
-                 .from(customer_2952383337_address)
-                 .orderBy(orderFields)))
-                 .from(_customer)
-                 .where(_customer.hasIds(customerIds))
-                 .fetchMap(Record2::value1, r -> r.value2().map(Record1::value1));
-                 """
+                        _customer.getId(),
+                        DSL.multiset(
+                                DSL.select(DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                .from(customer_2952383337_address)
+                                .orderBy(orderFields)
+                        )
+                )
+                .from(_customer)
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, r -> r.value2().map(Record1::value1));
+                """
         );
     }
 
@@ -261,8 +286,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as",
                 """
                 .select(
-                _customer.getId(),
-                DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .where(_customer.hasIds(customerIds))
@@ -281,12 +307,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //                ".from(film_3747728953_filmoriginallanguageidfkey"
                 "_film = FILM.as",
                 "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as",
-                ".select(" +
-                "_film.getId()," +
-                "DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new)))" +
-                ".from(_film)" +
-                ".join(film_3747728953_filmoriginallanguageidfkey)" +
-                ".where(_film.hasIds(filmIds))"
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))
+                )
+                .from(_film)
+                .join(film_3747728953_filmoriginallanguageidfkey)
+                .where(_film.hasIds(filmIds))
+                """
         );
     }
 
@@ -302,12 +331,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //                ".from(address_2030472956_customer"
                "_address = ADDRESS.as",
                 "address_2030472956_customer = _address.customer().as",
-                ".select(" +
-                "_address.getId()," +
-                "DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                ".from(_address)" +
-                ".join(address_2030472956_customer)" +
-                ".where(_address.hasIds(addressIds))"
+                """
+                .select(
+                        _address.getId(),
+                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_address)
+                .join(address_2030472956_customer)
+                .where(_address.hasIds(addressIds))
+                """
         );
     }
 
@@ -378,15 +410,16 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"*/
                 "_customer = CUSTOMER.as",
                 "customer_address = ADDRESS.as",
-                ".select(" +
-                "_customer.getId()," +
-                "DSL.row(" +
-                "customer_address.getId()" +
-                ").mapping(Functions.nullOnAllNull(Address::new))" +
-                ")" +
-                ".from(_customer)" +
-                ".join(customer_address)" +
-                ".on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))"
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_address)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .where(_customer.hasIds(customerIds))
+                """
         );
     }
 
