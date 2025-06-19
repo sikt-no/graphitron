@@ -109,8 +109,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //    @DisplayName("Table path")
     @DisplayName("""
                  Given that A has a field referencing B and this field includes a single reference directive with only
-                 a table parameter B, and there exists a relation from A to B, when a new resolver is generated, then a
-                 JOIN clause should be created. The JOIN clause must include table B retrieved through A
+                 the table parameter B, and there exists a direct relation from A to B, when a new resolver is
+                 generated, then a JOIN clause should be created. The JOIN clause must include table B retrieved
+                 through A
                  """)
     void table() {
         assertGeneratedContentContains(
@@ -126,6 +127,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
@@ -133,10 +135,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     @Test
 //    @DisplayName("Reverse table path")
     @DisplayName("""
-                 Given that A has a field referencing B and this field includes a single reference directive with only a
-                 table parameter B, and there does not exist a relation from A to B, but the (inverse) relation from B
-                 to A do, when a new resolver is generated, then a JOIN clause should be created. The JOIN clause must
-                 include table B retrieved through inverse relation
+                 Given that A has a field referencing B and this field includes a single reference directive with only
+                 the table parameter B, and there is no direct relation from A to B, but an inverse relation exists
+                 from B to A, when a new resolver is generated, then a JOIN clause should be created. The JOIN clause
+                 must include table B retrieved through inverse relation
                  """)
     void tableBackwards() {
         assertGeneratedContentContains(
@@ -152,15 +154,19 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_address)
                 .join(address_2030472956_customer)
                 .where(_address.hasIds(addressIds))
+                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
     @Test
 //    @DisplayName("Reference on a nullable field")
-    @DisplayName("Given that A has a field that refers to B and that field is nullable and has a single reference " +
-                 "directive containing only a table B, and a relation exists from A to B, then an explicit join " +
-                 "should be generated for the new resolver")
+    @DisplayName("""
+                 Given that A has a field referencing B and this field is nullable and has a single reference
+                 directive with only the table parameter B, and a direct relation exists from A to B, when a new
+                 resolver is generated, then a JOIN clause should be created. The JOIN clause must include table B
+                 retrieved through A
+                 """)
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
@@ -175,15 +181,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
     @Test
 //    @DisplayName("Indirect table path")
-    @DisplayName("Given that A has a field that refers to C, and that field has a single reference directive " +
-                 "containing only a table B, and a relation does not exists from A to C but from A to B and from B" +
-                 "to C, then an explicit join should be generated for the new resolver")
+    @DisplayName("""
+                 Given that A has a field referencing C and this field has a single reference directive with only the
+                 table parameter B, and there is no direct relation from A to C, but there are relations from A to B and
+                 from B to C, when a new resolver is generated, multiple JOIN clauses should be created. The first JOIN
+                 clause must include table B retrieved through A, and the second JOIN clause must include C retrieved
+                 through B
+                 """)
     void throughTable() {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
@@ -201,16 +212,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
                 .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
     @Test
 //    @DisplayName("Indirect reverse table path")
-    @DisplayName("Given that A has a field that refers to C, and that field has a single reference directive " +
-                 "containing only a table B, and a relation does not exists from A to C and neither from A to B or B" +
-                 "to C, but the (inverse) relation from B to A and C to B exists, then an explicit join should be " +
-                 "generated for the new resolver")
+    @DisplayName("""
+                 Given that A has a field referencing C, and this field includes a single reference directive with only
+                 the table parameter B, and there is no direct relation from A to C, nor from A to B or B to C, but
+                 inverse relations exists from B to A and from C to B, when a new resolver is generated, multiple JOIN
+                 clauses should be created. The first JOIN clause must include table B retrieved through the inverse
+                 relation from B to A, and the second JOIN clause must include table C retrieved through the inverse
+                 relation from C to B
+                 """)
     void throughTableBackwards() {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
@@ -218,6 +234,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 //                ".join(address_1356285680_customer"
                 "_city = CITY.as",
                 "city_1887334959_address = _city.address().as",
+                "address_1356285680_customer = city_1887334959_address.customer()",
                 """
                 .select(
                         _city.getId(),
@@ -227,15 +244,19 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .join(city_1887334959_address)
                 .join(address_1356285680_customer)
                 .where(_city.hasIds(cityIds))
+                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
     @Test
     //    @DisplayName("Table path to the same table as source")
-    @DisplayName("Given that A has a field that refers to the same type A, and this field has a single reference " +
-                 "directive that only specifies table A, while a relation already exists from A to A, when a new " +
-                 "resolver is generated, we expect that an explicit JOIN containing A path to A is used")
+    @DisplayName("""
+                 Given that A has a field referencing itself, and this field includes a single reference directive with
+                 only the table parameter A, and there is a direct relation from A to itself, when a new resolver is
+                 generated, a JOIN clause should be created. The JOIN clause must include table A retrieved through the
+                 self-relation
+                 """)
     void selfTableReference() {
         assertGeneratedContentContains(
                 "selfTableReference",
@@ -255,6 +276,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_film)
                 .join(film_3747728953_film)
                 .where(_film.hasIds(filmIds))
+                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
