@@ -76,16 +76,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("In jOOQ record input")
     void jooqRecord() {
         assertGeneratedContentContains("jooqRecord",
-                ".where(nodeIdStrategy.hasId(\"CUSTOMER\", filterRecord.getCustomerId(), _customer.fields(_customer.getPrimaryKey().getFieldsArray())))"
-        );
-    }
-
-    @Test
-    @DisplayName("In jOOQ record input with reference")
-    void jooqRecordWithReference() {
-        assertGeneratedContentContains("jooqRecordWithReference",
-                "where(nodeIdStrategy.hasId(\"ADDRESS\", filterRecord.getAddressId(), customer_2952383337_address_left",
-                ".leftJoin(customer_2952383337_address_left)"
+                ".where(nodeIdStrategy.hasId(\"CUSTOMER\", filterRecord, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))"
         );
     }
 

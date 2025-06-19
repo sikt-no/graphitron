@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -136,7 +137,13 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
      * @return CodeBlock for the mapping of a record.
      */
     private static CodeBlock transformOutputRecord(String typeName, boolean isJava) {
-        return CodeBlock.of("($L, $L) -> $L$S)", TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false), "");
+        return CodeBlock.of("($L, $L) -> $L$L$S)",
+                TRANSFORMER_LAMBDA_NAME,
+                RESPONSE_NAME,
+                recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false),
+                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : empty(),
+                ""
+        );
     }
 
     private static CodeBlock fetcherCodeInit(ObjectField target, RecordObjectSpecification<?> localObject, CodeBlock fetcher) {

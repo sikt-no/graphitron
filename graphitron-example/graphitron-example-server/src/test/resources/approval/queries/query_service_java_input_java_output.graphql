@@ -1,0 +1,5 @@
+{
+    helloWorldAgainWithJavaRecordInput(input: {customerId: "Q1VTVE9NRVI6MQ"}) {
+        greeting
+    }
+}

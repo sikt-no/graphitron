@@ -1,0 +1,14 @@
+{
+    "data": {
+        "customersByAddress": {
+            "nodes": [
+                {
+                    "id": "Q1VTVE9NRVI6MQ",
+                    "address": {
+                        "id": "QUREUkVTUzo1"
+                    }
+                }
+            ]
+        }
+    }
+}

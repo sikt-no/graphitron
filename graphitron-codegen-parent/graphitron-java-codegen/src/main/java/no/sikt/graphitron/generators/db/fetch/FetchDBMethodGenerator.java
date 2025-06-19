@@ -34,7 +34,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
@@ -448,10 +447,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      */
     protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
         var renderedSource = context.renderQuerySource(getLocalTable());
-        if (field.isID()) {
-            if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                return createNodeIdBlock(((ObjectDefinition) context.getReferenceObject()), context.getTargetAlias());
-            }
+
+        if (processedSchema.isNodeIdField(field)) {
+            return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
+        } else if (field.isID()) {
             return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
@@ -546,8 +545,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 }
 
                 if (field.isID()) {
-                    if (shouldMakeNodeStrategy() && field.hasNodeID()) {
-                        conditionBuilder.add(hasIdsBlock(name.toString(), processedSchema.getObject(field.getNodeIdTypeName()), renderedSequence.toString(), field.isIterableWrapped()));
+                    if (processedSchema.isNodeIdField(field)) {
+                        conditionBuilder.add(
+                                hasIdsBlock(
+                                        processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
+                                                CodeBlock.of(inputCondition.getNamePath()) : name,
+                                        processedSchema.getObject(field.getNodeIdTypeName()),
+                                        renderedSequence.toString(),
+                                        field.isIterableWrapped()
+                                )
+                        );
                     } else {
                         conditionBuilder
                                 .add(renderedSequence)
@@ -841,7 +848,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (orderByField.isEmpty() && !hasPrimaryKey) return Optional.empty();
 
-        var defaultOrderByFields = hasPrimaryKey ? getPrimaryKeyFieldsBlock(actualRefTable) : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
+        var defaultOrderByFields = hasPrimaryKey ? getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable) : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
         var code = CodeBlock.builder();
         orderByField.ifPresentOrElse(
                 it -> code.add(createCustomOrderBy(it, actualRefTable, defaultOrderByFields, tableName)),

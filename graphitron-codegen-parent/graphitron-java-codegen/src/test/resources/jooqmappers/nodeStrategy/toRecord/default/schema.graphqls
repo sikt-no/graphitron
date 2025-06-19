@@ -1,0 +1,7 @@
+type Query {
+  query(in: CustomerInputTable): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input CustomerInputTable @table(name: "CUSTOMER") {
+  id: ID! @nodeId(typeName: "CustomerNode")
+}

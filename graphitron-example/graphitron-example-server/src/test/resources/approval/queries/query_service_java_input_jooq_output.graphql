@@ -1,0 +1,7 @@
+{
+    customerServiceWithJavaRecordInput(input: {name: "My Name"}) {
+        name {
+            firstName
+        }
+    }
+}
