@@ -80,8 +80,23 @@ public class NodeIdStrategy {
         return row(keyColumnFields).in(rows);
     }
 
-    public <T extends UpdatableRecord<T>> void setId(UpdatableRecordImpl<T> record, String id, String typeId, List<TableField<T, ?>> keyColumnFields) {
+    public <T extends UpdatableRecord<T>> void setUniqueId(UpdatableRecordImpl<T> record, String id, String typeId, List<TableField<T, ?>> keyColumnFields) {
         setId(record, id, typeId, keyColumnFields.toArray(Field[]::new));
+
+        keyColumnFields
+//                .filter(field -> Arrays.asList(record.key().fields()).contains(field))
+                .forEach(field -> record.changed(field, false));
+    }
+
+    public <T extends Record & UpdatableRecord<T>, U extends Record> void setReferenceId(UpdatableRecordImpl<T> record, ForeignKey<T, U> key, String id, String typeId, List<TableField<U, ?>> idFields) {
+        Field<?>[] sourceColumns = getSourceColumns(key, idFields);
+
+        for (Field<?> sourceColumn : sourceColumns) {
+            if (Arrays.asList(record.key().fields()).contains(sourceColumn)) {
+                throw new RuntimeException("fk overlapping with pk is not supported"); // todo: test
+            }
+        }
+        setId(record, id, typeId, sourceColumns);
     }
 
     private <T extends UpdatableRecord<T>> void setId(UpdatableRecordImpl<T> record, String id, String typeId, Field<?>... keyColumnFields) {
@@ -90,14 +105,6 @@ public class NodeIdStrategy {
             values = unpack(typeId, keyColumnFields, id);
         }
         record.from(values, keyColumnFields);
-
-        Arrays.stream(keyColumnFields)
-                .filter(field -> Arrays.asList(record.key().fields()).contains(field))
-                .forEach(field -> record.changed(field, false));
-    }
-
-    public <T extends Record & UpdatableRecord<T>, U extends Record> void setId(UpdatableRecordImpl<T> record, ForeignKey<T, U> key, String id, String typeId, List<TableField<U, ?>> idFields) {
-        setId(record, id, typeId, getSourceColumns(key, idFields));
     }
 
     private static <T extends Record, U extends Record> Field<?>[] getSourceColumns(ForeignKey<U, T> fk, List<TableField<T, ?>> targetNodeIdFields) {
@@ -115,6 +122,10 @@ public class NodeIdStrategy {
 
         if (!missingFields.isEmpty()) {
             throw new IllegalArgumentException("ID is missing the following fields to set the required fields for foreign key " + fk.getName() + ": " + String.join(", ", missingFields));
+        }
+
+        if (targetNodeIdFields.size() != sourceColumns.size()) {
+            throw new IllegalArgumentException("id has more fields than fk blah blah blah");
         }
 
         return targetNodeIdFields.stream()
