@@ -1,0 +1,7 @@
+type Query {
+  query(in: In): CustomerTable
+}
+
+input In {
+  email: String! @condition(condition: {name: "CONTEXT_CONDITION"}, contextArguments: "ctxField")
+}

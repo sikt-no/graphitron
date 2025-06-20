@@ -108,7 +108,9 @@ directive @condition(
   """Condition to be used. Available values are set in the plugin configuration."""
   condition: ExternalCodeReference,
   """If true, this condition should be used instead of the usual checks that are generated."""
-  override: Boolean = false
+  override: Boolean = false,
+  """Arguments to include from the GraphQLContext. Context arguments must be added to the GraphQLContext at run-time."""
+  contextArguments: [String!]
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION

@@ -122,7 +122,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
-
+        processedSchema
+                .getAllContextFields(referenceField)
+                .forEach((key, value) -> spec.addParameter(value, "_" + key));
 
         return spec;
     }

@@ -518,8 +518,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private List<CodeBlock> getInputConditions(FetchContext context) {
         var allConditionCodeBlocks = new ArrayList<CodeBlock>();
         var inputConditions = getInputConditions((ObjectField) context.getReferenceObjectField());
-        var flatInputs = inputConditions.getIndependentConditions();
-        var declaredInputConditions = inputConditions.getDeclaredConditionsByField();
+        var flatInputs = inputConditions.independentConditions();
+        var declaredInputConditions = inputConditions.declaredConditionsByField();
         var inputsWithRecord = flatInputs
                 .stream()
                 .filter(it -> processedSchema.hasRecord(it.getInput()))
@@ -578,16 +578,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        for (var conditionTuple : inputConditions.getConditionTuples()) {
-            if (inputConditions.getConditionTuples()
+        for (var conditionTuple : inputConditions.conditionTuples()) {
+            if (inputConditions.conditionTuples()
                     .stream()
-                    .anyMatch(it -> conditionTuple.getPath().startsWith(it.getPath())
-                            && conditionTuple.getPath().length() > it.getPath().length())) {
+                    .anyMatch(it -> conditionTuple.path().startsWith(it.path())
+                            && conditionTuple.path().length() > it.path().length())) {
                 continue;
             }
 
             allConditionCodeBlocks.add(createTupleCondition(
-                    context, conditionTuple.getPath(), conditionTuple.getConditions()));
+                    context, conditionTuple.path(), conditionTuple.conditions()));
         }
 
         for (var inputCondition : inputsWithRecord) {
@@ -766,7 +766,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         conditionTuples
                 .stream()
-                .map(InputConditions.ConditionTuple::getConditions)
+                .map(InputConditions.ConditionTuple::conditions)
                 .forEach(flatInputs::removeAll);
 
         filterDeclaredConditions(declaredConditionsByField, conditionTuples);
@@ -812,7 +812,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
             conditionTuples
                     .stream()
-                    .map(InputConditions.ConditionTuple::getConditions)
+                    .map(InputConditions.ConditionTuple::conditions)
                     .forEach(conditions::removeAll);
 
             declaredConditionsByField.replace(
@@ -904,7 +904,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     .addParameter(INTEGER.className, PAGE_SIZE_NAME)
                     .addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
         }
-        return spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
+        processedSchema
+                .getAllContextFields(referenceField)
+                .forEach((key, value) -> spec.addParameter(value, "_" + key));
+        spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
+
+        return spec;
     }
 
     @NotNull

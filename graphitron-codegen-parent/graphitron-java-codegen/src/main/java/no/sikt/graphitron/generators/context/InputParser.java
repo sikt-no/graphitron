@@ -41,7 +41,7 @@ public class InputParser {
                 .filter(it -> schema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         var inputsJoined = String.join(", ", methodInputsWithOrderField.keySet());
-        var contextParams = target.hasServiceReference() ? String.join(", ", target.getService().getContextFields().keySet().stream().map(it -> "_" + it).toList()) : "";
+        var contextParams = String.join(", ", schema.getAllContextFields(target).keySet().stream().map(it -> "_" + it).toList());
         if (target.hasForwardPagination()) {
             var contextParamsOrEmpty = contextParams.isEmpty() ? "" : ", " + contextParams;
             serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + ", " + PAGINATION_AFTER.getName() + contextParamsOrEmpty;

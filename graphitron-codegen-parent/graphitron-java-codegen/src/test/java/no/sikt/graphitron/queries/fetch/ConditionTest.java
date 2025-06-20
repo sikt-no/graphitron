@@ -27,7 +27,12 @@ public class ConditionTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(QUERY_FETCH_CONDITION, QUERY_FETCH_STAFF_CONDITION, QUERY_FETCH_ADDRESS_INTERFACE_CONDITION);
+        return makeReferences(
+                QUERY_FETCH_CONDITION,
+                QUERY_FETCH_STAFF_CONDITION,
+                QUERY_FETCH_ADDRESS_INTERFACE_CONDITION,
+                CONTEXT_CONDITION
+        );
     }
 
     @Override
@@ -136,7 +141,7 @@ public class ConditionTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Condition on a parameter of input type")
+    @DisplayName("Condition on an input type parameter")
     void onInputParam() {
         assertGeneratedContentContains(
                 "onInputParam", Set.of(STAFF, NAME_INPUT),
@@ -415,6 +420,68 @@ public class ConditionTest extends GeneratorTest {
                 "_staff.FIRST_NAME.eq(nAME.getFirstname())",
                 "_staff.LAST_NAME.eq(nAME.getLastname())",
                 ".name(_staff, nAME.getFirstname(), nAME.getLastname())"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition referencing a context field on a parameter")
+    void onParamWithContextField() {
+        assertGeneratedContentContains(
+                "onParamWithContextField",
+                "String email, String _ctxField, SelectionSet",
+                ".email(_customer, email, _ctxField)"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition referencing a context field on a field")
+    void onFieldWithContextField() {
+        assertGeneratedContentContains(
+                "onFieldWithContextField",
+                "String email, String _ctxField, SelectionSet",
+                ".query(_customer, email, _ctxField)"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition referencing a context field on a field within an input type")
+    void onInputParamWithContextField() {
+        assertGeneratedContentContains(
+                "onInputParamWithContextField",
+                "In in, String _ctxField, SelectionSet",
+                ".email(_customer, in != null ? in.getEmail() : null, _ctxField)"
+        );
+    }
+
+    @Test
+    @DisplayName("Condition referencing two context fields on a parameter")
+    void onParamWithMultipleContextFields() {
+        assertGeneratedContentContains(
+                "onParamWithMultipleContextFields",
+                "String email, String _ctxField1, String _ctxField2, SelectionSet",
+                ".email(_customer, email, _ctxField1, _ctxField2)"
+        );
+    }
+
+    @Test
+    @DisplayName("Two conditions each referencing context fields on parameters")
+    void onMultipleParamsWithContextFields() {
+        assertGeneratedContentContains(
+                "onMultipleParamsWithContextFields",
+                "String email2, String _ctxField1, String _ctxField2, SelectionSet",
+                ".email(_customer, email1, _ctxField1)",
+                ".email(_customer, email2, _ctxField2)"
+        );
+    }
+
+    @Test
+    @DisplayName("Two conditions each referencing the same context field on parameters")
+    void onMultipleParamsWithSameContextField() {
+        assertGeneratedContentContains(
+                "onMultipleParamsWithSameContextField",
+                "String email2, String _ctxField, SelectionSet",
+                ".email(_customer, email1, _ctxField)",
+                ".email(_customer, email2, _ctxField)"
         );
     }
 }
