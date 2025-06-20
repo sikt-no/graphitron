@@ -34,6 +34,7 @@ public class GeneratorConfig {
 
     private static boolean makeKickstart = false;
     private static boolean makeNodeStrategy = false;
+    private static boolean alwaysUsePrimaryKeyInSplitQueries = true;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -107,6 +108,7 @@ public class GeneratorConfig {
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
         makeKickstart = mojo.makeKickstart();
         makeNodeStrategy = mojo.makeNodeStrategy();
+        alwaysUsePrimaryKeyInSplitQueries = true;
     }
 
     /**
@@ -187,7 +189,15 @@ public class GeneratorConfig {
 
     public static void setNodeStrategy(boolean shouldUseNodeStrategy) {
         makeNodeStrategy = shouldUseNodeStrategy;
-   }
+    }
+
+    public static boolean alwaysUsePrimaryKeyInSplitQueries() {
+        return alwaysUsePrimaryKeyInSplitQueries;
+    }
+
+    public static void setAlwaysUsePrimaryKeyInSplitQueries(boolean usePrimaryKey) {
+        alwaysUsePrimaryKeyInSplitQueries = usePrimaryKey;
+    }
 
     public static void setRecordValidation(RecordValidation recordValidation) {
         GeneratorConfig.recordValidation = recordValidation;

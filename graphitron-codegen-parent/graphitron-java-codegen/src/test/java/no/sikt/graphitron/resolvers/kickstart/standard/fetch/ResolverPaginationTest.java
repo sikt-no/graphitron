@@ -60,7 +60,7 @@ public class ResolverPaginationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitquery/withOtherInput", Set.of(SPLIT_QUERY_WRAPPER),
                 "query(Wrapper wrapper, Integer first, String after, String other,",
-                "queryForWrapper(ctx, ids, other, pageSize, after,"
+                "queryForWrapper(ctx, resolverKeys, other, pageSize, after,"
         );
     }
 

@@ -67,7 +67,7 @@ public class OutputRecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitquery/returningJavaRecord", Set.of(SPLIT_QUERY_WRAPPER),
                 "DataFetcher<CompletableFuture<DummyTypeRecord>>",
-                "resolverFetchService.queryJavaRecord(ids)",
+                "resolverFetchService.queryJavaRecord(resolverKeys)",
                 "recordTransform.dummyTypeRecordToGraphType(response, \"\")"
         );
     }

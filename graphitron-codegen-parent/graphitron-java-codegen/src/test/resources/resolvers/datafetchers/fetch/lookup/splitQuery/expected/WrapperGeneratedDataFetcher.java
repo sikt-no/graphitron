@@ -16,7 +16,7 @@ public class WrapperGeneratedDataFetcher {
             var wrapper = ((Wrapper) env.getSource());
             var id = ((List<String>) _args.get("id"));
             var keys = List.of(id);
-            return new DataFetcherHelper(env).loadLookup(keys, (ctx, ids, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
+            return new DataFetcherHelper(env).loadLookup(keys, (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
         };
     }
 }

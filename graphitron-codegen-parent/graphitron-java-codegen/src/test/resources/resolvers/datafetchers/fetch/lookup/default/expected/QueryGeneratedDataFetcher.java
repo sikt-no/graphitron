@@ -14,7 +14,7 @@ public class QueryGeneratedDataFetcher {
             var _args = env.getArguments();
             var id = ((List<String>) _args.get("id"));
             var keys = List.of(id);
-            return new DataFetcherHelper(env).loadLookup(keys, (ctx, ids, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, selectionSet));
+            return new DataFetcherHelper(env).loadLookup(keys, (ctx, resolverKeys, selectionSet) -> QueryDBQueries.queryForQuery(ctx, id, selectionSet));
         };
     }
 }

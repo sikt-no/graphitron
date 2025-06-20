@@ -1,6 +1,7 @@
 package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,11 +31,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Foreign key columns should be selected in previous query")
     void previousQuery() {
         assertGeneratedContentContains(
                 "previousQuery", Set.of(CUSTOMER_QUERY),
                 "DSL.row(DSL.row(_customer.ADDRESS_ID)).mapping(Functions.nullOnAllNull(Customer::new"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query")
+    void previousQueryOnlyPrimaryKey() {
+        assertGeneratedContentContains(
+                "previousQuery", Set.of(CUSTOMER_QUERY),
+                "DSL.row(DSL.row(_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new"
         );
     }
 
@@ -57,11 +68,22 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Foreign key columns should be selected in previous query in nested type")
     void previousQueryNested() {
         assertGeneratedContentContains(
                 "previousQueryNested", Set.of(CUSTOMER_QUERY),
                 "row(customer_2952383337_address.CITY_ID), customer_2952383337_address.getId())" +
+                        ".mapping(Functions.nullOnAllNull(Address::"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query in nested type")
+    void previousQueryNestedOnlySplitQuery() {
+        assertGeneratedContentContains(
+                "previousQueryNested", Set.of(CUSTOMER_QUERY),
+                "row(customer_2952383337_address.ADDRESS_ID), customer_2952383337_address.getId())" +
                         ".mapping(Functions.nullOnAllNull(Address::"
         );
     }
@@ -159,7 +181,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
                 ".from(customer_2952383337_address).where(",
                 ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
-                ".where(_customer.hasIds(customerIds"
+                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream"
         );
     }
 
@@ -262,9 +284,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-                "_payment.getId(), DSL.field(",
+                "DSL.row(_payment.PAYMENT_ID), DSL.field(",
                 "CustomerTable::new))).from(payment_425747824_customer)",
-                ".from(_payment).where(_payment.hasIds(paymentIds))"
+                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream()"
         );
     }
 }

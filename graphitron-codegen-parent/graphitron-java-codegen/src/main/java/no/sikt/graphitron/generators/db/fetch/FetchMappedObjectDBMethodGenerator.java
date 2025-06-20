@@ -45,7 +45,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var context = new FetchContext(processedSchema, target, localObject, false);
         // Note that this must happen before alias declaration.
         var selectRowBlock = target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context);
-        var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
 
         var querySource = context.renderQuerySource(getLocalTable());
 
@@ -91,14 +91,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock createSelectBlock(ObjectField target, FetchContext context, String actualRefTable, CodeBlock selectRowBlock) {
         return indentIfMultiline(
                 Stream.of(
-                        getInitialID(context),
+                        getInitialKey(context),
                         target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
                         selectRowBlock
                 ).collect(CodeBlock.joining(""))
         );
     }
 
-    private CodeBlock getInitialID(FetchContext context) {
+    private CodeBlock getInitialKey(FetchContext context) {
         var code = CodeBlock.builder();
 
         var ref = (ObjectField) context.getReferenceObjectField();
@@ -111,11 +111,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 code.add(concatBlock).add(",\n");
             }
         } else if (!isRoot) {
-            if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                code.add("$L,\n", createNodeIdBlock(localObject, table.toString()));
-            } else {
-                code.add("$L.getId(),\n", table);
-            }
+            code.add("$L,\n", getSelectKeyColumnRow(context));
         }
         return code.build();
     }

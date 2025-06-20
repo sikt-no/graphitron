@@ -26,7 +26,7 @@ public class QueryGeneratedResolver implements QueryResolver {
         return new ServiceDataFetcherHelper<>(transform).loadPaginated(
                 pageSize, 1000,
                 () -> resolverFetchService.queryList(pageSize, after),
-                (ids) -> resolverFetchService.countQueryList(),
+                (resolverKeys) -> resolverFetchService.countQueryList(),
                 (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, ""),
                 (connection) ->  {
                     var edges = connection.getEdges().stream().map(it -> new CustomerConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());

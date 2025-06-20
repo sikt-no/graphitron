@@ -95,9 +95,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/default",
-                "createId(\"ADDRESS\", _address.fields(_address.getPrimaryKey().getFieldsArray())), DSL.field(",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"CUSTOMER\", address_2030472956",
-                ".where(nodeIdStrategy.hasIds(\"ADDRESS\", addressIds, _address.fields("
+                "DSL.select(DSL.row(nodeIdStrategy.createId(\"CUSTOMER\", address_2030472956"
         );
     }
 
@@ -106,9 +104,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customTypeId",
-                "createId(\"A\", _address.fields(_address.getPrimaryKey().getFieldsArray())), DSL.field(",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"C\", address_2",
-                ".where(nodeIdStrategy.hasIds(\"A\", addressIds, _address.fields"
+                "DSL.select(DSL.row(nodeIdStrategy.createId(\"C\", address_2"
         );
     }
 
@@ -117,8 +113,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customKeyColumns",
-                "createId(\"CUSTOMER\", _customer.CUSTOMER_ID, _customer.EMAIL), DSL.field(",
-                ".where(nodeIdStrategy.hasIds(\"CUSTOMER\", customerIds, _customer.CUSTOMER_ID, _customer.EMAIL))"
+                "DSL.select(DSL.row(nodeIdStrategy.createId(\"ADDRESS\", customer_2952383337_address.ADDRESS_ID)).mapping"
         );
     }
 

@@ -1,0 +1,16 @@
+{
+    "data": {
+        "citiesWithoutId": {
+            "nodes": [
+                {
+                    "cityId": 1,
+                    "addresses": [
+                        {
+                            "id": "QUREUkVTUzo1Ng"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

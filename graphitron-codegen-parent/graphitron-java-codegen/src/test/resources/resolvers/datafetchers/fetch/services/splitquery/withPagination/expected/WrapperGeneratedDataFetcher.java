@@ -25,9 +25,9 @@ public class WrapperGeneratedDataFetcher {
             var transform = new RecordTransformer(env);
             var resolverFetchService = new ResolverFetchService(transform.getCtx());
             return new ServiceDataFetcherHelper<>(transform).loadPaginated(
-                    wrapper.getId(), pageSize, 1000,
-                    (ids) -> resolverFetchService.queryMap(ids, pageSize, after),
-                    (ids) -> resolverFetchService.countQueryMap(ids),
+                    wrapper.getQueryKey(), pageSize, 1000,
+                    (resolverKeys) -> resolverFetchService.queryMap(resolverKeys, pageSize, after),
+                    (resolverKeys) -> resolverFetchService.countQueryMap(resolverKeys),
                     (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, ""),
                     (connection) ->  {
                         var edges = connection.getEdges().stream().map(it -> new CustomerConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());

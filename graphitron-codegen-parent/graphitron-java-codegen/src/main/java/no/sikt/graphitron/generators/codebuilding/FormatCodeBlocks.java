@@ -11,6 +11,7 @@ import no.sikt.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
+import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -20,6 +21,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Key;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -28,9 +30,11 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
 import static no.sikt.graphitron.mappings.TableReflection.getTable;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -395,7 +399,7 @@ public class FormatCodeBlocks {
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
                 includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : empty(),
-                IDS_NAME,
+                RESOLVER_KEYS_NAME,
                 isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
                 String.join(", ", params)
@@ -410,7 +414,7 @@ public class FormatCodeBlocks {
      * @return CodeBlock consisting of a function for a generic DB call.
      */
     @NotNull
-    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, String inputList, boolean hasIds, boolean usesIds, boolean isService) {
+    public static CodeBlock queryFunction(String queryLocation, String queryMethodName, String inputList, boolean hasKeyValues, boolean usesKeyValues, boolean isService) {
         var inputs = new ArrayList<String>();
         var params = new ArrayList<String>();
         if (!isService) {
@@ -420,11 +424,11 @@ public class FormatCodeBlocks {
                 params.add(NODE_ID_STRATEGY_NAME);
             }
         }
-        if (hasIds) {
-            inputs.add(IDS_NAME);
+        if (hasKeyValues) {
+            inputs.add(RESOLVER_KEYS_NAME);
         }
-        if (usesIds) {
-            params.add(IDS_NAME);
+        if (usesKeyValues) {
+            params.add(RESOLVER_KEYS_NAME);
         }
         if (!inputList.isEmpty()) {
             params.add(inputList);
@@ -927,6 +931,39 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock returnCompletedFuture(CodeBlock code) {
         return returnWrap(CodeBlock.of("$T.completedFuture($L)", COMPLETABLE_FUTURE.className, code));
+    }
+
+    public static CodeBlock inResolverKeysBlock(String resolverKeyParamName, FetchContext context) {
+        return CodeBlock.of("$L.in($N.stream().map($T::valuesRow).toList())",
+                getSelectKeyColumnRow(context),
+                resolverKeyParamName,
+                getKeyTypeName(context.getResolverKey(), false)
+        );
+    }
+
+    /**
+     * Returns the select code for the columns of a key.
+     *
+     * @param key               The key
+     * @param aliasVariableName The variable name for the table alias
+     * @return Select code for the columns in the key
+     */
+    public static CodeBlock getSelectKeyColumnRow(Key<?> key, String tableName, String aliasVariableName) {
+        return wrapRow(
+                getJavaFieldNamesForKey(tableName, key)
+                        .stream()
+                        .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
+                        .collect(CodeBlock.joining(", "))
+        );
+    }
+
+    /**
+     * Returns codeblock for selecting key columns for the resolver key
+     * @param context The fetching context
+     * @return Select code for the columns in the resolver key
+     */
+    public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
+        return getSelectKeyColumnRow(context.getResolverKey(), context.getTargetTableName(), context.getTargetAlias());
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {

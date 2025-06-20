@@ -1,13 +1,12 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jooq.ForeignKey;
 import org.jooq.Key;
 import org.jooq.Typed;
 
@@ -17,8 +16,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.wrapRow;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 
 public class ResolverKeyHelpers {
 
@@ -57,6 +56,8 @@ public class ResolverKeyHelpers {
      * @return The key used in the first step when resolving a resolver field
      */
     public static Key<?> findKeyForResolverField(GenerationField field, ProcessedSchema processedSchema) {
+        if (!field.isResolver()) return null;
+
         var container = processedSchema.getRecordType(field.getContainerTypeName());
 
         var containerTypeTable = container.hasTable() ?
@@ -65,35 +66,40 @@ public class ResolverKeyHelpers {
 
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 
-        ForeignKey<?, ?> foreignKey;
+        String foreignKeyName;
         var primaryKeyOptional = getPrimaryKeyForTable(containerTypeTable.getName());
+
+        if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries()) {
+            return primaryKeyOptional
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",
+                                    field.getContainerTypeName(), field.getName(), containerTypeTable.getName(), SPLIT_QUERY.getName())));
+        }
 
         if (processedSchema.isScalar(field.getTypeName()) && !field.hasFieldReferences()) {
             throw new RuntimeException("Cannot resolve reference for scalar field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.");
         } else if (field.hasFieldReferences()) {
             var firstRef = field.getFieldReferences().stream().findFirst().get();
-            String keyName;
             Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(containerTypeTable.getName(), firstRef.getTable().getName()) : Optional.empty();
 
             if (firstRef.hasKey()) {
-                keyName = firstRef.getKey().getName();
+                foreignKeyName = firstRef.getKey().getName();
             } else if (firstRef.hasTableCondition() && implicitKey.isEmpty()) {
                     return primaryKeyOptional
                             .orElseThrow(() -> new IllegalArgumentException(
                                     String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
                                             field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
             } else {
-                keyName = implicitKey.stream().findFirst()
+                foreignKeyName = implicitKey.stream().findFirst()
                         .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
             }
-
-            foreignKey = getForeignKey(keyName)
-                    .orElseThrow(() -> new RuntimeException("Cannot find key with name " + firstRef.getKey().getName()));
         } else {
-            foreignKey = getForeignKey(findImplicitKey(containerTypeTable.getName(), (tableFromFieldType != null ? tableFromFieldType : containerTypeTable).getName())
-                    .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.")))
-                    .orElseThrow();
+            foreignKeyName = findImplicitKey(containerTypeTable.getName(), (tableFromFieldType != null ? tableFromFieldType : containerTypeTable).getName())
+                    .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
         }
+
+        var foreignKey = getForeignKey(foreignKeyName)
+                .orElseThrow(() -> new RuntimeException("Cannot find key with name " + foreignKeyName));
 
         if (!foreignKey.getTable().getName().equalsIgnoreCase(containerTypeTable.getName())) { // Reverse reference
             return primaryKeyOptional
@@ -105,19 +111,13 @@ public class ResolverKeyHelpers {
     }
 
     /**
-     * Returns the select code for the columns of a key.
+     * Get the TypeName for the key used for a resolver field
      *
-     * @param key               The key
-     * @param aliasVariableName The variable name for the table alias
-     * @return Select code for the columns in the key
+     * @param field The resolver field
+     * @return TypeName of the key variable
      */
-    public static CodeBlock getSelectKeyColumnRow(Key<?> key, String tableName, String aliasVariableName) {
-        return wrapRow(
-                getJavaFieldNamesForKey(tableName, key)
-                        .stream()
-                        .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
-                        .collect(CodeBlock.joining(", "))
-        );
+    public static TypeName getKeyTypeName(GenerationField field, ProcessedSchema schema) {
+        return getKeyTypeName(findKeyForResolverField(field, schema));
     }
 
     /**
@@ -127,14 +127,26 @@ public class ResolverKeyHelpers {
      * @return TypeName of the key variable
      */
     public static TypeName getKeyTypeName(Key<?> key) {
+        return getKeyTypeName(key, true);
+    }
+
+    /**
+     * Get the TypeName for the key variable in the DTO
+     *
+     * @param key The key
+     * @return TypeName of the key variable
+     */
+    public static TypeName getKeyTypeName(Key<?> key, boolean parameterized) {
         var keyFields = key.getFields();
 
         if (keyFields.size() > 22) {
             throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
         }
-        return ParameterizedTypeName.get(
-                ClassName.get("org.jooq", String.format("Record%d", keyFields.size())),
-                keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
-        );
+        var recordClassName = ClassName.get("org.jooq", String.format("Record%d", keyFields.size()));
+        return parameterized ?
+                ParameterizedTypeName.get(
+                        recordClassName,
+                        keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
+                ) : recordClassName;
     }
 }

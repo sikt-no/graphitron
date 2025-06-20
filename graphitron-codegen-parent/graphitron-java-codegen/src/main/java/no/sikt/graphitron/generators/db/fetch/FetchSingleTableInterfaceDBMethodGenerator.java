@@ -52,7 +52,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
         var selectCode = generateSelectRow(context, target, implementations);
         var querySource = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, idParamName, isRoot, target.isResolver());
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
         var fetchAndMap = fetchAndMap(target, implementations, querySource);
 
         Optional<CodeBlock> maybeOrderFields = maybeCreateOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());

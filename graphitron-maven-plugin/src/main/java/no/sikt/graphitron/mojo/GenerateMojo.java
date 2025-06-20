@@ -273,7 +273,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
         return makeNodeStrategy;
     }
 
-
     public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
         this.jooqGeneratedPackage = jooqGeneratedPackage;
     }

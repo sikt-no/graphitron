@@ -6,6 +6,7 @@ public class VariableNames {
     public final static String
             SELECTION_SET_NAME = "selectionSet",
             IDS_NAME = "ids",
+            RESOLVER_KEYS_NAME = "resolverKeys",
             PAGE_SIZE_NAME = "pageSize",
             CONTEXT_NAME = "ctx",
             GRAPH_CONTEXT_NAME = "_graphCtx",

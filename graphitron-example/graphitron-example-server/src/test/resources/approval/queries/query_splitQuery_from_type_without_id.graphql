@@ -1,0 +1,10 @@
+{
+  citiesWithoutId (first: 1) {
+    nodes {
+      cityId
+      addresses {
+        id
+      }
+    }
+  }
+}
