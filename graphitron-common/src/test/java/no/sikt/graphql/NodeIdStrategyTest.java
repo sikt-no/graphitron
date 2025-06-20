@@ -4,7 +4,6 @@ import no.sikt.jooq.example.*;
 import no.sikt.jooq.example.Vacation;
 import no.sikt.jooq.example.VacationDestination;
 import no.sikt.jooq.example.VacationDestinationRecord;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -44,7 +43,7 @@ class NodeIdStrategyTest {
     @DisplayName("Setting primary key fields for record")
     void setUniqueIdForRecord() {
         var vacationDestinationRecord = new VacationDestinationRecord();
-        new NodeIdStrategy().setUniqueId(
+        new NodeIdStrategy().setId(
                 vacationDestinationRecord,
                 "VmFjYXRpb25EZXN0aW5hdGlvbjoxMjM0LE5vcndheQ==", // Decoded: VacationDestination:1234,Norway
                 "VacationDestination",
@@ -61,7 +60,7 @@ class NodeIdStrategyTest {
     @DisplayName("Setting primary key fields for record, with the key fields provided in another order")
     void setUniqueIdForRecordReverseOrder() {
         var vacationDestinationRecord = new VacationDestinationRecord();
-        new NodeIdStrategy().setUniqueId(
+        new NodeIdStrategy().setId(
                 vacationDestinationRecord,
                 "VmFjYXRpb25EZXN0aW5hdGlvbjpOb3J3YXksMTIzNA==", // Decoded: VacationDestination:Norway,1234
                 "VacationDestination",

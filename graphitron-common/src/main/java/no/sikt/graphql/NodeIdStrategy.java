@@ -80,7 +80,7 @@ public class NodeIdStrategy {
         return row(keyColumnFields).in(rows);
     }
 
-    public <T extends UpdatableRecord<T>> void setUniqueId(UpdatableRecordImpl<T> record, String id, String typeId, List<TableField<T, ?>> keyColumnFields) {
+    public <T extends UpdatableRecord<T>> void setId(UpdatableRecordImpl<T> record, String id, String typeId, List<TableField<T, ?>> keyColumnFields) {
         setId(record, id, typeId, keyColumnFields.toArray(Field[]::new));
 
         keyColumnFields
