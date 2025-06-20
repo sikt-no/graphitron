@@ -68,10 +68,10 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     void manyImplementations() {
         assertGeneratedContentContains(
                 "manyImplementations",
-                "case \"ADDRESS\":",
-                "case \"CUSTOMER\":",
+                "case \"Address\":",
+                "case \"Customer\":",
                 "AddressDBQueries.addressForNode(",
-                "case \"FILM\":",
+                "case \"Film\":",
                 "CustomerDBQueries.customerForNode(",
                 "FilmDBQueries.filmForNode("
         );

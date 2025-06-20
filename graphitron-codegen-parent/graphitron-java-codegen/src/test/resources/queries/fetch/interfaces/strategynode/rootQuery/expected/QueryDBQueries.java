@@ -17,7 +17,7 @@ public class QueryDBQueries {
         var _customer = CUSTOMER.as("customer_2952383337");
         var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
         return ctx
-                .select(DSL.row(nodeIdStrategy.createId("CUSTOMER", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new)))
+                .select(DSL.row(nodeIdStrategy.createId("Customer", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(_customer)
                 .orderBy(orderFields)
                 .fetch(it -> it.into(Customer.class));

@@ -66,7 +66,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
                 "twoInterfaces",
                 "customerForNode",
                 ",Set<String> ids,",
-                ".where(nodeIdStrategy.hasIds(\"CUSTOMER\", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray()))"
+                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray()))"
         );
     }
 
@@ -75,9 +75,9 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @DisplayName("Split query")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
-                "nodeIdStrategy.createId(\"CUSTOMER\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))," +
+                "nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))," +
                         "DSL.field(",
-                ".where(nodeIdStrategy.hasIds(\"CUSTOMER\", customerIds, _customer.fields"
+                ".where(nodeIdStrategy.hasIds(\"Customer\", customerIds, _customer.fields"
         );
     }
 
