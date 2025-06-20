@@ -19,11 +19,11 @@ public class CustomerDBQueries {
         var _customer = CUSTOMER.as("customer_2952383337");
         return ctx
                 .select(
-                        nodeIdStrategy.createId("CUSTOMER", _customer.fields(_customer.getPrimaryKey().getFieldsArray())),
-                        DSL.row(nodeIdStrategy.createId("CUSTOMER", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new))
+                        nodeIdStrategy.createId("Customer", _customer.fields(_customer.getPrimaryKey().getFieldsArray())),
+                        DSL.row(nodeIdStrategy.createId("Customer", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new))
                 )
                 .from(_customer)
-                .where(nodeIdStrategy.hasIds("CUSTOMER", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))
+                .where(nodeIdStrategy.hasIds("Customer", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))
                 .fetchMap(Record2::value1, Record2::value2);
     }
 }

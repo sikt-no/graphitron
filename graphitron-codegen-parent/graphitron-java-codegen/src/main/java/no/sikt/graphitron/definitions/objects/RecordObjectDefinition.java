@@ -67,7 +67,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
         typeId = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID)
-                .orElse(getTable() != null ? getTable().getName() : null);
+                .orElse(getTable() != null ? getName() : null);
         keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
                 .stream()
                 .map(columnName -> getJavaFieldName(getTable().getName(), columnName).orElse(columnName))

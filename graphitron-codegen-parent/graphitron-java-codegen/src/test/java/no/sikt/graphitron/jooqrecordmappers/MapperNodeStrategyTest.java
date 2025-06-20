@@ -48,7 +48,7 @@ public class MapperNodeStrategyTest extends GeneratorTest {
         assertGeneratedContentContains("toGraph/default", Set.of(CUSTOMER_NODE),
                 // In mapper
                 " recordToGraphType(List<CustomerRecord> customerRecord, NodeIdStrategy nodeIdStrategy, String path, RecordTransformer transform)",
-                "customerNode.setId(nodeIdStrategy.createId(itCustomerRecord, \"CUSTOMER\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray()))",
+                "customerNode.setId(nodeIdStrategy.createId(itCustomerRecord, \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray()))",
 
                 // In record transformer
                 "customerNodeRecordToGraphType(List<CustomerRecord> input, NodeIdStrategy nodeIdStrategy, String path)",
@@ -72,7 +72,7 @@ public class MapperNodeStrategyTest extends GeneratorTest {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
                 // In mapper
                 "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy nodeIdStrategy, String path, RecordTransformer transform)",
-                "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CUSTOMER\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
+                "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
 
                 // In recordtransformer
                 "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy nodeIdStrategy, String path)",

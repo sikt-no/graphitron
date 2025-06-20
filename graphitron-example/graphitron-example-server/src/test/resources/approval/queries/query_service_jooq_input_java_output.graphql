@@ -1,5 +1,5 @@
 {
-    helloWorldAgainWithJooqRecordInput(input: {id: "Q1VTVE9NRVI6MQ"}) {
+    helloWorldAgainWithJooqRecordInput(input: {id: "Q3VzdG9tZXI6MQ=="}) {
         greeting
     }
 }
