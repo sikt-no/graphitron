@@ -1,12 +1,8 @@
-type Query {
-  node(id: ID!): Node
-}
-
-type Customer implements Node @table {
+type Customer implements Node @node @table {
   id: ID!
   address: Address @splitQuery
 }
 
-type Address @table {
+type Address implements Node @node @table {
   id: ID
 }

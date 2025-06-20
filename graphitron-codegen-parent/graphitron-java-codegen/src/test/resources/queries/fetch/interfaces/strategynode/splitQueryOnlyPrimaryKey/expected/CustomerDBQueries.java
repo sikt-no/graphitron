@@ -3,9 +3,7 @@ package fake.code.generated.queries.query;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 import fake.graphql.example.model.Address;
-import fake.graphql.example.model.Customer;
 import java.lang.Long;
-import java.lang.String;
 import java.util.Map;
 import java.util.Set;
 import no.sikt.graphql.NodeIdStrategy;
@@ -16,23 +14,8 @@ import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.impl.DSL;
 
-public class CustomerDBQueries {
-    public static Map<String, Customer> customerForNode(DSLContext ctx, NodeIdStrategy nodeIdStrategy, Set<String> ids,
-                                                        SelectionSet select) {
-        var _customer = CUSTOMER.as("customer_2952383337");
-        return ctx
-                .select(
-                        nodeIdStrategy.createId("CUSTOMER", _customer.fields(_customer.getPrimaryKey().getFieldsArray())),
-                        DSL.row(
-                                DSL.row(_customer.CUSTOMER_ID),
-                                nodeIdStrategy.createId("CUSTOMER", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))
-                        ).mapping(Functions.nullOnAllNull(Customer::new))
-                )
-                .from(_customer)
-                .where(nodeIdStrategy.hasIds("CUSTOMER", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))
-                .fetchMap(Record2::value1, Record2::value2);
-    }
 
+public class CustomerDBQueries {
     public static Map<Record1<Long>, Address> addressForCustomer(DSLContext ctx, NodeIdStrategy nodeIdStrategy,
                                                           Set<Record1<Long>> customerResolverKeys, SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
