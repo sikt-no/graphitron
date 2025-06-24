@@ -172,7 +172,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false, true);
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -636,9 +636,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     /**
+     * @param startWithWhere Whether the contents should start with a "WHERE" clause or and "AND" clause. The default
+     *                       is true, but it can be set to false for possible subsequent method calls.
+     *
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isResolverRoot) {
+    protected CodeBlock formatWhereContents(
+            FetchContext context,
+            String resolverKeyParamName,
+            boolean isRoot,
+            boolean isResolverRoot,
+            boolean startWithWhere
+    ) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {

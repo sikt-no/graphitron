@@ -137,6 +137,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             );
         }
 
+        if (referenceField.isResolver() && referenceField.isIterableWrapped()) {
+            return CodeBlock
+                    .builder()
+                    .add(".fetchGroups")
+                    .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className)
+                    .build();
+        }
+
         var code = CodeBlock.builder()
                 .add(".fetchMap(")
                 .addIf(lookupExists, "$T::value1, ", RECORD2.className)

@@ -155,6 +155,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y, LinkedHashMap::new));
     }
 
+    /**
+     *  A field is considered a resolver if it has a `@splitQuery` directive applied, or if it is a field with
+     *  arguments.
+     */
     @Override
     public boolean isResolver() {
         return isResolver;

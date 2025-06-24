@@ -343,7 +343,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, ObjectField queryTarget) {
         var targetAlias = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false);
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false, true);
         String implName = implementation.getName();
 
         // When first reference step is a condition reference without key, we need to join explicitly

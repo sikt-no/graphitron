@@ -1,0 +1,24 @@
+type Query {
+  query: Customer
+}
+
+type Customer @table {
+  address: Address @splitQuery @reference(references: [{table: "ADDRESS"}])
+}
+
+type Address @table {
+  id: ID!
+  address: String
+  city: City!
+}
+
+type City @table {
+  id: ID!
+  city: String
+  country: Country!
+}
+
+type Country @table {
+  id: ID!
+  country: String
+}

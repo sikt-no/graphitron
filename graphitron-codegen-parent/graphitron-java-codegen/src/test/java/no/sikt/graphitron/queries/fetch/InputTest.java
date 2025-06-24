@@ -165,12 +165,30 @@ public class InputTest extends GeneratorTest {
                 ".and(_a_address.POSTAL_CODE.eq(filter.getPostalCode()))");
     }
 
+    /**
+     * Given that A has a field referencing B, and this field has a scalar input parameter, and there is no direct
+     * relation from A to B but an inverse relation from B to A exists, when a new resolver is generated, a JOIN clause
+     * and a WHERE clause should be created. The JOIN clause must include table B retrieved through the inverse
+     * relation, and the WHERE clause must include the scalar condition on B.
+     */
     @Test
     @DisplayName("SplitQuery field")
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
-                ".from(_a_address_223244161_customer).where(_a_address_223244161_customer.EMAIL.eq(email))",
-                ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address)).fetch" // Make sure conditon is not applied on outer query
+                  "_address = ADDRESS.as",
+                 "address_2030472956_customer = _address.customer().as",
+                 "orderFields = address_2030472956_customer.fields(address_2030472956_customer.getPrimaryKey().getFieldsArray())",
+                 """
+                 .select(
+                        DSL.row(_address.ADDRESS_ID),
+                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_address)
+                .join(address_2030472956_customer)
+                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .and(address_2030472956_customer.EMAIL.eq(email))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 }
