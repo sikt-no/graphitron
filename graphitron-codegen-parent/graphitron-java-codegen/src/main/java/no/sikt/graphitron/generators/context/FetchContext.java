@@ -407,8 +407,6 @@ public class FetchContext {
                                   ? joinSequenceFromFieldReferences
                                   : previousJoinSequence;
 
-        // When no more tables are reachable, return the acumulated join sequence retrieved from the field references
-        // and/or the previous join sequence.
         if (referenceObjectTable == null) {
             return updatedJoinSequence;
         }
@@ -428,12 +426,13 @@ public class FetchContext {
             }
         }
 
+        // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
         var finalSequence = resolveNextSequence(
                 new FieldReference(referenceObjectTable),
                 new TableRelation(lastTable, referenceObjectTable),
                 updatedJoinSequence,
                 false
-        ); // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
+        );
 
         if (!finalSequence.isEmpty()) {
             return finalSequence;
@@ -520,7 +519,6 @@ public class FetchContext {
         var targetOrPrevious = target != null ? target : previous;
         var newSequence = joinSequence;
 
-        // TODO: If a condition is specified, we might get a key from a non-existing referencekey leading to keyToUse being null, even though an implicit key might exist?
         var keyToUse = fieldRef.hasKey() || fieldRef.hasTableCondition()
                 ? fieldRef.getKey()
                 : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName())
@@ -533,27 +531,21 @@ public class FetchContext {
 
         if (fieldRef.hasTableCondition() && keyToUse == null) {
             if (newSequence.isEmpty()) {
-
                 var alias = new Alias(
                         previous.getCodeName() + "_" + getReferenceObjectField().getName(),
-                        JoinListSequence.of(target),  // Changed from previous to target. Correct?
+                        JoinListSequence.of(target/*previous*/),  // TODO: Changed from previous to target. Correct?
                         false
                 );
 
-                newSequence.add(alias);
-                this.aliasSet.add(alias.toAliasWrapper());
-
-                // No keys found in combination with a condition, indicates a join (JOIN ON) in the previous context
-                // between that source and this table.
-                var selectedContext = this.previousContext != null
-                        ? this.previousContext
-                        : this;
-                selectedContext.joinSet.add(fieldRef.createConditionJoinFor(
-                        JoinListSequence.of(selectedContext.currentJoinSequence.getLast()),
+                this.joinSet.add(fieldRef.createConditionJoinFor(
+                        this.previousContext != null ? JoinListSequence.of(this.previousContext.getCurrentJoinSequence().getLast()) : newSequence,
                         alias,
                         targetOrPrevious,
                         requiresLeftJoin
                 ));
+
+                newSequence.add(alias);
+                this.aliasSet.add(alias.toAliasWrapper());
                 return newSequence.cloneAdd(alias);
 
 
@@ -588,8 +580,6 @@ public class FetchContext {
             return newSequence;
         }
 
-        // TODO: If key is used, aliasname is not necessarily named after the key used (ReferenceSplityQueryTest->keyBackwards())
-
         if (keyToUse != null) {
             var aliasJoinSequence = newSequence.clone();
 
@@ -608,27 +598,13 @@ public class FetchContext {
         }
 
         if (fieldRef.hasTableCondition() && relation.hasRelation()) {
-            var selectedContext = this.previousContext != null
-                                  ? this.previousContext
-                                  : this;
-
             var previousTableWithAlias = newSequence.getSecondLast() == null && this.previousContext != null
                                          ? this.previousContext.getCurrentJoinSequence().render()
                                          : newSequence.render(newSequence.getSecondLast());
 
-            // If splitQuery directive is used, the condition should be handled in the parent context
-            if (this.previousContext != null &&
-                this.referenceObjectField.hasSplitQueryDirective() &&
-                this.referenceObjectField.isResolver()
-            ) {
-                this.previousContext.conditionList.add(
-                        fieldRef.getTableCondition().formatToString(
-                                List.of(previousTableWithAlias, newSequence.render())));
-            } else {
                 this.conditionList.add(
                         fieldRef.getTableCondition().formatToString(
                                 List.of(previousTableWithAlias, newSequence.render())));
-            }
         }
 
         return newSequence;
