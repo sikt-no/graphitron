@@ -125,23 +125,23 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false, true);
         var joins = createSelectJoins(context.getJoinSet());
 
         CodeBlock.Builder contents = null;
 
-        if (field.hasSplitQueryDirective()/* && field.hasFieldReferencesWithAllConditions()*/) {
-            contents = CodeBlock
-                    .builder()
-                    .add(!isMultiset
-                         ? select.build()
-                         : CodeBlock.of("$T.select($L)", DSL.className, indentIfMultiline(select.build())))
-                    .add(!isMultiset
-                         ? empty()
-                         : CodeBlock.of("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName()))
-                    .add(shouldBeOrdered
-                         ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get())
-                         : empty());
+        if (field.isResolver()) {
+            contents = select; // CodeBlock.of(select);
+//                    .builder()
+//                    .add(!isMultiset
+//                         ? select.build()
+//                         : CodeBlock.of("$T.select($L)", DSL.className, indentIfMultiline(select.build())))
+//                    .add(!isMultiset
+//                         ? empty()
+//                         : CodeBlock.of("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName()))
+//                    .add(shouldBeOrdered
+//                         ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get())
+//                         : empty());
 //                    .add(!isMultiset ? select.build() : CodeBlock.of("$T.select($)", DSL.className, indentIfMultiline(select.build()))));
         } else {
             contents = CodeBlock.builder()
@@ -156,7 +156,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         return isMultiset
                ? field.isResolver()
-                 ? wrapInMultiset(contents.build())
+                 ? contents.build()//wrapInMultiset(contents.build())
                  : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken)
                : field.hasSplitQueryDirective()
                  ? contents.build()
@@ -552,9 +552,18 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     /**
+     * @param startWithWhere Whether the contents should start with a "WHERE" clause or and "AND" clause. The default
+     *                       is true, but it can be set to false for possible subsequent method calls.
+     *
      * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
      */
-    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isResolverRoot) {
+    protected CodeBlock formatWhereContents(
+            FetchContext context,
+            String resolverKeyParamName,
+            boolean isRoot,
+            boolean isResolverRoot,
+            boolean startWithWhere
+    ) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {
@@ -584,7 +593,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var code = CodeBlock.builder();
-        var hasWhere = false;
+        var hasWhere = !startWithWhere;
         for(var condition : conditionList) {
             if (condition.isEmpty()) continue;
             code.add(".$L($L)\n", hasWhere ? "and" : "where", indentIfMultiline(condition));

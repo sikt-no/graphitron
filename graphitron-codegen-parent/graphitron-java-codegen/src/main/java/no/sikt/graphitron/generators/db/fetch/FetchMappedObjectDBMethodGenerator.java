@@ -43,20 +43,18 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField targetField) {
         var targetOwner = getLocalObject();
         var context = new FetchContext(processedSchema, targetField, targetOwner, false);
-        var resolverContext = targetField.isResolver()
-                              ? context.nextContext(targetField)
-                              : null;
+        var resolverContext = context.nextContext(targetField);
 
         // Note that this must happen before alias declaration.
-        var selectRowBlock = /*targetField.isResolver()*/ resolverContext != null
-                             ? generateCorrelatedSubquery(targetField, /*context.nextContext(targetField)*/resolverContext)
+        var selectRowBlock = targetField.isResolver()
+                             ? generateSelectRow(resolverContext)
                              : generateSelectRow(context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, targetField.isResolver());
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, targetField.isResolver(), true);
         var querySource = context.renderQuerySource(getLocalTable());
 
-        var refContext = /*targetField.isResolver()*/resolverContext != null ? /*context.nextContext(targetField)*/ resolverContext : context;
-        var actualRefTable = refContext.getTargetAlias(); // TODO: film_followup_follow_up_film //film_followup
-        var actualRefTableName = refContext.getTargetTableName(); // TODO: "FILM"
+        var refContext = targetField.isResolver() ? resolverContext : context;
+        var actualRefTable = refContext.getTargetAlias();
+        var actualRefTableName = refContext.getTargetTableName();
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
@@ -76,10 +74,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".select(")
                 .add(createSelectBlock(targetField, context, actualRefTable, selectRowBlock))
                 .add(")\n.from($L)\n", querySource)
-                .add(createSelectJoins(context.getJoinSet()))
+                .add(createSelectJoins(targetField.isResolver() ? resolverContext.getJoinSet() : context.getJoinSet()))
                 .add(whereBlock)
+                .add(targetField.isResolver()
+                     ? formatWhereContents(resolverContext, "", isRoot, false, whereBlock.isEmpty())
+                     : empty())
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(targetField.isResolver() ? empty() : maybeOrderFields
+                .add(targetField.isResolver()
+                     ? createSelectConditions(resolverContext.getConditionList(), !whereBlock.isEmpty())
+                     : empty())
+                .add(targetField.isResolver() && !targetField.isIterableWrapped() ? empty() : maybeOrderFields
                         .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
                         .orElse(empty()))
                 .add(targetField.hasForwardPagination() && !targetField.isResolver()
@@ -139,15 +143,20 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         if (isRoot && !lookupExists) {
             code.addStatement(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName());
         } else {
-            code.add(".fetchMap");
-            if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
-                if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
-                    code.addStatement("($T::value1, r -> r.value2().map($T::value2))", RECORD2.className, RECORD2.className);
-                } else {
-                    code.addStatement("($T::value1, r -> r.value2().map($T::value1))", RECORD2.className, RECORD1.className);
-                }
-            } else {
+            if (referenceField.isResolver() && referenceField.isIterableWrapped()) {
+                code.add(".fetchGroups");
                 code.addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
+            } else {
+                code.add(".fetchMap");
+                if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
+                    if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
+                        code.addStatement("($T::value1, r -> r.value2().map($T::value2))", RECORD2.className, RECORD2.className);
+                    } else {
+                        code.addStatement("($T::value1, r -> r.value2().map($T::value1))", RECORD2.className, RECORD1.className);
+                    }
+                } else {
+                    code.addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className);
+                }
             }
         }
         return code.build();

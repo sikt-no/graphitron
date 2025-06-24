@@ -121,6 +121,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                 });
     }
 
+    /**
+     * @return <code>true</code> if this field has the `@splitQuery` directive or it has input values (i.e., it is a
+     *         field definition with input values); <code>false</code> otherwise
+     */
     @Override
     public boolean isResolver() {
         return isResolver;
