@@ -84,9 +84,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(targetField.isResolver() ? CodeBlock.empty() : maybeOrderFields
-                        .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
-                        .orElse(CodeBlock.empty()))
+                .add(targetField.isResolver() && !targetField.isIterableWrapped()
+                     ? CodeBlock.empty()
+                     : maybeOrderFields
+                             .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
+                             .orElse(CodeBlock.empty()))
                 .add(targetField.hasForwardPagination() && !targetField.isResolver()
                         ? createSeekAndLimitBlock()
                         : CodeBlock.empty())
@@ -153,6 +155,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             return CodeBlock
                     .builder()
                     .addStatement(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName())
+                    .build();
+        }
+
+        if (referenceField.isResolver() && referenceField.isIterableWrapped()) {
+            return CodeBlock
+                    .builder()
+                    .add(".fetchGroups")
+                    .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className)
                     .build();
         }
 
