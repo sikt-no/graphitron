@@ -2,6 +2,7 @@ package no.sikt.graphitron.resolvers.datafetchers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_CONDITION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_CONNECTION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.SPLIT_QUERY_WRAPPER;
 
@@ -30,6 +32,11 @@ public class ResolverPaginationTest extends GeneratorTest {
     @Override
     protected Set<SchemaComponent> getComponents() {
         return makeComponents(DUMMY_CONNECTION);
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(CONTEXT_CONDITION);
     }
 
     @Test
@@ -85,6 +92,16 @@ public class ResolverPaginationTest extends GeneratorTest {
                 "CompletableFuture<AddressConnection>",
                 "loadPaginated",
                 "QueryDBQueries.addressForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("Field with a condition referencing a context parameter")
+    void withContextCondition() {
+        assertGeneratedContentContains(
+                "operation/withContextCondition",
+                "queryForQuery(ctx, pageSize, after, _c_ctxField, selectionSet)",
+                "countQueryForQuery(ctx, _c_ctxField)"
         );
     }
 }

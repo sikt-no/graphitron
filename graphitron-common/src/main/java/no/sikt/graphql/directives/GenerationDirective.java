@@ -20,7 +20,7 @@ public enum GenerationDirective {
     LOOKUP_KEY("lookupKey"),
     REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.REFERENCES)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
-    CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE)),
+    CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
     ORDER_BY("orderBy"),
     DISCRIMINATE("discriminate", EnumSet.of(GenerationDirectiveParam.ON)),
     DISCRIMINATOR("discriminator", EnumSet.of(GenerationDirectiveParam.VALUE)),

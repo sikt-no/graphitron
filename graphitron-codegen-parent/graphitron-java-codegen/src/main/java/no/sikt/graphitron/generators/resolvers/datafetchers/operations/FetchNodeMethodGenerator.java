@@ -15,8 +15,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
@@ -79,7 +78,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, "_" + target.getName())))
+                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, asInternalName(target.getName()))))
                 .addCode(declare(VARIABLE_FETCHER_NAME, newDataFetcher()))
                 .addCode("\n")
                 .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME);

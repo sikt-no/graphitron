@@ -1,13 +1,7 @@
 package no.sikt.graphitron.definitions.fields;
 
-import graphql.language.Argument;
-import graphql.language.ArrayValue;
-import graphql.language.DirectivesContainer;
-import graphql.language.FieldDefinition;
-import graphql.language.NamedNode;
+import graphql.language.*;
 import graphql.language.ObjectField;
-import graphql.language.ObjectValue;
-import graphql.language.Value;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
@@ -17,26 +11,20 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.DirectiveHelpers;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
-import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveArgumentBoolean;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
-import static no.sikt.graphql.directives.GenerationDirective.EXTERNAL_FIELD;
-import static no.sikt.graphql.directives.GenerationDirective.FIELD;
-import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
-import static no.sikt.graphql.directives.GenerationDirective.REFERENCE;
-import static no.sikt.graphql.directives.GenerationDirective.SERVICE;
-import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
+import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.OVERRIDE;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.REFERENCES;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
@@ -51,6 +39,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     private final MethodMapping mappingForRecordFieldOverride;
     private final ServiceWrapper serviceWrapper;
     private final String nodeIdTypeName;
+    private final Map<String, TypeName> contextFields;
 
     public GenerationSourceField(T field, FieldType fieldType, String container) {
         super(field, fieldType, container);
@@ -63,15 +52,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                     .ifPresent(this::addFieldReferences);
         }
 
-        if (field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null) {
-            condition = new SQLCondition(
-                    new CodeReference(field, GenerationDirective.CONDITION, GenerationDirectiveParam.CONDITION, getName()),
-                    getOptionalDirectiveArgumentBoolean(field, GenerationDirective.CONDITION, OVERRIDE).orElse(false)
-            );
-        } else {
-            condition = null;
-        }
-
+        condition = field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null ? new SQLCondition(field) : null;
         serviceWrapper = field.hasDirective(SERVICE.getName()) ? new ServiceWrapper(field) : null;
         if (field.hasDirective(FIELD.getName())) {
             mappingForRecordFieldOverride = getJavaName().isEmpty() ? new MethodMapping(toCamelCase(getUpperCaseName())) : new MethodMapping(getJavaName());
@@ -89,6 +70,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
         hasNodeID = field.hasDirective(GenerationDirective.NODE_ID.getName());
         nodeIdTypeName = hasNodeID ? getDirectiveArgumentString(field, GenerationDirective.NODE_ID, GenerationDirectiveParam.TYPE_NAME) : null;
+        contextFields = findContextFields();
     }
 
     /**
@@ -117,6 +99,23 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                             )
                     );
                 });
+    }
+
+    /**
+     * @return Gather all the context fields that are reachable from this object alone.
+     */
+    private Map<String, TypeName> findContextFields() {
+        var serviceFields = hasServiceReference() ? serviceWrapper.getContextFields() : Map.<String, TypeName>of();
+        var conditionFields = hasCondition() ? condition.getContextFields() : Map.<String, TypeName>of();
+        var referenceConditionFields = fieldReferences
+                .stream()
+                .map(FieldReference::getTableCondition)
+                .filter(Objects::nonNull)
+                .flatMap(it -> it.getContextFields().entrySet().stream());
+        return Stream
+                .concat(Stream.concat(serviceFields.entrySet().stream(), conditionFields.entrySet().stream()), referenceConditionFields)
+                .sorted(Map.Entry.comparingByKey())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y, LinkedHashMap::new));
     }
 
     @Override
@@ -180,6 +179,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public ServiceWrapper getService() {
         return serviceWrapper;
+    }
+
+    @Override
+    public Map<String, TypeName> getContextFields() {
+        return contextFields;
     }
 
     @Override

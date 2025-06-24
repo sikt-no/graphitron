@@ -15,8 +15,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DATA_FETCHING_ENVIRONMENT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ILLEGAL_ARGUMENT_EXCEPTION;
@@ -76,7 +75,7 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
                 .beginControlFlow("if ($N == null)", VARIABLE_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", VARIABLE_TYPE_NAME, "_" + target.getName())))
+                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", VARIABLE_TYPE_NAME, asInternalName(target.getName()))))
                 .addCode(declare(VARIABLE_FETCHER_NAME, newDataFetcher()))
                 .addCode("\n")
                 .beginControlFlow("switch ($N)", VARIABLE_TYPE_NAME);

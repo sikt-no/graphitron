@@ -480,7 +480,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasCondition)
                 .map(ObjectField::getCondition)
-                .map(SQLCondition::getConditionReference)
+                .map(SQLCondition::getReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> errorMessages.add(String.format("No condition with name '%s' found.", e.getSchemaClassReference())));
     }

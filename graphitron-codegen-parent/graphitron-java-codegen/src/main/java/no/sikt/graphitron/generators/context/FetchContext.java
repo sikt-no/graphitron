@@ -17,6 +17,7 @@ import java.util.*;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
 import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.findKeyForResolverField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
@@ -332,7 +333,7 @@ public class FetchContext {
         if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))) {
 
             if (updatedSequence.isEmpty()) {
-                var alias = new Alias("_" + refTable.getCodeName(), JoinListSequence.of(refTable), false);
+                var alias = new Alias(asInternalName(refTable.getCodeName()), JoinListSequence.of(refTable), false);
                 aliasSet.add(alias);
                 return JoinListSequence.of(alias);
             } else {
@@ -349,7 +350,7 @@ public class FetchContext {
         if (!finalSequence.isEmpty()) {
             return finalSequence;
         } else {
-            var alias = new Alias("_" + refTable.getCodeName(), JoinListSequence.of(refTable), false);
+            var alias = new Alias(asInternalName(refTable.getCodeName()), JoinListSequence.of(refTable), false);
             aliasSet.add(alias);
             return JoinListSequence.of(alias);
         }
@@ -390,12 +391,12 @@ public class FetchContext {
         var target = relation.getToTable();
 
         if (previous == null) {
-            var alias = new Alias("_" + target.getCodeName(), JoinListSequence.of(target), false);
+            var alias = new Alias(asInternalName(target.getCodeName()), JoinListSequence.of(target), false);
             aliasSet.add(alias);
             return JoinListSequence.of(alias);
         }
         if (getReferenceObjectField().isResolver() && previousContext == null) {
-            var alias = new Alias("_" + previous.getCodeName(), JoinListSequence.of(previous), false);
+            var alias = new Alias(asInternalName(previous.getCodeName()), JoinListSequence.of(previous), false);
             aliasSet.add(alias);
             return JoinListSequence.of(alias);
         }

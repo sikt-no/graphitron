@@ -2,6 +2,7 @@ package no.sikt.graphitron.resolvers.datafetchers.standard.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.resolvers.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_CONDITION;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch resolvers - Resolvers for queries")
@@ -30,6 +32,11 @@ public class ResolverTest extends GeneratorTest {
     @Override
     protected Set<SchemaComponent> getComponents() {
         return makeComponents(DUMMY_TYPE);
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(CONTEXT_CONDITION);
     }
 
     @Override
@@ -65,6 +72,57 @@ public class ResolverTest extends GeneratorTest {
                 "operation/wrongInputTypeCapitalisation",
                 Set.of(DUMMY_INPUT),
                 "iN =", ".get(\"IN\")", ", iN,"
+        );
+    }
+
+    @Test
+    @DisplayName("Field with a condition referencing a context parameter")
+    void withContextCondition() {
+        assertGeneratedContentContains(
+                "operation/withContextCondition",
+                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "queryForQuery(ctx, _c_ctxField, selectionSet)"
+        );
+    }
+
+    @Test
+    @DisplayName("Field with a argument condition referencing a context parameter")
+    void withArgumentContextCondition() {
+        assertGeneratedContentContains(
+                "operation/withArgumentContextCondition",
+                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "queryForQuery(ctx, email, _c_ctxField, selectionSet)"
+        );
+    }
+
+    @Test
+    @DisplayName("Field with an input type field condition referencing a context parameter")
+    void withInputTypeContextCondition() {
+        assertGeneratedContentContains(
+                "operation/withInputTypeContextCondition",
+                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "queryForQuery(ctx, in, _c_ctxField, selectionSet)"
+        );
+    }
+
+    @Test // Note, these are sorted alphabetically.
+    @DisplayName("Field with multiple conditions referencing context parameters")
+    void withMultipleContextConditions() {
+        assertGeneratedContentContains(
+                "operation/withMultipleContextConditions",
+                "_c_ctxField1 = ((String) _graphCtx.get(\"ctxField1\"))",
+                "_c_ctxField2 = ((String) _graphCtx.get(\"ctxField2\"))",
+                "queryForQuery(ctx, email, _c_ctxField1, _c_ctxField2, selectionSet)"
+        );
+    }
+
+    @Test
+    @DisplayName("Field with multiple conditions referencing the same context parameter")
+    void withDuplicateContextField() {
+        assertGeneratedContentContains(
+                "operation/withDuplicateContextField",
+                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "queryForQuery(ctx, email, _c_ctxField, selectionSet)"
         );
     }
 
