@@ -30,6 +30,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         return makeReferences(REFERENCE_CUSTOMER_CONDITION, REFERENCE_FILM_CONDITION);
     }
 
+
+    //########  Validate previous query generation ########
+
     @Test
     @Disabled("Disabled until alwaysUsePrimaryKeyInSplitQueries-property is removed.")
     @DisplayName("Foreign key columns should be selected in previous query")
@@ -97,196 +100,569 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         );
     }
 
+
+    // ######## Validate new resolver generation ########
+
+    // ===== Reference directive with only tables =====
+
     @Test
     @DisplayName("Table path")
+    /**
+     * Given that A has a field referencing B and this field includes a single reference directive with only the table
+     * parameter B, and there exists a direct relation from A to B, when a new resolver is generated, then a JOIN
+     * clause should be created. The JOIN clause must include table B retrieved through A.
+     */
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address"
+//                ".from(customer_2952383337_address"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 
     @Test
     @DisplayName("Reverse table path")
+    /**
+     * Given that A has a field referencing B, and this field includes a single reference directive with only the table
+     * parameter B, and there is no direct relation from A to B, but an inverse relation exists from B to A, when a new
+     * resolver is generated, a JOIN clause should be created. The JOIN clause must include table B retrieved through
+     * the inverse relation.
+     */
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-                ".from(address_2030472956_customer"
-        );
-    }
-
-    @Test
-    @DisplayName("Key path with only one possible path between the tables")
-    void keyWithSinglePath() {
-        assertGeneratedContentContains(
-                "keyWithSinglePath", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address"
-        );
-    }
-
-    @Test
-    @DisplayName("Key path with multiple possible paths between the tables")
-    void keyWithMultiplePaths() {
-        assertGeneratedContentContains(
-                "keyWithMultiplePaths",
-                ".from(film_3747728953_filmoriginallanguageidfkey"
-        );
-    }
-
-    @Test
-    @DisplayName("Reverse key path")
-    void keyBackwards() {
-        assertGeneratedContentContains(
-                "keyBackwards", Set.of(CUSTOMER_TABLE),
-                ".from(address_2030472956_customer"
-        );
-    }
-
-    @Test
-    @DisplayName("Condition path")
-    void condition() {
-        assertGeneratedContentContains(
-                "condition", Set.of(CUSTOMER_NOT_GENERATED),
-                "join(customer_address_addresscustomer_address).on(",
-                ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
-                ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"
+//                ".from(address_2030472956_customer"
+                "_address = ADDRESS.as",
+                "address_2030472956_customer = _address.customer().as",
+                """
+                .select(
+                        _address.getId(),
+                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_address)
+                .join(address_2030472956_customer)
+                .where(_address.hasIds(addressIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 
     @Test
     @DisplayName("Reference on a nullable field")
+    /**
+     * Given that A has a field referencing B and this field is nullable and has a single reference directive with only
+     * the table parameter B, and a direct relation exists from A to B, when a new resolver is generated, then a JOIN
+     * clause should be created. The JOIN clause must include table B retrieved through A.
+     */
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address"
+//                ".from(customer_2952383337_address"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 
     @Test
+    @DisplayName("Indirect table path")
+    /**
+     * Given that A has a field referencing C and this field has a single reference directive with only the table
+     * parameter B, and there is no direct relation from A to C, but there are relations from A to B and from B to C,
+     * when a new resolver is generated, multiple JOIN clauses should be created. The first JOIN clause must include
+     * table B retrieved through A, and the second JOIN clause must include C retrieved through B.
+     */
+    void throughTable() {
+        assertGeneratedContentContains(
+                "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
+//                ".from(customer_2952383337_address",
+//                ".join(address_1214171484_city"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                "address_1214171484_city = customer_2952383337_address.city().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .join(address_1214171484_city)
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect reverse table path")
+    /**
+     * Given that A has a field referencing C, and this field includes a single reference directive with only the table
+     * parameter B, and there is no direct relation from A to C, nor from A to B or B to C, but inverse relations
+     * exists from B to A and from C to B, when a new resolver is generated, multiple JOIN clauses should be created.
+     * The first JOIN clause must include table B retrieved through the inverse relation from B to A, and the second
+     * JOIN clause must include table C retrieved through the inverse relation from C to B.
+     */
+    void throughTableBackwards() {
+        assertGeneratedContentContains(
+                "throughTableBackwards", Set.of(CUSTOMER_TABLE),
+//                ".from(city_1887334959_address",
+//                ".join(address_1356285680_customer"
+                "_city = CITY.as",
+                "city_1887334959_address = _city.address().as",
+                "address_1356285680_customer = city_1887334959_address.customer()",
+                """
+                .select(
+                        _city.getId(),
+                        DSL.row(address_1356285680_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_city)
+                .join(city_1887334959_address)
+                .join(address_1356285680_customer)
+                .where(_city.hasIds(cityIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Table path to the same table as source")
+    /**
+     * Given that A has a field referencing itself, and this field includes a single reference directive with only the
+     * table parameter A, and there is a direct relation from A to itself, when a new resolver is generated, a JOIN
+     * clause should be created. The JOIN clause must include table A retrieved through the self-relation.
+     */
+    void selfTableReference() {
+        assertGeneratedContentContains(
+                "selfTableReference",
+                //                "_film.film().as(",
+                //                "film_3747728953_film.getId()",
+                //                ".from(film_3747728953_film"
+                "_film = FILM.as",
+                "film_3747728953_film = _film.film().as",
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(
+                                DSL.row(film_3747728953_film.FILM_ID),
+                                film_3747728953_film.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
+                )
+                .from(_film)
+                .join(film_3747728953_film)
+                .where(_film.hasIds(filmIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Table path on a list with split query")
+    /**
+     * Given that A has a field referencing a list of B, and this field includes a single reference directive with only
+     * the table parameter B, and there is a direct relation from A to B, when a new resolver is generated, a JOIN
+     * clause should be created. The JOIN clause must include table B retrieved through A.
+     */
+    void list() {
+        assertGeneratedContentContains(
+                "list", Set.of(CUSTOMER_NOT_GENERATED),
+//                ".from(customer_2952383337_address)",
+//                "DSL.multiset(DSL.select(",
+//                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .orderBy(orderFields)
+                .fetchGroups(Record2::value1, Record2::value2)
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Table path on a nullable list with split query")
+    /**
+     * Given that A has a field referencing a NULLABLE list of B, and this field includes a single reference directive
+     * with only the table parameter B, and there is a direct relation from A to B, when a new resolver is generated, a
+     * JOIN clause should be created. The JOIN clause must include table B retrieved through A.
+     */
+    void nullableList() {
+        assertGeneratedContentContains(
+                "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
+//                ".from(customer_2952383337_address)"
+                    "_customer = CUSTOMER.as",
+                 "customer_2952383337_address = _customer.address().as",
+                 """
+                 .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .orderBy(orderFields)
+                .fetchGroups(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Multi table interface with a condition")
+    void multiLevelWithTable() {
+        assertGeneratedContentContains(
+                "multiLevelWithTable",
+                ""
+        );
+    }
+
+
+    // ===== Reference directive with only keys =====
+
+    @Test
+    @DisplayName("Key path with only one possible path between the tables")
+    /**
+     * Given that A has a field referencing B, and this field has a reference directive containing a key defined from
+     * same A to B, while a relation already exists from A to B, when a new resolver is generated, we expect that an
+     * explicit JOIN between these two tables using the key, is created.
+     */
+    // TODO: Alias name is not using name based on key. Is this correct? What is the rule here?
+    void keyWithSinglePath() {
+        assertGeneratedContentContains(
+                "keyWithSinglePath", Set.of(CUSTOMER_NOT_GENERATED),
+//                ".from(customer_2952383337_address"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Key path with multiple possible paths between the tables")
+    /**
+     * Given that A has a field referencing B, and this field includes a reference directive containing a key, and
+     * multiple relations exist from A to B, when a new resolver is generated, we expect that the specified key will
+     * be used to create an explicit JOIN between these two tables.
+     */
+    void keyWithMultiplePaths() {
+        assertGeneratedContentContains(
+                "keyWithMultiplePaths",
+//                ".from(film_3747728953_filmoriginallanguageidfkey"
+                "_film = FILM.as",
+                "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as",
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))
+                )
+                .from(_film)
+                .join(film_3747728953_filmoriginallanguageidfkey)
+                .where(_film.hasIds(filmIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Reverse key path")
+    /**
+     * Given that A has a field that refers to B and that field has a reference directive containing a key defined from
+     * the inverse B to A, and no relation exist from A to B, when a new resolver is generated, then an implicit JOIN
+     * between these two tables using the key should be generated for the new resolver.
+     */
+    // TODO: Alias name is not using name based on key. Is this correct? What is the rule here?
+    void keyBackwards() {
+        assertGeneratedContentContains(
+                "keyBackwards", Set.of(CUSTOMER_TABLE),
+//                ".from(address_2030472956_customer"
+               "_address = ADDRESS.as",
+                "address_2030472956_customer = _address.customer().as",
+                """
+                .select(
+                        _address.getId(),
+                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_address)
+                .join(address_2030472956_customer)
+                .where(_address.hasIds(addressIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect key path")
+    /**
+     * Given that A has a field referencing C, and this field has a reference directive containing a key defined from
+     * A to B, and there is no direct relation from A to C, but there are a relation from A to B and from B to C, when
+     * a new resolver is generated, we expect that implicit JOIN path is crated. The first JOIN clause must include
+     * table B retrieved through A, and the second JOIN clause must include C retrieved thhrough B.
+     */
+    void throughKey() {
+        assertGeneratedContentContains(
+                "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
+//                ".from(customer_2952383337_address",
+//                ".join(address_1214171484_city"
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                "address_1214171484_city = customer_2952383337_address.city().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .join(address_1214171484_city)
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Key path to the same table as source")
+    /**
+     * Given that A has a field referencing itselt, and this field includes a reference directive containing a key that
+     * is defined from A to A, and therefore creates a direct relation from A to itself, when a new resolver is
+     * generated, we expect that an implicit JOIN path is created. The JOIN clause must include A retrieved through A.
+     */
+    void selfKeyReference() {
+        assertGeneratedContentContains(
+                "selfKeyReference",
+//                "_film.film().as(",
+//                "film_3747728953_film.getId()",
+//                ".from(film_3747728953_film"
+               "_film = FILM.as",
+               "film_3747728953_film = _film.film().as",
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(
+                                DSL.row(film_3747728953_film.FILM_ID),
+                                film_3747728953_film.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
+                )
+                .from(_film)
+                .join(film_3747728953_film)
+                .where(_film.hasIds(filmIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+
+    // ===== Reference directive with only conditions =====
+
+    @Test
+//    @DisplayName("Condition path")
+    @DisplayName("""
+                 Given that A has a field referencing B, and this field includes a single reference directive
+                 with only a condition, and there exists a relation from A to B, when a new resolver is
+                 generated, we expect that JOIN and ON clauses are created. The JOIN clause should contain
+                 table B, and the ON clause should use the condition method with tables A and B as arguments
+                 """)
+    void condition() {
+        assertGeneratedContentContains(
+                "condition", Set.of(CUSTOMER_NOT_GENERATED),
+               /* "join(customer_address_addresscustomer_address).on(",
+                ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
+                ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"*/
+                "_customer = CUSTOMER.as",
+                "customer_address = ADDRESS.as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_address)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Indirect condition path")
+    /**
+     * Given that A has a field referencing C, and this field includes a single reference directive containing only a
+     * condition, and there is no direct relation from A to C, when a new resolver is generated we expect that a JOIN
+     * and ON cluase is created. The JOIN clause must include table C and the ON clause must include the condition
+     * method with tables A and C as arguments.
+     */
+    void throughCondition() {
+        assertGeneratedContentContains(
+                "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
+//                ".join(customer_city_citycustomer_city).on(",
+//                ".cityCustomer(customer_city, customer_city_citycustomer_city)"
+                "_customer = CUSTOMER.as",
+                "customer_city = CITY.as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_city.getId()).mapping(Functions.nullOnAllNull(City::new))
+                )
+                .from(_customer)
+                .join(customer_city)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+    @Test
+    @DisplayName("Condition path to the same table as source")
+    /**
+     * Given that A has a field referencing itself, and this field includes a reference directive containing a
+     * condition, and there is a direct relation from A to itself, when a new resolver is generated, we expect that a
+     * JOIN clause and an ON clause is created. The JOIN clause must include table A and the ON clause must include the
+     * condition method with tables A and itself as arguments.
+     */
+    void selfConditionReference() {
+        assertGeneratedContentContains(
+                "selfConditionReference",
+//                "FILM.as(",
+//                "film_sequel_sequel_film.getId()",
+//                ".join(film_sequel_sequel_film).on(",
+//                ".sequel(film_sequel, film_sequel_sequel_film"
+                "_film = FILM.as",
+                "film_sequel = FILM.as",
+                """
+                .select(
+                        _film.getId(),
+                        DSL.row(
+                                DSL.row(film_sequel.FILM_ID),
+                                film_sequel.getId()
+                        ).mapping(Functions.nullOnAllNull(Film::new))
+                )
+                .from(_film)
+                .join(film_sequel)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_sequel))
+                .where(_film.hasIds(filmIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
+        );
+    }
+
+
+    // ===== Reference directive with table and condition =====
+
+    @Test
     @DisplayName("Both a table and a condition set on the same path element")
+    /**
+     *
+     */
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_address_addresscustomer_address = ADDRESS.as(", // Note, no implicit join anymore.
+               /* "customer_address_addresscustomer_address = ADDRESS.as(", // Note, no implicit join anymore.
                 ".join(customer_address_addresscustomer_address).on(",
-                ".addressCustomer(customer_address, customer_address_addresscustomer_address)" // Note, condition overrides as it uses "on".
+                ".addressCustomer(customer_address, customer_address_addresscustomer_address)" // Note, condition overrides as it uses "on".*/
+                "_customer = CUSTOMER.as",
+                "customer_address = ADDRESS.as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_address)
+                .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
+                .where(_customer.hasIds(customerIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
+
+
+    // ===== Reference directive with key and condition =====
 
     @Test
     @DisplayName("Both a key and a condition set on the same path element")
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
-                ".from(customer_2952383337_address).where(",
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as(",// Note, implicit join is present when we use a key, but not table.
+                /*".from(customer_2952383337_address).where(",
                 ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
-                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream"
+                ".where(_customer.hasIds(customerIds"*/
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                """
+                .select(
+                        _customer.getId(),
+                        DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(_customer.hasIds(customerIds))
+                .and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 
-    @Test
-    @DisplayName("Indirect table path")
-    void throughTable() {
-        assertGeneratedContentContains(
-                "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address",
-                ".join(address_1214171484_city"
-        );
-    }
 
-    @Test
-    @DisplayName("Indirect key path")
-    void throughKey() {
-        assertGeneratedContentContains(
-                "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address",
-                ".join(address_1214171484_city"
-        );
-    }
-
-    @Test
-    @DisplayName("Indirect condition path")
-    void throughCondition() {
-        assertGeneratedContentContains(
-                "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                ".join(customer_city_citycustomer_city).on(",
-                ".cityCustomer(customer_city, customer_city_citycustomer_city)"
-        );
-    }
-
-    @Test
-    @DisplayName("Indirect reverse table path")
-    void throughTableBackwards() {
-        assertGeneratedContentContains(
-                "throughTableBackwards", Set.of(CUSTOMER_TABLE),
-                ".from(city_1887334959_address",
-                ".join(address_1356285680_customer"
-        );
-    }
-
-    @Test
-    @DisplayName("Table path on a list with split query")
-    void list() {
-        assertGeneratedContentContains(
-                "list", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address)",
-                "DSL.multiset(DSL.select(",
-                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
-        );
-    }
-
-    @Test
-    @DisplayName("Table path on a nullable list with split query")
-    void nullableList() {
-        assertGeneratedContentContains(
-                "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
-                ".from(customer_2952383337_address)"
-        );
-    }
-
-    @Test
-    @DisplayName("Table path to the same table as source")
-    void selfTableReference() {
-        assertGeneratedContentContains(
-                "selfTableReference",
-                "_film.film().as(",
-                "film_3747728953_film.getId()",
-                ".from(film_3747728953_film"
-        );
-    }
-
-    @Test
-    @DisplayName("Key path to the same table as source")
-    void selfKeyReference() {
-        assertGeneratedContentContains(
-                "selfKeyReference",
-                "_film.film().as(",
-                "film_3747728953_film.getId()",
-                ".from(film_3747728953_film"
-        );
-    }
-
-    @Test
-    @DisplayName("Condition path to the same table as source")
-    void selfConditionReference() {
-        assertGeneratedContentContains(
-                "selfConditionReference",
-                "FILM.as(",
-                "film_sequel_sequel_film.getId()",
-                ".join(film_sequel_sequel_film).on(",
-                ".sequel(film_sequel, film_sequel_sequel_film"
-        );
-    }
+    // ===== Other combinations of directives =====
 
     @Test
     @DisplayName("Reference from multi table interface")
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-                "DSL.row(_payment.PAYMENT_ID), DSL.field(",
-                "CustomerTable::new))).from(payment_425747824_customer)",
-                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream()"
+//                "_payment.getId(), DSL.field(",
+//                "CustomerTable::new))).from(payment_425747824_customer)",
+//                ".from(_payment).where(_payment.hasIds(paymentIds))"
+               "_payment = PAYMENT.as",
+               "payment_425747824_customer = _payment.customer().as",
+                """
+                .select(
+                        _payment.getId(),
+                        DSL.row(payment_425747824_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                )
+                .from(_payment)
+                .join(payment_425747824_customer)
+                .where(_payment.hasIds(paymentIds))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 }
