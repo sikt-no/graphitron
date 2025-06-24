@@ -25,7 +25,7 @@ public class CustomerDBQueries {
                 .select(
                         DSL.row(_customer.CUSTOMER_ID),
                         DSL.field(
-                                DSL.select(DSL.row(nodeIdStrategy.createId("ADDRESS", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
+                                DSL.select(DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
                                         .from(customer_2952383337_address)
                         )
                 )
