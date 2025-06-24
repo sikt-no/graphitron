@@ -64,6 +64,12 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("One type with node directive generates correct switch statement")
+    void nodeCorrectSwitchStatement() {
+        assertGeneratedContentContains("oneImplementation", "case \"CustomerType\"");
+    }
+
+    @Test
     @DisplayName("Many types implement Node interface")
     void manyImplementations() {
         assertGeneratedContentContains(
