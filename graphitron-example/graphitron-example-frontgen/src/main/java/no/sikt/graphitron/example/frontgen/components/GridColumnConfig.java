@@ -1,4 +1,4 @@
-package no.sikt.graphitron.example.server.frontgen.components;
+package no.sikt.graphitron.example.frontgen.components;
 
 import java.util.function.Function;
 

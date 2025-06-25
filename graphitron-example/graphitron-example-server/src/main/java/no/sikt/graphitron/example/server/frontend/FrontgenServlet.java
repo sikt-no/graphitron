@@ -1,4 +1,4 @@
-package no.sikt.graphitron.example.server.frontgen.config;
+package no.sikt.graphitron.example.server.frontend;
 
 import com.vaadin.quarkus.QuarkusVaadinServlet;
 import jakarta.servlet.annotation.WebServlet;

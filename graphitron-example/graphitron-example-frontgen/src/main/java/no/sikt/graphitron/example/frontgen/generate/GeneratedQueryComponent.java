@@ -1,8 +1,8 @@
-package no.sikt.graphitron.example.server.frontgen.generate;
+package no.sikt.graphitron.example.frontgen.generate;
 
 import com.vaadin.flow.component.grid.Grid;
-import no.sikt.graphitron.example.server.frontgen.QueryBackedView;
-import no.sikt.graphitron.example.server.frontgen.components.QueryComponent;
+import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
+import no.sikt.graphitron.example.frontgen.components.QueryComponent;
 
 import java.util.List;
 import java.util.function.Function;

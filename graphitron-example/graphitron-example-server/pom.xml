@@ -43,6 +43,11 @@
         </dependency>
         <dependency>
             <groupId>no.sikt</groupId>
+            <artifactId>graphitron-example-frontgen</artifactId>
+            <version>${revision}${changelist}</version>
+        </dependency>
+        <dependency>
+            <groupId>no.sikt</groupId>
             <artifactId>graphitron-common</artifactId>
             <version>${revision}${changelist}</version>
         </dependency>

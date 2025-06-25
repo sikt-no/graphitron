@@ -1,4 +1,4 @@
-package no.sikt.graphitron.example.server.frontgen.graphql;
+package no.sikt.graphitron.example.frontgen.graphql;
 
 import java.util.List;
 import java.util.Map;

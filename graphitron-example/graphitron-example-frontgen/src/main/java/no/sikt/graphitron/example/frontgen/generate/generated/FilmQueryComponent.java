@@ -1,10 +1,10 @@
-package no.sikt.graphitron.example.server.frontgen.generate.generated;
+package no.sikt.graphitron.example.frontgen.generate.generated;
 
 import com.vaadin.flow.component.grid.Grid;
 import no.sikt.graphitron.example.generated.graphitron.model.Film;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnectionEdge;
-import no.sikt.graphitron.example.server.frontgen.generate.GeneratedQueryComponent;
+import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 
 import java.util.List;
 import java.util.function.Function;
