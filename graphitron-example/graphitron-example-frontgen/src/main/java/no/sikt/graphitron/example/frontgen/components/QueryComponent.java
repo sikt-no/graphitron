@@ -1,7 +1,6 @@
-package no.sikt.graphitron.example.server.frontgen.components;
+package no.sikt.graphitron.example.frontgen.components;
 
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import no.sikt.graphitron.example.server.frontgen.QueryBackedView;
 
 public abstract class QueryComponent extends VerticalLayout {
 

@@ -1,6 +1,5 @@
-package no.sikt.graphitron.example.server.frontgen.graphql;
+package no.sikt.graphitron.example.frontgen.graphql;
 
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
 import org.slf4j.Logger;
@@ -16,7 +15,6 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.util.HashMap;
 import java.util.Map;
 
-@ApplicationScoped
 public class GraphQLQueryAdapter {
     private static final Logger LOG = LoggerFactory.getLogger(GraphQLQueryAdapter.class);
     private final HttpClient httpClient;

@@ -1,13 +1,12 @@
-package no.sikt.graphitron.example.server.frontgen;
+package no.sikt.graphitron.example.frontgen.components;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import jakarta.inject.Inject;
-import no.sikt.graphitron.example.server.frontgen.graphql.GraphQLQueryAdapter;
-import no.sikt.graphitron.example.server.frontgen.graphql.GraphQLResponse;
+import no.sikt.graphitron.example.frontgen.graphql.GraphQLQueryAdapter;
+import no.sikt.graphitron.example.frontgen.graphql.GraphQLResponse;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
 import java.util.List;
@@ -16,8 +15,11 @@ import java.util.function.Function;
 
 public class QueryBackedView extends VerticalLayout {
 
-    @Inject
-    GraphQLQueryAdapter graphQLService;
+    private final GraphQLQueryAdapter graphQLService;
+
+    public QueryBackedView(GraphQLQueryAdapter graphQLService) {
+        this.graphQLService = graphQLService;
+    }
 
     public <T, R> void fetch(
             String query,

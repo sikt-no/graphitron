@@ -1,7 +1,7 @@
-package no.sikt.graphitron.example.server.frontgen.generate.generated;
+package no.sikt.graphitron.example.frontgen.generate.generated;
 
-import no.sikt.graphitron.example.server.frontgen.QueryBackedView;
-import no.sikt.graphitron.example.server.frontgen.components.QueryComponent;
+import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
+import no.sikt.graphitron.example.frontgen.components.QueryComponent;
 
 public class QueryComponents {
 

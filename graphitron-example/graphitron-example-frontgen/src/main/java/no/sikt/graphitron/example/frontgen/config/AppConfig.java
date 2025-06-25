@@ -1,4 +1,4 @@
-package no.sikt.graphitron.example.server.frontgen.config;
+package no.sikt.graphitron.example.frontgen.config;
 
 import com.vaadin.flow.component.page.AppShellConfigurator;
 import com.vaadin.flow.theme.Theme;

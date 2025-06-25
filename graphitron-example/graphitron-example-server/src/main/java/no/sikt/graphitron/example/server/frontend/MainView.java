@@ -1,22 +1,27 @@
-package no.sikt.graphitron.example.server.frontgen;
+package no.sikt.graphitron.example.server.frontend;
 
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.router.Route;
-import no.sikt.graphitron.example.server.frontgen.components.QueryComponent;
-import no.sikt.graphitron.example.server.frontgen.generate.generated.QueryComponents;
+import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
+import no.sikt.graphitron.example.frontgen.components.QueryComponent;
+import no.sikt.graphitron.example.frontgen.generate.generated.QueryComponents;
+import no.sikt.graphitron.example.frontgen.graphql.GraphQLQueryAdapter;
 
 import java.util.List;
 
 @Route("")
 public class MainView extends QueryBackedView {
+    GraphQLQueryAdapter graphQLService;
 
     public MainView() {
+        super(new GraphQLQueryAdapter());
         HorizontalLayout buttonBar = new HorizontalLayout();
         buttonBar.setWidthFull();
         buttonBar.setPadding(true);
-        buttonBar.setJustifyContentMode(JustifyContentMode.CENTER);
+        buttonBar.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
 
         List<QueryComponent> components = createComponents();
 
