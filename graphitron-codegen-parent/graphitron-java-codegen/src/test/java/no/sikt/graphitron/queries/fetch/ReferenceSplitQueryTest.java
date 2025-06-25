@@ -107,6 +107,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Test
     @DisplayName("Table path")
+    // TODO: The descriptions for the different tests below can be omitted if we do not find them useful.
+    // Thought they could be useful as a way to document the expected behaviour under different conditions. The problem
+    // can be a lot of textchanges if we make adjustments to the "rules" of expected behaviour. Has also added more of
+    // the generated code to be validated than previously. (Previous validation text is commented out if we want to use
+    // it again.) Perhaps more output validation can replace the descriptions? (Descriptions might not be correct or
+    // are incomplete)
     /**
      * Given that A has a field referencing B and this field includes a single reference directive with only the table
      * parameter B, and there exists a direct relation from A to B, when a new resolver is generated, then a JOIN
@@ -120,12 +126,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -147,12 +153,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "address_2030472956_customer = _address.customer().as",
                 """
                 .select(
-                        _address.getId(),
+                        DSL.row(_address.ADDRESS_ID),
                         DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(_address.hasIds(addressIds))
+                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -173,12 +179,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -201,14 +207,14 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as",
                 "address_1214171484_city = customer_2952383337_address.city().as",
                 """
-                .select(
-                        _customer.getId(),
+               .select(
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -233,13 +239,13 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "address_1356285680_customer = city_1887334959_address.customer()",
                 """
                 .select(
-                        _city.getId(),
+                        DSL.row(_city.CITY_ID),
                         DSL.row(address_1356285680_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_city)
                 .join(city_1887334959_address)
                 .join(address_1356285680_customer)
-                .where(_city.hasIds(cityIds))
+                .where(DSL.row(_city.CITY_ID).in(cityResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -262,7 +268,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "film_3747728953_film = _film.film().as",
                 """
                 .select(
-                        _film.getId(),
+                        DSL.row(_film.FILM_ID),
                         DSL.row(
                                 DSL.row(film_3747728953_film.FILM_ID),
                                 film_3747728953_film.getId()
@@ -270,7 +276,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_film)
                 .join(film_3747728953_film)
-                .where(_film.hasIds(filmIds))
+                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -293,14 +299,14 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .orderBy(orderFields)
-                .fetchGroups(Record2::value1, Record2::value2)
+                .fetchGroups(Record2::value1, Record2::value2);
                 """
         );
     }
@@ -320,12 +326,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                  "customer_2952383337_address = _customer.address().as",
                  """
                  .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .orderBy(orderFields)
                 .fetchGroups(Record2::value1, Record2::value2);
                 """
@@ -337,7 +343,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void multiLevelWithTable() {
         assertGeneratedContentContains(
                 "multiLevelWithTable",
-                ""
+                "X"
         );
     }
 
@@ -360,12 +366,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -386,12 +392,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as",
                 """
                 .select(
-                        _film.getId(),
+                        DSL.row(_film.FILM_ID),
                         DSL.row(film_3747728953_filmoriginallanguageidfkey.getId()).mapping(Functions.nullOnAllNull(Language::new))
                 )
                 .from(_film)
                 .join(film_3747728953_filmoriginallanguageidfkey)
-                .where(_film.hasIds(filmIds))
+                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -413,12 +419,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "address_2030472956_customer = _address.customer().as",
                 """
                 .select(
-                        _address.getId(),
+                        DSL.row(_address.ADDRESS_ID),
                         DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(_address.hasIds(addressIds))
+                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -442,13 +448,13 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "address_1214171484_city = customer_2952383337_address.city().as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -471,7 +477,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                "film_3747728953_film = _film.film().as",
                 """
                 .select(
-                        _film.getId(),
+                        DSL.row(_film.FILM_ID),
                         DSL.row(
                                 DSL.row(film_3747728953_film.FILM_ID),
                                 film_3747728953_film.getId()
@@ -479,7 +485,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_film)
                 .join(film_3747728953_film)
-                .where(_film.hasIds(filmIds))
+                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -489,13 +495,16 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     // ===== Reference directive with only conditions =====
 
     @Test
-//    @DisplayName("Condition path")
-    @DisplayName("""
-                 Given that A has a field referencing B, and this field includes a single reference directive
-                 with only a condition, and there exists a relation from A to B, when a new resolver is
-                 generated, we expect that JOIN and ON clauses are created. The JOIN clause should contain
-                 table B, and the ON clause should use the condition method with tables A and B as arguments
-                 """)
+    @DisplayName("Condition path")
+    /**
+     * Given that A has a field referencing B, and this field includes a single reference directive with only a
+     * condition, and there exists a relation from A to B, when a new resolver is generated, we expect that JOIN and ON
+     * clauses are created. The JOIN clause should contain table B, and the ON clause should use the condition method
+     * with tables A and B as arguments.
+     */
+    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
+    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
+    // test, as this test no longer generates a subquery. Does this look correct?
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
@@ -506,13 +515,13 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_address = ADDRESS.as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_address)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -526,6 +535,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
      * and ON cluase is created. The JOIN clause must include table C and the ON clause must include the condition
      * method with tables A and C as arguments.
      */
+    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
+    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
+    // test, as this test no longer generates a subquery. Does this look correct?
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
@@ -535,13 +547,13 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_city = CITY.as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_city.getId()).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(_customer)
                 .join(customer_city)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -555,6 +567,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
      * JOIN clause and an ON clause is created. The JOIN clause must include table A and the ON clause must include the
      * condition method with tables A and itself as arguments.
      */
+    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
+    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
+    // test, as this test no longer generates a subquery. Does this look correct?
     void selfConditionReference() {
         assertGeneratedContentContains(
                 "selfConditionReference",
@@ -566,7 +581,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "film_sequel = FILM.as",
                 """
                 .select(
-                        _film.getId(),
+                        DSL.row(_film.FILM_ID),
                         DSL.row(
                                 DSL.row(film_sequel.FILM_ID),
                                 film_sequel.getId()
@@ -575,7 +590,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_film)
                 .join(film_sequel)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_sequel))
-                .where(_film.hasIds(filmIds))
+                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -589,6 +604,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     /**
      *
      */
+    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
+    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
+    // test, as this test no longer generates a subquery. Does this look correct?
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
@@ -599,13 +617,13 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_address = ADDRESS.as",
                 """
                 .select(
-                        _customer.getId(),
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_address)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );
@@ -627,13 +645,13 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 """
-                .select(
-                        _customer.getId(),
+               .select(
+                        DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(_customer.hasIds(customerIds))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
@@ -655,12 +673,12 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                "payment_425747824_customer = _payment.customer().as",
                 """
                 .select(
-                        _payment.getId(),
+                        DSL.row(_payment.PAYMENT_ID),
                         DSL.row(payment_425747824_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_payment)
                 .join(payment_425747824_customer)
-                .where(_payment.hasIds(paymentIds))
+                .where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
         );

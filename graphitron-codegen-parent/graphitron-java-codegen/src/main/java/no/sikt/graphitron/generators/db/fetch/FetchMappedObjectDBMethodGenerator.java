@@ -46,6 +46,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var resolverContext = context.nextContext(targetField);
 
         // Note that this must happen before alias declaration.
+        // TODO: Previously, when a field was a resolver, the method "generateCorrelatedSubquery" was called. Have
+        //  changed this to use the "generateSelectRow" method instead, because we don't necessarily create a
+        //  correlated subquery here at the root query. Is this a wrong assumption?
         var selectRowBlock = targetField.isResolver()
                              ? generateSelectRow(resolverContext)
                              : generateSelectRow(context);

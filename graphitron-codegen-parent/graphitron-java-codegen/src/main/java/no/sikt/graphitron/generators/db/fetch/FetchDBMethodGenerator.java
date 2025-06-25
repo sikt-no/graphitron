@@ -130,6 +130,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         CodeBlock.Builder contents = null;
 
+        // TODO: This is just temporary.
         if (field.isResolver()) {
             contents = select; // CodeBlock.of(select);
 //                    .builder()
