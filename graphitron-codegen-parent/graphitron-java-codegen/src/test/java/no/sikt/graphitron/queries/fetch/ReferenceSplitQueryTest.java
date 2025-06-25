@@ -339,11 +339,45 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Multi table interface with a condition")
-    void multiLevelWithTable() {
+    @DisplayName("Table reference on a multi-level type")
+    void tableOnMultiLevelType() {
         assertGeneratedContentContains(
-                "multiLevelWithTable",
-                "X"
+                "tableOnMultiLevelType",
+                "_customer = CUSTOMER.as",
+                "customer_2952383337_address = _customer.address().as",
+                "address_1214171484_city = customer_2952383337_address.city().as",
+                "city_2554114265_country = address_1214171484_city.country().as",
+                """
+                .select(
+                        DSL.row(_customer.CUSTOMER_ID),
+                        DSL.row(
+                                customer_2952383337_address.getId(),
+                                customer_2952383337_address.ADDRESS,
+                                DSL.field(
+                                        DSL.select(
+                                                DSL.row(
+                                                        address_1214171484_city.getId(),
+                                                        address_1214171484_city.CITY,
+                                                        DSL.field(
+                                                                DSL.select(
+                                                                        DSL.row(
+                                                                                city_2554114265_country.getId(),
+                                                                                city_2554114265_country.COUNTRY
+                                                                        ).mapping(Functions.nullOnAllNull(Country::new))
+                                                                )
+                                                                .from(city_2554114265_country)
+                                                        )
+                                                ).mapping(Functions.nullOnAllNull(City::new))
+                                        )
+                                        .from(address_1214171484_city)
+                                )
+                        ).mapping(Functions.nullOnAllNull(Address::new))
+                )
+                .from(_customer)
+                .join(customer_2952383337_address)
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .fetchMap(Record2::value1, Record2::value2);
+                """
         );
     }
 

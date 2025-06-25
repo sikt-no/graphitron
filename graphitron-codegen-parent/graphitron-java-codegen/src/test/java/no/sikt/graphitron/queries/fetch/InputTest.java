@@ -185,12 +185,12 @@ public class InputTest extends GeneratorTest {
                  "address_2030472956_customer = _address.customer().as",
                  """
                  .select(
-                         _address.getId(),
-                         DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        DSL.row(_address.ADDRESS_ID),
+                        DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(_address.hasIds(addressIds))
+                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .and(address_2030472956_customer.EMAIL.eq(email))
                 .fetchMap(Record2::value1, Record2::value2);
                 """
