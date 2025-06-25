@@ -923,9 +923,9 @@ public class CustomerService {
 ```
 
 #### Context variables
-Using the _contextArguments_ parameter on the **service** directive, one can specify which context values should be passed to the service.
+Using the _contextArguments_ parameter on the **service** or **condition** directives, one can specify which context values should be passed to the referenced method.
 The names correspond to the keys of the values as found in the `graphql.GraphQLContext` for the current operation.
-Graphitron will fetch these values and try to cast them to the matching datatypes in the service method arguments.
+Graphitron will fetch these values and try to cast them to the matching datatypes in the method arguments.
 Note that context arguments are always placed at the end of the method arguments, in the order specified by the _contextArguments_ parameter.
 
 _Schema:_
