@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
+import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
@@ -20,6 +21,8 @@ import org.apache.commons.lang3.Validate;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.Field;
+import org.jooq.Key;
+import org.jooq.UniqueKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +36,7 @@ import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.groupingBy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
+import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.STRING;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
@@ -90,6 +94,7 @@ public class ProcessedDefinitionsValidator {
         validateNodeDirective();
         validateUnionAndInterfaceSubTypes();
         validateNodeId();
+        validateNodeIdReferenceInJooqRecordInput();
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -138,12 +143,25 @@ public class ProcessedDefinitionsValidator {
                                                 objectDefinition.getName(),
                                                 objectDefinition.getTable().getName()))
                                 );
+
+                        if (getPrimaryOrUniqueKeyMatchingIdFields(objectDefinition).isEmpty()) {
+                            errorMessages.add(
+                                    String.format("Key columns in node ID for type '%s' does not match a PK/UK for table '%s'",
+                                            objectDefinition.getName(),
+                                            objectDefinition.getTable().getName()));
+                        }
                     }
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())){
                         errorMessages.add(String.format("Type %s has the %s directive, but does not implement the %s interface.",
                                 objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName()));
                     }
                 });
+    }
+
+    private Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingIdFields(ObjectDefinition target) {
+        return !target.hasCustomKeyColumns() ?
+                getPrimaryKeyForTable(target.getTable().getName())
+                : getPrimaryOrUniqueKeyMatchingFields(target.getTable().getName(), target.getKeyColumns());
     }
 
     private void validateNodeId() {
@@ -205,6 +223,79 @@ public class ProcessedDefinitionsValidator {
                                 EXTERNAL_FIELD.getName()
                         ));
                     }
+                });
+    }
+
+    private void validateNodeIdReferenceInJooqRecordInput() {
+        schema.getInputTypes()
+                .values()
+                .stream()
+                .filter(it -> schema.isRecordType(it.getName()))
+                .map(it -> schema.getRecordType(it.getName()))
+                .filter(it -> it.getFields().stream().anyMatch(FieldSpecification::hasNodeID))
+                .filter(it -> it.hasTable() && getTable(it.getTable().getName()).isPresent()) // No need to continue validation here if table does not exist. Table names is validated in validateTablesAndKeys
+                .forEach(jooqRecordInput -> {
+                    jooqRecordInput.getFields()
+                            .stream()
+                            .filter(FieldSpecification::hasNodeID)
+                            .filter(it -> !schema.getRecordType(it.getNodeIdTypeName()).getTable().equals(jooqRecordInput.getTable()))
+                            .forEach(field -> {
+                                var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
+
+                                if (foreignKeyOptional.isEmpty()) {
+                                    errorMessages.add(String.format("Cannot find foreign key for node ID field '%s' in jOOQ record input '%s'.",
+                                            field.getName(),
+                                            field.getContainerTypeName()));
+                                    return;
+                                }
+
+                                var foreignKey = foreignKeyOptional.get();
+
+                                if (!foreignKey.getTable().getName().equalsIgnoreCase(jooqRecordInput.getTable().getName())) {
+                                    errorMessages.add(String.format(
+                                            "Node ID field '%s' in jOOQ record input '%s' references a table with an inverse key which is not supported.",
+                                            field.getName(),
+                                            field.getContainerTypeName()
+                                    ));
+                                    return;
+                                }
+
+                                var nodeType = schema.getObject(field.getNodeIdTypeName());
+                                var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
+
+                                if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
+                                    errorMessages.add(String.format(
+                                            "Node ID field '%s' in jOOQ record input '%s' has a reference via table(s) which is not supported on jOOQ record inputs.",
+                                            field.getName(),
+                                            field.getContainerTypeName()
+                                    ));
+                                    return;
+                                }
+
+                                var targetKey = getPrimaryOrUniqueKeyMatchingIdFields(nodeType);
+
+                                if (targetKey.isPresent() && !targetKey.get().equals(foreignKey.getKey())) {
+                                    errorMessages.add(String.format(
+                                            "Node ID field '%s' in jOOQ record input '%s' uses foreign key '%s' which does not reference the same primary/unique key used for type '%s's node ID. This is not supported.",
+                                            field.getName(),
+                                            field.getContainerTypeName(),
+                                            foreignKey.getName(),
+                                            field.getNodeIdTypeName()
+                                    ));
+                                }
+
+                                getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
+                                        .map(Key::getFields)
+                                        .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
+                                        .stream().findFirst()
+                                        .map(a -> errorMessages.add(String.format(
+                                                "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported.",
+                                                field.getName(),
+                                                field.getContainerTypeName()
+                                        )));
+                            });
+
+
                 });
     }
 

@@ -474,6 +474,16 @@ public class TableReflection {
         return getTable(tableName).map(Table::getPrimaryKey).stream().findFirst();
     }
 
+    public static Optional<? extends UniqueKey<?>> getPrimaryOrUniqueKeyMatchingFields(String table, List<String> fields) {
+        return getTable(table)
+                .flatMap(value ->
+                        Stream.concat(value.getUniqueKeys().stream(), Stream.of(value.getPrimaryKey()))
+                                .filter(key -> key.getFields().size() == fields.size()
+                                        && fields.stream().allMatch(idField -> key.getFields().stream().anyMatch(keyField -> keyField.getName().equalsIgnoreCase(idField))))
+                                .findFirst()
+                );
+    }
+
     public static Optional<Method> getMethodFromReference(String reference, String tableName, String methodName) {
         try {
         Class<?> clazz = Class.forName(reference);

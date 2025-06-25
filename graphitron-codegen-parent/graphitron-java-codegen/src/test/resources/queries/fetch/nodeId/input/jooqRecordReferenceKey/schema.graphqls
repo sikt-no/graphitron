@@ -1,0 +1,15 @@
+type Query {
+    query(filter: FilmInput!): Film
+}
+
+input FilmInput @table(name: "FILM") {
+    originalLanguageId: ID! @nodeId(typeName: "Language") @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+}
+
+type Film @table {
+    id: ID!
+}
+
+type Language implements Node @node @table {
+    id: ID!
+}
