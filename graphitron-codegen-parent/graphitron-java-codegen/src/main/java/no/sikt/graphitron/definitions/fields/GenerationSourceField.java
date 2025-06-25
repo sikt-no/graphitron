@@ -122,8 +122,8 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     /**
-     * @return <code>true</code> if this field has the `@splitQuery` directive or it has input values (i.e., it is a
-     *         field definition with input values); <code>false</code> otherwise
+     *  A field is considered a resolver if it has a `@splitQuery` directive applied, or if it is a field with
+     *  arguments.
      */
     @Override
     public boolean isResolver() {
@@ -177,6 +177,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasCondition() && condition.isOverride();
     }
 
+
+    /**
+     * A field is considered generated unless the `@notGenerated` directive is applied.
+     */
     @Override
     public boolean isGenerated() {
         return isGenerated;
@@ -202,6 +206,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return null;
     }
 
+
+    /**
+     * A field is considered generated with a resolver if it is generated and satisfies one of the following
+     * conditions: it is a resolver, it is a field in the root type `Query`, or it is a field in the `Mutation` type.
+     */
     @Override
     public boolean isGeneratedWithResolver() {
         return isGeneratedAsResolver;

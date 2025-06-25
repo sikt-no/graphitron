@@ -322,9 +322,7 @@ public class FetchContext {
      * reference field, or other appropriate start points for a sequence.
      */
     public JoinListSequence iterateJoinSequence(JoinListSequence previousJoinSequence) {
-        var referenceObjectTable = getReferenceTable();
-
-        if (!hasNextTable()) {
+        if (hasNoNextTable()) {
             return previousJoinSequence;
         }
 
@@ -340,6 +338,8 @@ public class FetchContext {
         var updatedJoinSequence = !joinSequenceFromFieldReferences.isEmpty()
                                   ? joinSequenceFromFieldReferences
                                   : previousJoinSequence;
+
+        var referenceObjectTable = getReferenceTable();
 
         if (referenceObjectTable == null) {
             return updatedJoinSequence;
@@ -601,8 +601,8 @@ public class FetchContext {
         return nextTable;
     }
 
-    boolean hasNextTable() {
-        return getReferenceTable() != null || this.referenceObjectField.hasFieldReferences();
+    boolean hasNoNextTable() {
+        return getReferenceTable() == null && !this.referenceObjectField.hasFieldReferences();
     }
 
     List<TableRelation> createTableRelationsFromFieldReferences(
