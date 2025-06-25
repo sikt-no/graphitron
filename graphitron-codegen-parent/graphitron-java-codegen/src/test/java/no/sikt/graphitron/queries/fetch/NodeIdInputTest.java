@@ -81,10 +81,70 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     }
 
     @Test
+    @DisplayName("Key reference in jOOQ record input")
+    void jooqRecordReferenceKey() {
+        assertGeneratedContentContains("jooqRecordReferenceKey", Set.of(CUSTOMER_NODE),
+                ".where(nodeIdStrategy.hasId(\"Language\", filterRecord, _film.ORIGINAL_LANGUAGE_ID)",
+                ".from(_film).where" // make sure there's no join
+        );
+    }
+
+    @Test
+    @DisplayName("Reference in jOOQ record input with custom node ID")
+    void jooqRecordReferenceWithCustomId() {
+        assertGeneratedContentContains("jooqRecordReferenceWithCustomId", Set.of(CUSTOMER_NODE),
+                ".where(nodeIdStrategy.hasId(\"A\", filterRecord, _customer.ADDRESS_ID)"
+        );
+    }
+
+    @Test
+    @DisplayName("Reference with FK fields having different order from target node ID")
+    void jooqRecordReferenceWithCustomFieldOrder() {
+        assertGeneratedContentContains("jooqRecordReferenceWithCustomFieldOrder", Set.of(CUSTOMER_NODE),
+                ".where(nodeIdStrategy.hasId(\"A\", filterRecord, _filmactor.ACTOR_LAST_NAME, _filmactor.ACTOR_ID)",
+                ".from(_filmactor).where"
+        );
+    }
+
+    @Test
+    @DisplayName("Table reference in jOOQ record input")
+    void jooqRecordReferenceTable() {
+        assertGeneratedContentContains("jooqRecordReferenceTable", Set.of(CUSTOMER_NODE),
+                ".where(nodeIdStrategy.hasId(\"Address\", filterRecord, _customer.ADDRESS_ID"
+        );
+    }
+
+    @Test
+    @DisplayName("Optional reference in jOOQ record should have no null checks")
+    void jooqRecordReferenceOptional() {
+        assertGeneratedContentContains("jooqRecordReferenceOptional", Set.of(CUSTOMER_NODE),
+                "where(nodeIdStrategy",
+                "_customer.ADDRESS_ID)).fetch"
+        );
+    }
+
+    @Test
     @DisplayName("In java record input")
     void javaRecord() {
         assertGeneratedContentContains("javaRecord", Set.of(CUSTOMER_NODE),
                 ".where(nodeIdStrategy.hasId(\"CustomerNode\", inRecord.getId(), _customer.fields(_customer.getPrimaryKey().getFieldsArray())))"
+        );
+    }
+
+    @Test
+    @DisplayName("Optional in java record input should not skip null checks")
+    void javaRecordOptional() {
+        assertGeneratedContentContains("javaRecordOptional", Set.of(CUSTOMER_NODE),
+                "where(inRecord.getId() != null ? nodeIdStrategy"
+        );
+    }
+
+    @Test
+    @DisplayName("Node ID reference in java record input")
+    void javaRecordReference() {
+        assertGeneratedContentContains("javaRecordReference", Set.of(CUSTOMER_NODE),
+                ".leftJoin(customer_2952383337_address_left)",
+                ".where(nodeIdStrategy.hasId(\"Address\", inRecord.getAddressId(), customer_2952383337_address_left.fields("
         );
     }
 }
