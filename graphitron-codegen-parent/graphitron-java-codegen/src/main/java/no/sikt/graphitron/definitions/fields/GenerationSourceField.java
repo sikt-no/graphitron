@@ -175,6 +175,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasCondition() && condition.isOverride();
     }
 
+
+    /**
+     * A field is considered generated unless the `@notGenerated` directive is applied.
+     */
     @Override
     public boolean isGenerated() {
         return isGenerated;
@@ -205,6 +209,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return null;
     }
 
+
+    /**
+     * A field is considered generated with a resolver if it is generated and satisfies one of the following
+     * conditions: it is a resolver, it is a field in the root type `Query`, or it is a field in the `Mutation` type.
+     */
     @Override
     public boolean isGeneratedWithResolver() {
         return isGeneratedAsResolver;
