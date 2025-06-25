@@ -18,7 +18,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("Default case")
     void defaultCase() {
         assertGeneratedContentContains("default", Set.of(CUSTOMER_QUERY),
-                "row(nodeIdStrategy.createId(\"CUSTOMER\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping"
+                "row(nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping"
         );
     }
 
@@ -26,7 +26,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference")
     void reference() {
         assertGeneratedContentContains("reference", Set.of(CUSTOMER_QUERY),
-                "field(DSL.select(nodeIdStrategy.createId(\"ADDRESS\", customer_2952383337_address.fields"
+                "field(DSL.select(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.fields"
         );
     }
 
@@ -34,7 +34,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference via table")
     void referenceViaTable() {
         assertGeneratedContentContains("referenceViaTable", Set.of(CUSTOMER_QUERY),
-                "field(DSL.select(nodeIdStrategy.createId(\"CITY\", address_1214171484_city.fields"
+                "field(DSL.select(nodeIdStrategy.createId(\"City\", address_1214171484_city.fields"
         );
     }
 
@@ -42,7 +42,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With implicit reference from typeName in @nodeId")
     void implicitReference() {
         assertGeneratedContentContains("implicitReference", Set.of(CUSTOMER_QUERY),
-                "field(DSL.select(nodeIdStrategy.createId(\"ADDRESS\", customer_2952383337_address.fields"
+                "field(DSL.select(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.fields"
         );
     }
 
@@ -51,7 +51,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     void conditionReference() {
         assertGeneratedContentContains("conditionReference", Set.of(CUSTOMER_QUERY),
                 ".from(customer_addressid).join(customer_addressid_addressid_address).on(no.",
-                "createId(\"ADDRESS\", customer_addressid_addressid_address.fields"
+                "createId(\"Address\", customer_addressid_addressid_address.fields"
         );
     }
 
@@ -59,7 +59,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With condition reference and key")
     void conditionReferenceWithKey() {
         assertGeneratedContentContains("conditionReferenceWithKey", Set.of(CUSTOMER_QUERY),
-                "createId(\"ADDRESS\", customer_2952383337_address.fields"
+                "createId(\"Address\", customer_2952383337_address.fields"
         );
     }
 
@@ -67,7 +67,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With self-reference")
     void selfReference() {
         assertGeneratedContentContains("selfReference",
-                "createId(\"FILM\", film_3747728953_film.fields"
+                "createId(\"Film\", film_3747728953_film.fields"
         );
     }
 }

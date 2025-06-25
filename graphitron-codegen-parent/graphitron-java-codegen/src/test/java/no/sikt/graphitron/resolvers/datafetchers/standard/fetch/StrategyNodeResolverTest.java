@@ -64,14 +64,20 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Custom type id generates correct switch statements")
+    void nodeCorrectSwitchStatement() {
+        assertGeneratedContentContains("withCustomTypeId", "case \"CustomerType\"");
+    }
+
+    @Test
     @DisplayName("Many types implement Node interface")
     void manyImplementations() {
         assertGeneratedContentContains(
                 "manyImplementations",
-                "case \"ADDRESS\":",
-                "case \"CUSTOMER\":",
+                "case \"Address\":",
+                "case \"Customer\":",
                 "AddressDBQueries.addressForNode(",
-                "case \"FILM\":",
+                "case \"Film\":",
                 "CustomerDBQueries.customerForNode(",
                 "FilmDBQueries.filmForNode("
         );

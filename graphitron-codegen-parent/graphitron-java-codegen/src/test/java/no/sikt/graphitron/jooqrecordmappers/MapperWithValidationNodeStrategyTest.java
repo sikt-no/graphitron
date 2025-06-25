@@ -57,7 +57,7 @@ public class MapperWithValidationNodeStrategyTest extends GeneratorTest {
         assertGeneratedContentContains("toRecord/default", Set.of(CUSTOMER_NODE),
                 // In mapper
                 "toJOOQRecord(List<CustomerInputTable> customerInputTable, NodeIdStrategy nodeIdStrategy, String path, RecordTransformer transform)",
-                "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CUSTOMER\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
+                "nodeIdStrategy.setId(customerRecord, itCustomerInputTable.getId(), \"CustomerNode\", Customer.CUSTOMER.getPrimaryKey().getFieldsArray())",
 
                 // In recordtransformer
                 "customerInputTableToJOOQRecord(List<CustomerInputTable> input, NodeIdStrategy nodeIdStrategy, String path, String indexPath)",
