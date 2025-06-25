@@ -1,5 +1,5 @@
-{
-    customerWithJavaRecordInput(input: {id: "Q3VzdG9tZXI6MQ=="}) {
+query QueryWithJavaRecordInput ($input: CustomerJavaRecordInput!){
+    customerWithJavaRecordInput(input: $input) {
         nodes {
             id
         }

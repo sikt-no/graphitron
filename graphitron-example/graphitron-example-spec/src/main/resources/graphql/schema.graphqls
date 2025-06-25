@@ -159,5 +159,6 @@ union LanguageStaffUnion = Language | Staff
 
 input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
     id: ID! @nodeId(typeName: "Customer")
+    addressId: ID @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
 }
