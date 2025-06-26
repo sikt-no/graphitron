@@ -105,7 +105,7 @@ enum FilmCategory { # Note that this enum is not complete, and other values are 
     ANIMATION @field(name: "Animation")
 }
 
-type Language implements Node @table @node(keyColumns: ["NAME", "LANGUAGE_ID"]){
+type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
     id: ID!
     name: String
     films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
