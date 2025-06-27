@@ -6,13 +6,31 @@ scalar BigDecimal
 scalar LocalDateTime
 
 type Query {
+
     customers(first: Int = 100, after: String): CustomerConnection
+    activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
+    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
+    customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection
+    customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection
 
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
+    filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
+    filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
+    filmLists(category: String): [FilmList]
 
     languages: [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
+
+    staff(input: StaffInput!): [Staff] @asConnection
+
+    node(id: ID!): Node
+    cities: [City] @asConnection
+    citiesWithoutId: [CityWithoutID] @asConnection
+
+    languageOrStaff: [LanguageStaffUnion] @asConnection
 }
 
 interface Node {

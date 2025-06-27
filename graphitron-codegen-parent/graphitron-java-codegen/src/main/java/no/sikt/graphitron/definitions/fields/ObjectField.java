@@ -1,5 +1,6 @@
 package no.sikt.graphitron.definitions.fields;
 
+import graphql.language.Directive;
 import graphql.language.FieldDefinition;
 import graphql.language.IntValue;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
@@ -34,6 +35,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
             GraphQLReservedName.PAGINATION_LAST.getName(),
             GraphQLReservedName.PAGINATION_BEFORE.getName()
     );
+    private final List<Directive> directives;
 
     public ObjectField(FieldDefinition field, String container) {
         super(field, new FieldType(field.getType()), container);
@@ -54,6 +56,8 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
                 "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
         Validate.isTrue(!hasLookupKey || !hasPagination(),
                 "'%s' has both pagination and @%s defined. These can not be used together", getName(), LOOKUP_KEY.getName());
+
+        directives = field.getDirectives();
     }
 
     private List<ArgumentField> setInputAndPagination(FieldDefinition field, boolean isTopLevel, String container) {
@@ -231,6 +235,10 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
 
     public Optional<ArgumentField> getOrderField() {
         return Optional.ofNullable(orderField);
+    }
+
+    public List<Directive> getDirectives() {
+        return directives;
     }
 
     @Override
