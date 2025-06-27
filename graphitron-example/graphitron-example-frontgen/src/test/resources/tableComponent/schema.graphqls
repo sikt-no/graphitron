@@ -6,13 +6,23 @@ scalar BigDecimal
 scalar LocalDateTime
 
 type Query {
+
     customers(first: Int = 100, after: String): CustomerConnection
+    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
+    customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection
 
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    filmLists(category: String): [FilmList]
 
     languages: [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
+
+    staff(input: StaffInput!): [Staff] @asConnection
+
+    cities: [City] @asConnection
+
+    languageOrStaff: [LanguageStaffUnion] @asConnection
 }
 
 interface Node {
@@ -69,11 +79,6 @@ type City implements Node @table @node(typeId: "CityType"){
     payments: [Payment] @reference(references: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
 }
 
-type CityWithoutID @table(name: "CITY") {
-    cityId: Int @field(name: "CITY_ID")
-    addresses: [Address]
-}
-
 type FilmList @table(name: "FILM_LIST") {
     description: String
     category: FilmCategory @field(name: "CATEGORY")
@@ -95,11 +100,6 @@ type Language implements Node @table @node(keyColumns: ["NAME", "LANGUAGE_ID"]){
 type Film implements Node @node @table {
     id: ID!
     title: String
-}
-
-input FilmLookupInput {
-    filmId: String! @field(name: "FILM_ID")
-    title: String!
 }
 
 input FilmsOrderByInput {
@@ -137,8 +137,3 @@ type Staff implements Node @node @table(name: "STAFF") {
 }
 
 union LanguageStaffUnion = Language | Staff
-
-input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
-    id: ID! @nodeId(typeName: "Customer")
-    firstName: String @field(name: "FIRST_NAME")
-}
