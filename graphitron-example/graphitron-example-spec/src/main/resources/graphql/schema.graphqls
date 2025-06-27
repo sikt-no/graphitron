@@ -105,7 +105,7 @@ enum FilmCategory { # Note that this enum is not complete, and other values are 
     ANIMATION @field(name: "Animation")
 }
 
-type Language implements Node @table @node(keyColumns: ["NAME", "LANGUAGE_ID"]){
+type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
     id: ID!
     name: String
     films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
@@ -159,5 +159,6 @@ union LanguageStaffUnion = Language | Staff
 
 input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
     id: ID! @nodeId(typeName: "Customer")
+    addressId: ID @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
 }

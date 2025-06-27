@@ -1,0 +1,7 @@
+input FilmFilter @table(name: "FILM") {
+    languageId: ID! @nodeId(typeName: "Language") @reference(references: [{table: "LANGUAGE"}])
+}
+
+type Language implements Node @node @table {
+    id: ID!
+}
