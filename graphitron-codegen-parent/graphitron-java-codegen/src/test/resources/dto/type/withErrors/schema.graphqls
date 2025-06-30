@@ -1,0 +1,4 @@
+type CustomerTable @table(name: "CUSTOMER") {
+    id: ID
+    string: String
+}

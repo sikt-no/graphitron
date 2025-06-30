@@ -14,6 +14,7 @@ import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
+import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -27,7 +28,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
-import org.jooq.Key;
 
 import java.util.*;
 import java.util.regex.Pattern;
@@ -37,8 +37,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeySetForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -162,7 +162,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         var keySet = getKeySetForResolverFields(context.getReferenceObject().getFields(), processedSchema);
         keySet.forEach(key ->
-                rowElements.add(getSelectKeyColumnRow(key, context.getTargetTableName(), context.getTargetAlias()))
+                rowElements.add(getSelectKeyColumnRow(key.key(), context.getTargetTableName(), context.getTargetAlias()))
         );
 
         var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
@@ -221,7 +221,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<Key<?>> keySet) {
+     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
@@ -389,12 +389,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<Key<?>> keySet) {
+    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<KeyWrapper> keySet) {
         var innerMappingCode = new ArrayList<CodeBlock>();
 
         int i = 0;
         for (var key : keySet) {
-            innerMappingCode.add(CodeBlock.of("($T) r[$L]", getKeyTypeName(key), i));
+            innerMappingCode.add(CodeBlock.of("($T) r[$L]", key.getTypeName(), i));
             i++;
         }
 

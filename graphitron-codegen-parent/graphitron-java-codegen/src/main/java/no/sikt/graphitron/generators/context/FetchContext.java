@@ -8,9 +8,9 @@ import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
+import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jooq.Key;
 import org.jooq.Table;
 
 import java.util.*;
@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.findKeyForResolverField;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -29,7 +29,7 @@ public class FetchContext {
     private final FetchContext previousContext;
     private final GenerationField referenceObjectField, conditionSourceField;
     private final RecordObjectSpecification<?> referenceObject, previousTableObject;
-    private final JOOQMapping referenceTable;
+    private final JOOQMapping referenceTable, inputTable;
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
@@ -37,7 +37,7 @@ public class FetchContext {
     private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
-    private final Key<?> resolverKey;
+    private final KeyWrapper resolverKey;
     private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
     private final boolean hasApplicableTable;
@@ -106,6 +106,27 @@ public class FetchContext {
         } else {
             this.conditionSourceField = conditionSourceField;
         }
+        inputTable = findInputTable();
+    }
+
+    /**
+     * Simple method that tries to find a table reference in the input records.
+     * This is not very robust, but we need this to not break existing things.
+     * @return Table mapping for this context based on input records, if any exists.
+     */
+    private JOOQMapping findInputTable() {
+        if (this.referenceObjectField instanceof ObjectField objectField) {
+            return objectField
+                    .getArguments()
+                    .stream()
+                    .filter(processedSchema::isRecordType)
+                    .map(processedSchema::getRecordType)
+                    .filter(RecordObjectSpecification::hasTable)
+                    .map(RecordObjectSpecification::getTable)
+                    .findFirst()
+                    .orElse(null);
+        }
+        return null;
     }
 
     /**
@@ -241,7 +262,7 @@ public class FetchContext {
         return conditionSourceField;
     }
 
-    public Key<?> getResolverKey() {
+    public KeyWrapper getResolverKey() {
         return resolverKey;
     }
 

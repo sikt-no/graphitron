@@ -79,4 +79,10 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
         assertGeneratedContentContains("unorderedConnectionType", Set.of(DUMMY_TYPE, PAGE_INFO),
                 "DummyConnection(List<DummyConnectionEdge> edges, PageInfo pageInfo, List<DummyType> nodes, Integer totalCount)");
     }
+
+    @Test
+    @DisplayName("Contains an errors field")
+    void withErrors() {
+        assertGeneratedContentMatches("withErrors");
+    }
 }

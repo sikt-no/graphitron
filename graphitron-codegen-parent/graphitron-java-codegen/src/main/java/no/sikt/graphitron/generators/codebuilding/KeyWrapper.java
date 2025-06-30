@@ -1,6 +1,7 @@
 package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -10,6 +11,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Key;
 import org.jooq.Typed;
+import org.jooq.UniqueKey;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -17,10 +19,45 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
+import static no.sikt.graphitron.generators.dto.DTOGenerator.PRIMARY_KEY;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
-public class ResolverKeyHelpers {
+public record KeyWrapper(Key<?> key) {
+    public String getDTOVariableName() {
+        return key instanceof UniqueKey ? PRIMARY_KEY : uncapitalize(key.getName());
+    }
+
+    /**
+     * Get the TypeName for the key variable
+     *
+     * @return TypeName of the key variable
+     */
+    public TypeName getTypeName() {
+        return getTypeName(true);
+    }
+
+    /**
+     * Get the TypeName for the key variable
+     *
+     * @return TypeName of the key variable
+     */
+    public TypeName getTypeName(boolean parameterized) {
+        var keyFields = key.getFields();
+
+        if (keyFields.size() > 22) {
+            throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
+        }
+        var recordClassName = ClassName.get("org.jooq", String.format("Record%d", keyFields.size()));
+        return parameterized ?
+                ParameterizedTypeName.get(
+                        recordClassName,
+                        keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
+                ) : recordClassName;
+    }
 
     /**
      * Get map of field names to keys used in the first step of the reference in resolver fields.
@@ -30,7 +67,7 @@ public class ResolverKeyHelpers {
      * @param schema The processed schema
      * @return The map of field names and keys
      */
-    public static LinkedHashMap<String, Key<?>> getKeyMapForResolverFields(List<? extends GenerationField> fields, ProcessedSchema schema) {
+    public static LinkedHashMap<String, KeyWrapper> getKeyMapForResolverFields(List<? extends GenerationField> fields, ProcessedSchema schema) {
         return fields.stream()
                 .filter(GenerationTarget::isGeneratedWithResolver)
                 .collect(Collectors.toMap(GenerationField::getName, it ->
@@ -45,7 +82,7 @@ public class ResolverKeyHelpers {
      * @param schema The processed schema
      * @return The map of field names and keys
      */
-    public static LinkedHashSet<Key<?>> getKeySetForResolverFields(List<? extends GenerationField> fields, ProcessedSchema schema) {
+    public static LinkedHashSet<KeyWrapper> getKeySetForResolverFields(List<? extends GenerationField> fields, ProcessedSchema schema) {
         return new LinkedHashSet<>(getKeyMapForResolverFields(fields, schema).values());
     }
 
@@ -54,9 +91,13 @@ public class ResolverKeyHelpers {
      *
      * @param field           The resolver field
      * @param processedSchema The processed schema
-     * @return The key used in the first step when resolving a resolver field
+     * @return Wrapper for the key used in the first step when resolving a resolver field
      */
-    public static Key<?> findKeyForResolverField(GenerationField field, ProcessedSchema processedSchema) {
+    public static KeyWrapper findKeyForResolverField(GenerationField field, ProcessedSchema processedSchema) {
+        return new KeyWrapper(findKeyForField(field, processedSchema));
+    }
+
+    private static Key<?> findKeyForField(GenerationField field, ProcessedSchema processedSchema) {
         if (!field.isResolver()) return null;
 
         var container = processedSchema.getRecordType(field.getContainerTypeName());
@@ -89,10 +130,10 @@ public class ResolverKeyHelpers {
             if (firstRef.hasKey()) {
                 foreignKeyName = firstRef.getKey().getName();
             } else if (firstRef.hasTableCondition() && implicitKey.isEmpty()) {
-                    return primaryKeyOptional
-                            .orElseThrow(() -> new IllegalArgumentException(
-                                    String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
-                                            field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
+                return primaryKeyOptional
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
+                                        field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
             } else {
                 foreignKeyName = implicitKey.stream().findFirst()
                         .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
@@ -121,36 +162,6 @@ public class ResolverKeyHelpers {
      * @return TypeName of the key variable
      */
     public static TypeName getKeyTypeName(GenerationField field, ProcessedSchema schema) {
-        return getKeyTypeName(findKeyForResolverField(field, schema));
-    }
-
-    /**
-     * Get the TypeName for the key variable in the DTO
-     *
-     * @param key The key
-     * @return TypeName of the key variable
-     */
-    public static TypeName getKeyTypeName(Key<?> key) {
-        return getKeyTypeName(key, true);
-    }
-
-    /**
-     * Get the TypeName for the key variable in the DTO
-     *
-     * @param key The key
-     * @return TypeName of the key variable
-     */
-    public static TypeName getKeyTypeName(Key<?> key, boolean parameterized) {
-        var keyFields = key.getFields();
-
-        if (keyFields.size() > 22) {
-            throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
-        }
-        var recordClassName = ClassName.get("org.jooq", String.format("Record%d", keyFields.size()));
-        return parameterized ?
-                ParameterizedTypeName.get(
-                        recordClassName,
-                        keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
-                ) : recordClassName;
+        return findKeyForResolverField(field, schema).getTypeName();
     }
 }

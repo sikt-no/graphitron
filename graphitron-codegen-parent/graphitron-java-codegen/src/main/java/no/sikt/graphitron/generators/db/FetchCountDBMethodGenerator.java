@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;

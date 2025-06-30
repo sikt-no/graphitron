@@ -30,7 +30,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -937,7 +936,7 @@ public class FormatCodeBlocks {
         return CodeBlock.of("$L.in($N.stream().map($T::valuesRow).toList())",
                 getSelectKeyColumnRow(context),
                 resolverKeyParamName,
-                getKeyTypeName(context.getResolverKey(), false)
+                context.getResolverKey().getTypeName(false)
         );
     }
 
@@ -963,7 +962,7 @@ public class FormatCodeBlocks {
      * @return Select code for the columns in the resolver key
      */
     public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
-        return getSelectKeyColumnRow(context.getResolverKey(), context.getTargetTableName(), context.getTargetAlias());
+        return getSelectKeyColumnRow(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
