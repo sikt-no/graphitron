@@ -32,7 +32,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <version.jakarta>8.0.0</version.jakarta>
+        <version.jakarta>11.0.0</version.jakarta>
         <version.jakarta.validation>3.1.1</version.jakarta.validation>
         <version.org.jooq>3.19.18</version.org.jooq>
         <version.org.junit>5.13.1</version.org.junit>
