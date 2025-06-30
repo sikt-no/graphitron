@@ -23,10 +23,6 @@ updates:
   directory: "/graphitron-example/graphitron-example-server"
   schedule:
     interval: "weekly"
-  groups:
-    quarkus-dependencies:
-      patterns:
-      - "io.quarkus*"
 
 - package-ecosystem: "github-actions"
   directory: "/"
