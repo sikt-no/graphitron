@@ -19,11 +19,6 @@ updates:
       - "org.mockito*"
       - "com.approvaltests*"
 
-- package-ecosystem: "maven"
-  directory: "/graphitron-example/graphitron-example-server"
-  schedule:
-    interval: "weekly"
-
 - package-ecosystem: "github-actions"
   directory: "/"
   schedule:
