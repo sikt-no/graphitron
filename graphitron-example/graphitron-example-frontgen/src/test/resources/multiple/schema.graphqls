@@ -1,0 +1,275 @@
+# Modifield version of graphitron-example/graphitron-example-spec/target/generated-resources/graphql_transformer/generator-schema.graphql
+
+schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]){
+    query: Query
+}
+
+type Address implements Node @node @table @key(fields : "id", resolvable : false) {
+    id: ID!
+    addressLine1: String! @field(name : "ADDRESS_")
+    addressLine2: String @field(name : "ADDRESS2")
+    city: City!
+    zip: String @field(name : "POSTAL_CODE")
+    phone: String!
+}
+
+interface AddressByPostalCode @table(name : "ADDRESS") @discriminate(on : "POSTAL_CODE") {
+    addressLine1: String! @field(name : "ADDRESS_")
+    spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
+}
+
+type AddressInAnotherArea implements AddressByPostalCode @table(name : "ADDRESS") @discriminator(value : "9668") {
+    spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
+    addressLine1: String! @field(name : "ADDRESS_")
+    postalCode: String @field(name : "POSTAL_CODE")
+}
+
+type AddressInOneArea implements AddressByPostalCode @table(name : "ADDRESS") @discriminator(value : "22474") {
+    addressLine1: String! @field(name : "ADDRESS_")
+    spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
+}
+
+scalar BigDecimal
+
+type City implements Node @table @node(typeId : "CityType") {
+    id: ID!
+    name: String! @field(name : "CITY_")
+    countryName: String! @field(name : "COUNTRY_") @reference(references : [{table : "COUNTRY"}])
+    addressExample: Address @splitQuery @notGenerated
+    addresses: [Address] @splitQuery
+    addressesPaginated(first: Int = 100, after: String): CityAddressesPaginatedConnection @splitQuery
+    payments: [Payment] @reference(references : [{table : "ADDRESS"}, {key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table : "PAYMENT"}])
+}
+
+type CityAddressesPaginatedConnection {
+    edges: [CityAddressesPaginatedConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Address]
+    totalCount: Int
+}
+
+type CityAddressesPaginatedConnectionEdge {
+    cursor: String
+    node: Address
+}
+
+type CityWithoutID @table(name : "CITY") {
+    cityId: Int @field(name : "CITY_ID")
+    addresses: [Address]
+}
+
+type Customer implements Node @node @table {
+    id: ID!
+    name: CustomerName
+    email: String
+    address: Address!
+}
+
+type CustomerConnection {
+    edges: [CustomerConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Customer!]!
+    totalCount: Int
+}
+
+type CustomerConnectionEdge {
+    cursor: String
+    node: Customer
+}
+
+input CustomerInput @table(name : "CUSTOMER") {
+    id: ID! @nodeId(typeName : "Customer")
+    firstName: String @field(name : "FIRST_NAME")
+}
+
+input CustomerJavaRecordInput @record(record : {className : "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
+    id: ID! @nodeId(typeName : "Customer")
+    firstName: String @field(name : "FIRST_NAME")
+}
+
+type CustomerName {
+    firstName: String! @field(name : "FIRST_NAME")
+    lastName: String! @field(name : "LAST_NAME")
+}
+
+type CustomerWithEmail implements PersonWithEmail @table(name : "CUSTOMER") {
+    name: CustomerName
+    email: String
+}
+
+
+type Film implements Node @node @table {
+    id: ID!
+    title: String
+}
+
+enum FilmCategory {
+    " Note that this enum is not complete, and other values are also present in the database"
+    SPORTS @field(name : "Sports")
+    CLASSICS @field(name : "Classics")
+    COMEDY @field(name : "Comedy")
+    ANIMATION @field(name : "Animation")
+}
+
+type FilmList @table(name : "FILM_LIST") {
+    description: String
+    category: FilmCategory @field(name : "CATEGORY")
+}
+
+input FilmLookupInput {
+    filmId: String! @field(name : "FILM_ID")
+    title: String!
+}
+
+enum FilmsOrderByFields {
+    TITLE @index(name : "IDX_TITLE")
+    LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
+}
+
+input FilmsOrderByInput {
+    orderByField: FilmsOrderByFields!
+    direction: OrderDirection!
+}
+
+input HelloWorldInputObject @record(record : {className : "no.sikt.graphitron.example.service.records.HelloWorldInput"}) {
+    name: String
+    customerId: ID @nodeId(typeName : "Customer")
+}
+
+type HelloWorldObject @record(record : {className : "no.sikt.graphitron.example.service.records.HelloWorldRecord"}) {
+    greeting: String
+}
+
+type Language implements Node @table @node(keyColumns : ["NAME", "LANGUAGE_ID"]) {
+    id: ID!
+    name: String
+    films(releaseYear: Int @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): LanguageFilmsConnection @splitQuery @reference(references : [{key : "FILM__FILM_LANGUAGE_ID_FKEY"}])
+}
+
+type LanguageFilmsConnection {
+    edges: [LanguageFilmsConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Film]
+    totalCount: Int
+}
+
+type LanguageFilmsConnectionEdge {
+    cursor: String
+    node: Film
+}
+
+union LanguageStaffUnion = Language | Staff
+
+scalar LocalDateTime
+
+interface Node {
+    id: ID!
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type Payment @table {
+    amount: BigDecimal
+    dateTime: LocalDateTime @field(name : "PAYMENT_DATE")
+}
+
+interface PersonWithEmail {
+    email: String
+}
+
+type Query {
+    customers(first: Int = 100, after: String): CustomerConnection
+    films(orderBy: FilmsOrderByInput @orderBy, first: Int = 100, after: String): QueryFilmsConnection
+    languages(first: Int = 100, after: String): QueryLanguagesConnection
+    payments(dateTime: LocalDateTime @field(name : "PAYMENT_DATE"), amount: BigDecimal, first: Int = 100, after: String): QueryPaymentsConnection
+    reachableByEmail(first: Int = 100, after: String): QueryReachableByEmailConnection
+    helloWorldAgain(name: String!): HelloWorldObject @service(service : {className : "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldAgainWithJooqRecordInput(input: CustomerInput!): HelloWorldObject @service(service : {className : "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldAgainWithJavaRecordInput(input: HelloWorldInputObject!): HelloWorldObject @service(service : {className : "no.sikt.graphitron.example.service.HelloWorldService"})
+    customerService: Customer @service(service : {className : "no.sikt.graphitron.example.service.CustomerService", method : "customer"})
+    customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service : {className : "no.sikt.graphitron.example.service.CustomerService", method : "customer"})
+    customerServiceWithJavaRecordInput(input: HelloWorldInputObject!): Customer @service(service : {className : "no.sikt.graphitron.example.service.CustomerService", method : "customer"})
+    addressesByPostalCode(first: Int = 100, after: String): QueryAddressesByPostalCodeConnection
+}
+
+type QueryAddressesByPostalCodeConnection {
+    edges: [QueryAddressesByPostalCodeConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [AddressByPostalCode]
+    totalCount: Int
+}
+
+type QueryAddressesByPostalCodeConnectionEdge {
+    cursor: String
+    node: AddressByPostalCode
+}
+
+type QueryFilmsConnection {
+    edges: [QueryFilmsConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Film]
+    totalCount: Int
+}
+
+type QueryFilmsConnectionEdge {
+    cursor: String
+    node: Film
+}
+
+type QueryLanguagesConnection {
+    edges: [QueryLanguagesConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Language]
+    totalCount: Int
+}
+
+type QueryLanguagesConnectionEdge {
+    cursor: String
+    node: Language
+}
+
+type QueryPaymentsConnection {
+    edges: [QueryPaymentsConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Payment]
+    totalCount: Int
+}
+
+type QueryPaymentsConnectionEdge {
+    cursor: String
+    node: Payment
+}
+
+type QueryReachableByEmailConnection {
+    edges: [QueryReachableByEmailConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [PersonWithEmail]
+    totalCount: Int
+}
+
+type QueryReachableByEmailConnectionEdge {
+    cursor: String
+    node: PersonWithEmail
+}
+
+type Staff implements Node @node @table(name : "STAFF") {
+    id: ID!
+    email: String
+    username: String
+}
+
+input StaffInput {
+    username: String
+    isManager: Boolean @condition(condition : {className : "no.sikt.graphitron.example.service.conditions.StaffConditions", method : "isManagerOfAStore"}, override : true)
+    addressId: Int @field(name : "ADDRESS_ID") @reference(references : [{table : "ADDRESS"}])
+    withAddressIdInCity300: Int @field(name : "ADDRESS_ID") @reference(references : [{key : "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition : {className : "no.sikt.graphitron.example.service.conditions.StaffConditions"}, override : false)
+}
+
+type StaffWithEmail implements PersonWithEmail @table(name : "STAFF") {
+    email: String
+}

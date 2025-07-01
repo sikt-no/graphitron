@@ -1,0 +1,57 @@
+# Modifield version of graphitron-example/graphitron-example-spec/target/generated-resources/graphql_transformer/generator-schema.graphql
+
+schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]){
+    query: Query
+}
+
+type Film implements Node @node @table {
+    id: ID!
+    title: String
+}
+
+enum FilmCategory {
+    " Note that this enum is not complete, and other values are also present in the database"
+    SPORTS @field(name : "Sports")
+    CLASSICS @field(name : "Classics")
+    COMEDY @field(name : "Comedy")
+    ANIMATION @field(name : "Animation")
+}
+
+enum FilmsOrderByFields {
+    TITLE @index(name : "IDX_TITLE")
+    LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
+}
+
+input FilmsOrderByInput {
+    orderByField: FilmsOrderByFields!
+    direction: OrderDirection!
+}
+
+scalar LocalDateTime
+
+interface Node {
+    id: ID!
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type Query {
+    films(orderBy: FilmsOrderByInput @orderBy, first: Int = 100, after: String): QueryFilmsConnection
+}
+
+type QueryFilmsConnection {
+    edges: [QueryFilmsConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Film]
+    totalCount: Int
+}
+
+type QueryFilmsConnectionEdge {
+    cursor: String
+    node: Film
+}

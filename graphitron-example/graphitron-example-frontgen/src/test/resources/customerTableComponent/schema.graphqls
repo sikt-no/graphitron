@@ -1,0 +1,67 @@
+# Modifield version of graphitron-example/graphitron-example-spec/target/generated-resources/graphql_transformer/generator-schema.graphql
+
+schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]){
+    query: Query
+}
+
+type City implements Node @table @node(typeId : "CityType") {
+    id: ID!
+    name: String! @field(name : "CITY_")
+    countryName: String! @field(name : "COUNTRY_") @reference(references : [{table : "COUNTRY"}])
+}
+
+type CityAddressesPaginatedConnection {
+    edges: [CityAddressesPaginatedConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Address]
+    totalCount: Int
+}
+
+type CityAddressesPaginatedConnectionEdge {
+    cursor: String
+    node: Address
+}
+
+type CityWithoutID @table(name : "CITY") {
+    cityId: Int @field(name : "CITY_ID")
+    addresses: [Address]
+}
+
+type Customer implements Node @node @table {
+    id: ID!
+    name: CustomerName
+    email: String
+    address: Address!
+}
+
+type CustomerConnection {
+    edges: [CustomerConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Customer!]!
+    totalCount: Int
+}
+
+type CustomerConnectionEdge {
+    cursor: String
+    node: Customer
+}
+
+type CustomerName {
+    firstName: String! @field(name : "FIRST_NAME")
+    lastName: String! @field(name : "LAST_NAME")
+}
+
+interface Node {
+    id: ID!
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type Query {
+    customers(first: Int = 100, after: String): CustomerConnection
+}

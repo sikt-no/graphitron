@@ -79,7 +79,8 @@ public class ComponentGenerator extends AbstractClassGenerator {
         boolean isConnectionType = processedSchema.isConnectionObject(field);
 
 //        return hasUIDirective || isConnectionType;
-        return isConnectionType;
+        //return isConnectionType;
+        return true;
     }
 
     private String getConnectionTypeName(ObjectField field) {
