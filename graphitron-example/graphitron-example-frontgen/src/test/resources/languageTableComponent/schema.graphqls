@@ -1,0 +1,39 @@
+# Modifield version of graphitron-example/graphitron-example-spec/target/generated-resources/graphql_transformer/generator-schema.graphql
+
+schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]){
+    query: Query
+}
+
+type Language implements Node @table @node(keyColumns : ["NAME", "LANGUAGE_ID"]) {
+    id: ID!
+    name: String
+}
+
+type QueryLanguagesConnection {
+    edges: [QueryLanguagesConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Language]
+    totalCount: Int
+}
+
+type QueryLanguagesConnectionEdge {
+    cursor: String
+    node: Language
+}
+
+scalar LocalDateTime
+
+interface Node {
+    id: ID!
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+type Query {
+    languages(first: Int = 100, after: String): QueryLanguagesConnection
+}
+

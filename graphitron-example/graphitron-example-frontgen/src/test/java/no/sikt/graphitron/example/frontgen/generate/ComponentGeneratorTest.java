@@ -31,4 +31,11 @@ class ComponentGeneratorTest {
         ComponentGenerator componentGenerator = new ComponentGenerator(processedSchema);
         assertGeneratedContentMatches(BASE_PATH + "filmTableComponent", GraphQLGenerator.generateAsStrings(List.of(componentGenerator)));
     }
+
+    @Test
+    void languageTableComponent() {
+        ProcessedSchema processedSchema = TestConfiguration.getProcessedSchema(BASE_PATH + "languageTableComponent", false, false);
+        ComponentGenerator componentGenerator = new ComponentGenerator(processedSchema);
+        assertGeneratedContentMatches(BASE_PATH + "languageTableComponent", GraphQLGenerator.generateAsStrings(List.of(componentGenerator)));
+    }
 }
