@@ -1,0 +1,7 @@
+input FilmActorFilter @table(name: "FILM_ACTOR") {
+    actorId: ID! @nodeId(typeName: "Actor") @reference(references: [{key: "FILM_ACTOR__FILM_ACTOR_ACTOR_ID_LAST_NAME_FKEY"}])
+}
+
+type Actor implements Node @node @table {
+    id: ID!
+}

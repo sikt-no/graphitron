@@ -41,6 +41,7 @@ import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getK
 import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getMethodFromReference;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -533,8 +534,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
-            var checksNotEmpty = !checks.isEmpty();
-            var renderedSequence = context.iterateJoinSequenceFor(field).render();
+            var checksNotEmpty = !checks.isEmpty()
+                    && !(processedSchema.hasJOOQRecord(field.getContainerTypeName()) && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs
+            var renderedSequence = processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
+                    CodeBlock.of(context.getTargetAlias())
+                    :  context.iterateJoinSequenceFor(field).render();
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
                 if (checksNotEmpty) {
@@ -543,14 +547,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
                 if (field.isID()) {
                     if (processedSchema.isNodeIdField(field)) {
-                        conditionBuilder.add(
-                                hasIdsBlock(
-                                        processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
-                                                CodeBlock.of(inputCondition.getNamePath()) : name,
-                                        processedSchema.getObject(field.getNodeIdTypeName()),
-                                        renderedSequence.toString(),
-                                        field.isIterableWrapped()
-                                )
+                        conditionBuilder.add(hasIdOrIdsBlock(
+                                processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
+                                        CodeBlock.of(inputCondition.getNamePath()) : name,
+                                processedSchema.getObject(field.getNodeIdTypeName()),
+                                renderedSequence.toString(),
+                                getSourceFieldsForForeignKey(field, processedSchema, renderedSequence),
+                                field.isIterableWrapped())
                         );
                     } else {
                         conditionBuilder

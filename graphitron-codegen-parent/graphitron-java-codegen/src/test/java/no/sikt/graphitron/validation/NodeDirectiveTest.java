@@ -46,4 +46,24 @@ public class NodeDirectiveTest extends ValidationTest {
                 "Key column 'WRONG' in node ID for type 'Language' does not exist in table 'LANGUAGE'"
         );
     }
+
+    @Test
+    @DisplayName("Key columns matching primary key should not throw error")
+    void keyColumnsMatchingPrimaryKey() {
+        getProcessedSchema("keyColumnsMatchingPrimaryKey");
+    }
+
+    @Test
+    @DisplayName("Key columns matching unique key should not throw error")
+    void keyColumnsMatchingUniqueKey() {
+        getProcessedSchema("keyColumnsMatchingUniqueKey");
+    }
+
+    @Test
+    @DisplayName("Node directive with keyFields not matching any unique keys")
+    void keyColumnsNotMatchingKey() {
+        assertErrorsContain("keyColumnsNotMatchingKey",
+                "Key columns in node ID for type 'Language' does not match a PK/UK for table 'LANGUAGE'"
+        );
+    }
 }

@@ -21,11 +21,14 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
+import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Key;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
@@ -34,8 +37,7 @@ import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getK
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.getJavaFieldNamesForKey;
-import static no.sikt.graphitron.mappings.TableReflection.getTable;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -983,32 +985,21 @@ public class FormatCodeBlocks {
         );
     }
 
-    public static CodeBlock hasIdsBlock(CodeBlock idsOrRecord, ObjectDefinition obj, String targetAlias, boolean isIterableWrapped) {
-        return isIterableWrapped ? hasIdsBlock(idsOrRecord, obj, targetAlias) : hasIdBlock(idsOrRecord, obj, targetAlias);
-    }
-
     public static CodeBlock hasIdBlock(CodeBlock id, ObjectDefinition obj, String targetAlias) {
-        return CodeBlock.of("$N.hasId($S, $L, $L)",
-                NODE_ID_STRATEGY_NAME,
-                obj.getTypeId(),
-                id,
-                nodeIdColumnsWithAliasBlock(targetAlias, obj)
-        );
+        return hasIdOrIdsBlock(id, obj, targetAlias, empty(), false);
     }
 
     public static CodeBlock hasIdsBlock(ObjectDefinition obj, String targetAlias) {
-        return hasIdsBlock(IDS_NAME, obj, targetAlias);
+        return hasIdOrIdsBlock(CodeBlock.of(IDS_NAME), obj, targetAlias, empty(), true);
     }
 
-    public static CodeBlock hasIdsBlock(String idParamName, ObjectDefinition obj, String targetAlias) {
-        return hasIdsBlock(CodeBlock.of(idParamName), obj, targetAlias);
-    }
-    public static CodeBlock hasIdsBlock(CodeBlock idOrRecordParamName, ObjectDefinition obj, String targetAlias) {
-        return CodeBlock.of("$N.hasIds($S, $L, $L)",
+    public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, ObjectDefinition obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {
+        return CodeBlock.of("$N.$L($S, $L, $L)",
                 NODE_ID_STRATEGY_NAME,
+                isMultiple ? "hasIds" : "hasId",
                 obj.getTypeId(),
                 idOrRecordParamName,
-                nodeIdColumnsWithAliasBlock(targetAlias, obj)
+                mappedFkFields.isEmpty() ? nodeIdColumnsWithAliasBlock(targetAlias, obj) : mappedFkFields
         );
     }
 
@@ -1018,6 +1009,39 @@ public class FormatCodeBlocks {
                     .collect(CodeBlock.joining(", "));
         }
         return getPrimaryKeyFieldsBlock(staticTableInstanceBlock(obj.getTable().getName()));
+    }
+
+    public static CodeBlock referenceNodeIdColumnsBlock(RecordObjectSpecification<?> container, RecordObjectSpecification<?> target, ForeignKey<?,?> fk) {
+        return referenceNodeIdColumnsBlock(container, target, fk, staticTableInstanceBlock(container.getTable().getName()));
+    }
+
+    public static CodeBlock referenceNodeIdColumnsBlock(RecordObjectSpecification<?> container, RecordObjectSpecification<?> target, ForeignKey<?,?> fk, CodeBlock tableReference) {
+        var mapping = new HashMap<String, Field<?>>();
+        var sourceColumns = fk.getFields();
+        var targetColumns = fk.getInverseKey().getFields();
+
+        for (int i = 0; i < sourceColumns.size(); i++) {
+            mapping.put(targetColumns.get(i).getName(), sourceColumns.get(i));
+        }
+
+        var sourceTable = target.getTable().getName();
+        var targetTable = container.getTable().getName();
+
+        var targetNodeIdFields = target.hasCustomKeyColumns() ? target.getKeyColumns()
+                : getPrimaryKeyForTable(sourceTable)
+                .orElseThrow(() -> new IllegalArgumentException("Cannot find primary key for table " + sourceTable)) // This should be validated and never thrown
+                .getFields()
+                .stream()
+                .map(Field::getName)
+                .toList();
+
+        return targetNodeIdFields.stream()
+                .map(it -> mapping.keySet().stream()
+                        .filter(fieldName -> fieldName.equalsIgnoreCase(it)).findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("Node ID field " + it + " is not found in foreign key " + fk.getName() + "'s fields."))) // Should never be thrown
+                .map(mapping::get)
+                .map(it -> CodeBlock.of("$L.$L", tableReference, getJavaFieldName(targetTable, it.getName()).orElseThrow()))
+                .collect(CodeBlock.joining(", "));
     }
 
     private static CodeBlock staticTableInstanceBlock(String tableName) {

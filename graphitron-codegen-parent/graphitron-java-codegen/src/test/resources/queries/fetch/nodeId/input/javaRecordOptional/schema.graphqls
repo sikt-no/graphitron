@@ -1,0 +1,7 @@
+type Query {
+  customer(in: CustomerJavaRecordInput!): CustomerNode
+}
+
+input CustomerJavaRecordInput @record(record: {name: "DUMMY_RECORD"}) {
+  id: ID @nodeId(typeName: "CustomerNode")
+}

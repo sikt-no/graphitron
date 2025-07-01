@@ -67,6 +67,53 @@ public class NodeIdInputTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Ambiguous reference")
+    void inJooqRecordInputWithAmbiguousReference() {
+        assertErrorsContain(
+                () -> getProcessedSchema("inJooqRecordInputWithAmbiguousReference", Set.of(CUSTOMER_NODE)),
+                "Cannot find foreign key for node ID field 'languageId' in jOOQ record input 'FilmFilter'."
+        );
+    }
+
+    @Test
+    @DisplayName("Inverse key reference in jOOQ input")
+    void inJooqRecordInputWithInverseForeignKey() {
+        assertErrorsContain(
+                () -> getProcessedSchema("inJooqRecordInputWithInverseForeignKey", Set.of(CUSTOMER_NODE)),
+                "Node ID field 'paymentId' in jOOQ record input 'CustomerFilter' references a table with an inverse key which is not supported."
+        );
+    }
+
+    @Test
+    @DisplayName("Node Id in jOOQ record input with reference via table")
+    void inJooqRecordInputWithReferenceViaTable() {
+        assertErrorsContain(
+                () -> getProcessedSchema("inJooqRecordInputWithReferenceViaTable", Set.of(CUSTOMER_NODE)),
+                "Node ID field 'cityId' in jOOQ record input 'CustomerFilter' has a reference via table(s) which is not supported on jOOQ record inputs."
+        );
+    }
+
+    @Test
+    @DisplayName("Foreign key does not reference the same key used for the target node type")
+    void foreignKeyReferencesWrongKey() {
+        assertErrorsContain(
+                () -> getProcessedSchema("foreignKeyReferencesWrongKey"),
+                "Node ID field 'actorId' in jOOQ record input 'FilmActorFilter' uses foreign key " +
+                        "'film_actor_actor_id_last_name_fkey' which does not reference the same primary/unique key used " +
+                        "for type 'Actor's node ID. This is not supported."
+        );
+    }
+
+    @Test
+    @DisplayName("Foreign key overlaps with the primary key of the jOOQ record table")
+    void foreignKeyOverlapsPrimaryKey() {
+        assertErrorsContain(
+                () -> getProcessedSchema("foreignKeyOverlapsPrimaryKey"),
+                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorFilter' overlaps with the primary key of the jOOQ record table. This is not supported."
+        );
+    }
+
+    @Test
     @Disabled("Disabled until GGG-209")
     @DisplayName("nodeID with invalid reference")
     void invalidReference() {

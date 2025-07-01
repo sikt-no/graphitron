@@ -26,6 +26,8 @@ public class VariableNames {
             METHOD_SELECT_NAME = "get" + capitalize(VARIABLE_SELECT),
             METHOD_SOURCE_NAME = "getSource",
             METHOD_GRAPH_CONTEXT = "getGraphQlContext",
+            METHOD_SET_RECORD_ID = "setId",
+            METHOD_SET_RECORD_REFERENCE_ID = "setReferenceId",
             VARIABLE_VALIDATION_ERRORS = "validationErrors",
             VARIABLE_PATHS_FOR_PROPERTIES = "pathsForProperties",
             VARIABLE_TYPE_NAME = "_targetType",
