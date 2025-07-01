@@ -17,6 +17,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -151,6 +152,7 @@ public class ComponentGenerator extends AbstractClassGenerator {
                         ClassName.bestGuess(BASE_COMPONENT_CLASS), nodeClass, connectionClass))
                 .addMethod(generateQueryMethod(field))
                 .addMethod(generateRootFieldMethod(field))
+                .addMethod(generateConnectionClassMethod(connectionTypeName))
                 .addMethod(generateEdgesFunctionMethod(connectionTypeName))
                 .addMethod(generateNodeFunctionMethod(connectionTypeName + "Edge", nodeTypeName))
                 .addMethod(generateGridCreatorMethod(field, nodeTypeName))
@@ -197,13 +199,36 @@ public class ComponentGenerator extends AbstractClassGenerator {
                 .build();
     }
 
-    private MethodSpec generateEdgesFunctionMethod(String connectionTypeName) {
+    private MethodSpec generateConnectionClassMethod(String connectionTypeName) {
         ClassName connectionClass = ClassName.get(GENERATED_MODELS_PACKAGE, connectionTypeName);
 
         TypeName returnType = ParameterizedTypeName.get(
+                ClassName.get(Class.class),
+                connectionClass
+        );
+
+        return MethodSpec.methodBuilder("getConnectionClass")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(returnType)
+                .addStatement("return $T.class", connectionClass)
+                .build();
+    }
+
+    private MethodSpec generateEdgesFunctionMethod(String connectionTypeName) {
+        ClassName connectionClass = ClassName.get(GENERATED_MODELS_PACKAGE, connectionTypeName);
+
+        // Create proper type with wildcards for List<?>
+        TypeName listType = ParameterizedTypeName.get(
+                ClassName.get(List.class),
+                WildcardTypeName.subtypeOf(Object.class)
+        );
+
+        // Create the Function<ConnectionClass, List<?>> type
+        TypeName returnType = ParameterizedTypeName.get(
                 ClassName.get(Function.class),
                 connectionClass,
-                ClassName.get(List.class)
+                listType
         );
 
         return MethodSpec.methodBuilder("getEdgesFunction")

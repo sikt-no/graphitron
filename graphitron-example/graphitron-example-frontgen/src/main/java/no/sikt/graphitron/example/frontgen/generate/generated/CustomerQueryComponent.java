@@ -1,6 +1,12 @@
 package no.sikt.graphitron.example.frontgen.generate.generated;
 
 import com.vaadin.flow.component.grid.Grid;
+import java.lang.Class;
+import java.lang.Object;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import java.util.function.Function;
 import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.example.generated.graphitron.model.Address;
 import no.sikt.graphitron.example.generated.graphitron.model.Customer;
@@ -8,37 +14,10 @@ import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnectionEdge;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerName;
 
-import java.util.List;
-import java.util.function.Function;
-
 public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
-
     @Override
     protected String getQuery() {
-        return """
-            query {
-              customers(first: 100) {
-                edges {
-                  node {
-                    id
-                    email
-                    name {
-                      firstName
-                      lastName
-                    }
-                    address {
-                      addressLine1
-                      addressLine2
-                      city {
-                        name
-                        countryName
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            """;
+        return "query { customers(first: 100) { edges { node { id email name { firstName lastName } address { addressLine1 addressLine2 city { name countryName } } } } } }";
     }
 
     @Override
@@ -65,15 +44,12 @@ public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, Cu
     protected Function<List<Customer>, Grid<Customer>> getGridCreator() {
         return customers -> {
             Grid<Customer> grid = new Grid<>(Customer.class, false);
-
             grid.addColumn(Customer::getId)
                     .setHeader("ID")
                     .setFlexGrow(1);
-
             grid.addColumn(Customer::getEmail)
                     .setHeader("Email")
                     .setFlexGrow(1);
-
             grid.addColumn(customer -> {
                         CustomerName name = customer.getName();
                         return name != null ? name.getFirstName() + " " + name.getLastName() : "N/A";

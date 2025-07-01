@@ -1,4 +1,5 @@
 import com.vaadin.flow.component.grid.Grid;
+import java.lang.Class;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
@@ -21,7 +22,12 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
     }
 
     @Override
-    protected Function<QueryFilmsConnection, List> getEdgesFunction() {
+    protected Class<QueryFilmsConnection> getConnectionClass() {
+        return QueryFilmsConnection.class;
+    }
+
+    @Override
+    protected Function<QueryFilmsConnection, List<?>> getEdgesFunction() {
         return QueryFilmsConnection::getEdges;
     }
 

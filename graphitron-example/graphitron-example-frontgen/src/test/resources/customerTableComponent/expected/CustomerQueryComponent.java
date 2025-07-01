@@ -1,6 +1,7 @@
 package no.sikt.graphitron.example.frontgen.generate.generated;
 
 import com.vaadin.flow.component.grid.Grid;
+import java.lang.Class;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
@@ -23,7 +24,12 @@ public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, Cu
     }
 
     @Override
-    protected Function<CustomerConnection, List> getEdgesFunction() {
+    protected Class<CustomerConnection> getConnectionClass() {
+        return CustomerConnection.class;
+    }
+
+    @Override
+    protected Function<CustomerConnection, List<?>> getEdgesFunction() {
         return CustomerConnection::getEdges;
     }
 

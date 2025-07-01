@@ -1,16 +1,18 @@
 package no.sikt.graphitron.example.frontgen.generate.generated;
 
 import com.vaadin.flow.component.grid.Grid;
+import java.lang.Class;
+import java.lang.Object;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import java.util.function.Function;
+import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.example.generated.graphitron.model.Film;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnectionEdge;
-import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
-
-import java.util.List;
-import java.util.function.Function;
 
 public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
-
     @Override
     protected String getQuery() {
         return "query { films(first: 100) { edges { node { id title } } } }";
@@ -40,15 +42,12 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
     protected Function<List<Film>, Grid<Film>> getGridCreator() {
         return films -> {
             Grid<Film> grid = new Grid<>(Film.class, false);
-
             grid.addColumn(Film::getId)
-                .setHeader("ID")
-                .setFlexGrow(1);
-
+                    .setHeader("ID")
+                    .setFlexGrow(1);
             grid.addColumn(Film::getTitle)
-                .setHeader("Title")
-                .setFlexGrow(2);
-
+                    .setHeader("Title")
+                    .setFlexGrow(2);
             grid.setItems(films);
             return grid;
         };
