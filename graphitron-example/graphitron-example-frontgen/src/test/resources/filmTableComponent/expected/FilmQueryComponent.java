@@ -45,7 +45,7 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
                     .setFlexGrow(1);
             grid.addColumn(Film::getTitle)
                     .setHeader("Title")
-                    .setFlexGrow(2);
+                    .setFlexGrow(1);
             grid.setItems(films);
             return grid;
         };

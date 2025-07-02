@@ -25,8 +25,10 @@ import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -174,20 +176,51 @@ public class ComponentGenerator extends AbstractClassGenerator {
     private String buildGraphQLQuery(ObjectField field) {
         String fieldName = field.getName();
 
-        // Extract field selections from the schema definition (simplified version)
+        // Get node type name to determine which fields to include
+        String connectionTypeName = getConnectionTypeName(field);
+        String nodeTypeName = getNodeTypeName(field, connectionTypeName);
+
+        // Extract field selections for the query
         StringBuilder queryFields = new StringBuilder("id"); // Always include ID
 
-        // In a full implementation, you would analyze the schema to determine proper fields
-        if (fieldName.equals("films")) {
-            queryFields.append(" title");
-        } else if (fieldName.equals("customers")) {
-            queryFields.append(" email name { firstName lastName } ")
-                    .append("address { addressLine1 addressLine2 city { name countryName } }");
+        // Add relevant fields based on node type from schema
+        if (nodeTypeName != null) {
+            ObjectDefinition objectDefinition = processedSchema.getObject(nodeTypeName);
+            if (objectDefinition != null) {
+                // Add all fields and nested objects
+                addQueryFields(objectDefinition, queryFields, new HashSet<>());
+            }
         }
 
         // Format the query with connection pattern
         return String.format("query { %s(first: 100) { edges { node { %s } } } }",
                 fieldName, queryFields);
+    }
+
+    private void addQueryFields(ObjectDefinition definition, StringBuilder queryFields, Set<String> visitedTypes) {
+        if (visitedTypes.contains(definition.getName())) {
+            return; // Prevent circular references
+        }
+        visitedTypes.add(definition.getName());
+
+        for (ObjectField nodeField : definition.getFields()) {
+            // Skip ID since we already added it at the beginning
+            if (nodeField.getName().equals("id")) continue;
+
+            // For scalar fields, just add the field name
+            if (!processedSchema.isObject(nodeField)) {
+                queryFields.append(" ").append(nodeField.getName());
+            }
+            // For object fields, add nested field selection
+            else {
+                ObjectDefinition nestedObject = processedSchema.getObject(nodeField.getTypeName());
+                if (nestedObject != null && !visitedTypes.contains(nestedObject.getName())) {
+                    queryFields.append(" ").append(nodeField.getName()).append(" { ");
+                    addQueryFields(nestedObject, queryFields, new HashSet<>(visitedTypes));
+                    queryFields.append(" }");
+                }
+            }
+        }
     }
 
     private MethodSpec generateRootFieldMethod(ObjectField field) {
@@ -283,52 +316,14 @@ public class ComponentGenerator extends AbstractClassGenerator {
         builder.addStatement("    grid.addColumn($T::getId)\n        .setHeader(\"ID\")\n        .setFlexGrow(1)",
                 nodeClass);
 
-        // Add specific columns based on type
-        if (nodeTypeName.equals("Film")) {
-            builder.addStatement("    grid.addColumn($T::getTitle)\n        .setHeader(\"Title\")\n        .setFlexGrow(2)",
-                    nodeClass);
-        }
-        else if (nodeTypeName.equals("Customer")) {
-            builder.addStatement("    grid.addColumn($T::getEmail)\n        .setHeader(\"Email\")\n        .setFlexGrow(1)",
-                    nodeClass);
+        // Get object definition from schema
+        ObjectDefinition objectDefinition = processedSchema.getObject(nodeTypeName);
+        if (objectDefinition != null) {
+            // Add columns for basic fields
+            addBasicColumns(builder, objectDefinition, nodeClass);
 
-            // Add name column with complex mapping logic
-            builder.addCode("""
-                    grid.addColumn(customer -> {
-                        CustomerName name = customer.getName();
-                        return name != null ? name.getFirstName() + " " + name.getLastName() : "N/A";
-                    })
-                    .setHeader("Full Name")
-                    .setFlexGrow(1);
-                    
-                    """);
-
-            // Add address column with complex mapping logic
-            builder.addCode("""
-                    grid.addColumn(customer -> {
-                        Address address = customer.getAddress();
-                        if (address != null) {
-                            StringBuilder addressText = new StringBuilder();
-                            if (address.getAddressLine1() != null) {
-                                addressText.append(address.getAddressLine1());
-                            }
-                            if (address.getAddressLine2() != null && !address.getAddressLine2().isEmpty()) {
-                                addressText.append(", ").append(address.getAddressLine2());
-                            }
-                            if (address.getCity() != null) {
-                                addressText.append(", ").append(address.getCity().getName());
-                                if (address.getCity().getCountryName() != null) {
-                                    addressText.append(", ").append(address.getCity().getCountryName());
-                                }
-                            }
-                            return addressText.toString();
-                        }
-                        return "N/A";
-                    })
-                    .setHeader("Address")
-                    .setFlexGrow(2);
-                    
-                    """);
+            // Add columns for complex object fields
+            addComplexColumns(builder, objectDefinition, nodeClass);
         }
 
         builder.addStatement("    grid.setItems($L)", itemsParam)
@@ -336,6 +331,163 @@ public class ComponentGenerator extends AbstractClassGenerator {
                 .addCode("};\n");
 
         return builder.build();
+    }
+
+    private void addBasicColumns(MethodSpec.Builder builder, ObjectDefinition objectDefinition, ClassName nodeClass) {
+        for (ObjectField nodeField : objectDefinition.getFields()) {
+            // Skip ID since we already added it
+            if (nodeField.getName().equals("id")) continue;
+
+            // Only add simple scalar fields
+            if (!processedSchema.isObject(nodeField) && !nodeField.isIterableWrapped()) {
+                String fieldName = nodeField.getName();
+                String capitalizedName = capitalize(fieldName);
+                String headerText = splitCamelCase(capitalizedName);
+
+                builder.addStatement("    grid.addColumn($T::get$L)\n        .setHeader(\"$L\")\n        .setFlexGrow(1)",
+                        nodeClass, capitalizedName, headerText);
+            }
+        }
+    }
+
+    private void addComplexColumns(MethodSpec.Builder builder, ObjectDefinition objectDefinition, ClassName nodeClass) {
+        // Process complex object fields
+        for (ObjectField nodeField : objectDefinition.getFields()) {
+            if (nodeField.getName().equals("id")) continue;
+
+            if (processedSchema.isObject(nodeField) && !nodeField.isIterableWrapped()) {
+                String fieldName = nodeField.getName();
+                String capitalizedFieldName = capitalize(fieldName);
+                String headerText = splitCamelCase(capitalizedFieldName);
+                ObjectDefinition nestedObjectDef = processedSchema.getObject(nodeField.getTypeName());
+
+                if (nestedObjectDef != null) {
+                    // Get scalar fields of the nested object
+                    List<String> scalarFields = nestedObjectDef.getFields().stream()
+                            .filter(f -> !processedSchema.isObject(f) && !f.isIterableWrapped() && !f.getName().equals("id"))
+                            .map(ObjectField::getName)
+                            .toList();
+
+                    if (!scalarFields.isEmpty()) {
+                        // Create a formatted display combining scalar fields
+                        builder.addCode("""
+                    grid.addColumn(entity -> {
+                        $1T $2L = entity.get$3L();
+                        if ($2L != null) {
+                            StringBuilder sb = new StringBuilder();
+                    """, ClassName.get(GENERATED_MODELS_PACKAGE, nestedObjectDef.getName()),
+                                fieldName, capitalizedFieldName);
+
+                        // Add each field with separator
+                        for (int i = 0; i < scalarFields.size(); i++) {
+                            String nestedField = scalarFields.get(i);
+                            String nestedFieldCapitalized = capitalize(nestedField);
+
+                            if (i == 0) {
+                                builder.addCode("""
+                            if ($1L.get$2L() != null) {
+                                sb.append($1L.get$2L());
+                            }
+                            """, fieldName, nestedFieldCapitalized);
+                            } else {
+                                builder.addCode("""
+                            if ($1L.get$2L() != null) {
+                                if (sb.length() > 0) sb.append(", ");
+                                sb.append($1L.get$2L());
+                            }
+                            """, fieldName, nestedFieldCapitalized);
+                            }
+                        }
+
+                        builder.addCode("""
+                            return sb.length() > 0 ? sb.toString() : "N/A";
+                        }
+                        return "N/A";
+                    })
+                    .setHeader("$L")
+                    .setFlexGrow(1);
+
+                    """, headerText);
+                    }
+
+                    // Handle second-level nested objects
+                    for (ObjectField nestedField : nestedObjectDef.getFields()) {
+                        if (nestedField.getName().equals("id")) continue;
+
+                        if (processedSchema.isObject(nestedField) && !nestedField.isIterableWrapped()) {
+                            String nestedFieldName = nestedField.getName();
+                            String nestedCapitalizedName = capitalize(nestedFieldName);
+                            String nestedHeaderText = splitCamelCase(capitalizedFieldName + " " + nestedCapitalizedName);
+                            ObjectDefinition level2ObjectDef = processedSchema.getObject(nestedField.getTypeName());
+
+                            if (level2ObjectDef != null) {
+                                // Get scalar fields of the second-level nested object
+                                List<String> level2ScalarFields = level2ObjectDef.getFields().stream()
+                                        .filter(f -> !processedSchema.isObject(f) && !f.isIterableWrapped() && !f.getName().equals("id"))
+                                        .map(ObjectField::getName)
+                                        .toList();
+
+                                if (!level2ScalarFields.isEmpty()) {
+                                    builder.addCode("""
+                                grid.addColumn(entity -> {
+                                    $1T $2L = entity.get$3L();
+                                    if ($2L != null) {
+                                        $4T $5L = $2L.get$6L();
+                                        if ($5L != null) {
+                                            StringBuilder sb = new StringBuilder();
+                                """, ClassName.get(GENERATED_MODELS_PACKAGE, nestedObjectDef.getName()),
+                                            fieldName, capitalizedFieldName,
+                                            ClassName.get(GENERATED_MODELS_PACKAGE, level2ObjectDef.getName()),
+                                            nestedFieldName, nestedCapitalizedName);
+
+                                    // Add each field with separator
+                                    for (int i = 0; i < level2ScalarFields.size(); i++) {
+                                        String level2Field = level2ScalarFields.get(i);
+                                        String level2FieldCapitalized = capitalize(level2Field);
+
+                                        if (i == 0) {
+                                            builder.addCode("""
+                                        if ($1L.get$2L() != null) {
+                                            sb.append($1L.get$2L());
+                                        }
+                                        """, nestedFieldName, level2FieldCapitalized);
+                                        } else {
+                                            builder.addCode("""
+                                        if ($1L.get$2L() != null) {
+                                            if (sb.length() > 0) sb.append(", ");
+                                            sb.append($1L.get$2L());
+                                        }
+                                        """, nestedFieldName, level2FieldCapitalized);
+                                        }
+                                    }
+
+                                    builder.addCode("""
+                                            return sb.length() > 0 ? sb.toString() : "N/A";
+                                        }
+                                    }
+                                    return "N/A";
+                                })
+                                .setHeader("$L")
+                                .setFlexGrow(1);
+                                
+                                """, nestedHeaderText);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Helper method to convert camelCase to human-readable form
+    private String splitCamelCase(String s) {
+        return s.replaceAll(
+                String.format("%s|%s|%s",
+                        "(?<=[A-Z])(?=[A-Z][a-z])",
+                        "(?<=[^A-Z])(?=[A-Z])",
+                        "(?<=[A-Za-z])(?=[^A-Za-z])"),
+                " ");
     }
 
     private String getItemsParameterName(String nodeTypeName) {

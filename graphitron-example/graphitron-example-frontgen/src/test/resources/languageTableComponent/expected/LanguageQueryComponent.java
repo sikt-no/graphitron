@@ -15,7 +15,7 @@ import no.sikt.graphitron.example.generated.graphitron.model.QueryLanguagesConne
 public class LanguageQueryComponent extends GeneratedQueryComponent<Language, QueryLanguagesConnection> {
     @Override
     protected String getQuery() {
-        return "query { languages(first: 100) { edges { node { id } } } }";
+        return "query { languages(first: 100) { edges { node { id name } } } }";
     }
 
     @Override
@@ -44,6 +44,9 @@ public class LanguageQueryComponent extends GeneratedQueryComponent<Language, Qu
             Grid<Language> grid = new Grid<>(Language.class, false);
             grid.addColumn(Language::getId)
                     .setHeader("ID")
+                    .setFlexGrow(1);
+            grid.addColumn(Language::getName)
+                    .setHeader("Name")
                     .setFlexGrow(1);
             grid.setItems(languages);
             return grid;

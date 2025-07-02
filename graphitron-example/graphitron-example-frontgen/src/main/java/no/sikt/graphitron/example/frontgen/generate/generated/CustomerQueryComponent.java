@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.function.Function;
 import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.example.generated.graphitron.model.Address;
+import no.sikt.graphitron.example.generated.graphitron.model.City;
 import no.sikt.graphitron.example.generated.graphitron.model.Customer;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnectionEdge;
@@ -17,7 +18,7 @@ import no.sikt.graphitron.example.generated.graphitron.model.CustomerName;
 public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     @Override
     protected String getQuery() {
-        return "query { customers(first: 100) { edges { node { id email name { firstName lastName } address { addressLine1 addressLine2 city { name countryName } } } } } }";
+        return "query { customers(first: 100) { edges { node { id name {  firstName lastName } email address {  addressLine1 addressLine2 city {  name countryName } zip phone } } } } }";
     }
 
     @Override
@@ -50,35 +51,70 @@ public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, Cu
             grid.addColumn(Customer::getEmail)
                     .setHeader("Email")
                     .setFlexGrow(1);
-            grid.addColumn(customer -> {
-                        CustomerName name = customer.getName();
-                        return name != null ? name.getFirstName() + " " + name.getLastName() : "N/A";
+            grid.addColumn(entity -> {
+                        CustomerName name = entity.getName();
+                        if (name != null) {
+                            StringBuilder sb = new StringBuilder();
+                            if (name.getFirstName() != null) {
+                                sb.append(name.getFirstName());
+                            }
+                            if (name.getLastName() != null) {
+                                if (sb.length() > 0) sb.append(", ");
+                                sb.append(name.getLastName());
+                            }
+                            return sb.length() > 0 ? sb.toString() : "N/A";
+                        }
+                        return "N/A";
                     })
-                    .setHeader("Full Name")
+                    .setHeader("Name")
                     .setFlexGrow(1);
 
-            grid.addColumn(customer -> {
-                        Address address = customer.getAddress();
+            grid.addColumn(entity -> {
+                        Address address = entity.getAddress();
                         if (address != null) {
-                            StringBuilder addressText = new StringBuilder();
+                            StringBuilder sb = new StringBuilder();
                             if (address.getAddressLine1() != null) {
-                                addressText.append(address.getAddressLine1());
+                                sb.append(address.getAddressLine1());
                             }
-                            if (address.getAddressLine2() != null && !address.getAddressLine2().isEmpty()) {
-                                addressText.append(", ").append(address.getAddressLine2());
+                            if (address.getAddressLine2() != null) {
+                                if (sb.length() > 0) sb.append(", ");
+                                sb.append(address.getAddressLine2());
                             }
-                            if (address.getCity() != null) {
-                                addressText.append(", ").append(address.getCity().getName());
-                                if (address.getCity().getCountryName() != null) {
-                                    addressText.append(", ").append(address.getCity().getCountryName());
-                                }
+                            if (address.getZip() != null) {
+                                if (sb.length() > 0) sb.append(", ");
+                                sb.append(address.getZip());
                             }
-                            return addressText.toString();
+                            if (address.getPhone() != null) {
+                                if (sb.length() > 0) sb.append(", ");
+                                sb.append(address.getPhone());
+                            }
+                            return sb.length() > 0 ? sb.toString() : "N/A";
                         }
                         return "N/A";
                     })
                     .setHeader("Address")
-                    .setFlexGrow(2);
+                    .setFlexGrow(1);
+
+            grid.addColumn(entity -> {
+                        Address address = entity.getAddress();
+                        if (address != null) {
+                            City city = address.getCity();
+                            if (city != null) {
+                                StringBuilder sb = new StringBuilder();
+                                if (city.getName() != null) {
+                                    sb.append(city.getName());
+                                }
+                                if (city.getCountryName() != null) {
+                                    if (sb.length() > 0) sb.append(", ");
+                                    sb.append(city.getCountryName());
+                                }
+                                return sb.length() > 0 ? sb.toString() : "N/A";
+                            }
+                        }
+                        return "N/A";
+                    })
+                    .setHeader("Address   City")
+                    .setFlexGrow(1);
 
             grid.setItems(customers);
             return grid;

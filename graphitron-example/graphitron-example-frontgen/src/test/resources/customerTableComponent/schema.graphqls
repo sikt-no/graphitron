@@ -4,6 +4,15 @@ schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]
     query: Query
 }
 
+type Address implements Node @node @table @key(fields : "id", resolvable : false) {
+    id: ID!
+    addressLine1: String! @field(name : "ADDRESS_")
+    addressLine2: String @field(name : "ADDRESS2")
+    city: City!
+    zip: String @field(name : "POSTAL_CODE")
+    phone: String!
+}
+
 type City implements Node @table @node(typeId : "CityType") {
     id: ID!
     name: String! @field(name : "CITY_")
@@ -20,11 +29,6 @@ type CityAddressesPaginatedConnection {
 type CityAddressesPaginatedConnectionEdge {
     cursor: String
     node: Address
-}
-
-type CityWithoutID @table(name : "CITY") {
-    cityId: Int @field(name : "CITY_ID")
-    addresses: [Address]
 }
 
 type Customer implements Node @node @table {
