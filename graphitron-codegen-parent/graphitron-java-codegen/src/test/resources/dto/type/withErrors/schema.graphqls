@@ -1,4 +1,9 @@
-type CustomerTable @table(name: "CUSTOMER") {
+type Customer {
     id: ID
-    string: String
+    errors: [ValidationError]
+}
+
+type ValidationError implements Error {
+    path: [String]
+    message: String
 }

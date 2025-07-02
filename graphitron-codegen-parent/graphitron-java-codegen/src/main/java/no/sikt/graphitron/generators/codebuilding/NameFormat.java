@@ -271,9 +271,9 @@ public class NameFormat {
     public static String toCamelCase(String name) {
         return uncapitalize(
                 Stream
-                .of(name.toLowerCase().split("_(?![0-9_]+)"))
-                .map(StringUtils::capitalize)
-                .collect(Collectors.joining())
+                        .of(name.toLowerCase().split("_(?![0-9_]+)"))
+                        .map(StringUtils::capitalize)
+                        .collect(Collectors.joining())
         );
     }
 }

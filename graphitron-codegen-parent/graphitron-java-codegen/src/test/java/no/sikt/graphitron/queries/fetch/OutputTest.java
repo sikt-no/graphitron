@@ -92,6 +92,12 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains("fieldOverride", "_customer.FIRST_NAME");
     }
 
+    @Test // Not sure if this is allowed.
+    @DisplayName("Containing ID field annotated with @field and has no @nodeId")
+    void fieldOverrideID() {
+        assertGeneratedContentContains("fieldOverrideID", "_payment.getCustomerId()");
+    }
+
     @Test
     @DisplayName("Field annotated with @externalField should use method extended on field's jooq table")
     void externalField() {
@@ -359,5 +365,40 @@ public class OutputTest extends GeneratorTest {
                 "subtype",
                 ".getId(),DSL.row(_customer.FIRST_NAME,",
                 ").mapping(Functions.nullOnAllNull(CustomerName::new))).mapping(Functions.nullOnAllNull(Customer::new))");
+    }
+
+    @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.
+    @DisplayName("A query returns a type without a table set")
+    void returningTypeWithoutTable() {
+        assertGeneratedContentContains(
+                "returningTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE),
+                ".row(_customer.getId(),_customer.FIRST_NAME",
+                "CustomerNoTable::new",
+                ".from(_customer)",
+                "_customer.hasId(inRecord.getId()",
+                ".into(CustomerNoTable.class"
+        );
+    }
+
+    @Test
+    @DisplayName("A query returns a type without a table set that contains a table type")
+    void returningTypeWithoutTableContainingTableType() {
+        assertGeneratedContentContains(
+                "returningTypeWithoutTableContainingTableType", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
+                ".row(DSL.row(_customer.getId()",
+                "CustomerTable::new))).mapping(Functions.nullOnAllNull(CustomerNoTable::new",
+                ".into(CustomerNoTable.class"
+        );
+    }
+
+    @Test
+    @DisplayName("A query returns a listed type without a table set")
+    void returningListedTypeWithoutTable() {
+        assertGeneratedContentContains(
+                "returningListedTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
+                ".row(_customer.getId(),_customer.FIRST_NAME",
+                "_customer.getId()).in(",
+                ".into(CustomerNoTable.class"
+        );
     }
 }

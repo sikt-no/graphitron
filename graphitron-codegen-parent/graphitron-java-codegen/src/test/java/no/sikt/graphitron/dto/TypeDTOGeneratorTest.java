@@ -80,9 +80,15 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
                 "DummyConnection(List<DummyConnectionEdge> edges, PageInfo pageInfo, List<DummyType> nodes, Integer totalCount)");
     }
 
-    @Test
+    @Test // New constructor that skips error fields so queries can use them without making up new empty fields.
     @DisplayName("Contains an errors field")
     void withErrors() {
-        assertGeneratedContentMatches("withErrors");
+        assertGeneratedContentContains(
+                "withErrors", Set.of(ERROR),
+                "Customer(String id, List<ValidationError> errors)",
+                "this.errors = errors",
+                "Customer(String id)",
+                "this.errors = null"
+        );
     }
 }

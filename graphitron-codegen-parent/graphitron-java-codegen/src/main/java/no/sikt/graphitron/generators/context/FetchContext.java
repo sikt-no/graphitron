@@ -28,8 +28,8 @@ import static no.sikt.graphitron.mappings.TableReflection.*;
 public class FetchContext {
     private final FetchContext previousContext;
     private final GenerationField referenceObjectField, conditionSourceField;
-    private final RecordObjectSpecification<?> referenceObject, previousTableObject;
-    private final JOOQMapping referenceTable, inputTable;
+    private final RecordObjectSpecification<?> referenceObject;
+    private final JOOQMapping referenceTable, previousTable, inputTable;
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
@@ -89,8 +89,10 @@ public class FetchContext {
         this.conditionList = conditionList;
 
         this.referenceObjectField = referenceObjectField;
-        this.previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
-        this.referenceTable = findReferenceTable();
+        inputTable = findInputTable();
+        var previousTableObject = processedSchema.getPreviousTableObjectForObject(previousObject);
+        this.previousTable = previousTableObject != null ? previousTableObject.getTable() : null;
+        this.referenceTable = referenceObject != null ? referenceObject.getTable() : null;
         graphPath = pastGraphPath;
 
         this.previousContext = previousContext;
@@ -98,7 +100,7 @@ public class FetchContext {
         this.resolverKey = findKeyForResolverField(referenceObjectField, processedSchema);
         currentJoinSequence = iterateJoinSequence(pastJoinSequence);
 
-        hasApplicableTable = previousTableObject != null || getReferenceTable() != null;
+        hasApplicableTable = previousTableObject != null || getReferenceTable() != null || inputTable != null;
         if (conditionSourceField != null && previousContext.hasApplicableTable()) {
             this.conditionSourceField = null;
         } else if (!hasApplicableTable && conditionSourceField == null) {
@@ -106,7 +108,6 @@ public class FetchContext {
         } else {
             this.conditionSourceField = conditionSourceField;
         }
-        inputTable = findInputTable();
     }
 
     /**
@@ -198,15 +199,11 @@ public class FetchContext {
         return conditionList;
     }
 
-    private JOOQMapping findReferenceTable() {
-        return referenceObject != null ? referenceObject.getTable() : null;
-    }
-
     /**
      * @return The reference table the reference field points to.
      */
     public JOOQMapping getReferenceTable() {
-        return referenceTable;
+        return referenceTable != null ? referenceTable : inputTable;
     }
 
     /**
@@ -216,7 +213,7 @@ public class FetchContext {
         if (previousContext != null) {
             return previousContext.getTargetTable();
         } else {
-            return previousTableObject != null ? previousTableObject.getTable() : null;
+            return previousTable;
         }
     }
 
@@ -245,7 +242,7 @@ public class FetchContext {
      * @return The reference table which fields on this layer are taken from.
      */
     public JOOQMapping getReferenceOrPreviousTable() {
-        return (referenceObject != null && referenceObject.hasTable()) ? referenceObject.getTable() : previousTableObject != null ? previousTableObject.getTable() : null;
+        return (referenceObject != null && referenceObject.hasTable()) ? referenceObject.getTable() : previousTable;
     }
 
     /**

@@ -1,13 +1,12 @@
 package no.sikt.graphitron.generators.dto;
 
-import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
-import no.sikt.graphitron.javapoet.*;
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
-import org.jooq.Key;
 
 import javax.lang.model.element.Modifier;
 import java.io.Serializable;
@@ -18,7 +17,6 @@ import java.util.Objects;
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTypeName;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -39,21 +37,24 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
         classBuilder.addSuperinterface(ClassName.get(Serializable.class));
 
         var constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
+
+        // New constructor that skips error fields so queries can use them without making up new empty fields.
         var constructorNoErrorsBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
 
         List<String> allVariableNames = new ArrayList<>();
 
-        var hasErrors = fields.stream().anyMatch(it -> it.getTypeName().equals(ERROR_TYPE.getName()));
+        var hasErrors = fields.stream().anyMatch(it -> processedSchema.implementsInterface(it, ERROR_TYPE.getName()));
         keyMap.values()
                 .stream()
                 .distinct()
                 .forEach((key) -> {
                     var dtoVarName = key.getDTOVariableName();
                     allVariableNames.add(dtoVarName);
-                    addClassKeyVariable(key.getTypeName(), dtoVarName, classBuilder);
-                    addConstructorKeyVariable(key.getTypeName(), dtoVarName, constructorBuilder);
+                    var typeName = key.getTypeName();
+                    addClassKeyVariable(typeName, dtoVarName, classBuilder);
+                    addConstructorKeyVariable(typeName, dtoVarName, constructorBuilder);
                     if (hasErrors) {
-                        addConstructorKeyVariable(key.getTypeName(), dtoVarName, constructorNoErrorsBuilder);
+                        addConstructorKeyVariable(typeName, dtoVarName, constructorNoErrorsBuilder);
                     }
                 });
 
@@ -68,9 +69,16 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     allVariableNames.add(variableName);
 
                     addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
-                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, field.isResolver());
-                    if (hasErrors && !field.getTypeName().equals(ERROR_TYPE.getName())) {
-                        addConstructorFieldVariable(typeName, variableName, constructorNoErrorsBuilder, setValue, field.isResolver());
+                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver());
+                    if (hasErrors) {
+                        addConstructorFieldVariable(
+                                typeName,
+                                variableName,
+                                constructorNoErrorsBuilder,
+                                setValue,
+                                processedSchema.implementsInterface(field, ERROR_TYPE.getName()),
+                                field.isResolver()
+                        );
                     }
                 });
 
@@ -113,10 +121,10 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
         }
     }
 
-    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isResolver) {
-        constructorBuilder.addStatement("this.$N = $N", name, setValueInConstructor);
+    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver) {
+        constructorBuilder.addStatement("this.$N = $N", name, isError ? "null" : setValueInConstructor);
 
-        if (!isResolver) {
+        if (!isResolver && !isError) {
             constructorBuilder.addParameter(fieldType, name);
         }
     }

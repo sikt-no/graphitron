@@ -161,9 +161,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var rowElements = new ArrayList<CodeBlock>();
 
         var keySet = getKeySetForResolverFields(context.getReferenceObject().getFields(), processedSchema);
-        keySet.forEach(key ->
-                rowElements.add(getSelectKeyColumnRow(key.key(), context.getTargetTableName(), context.getTargetAlias()))
-        );
+        var targetTable = context.getTargetTableName();
+        var targetAlias = context.getTargetAlias();
+        keySet.forEach(key -> rowElements.add(getSelectKeyColumnRow(key.key(), targetTable, targetAlias)));
 
         var referenceFieldSources = new HashMap<String, String>(); // Used to keep track of field sources for explicit mapping
 
@@ -196,8 +196,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     getImportReferenceOfValidExtensionMethod(field, table.getName()),
                     field.getName(),
                     context.getTargetAlias());
-        }
-        else if (field.hasFieldReferences() || (field.hasNodeID() && !field.getNodeIdTypeName().equals(field.getContainerTypeName()))) {
+        } else if (field.hasFieldReferences() || (field.hasNodeID() && !field.getNodeIdTypeName().equals(field.getContainerTypeName()))) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
@@ -496,7 +495,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (!isResolverRoot && context.hasApplicableTable()) {
             conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
             var otherConditionsField = context.getConditionSourceField();
-            if (otherConditionsField != null && context.hasApplicableTable()) {
+            if (otherConditionsField != null) {
                 conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
             }
         }
@@ -624,8 +623,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock createTupleCondition(
             FetchContext context,
             String argumentInputFieldName,
-            List<InputCondition> conditions) {
-
+            List<InputCondition> conditions
+    ) {
         var selectedConditions = new HashSet<InputCondition>();
         var tupleFieldBlocks = new ArrayList<CodeBlock>();
         var tupleVariableBlocks = new ArrayList<CodeBlock>();
@@ -634,8 +633,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var field = condition.getInput();
             var fieldSequence = context.iterateJoinSequenceFor(field).render();
             var unpacked = CodeBlock.of(
-                    VARIABLE_INTERNAL_ITERATION + condition
-                            .getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+                    "$N$L",
+                    VARIABLE_INTERNAL_ITERATION,
+                    condition.hasRecord()
+                            ? field.getMappingForRecordFieldOverride().asGetCall()
+                            : condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), "")
+            );
 
             if (!field.hasOverridingCondition() && !condition.isOverriddenByAncestors()) {
                 var enumHandling = toJOOQEnumConverter(field.getTypeName(), processedSchema);

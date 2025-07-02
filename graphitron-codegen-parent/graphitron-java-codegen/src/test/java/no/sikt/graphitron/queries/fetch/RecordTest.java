@@ -55,7 +55,7 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
                 "DSL.row(_customer.getId(), _customer.getId()).in(" +
-                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).collect(Collectors.toList())" +
+                        "inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).collect(Collectors.toList())" +
                         ") : DSL.noCondition()"
         );
     }
@@ -81,5 +81,17 @@ public class RecordTest extends GeneratorTest {
                         "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).collect(Collectors.toList())" +
                         ") : DSL.noCondition()"
         );
+    }
+
+    @Test // Not sure if this is allowed.
+    @DisplayName("Input type with an ID field annotated with @field without @nodeId")
+    void fieldOverrideID() {
+        assertGeneratedContentContains("fieldOverrideID", "_payment.getCustomerId()", "_payment.getPaymentId()");
+    }
+
+    @Test // Special case where nesting path should not be used since the records are flat structures.
+    @DisplayName("Listed input jOOQ records with an extra input type inside")
+    void listedNestedInputJOOQRecord() {
+        assertGeneratedContentContains("listedNestedInputJOOQRecord", ".inline(internal_it_.getFirstName())");
     }
 }
