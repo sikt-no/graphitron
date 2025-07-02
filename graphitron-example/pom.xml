@@ -18,7 +18,6 @@
         <module>graphitron-example-service</module>
         <module>graphitron-example-spec</module>
         <module>graphitron-example-server</module>
-        <module>graphitron-example-frontgen</module>
     </modules>
 
     <properties>

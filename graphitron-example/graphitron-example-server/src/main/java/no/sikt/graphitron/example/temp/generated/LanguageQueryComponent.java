@@ -1,16 +1,13 @@
-package no.sikt.graphitron.example.frontgen.generate.generated;
+package no.sikt.graphitron.example.temp.generated;
 
 import com.vaadin.flow.component.grid.Grid;
-import java.lang.Class;
-import java.lang.Object;
-import java.lang.Override;
-import java.lang.String;
-import java.util.List;
-import java.util.function.Function;
 import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.example.generated.graphitron.model.Language;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryLanguagesConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryLanguagesConnectionEdge;
+
+import java.util.List;
+import java.util.function.Function;
 
 public class LanguageQueryComponent extends GeneratedQueryComponent<Language, QueryLanguagesConnection> {
     @Override

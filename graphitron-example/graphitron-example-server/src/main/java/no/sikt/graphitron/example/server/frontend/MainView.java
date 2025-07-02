@@ -7,7 +7,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.router.Route;
 import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
 import no.sikt.graphitron.example.frontgen.components.QueryComponent;
-import no.sikt.graphitron.example.frontgen.generate.generated.QueryComponents;
+import no.sikt.graphitron.example.temp.generated.QueryComponents;
 import no.sikt.graphitron.example.frontgen.graphql.GraphQLQueryAdapter;
 
 @Route("")

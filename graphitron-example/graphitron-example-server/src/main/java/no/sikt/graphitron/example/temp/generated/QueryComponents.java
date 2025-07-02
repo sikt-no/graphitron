@@ -1,4 +1,4 @@
-package no.sikt.graphitron.example.frontgen.generate.generated;
+package no.sikt.graphitron.example.temp.generated;
 
 import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
 import no.sikt.graphitron.example.frontgen.components.QueryComponent;

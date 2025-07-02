@@ -1,12 +1,6 @@
-package no.sikt.graphitron.example.frontgen.generate.generated;
+package no.sikt.graphitron.example.temp.generated;
 
 import com.vaadin.flow.component.grid.Grid;
-import java.lang.Class;
-import java.lang.Object;
-import java.lang.Override;
-import java.lang.String;
-import java.util.List;
-import java.util.function.Function;
 import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.example.generated.graphitron.model.Address;
 import no.sikt.graphitron.example.generated.graphitron.model.City;
@@ -14,6 +8,9 @@ import no.sikt.graphitron.example.generated.graphitron.model.Customer;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerConnectionEdge;
 import no.sikt.graphitron.example.generated.graphitron.model.CustomerName;
+
+import java.util.List;
+import java.util.function.Function;
 
 public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     @Override

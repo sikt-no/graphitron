@@ -1,16 +1,13 @@
-package no.sikt.graphitron.example.frontgen.generate.generated;
+package no.sikt.graphitron.example.temp.generated;
 
 import com.vaadin.flow.component.grid.Grid;
-import java.lang.Class;
-import java.lang.Object;
-import java.lang.Override;
-import java.lang.String;
-import java.util.List;
-import java.util.function.Function;
 import no.sikt.graphitron.example.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.example.generated.graphitron.model.Film;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnection;
 import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnectionEdge;
+
+import java.util.List;
+import java.util.function.Function;
 
 public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
     @Override
