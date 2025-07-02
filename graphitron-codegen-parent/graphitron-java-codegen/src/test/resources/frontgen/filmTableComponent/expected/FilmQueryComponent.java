@@ -1,13 +1,14 @@
-package no.sikt.graphitron.example.temp.generated;
-
 import com.vaadin.flow.component.grid.Grid;
-import no.sikt.frontgen.generate.GeneratedQueryComponent;
-import no.sikt.graphitron.example.generated.graphitron.model.Film;
-import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnection;
-import no.sikt.graphitron.example.generated.graphitron.model.QueryFilmsConnectionEdge;
-
+import fake.graphql.example.model.Film;
+import fake.graphql.example.model.QueryFilmsConnection;
+import fake.graphql.example.model.QueryFilmsConnectionEdge;
+import java.lang.Class;
+import java.lang.Object;
+import java.lang.Override;
+import java.lang.String;
 import java.util.List;
 import java.util.function.Function;
+import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
 public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
     @Override
@@ -44,7 +45,7 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
                     .setFlexGrow(1);
             grid.addColumn(Film::getTitle)
                     .setHeader("Title")
-                    .setFlexGrow(2);
+                    .setFlexGrow(1);
             grid.setItems(films);
             return grid;
         };

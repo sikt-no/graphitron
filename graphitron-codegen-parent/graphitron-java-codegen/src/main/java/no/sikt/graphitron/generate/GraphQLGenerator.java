@@ -10,6 +10,7 @@ import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
 import no.sikt.graphitron.generators.dto.*;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
 import no.sikt.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
+import no.sikt.graphitron.generators.frontgen.TableUIComponentGenerator;
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
@@ -53,6 +54,7 @@ public class GraphQLGenerator {
 
     public static List<ClassGenerator> getGenerators(ProcessedSchema processedSchema) {
         List<ClassGenerator> generators = List.of(
+                new TableUIComponentGenerator(processedSchema),
                 new TypeDTOGenerator(processedSchema),
                 new InputDTOGenerator(processedSchema),
                 new InterfaceDTOGenerator(processedSchema),

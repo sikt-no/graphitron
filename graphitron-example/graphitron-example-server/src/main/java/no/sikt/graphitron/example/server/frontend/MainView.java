@@ -5,10 +5,10 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.router.Route;
-import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
-import no.sikt.graphitron.example.frontgen.components.QueryComponent;
+import no.sikt.frontgen.components.QueryBackedView;
+import no.sikt.frontgen.components.QueryComponent;
 import no.sikt.graphitron.example.temp.generated.QueryComponents;
-import no.sikt.graphitron.example.frontgen.graphql.GraphQLQueryAdapter;
+import no.sikt.frontgen.graphql.GraphQLQueryAdapter;
 
 @Route("")
 public class MainView extends QueryBackedView {

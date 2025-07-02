@@ -18,7 +18,6 @@
     <modules>
         <module>graphitron-java-codegen</module>
         <module>graphitron-javapoet</module>
-        <module>graphitron-frontgen</module>
     </modules>
 
 </project>

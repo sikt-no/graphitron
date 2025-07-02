@@ -1,18 +1,19 @@
-package no.sikt.graphitron.example.temp.generated;
-
 import com.vaadin.flow.component.grid.Grid;
-import no.sikt.frontgen.generate.GeneratedQueryComponent;
-import no.sikt.graphitron.example.generated.graphitron.model.Language;
-import no.sikt.graphitron.example.generated.graphitron.model.QueryLanguagesConnection;
-import no.sikt.graphitron.example.generated.graphitron.model.QueryLanguagesConnectionEdge;
-
+import fake.graphql.example.model.Language;
+import fake.graphql.example.model.QueryLanguagesConnection;
+import fake.graphql.example.model.QueryLanguagesConnectionEdge;
+import java.lang.Class;
+import java.lang.Object;
+import java.lang.Override;
+import java.lang.String;
 import java.util.List;
 import java.util.function.Function;
+import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
 public class LanguageQueryComponent extends GeneratedQueryComponent<Language, QueryLanguagesConnection> {
     @Override
     protected String getQuery() {
-        return "query { languages(first: 100) { edges { node { id } } } }";
+        return "query { languages(first: 100) { edges { node { id name } } } }";
     }
 
     @Override
@@ -41,6 +42,9 @@ public class LanguageQueryComponent extends GeneratedQueryComponent<Language, Qu
             Grid<Language> grid = new Grid<>(Language.class, false);
             grid.addColumn(Language::getId)
                     .setHeader("ID")
+                    .setFlexGrow(1);
+            grid.addColumn(Language::getName)
+                    .setHeader("Name")
                     .setFlexGrow(1);
             grid.setItems(languages);
             return grid;

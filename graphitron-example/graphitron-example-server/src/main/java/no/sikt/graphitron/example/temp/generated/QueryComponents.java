@@ -1,7 +1,7 @@
 package no.sikt.graphitron.example.temp.generated;
 
-import no.sikt.graphitron.example.frontgen.components.QueryBackedView;
-import no.sikt.graphitron.example.frontgen.components.QueryComponent;
+import no.sikt.frontgen.components.QueryBackedView;
+import no.sikt.frontgen.components.QueryComponent;
 
 import java.util.List;
 

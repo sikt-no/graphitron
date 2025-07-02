@@ -1,8 +1,0 @@
-package no.sikt.graphitron.example.frontgen.config;
-
-import com.vaadin.flow.component.page.AppShellConfigurator;
-import com.vaadin.flow.theme.Theme;
-
-@Theme("starter-theme")
-public class AppConfig implements AppShellConfigurator {
-}
