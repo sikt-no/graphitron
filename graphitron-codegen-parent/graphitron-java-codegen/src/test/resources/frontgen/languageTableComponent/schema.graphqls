@@ -1,24 +1,31 @@
-# Modifield version of graphitron-example/graphitron-example-spec/target/generated-resources/graphql_transformer/generator-schema.graphql
+# Modified version of graphitron-example/graphitron-example-spec/target/generated-resources/graphql_transformer/generator-schema.graphql
 
 schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]){
     query: Query
 }
 
+type Film implements Node @node @table {
+    id: ID!
+    title: String
+}
+
 type Language implements Node @table @node(keyColumns : ["NAME", "LANGUAGE_ID"]) {
     id: ID!
     name: String
+    #Should skip this field for now, because of the splitQuery usage
+    films(releaseYear: Int @field(name : "RELEASE_YEAR"), first: Int = 100, after: String): LanguageFilmsConnection @splitQuery @reference(references : [{key : "FILM__FILM_LANGUAGE_ID_FKEY"}])
 }
 
-type QueryLanguagesConnection {
-    edges: [QueryLanguagesConnectionEdge]
+type LanguageFilmsConnection {
+    edges: [LanguageFilmsConnectionEdge]
     pageInfo: PageInfo
-    nodes: [Language]
+    nodes: [Film]
     totalCount: Int
 }
 
-type QueryLanguagesConnectionEdge {
+type LanguageFilmsConnectionEdge {
     cursor: String
-    node: Language
+    node: Film
 }
 
 scalar LocalDateTime
@@ -33,7 +40,19 @@ type PageInfo {
     startCursor: String
     endCursor: String
 }
+
 type Query {
     languages(first: Int = 100, after: String): QueryLanguagesConnection
 }
 
+type QueryLanguagesConnection {
+    edges: [QueryLanguagesConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Language]
+    totalCount: Int
+}
+
+type QueryLanguagesConnectionEdge {
+    cursor: String
+    node: Language
+}

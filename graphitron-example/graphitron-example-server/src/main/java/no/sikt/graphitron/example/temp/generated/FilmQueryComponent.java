@@ -12,7 +12,7 @@ import java.util.function.Function;
 public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
     @Override
     protected String getQuery() {
-        return "query { films(first: 100) { edges { node { id title } } } }";
+        return "query { films(first: 100) { edges { node {  id title } } } }";
     }
 
     @Override
@@ -40,11 +40,11 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
         return films -> {
             Grid<Film> grid = new Grid<>(Film.class, false);
             grid.addColumn(Film::getId)
-                    .setHeader("ID")
-                    .setFlexGrow(1);
+                        .setHeader("Id")
+                        .setFlexGrow(1);
             grid.addColumn(Film::getTitle)
-                    .setHeader("Title")
-                    .setFlexGrow(2);
+                        .setHeader("Title")
+                        .setFlexGrow(1);
             grid.setItems(films);
             return grid;
         };

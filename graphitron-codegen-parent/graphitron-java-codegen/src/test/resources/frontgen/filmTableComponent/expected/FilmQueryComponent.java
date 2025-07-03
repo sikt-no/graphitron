@@ -41,7 +41,7 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
         return films -> {
             Grid<Film> grid = new Grid<>(Film.class, false);
             grid.addColumn(Film::getId)
-                    .setHeader("ID")
+                    .setHeader("Id")
                     .setFlexGrow(1);
             grid.addColumn(Film::getTitle)
                     .setHeader("Title")

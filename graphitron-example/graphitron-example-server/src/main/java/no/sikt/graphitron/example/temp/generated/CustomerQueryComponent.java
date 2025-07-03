@@ -15,7 +15,7 @@ import java.util.function.Function;
 public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     @Override
     protected String getQuery() {
-        return "query { customers(first: 100) { edges { node { id name {  firstName lastName } email address {  addressLine1 addressLine2 city {  name countryName } zip phone } } } } }";
+        return "query { customers(first: 100) { edges { node {  id name {  firstName lastName } email address {  id addressLine1 addressLine2 zip phone } } } } }";
     }
 
     @Override
@@ -43,75 +43,75 @@ public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, Cu
         return customers -> {
             Grid<Customer> grid = new Grid<>(Customer.class, false);
             grid.addColumn(Customer::getId)
-                    .setHeader("ID")
-                    .setFlexGrow(1);
+                        .setHeader("Id")
+                        .setFlexGrow(1);
             grid.addColumn(Customer::getEmail)
-                    .setHeader("Email")
-                    .setFlexGrow(1);
-            grid.addColumn(entity -> {
-                        CustomerName name = entity.getName();
-                        if (name != null) {
-                            StringBuilder sb = new StringBuilder();
-                            if (name.getFirstName() != null) {
-                                sb.append(name.getFirstName());
-                            }
-                            if (name.getLastName() != null) {
-                                if (sb.length() > 0) sb.append(", ");
-                                sb.append(name.getLastName());
-                            }
-                            return sb.length() > 0 ? sb.toString() : "N/A";
-                        }
-                        return "N/A";
-                    })
-                    .setHeader("Name")
-                    .setFlexGrow(1);
+                        .setHeader("Email")
+                        .setFlexGrow(1);
+        grid.addColumn(entity -> {
+            CustomerName name = entity.getName();
+            if (name != null) {
+                StringBuilder sb = new StringBuilder();
+        if (name.getFirstName() != null) {
+            sb.append(name.getFirstName());
+        }
+        if (name.getLastName() != null) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(name.getLastName());
+        }
+                return sb.length() > 0 ? sb.toString() : "N/A";
+            }
+            return "N/A";
+        })
+        .setHeader("Name")
+        .setFlexGrow(1);
 
-            grid.addColumn(entity -> {
-                        Address address = entity.getAddress();
-                        if (address != null) {
-                            StringBuilder sb = new StringBuilder();
-                            if (address.getAddressLine1() != null) {
-                                sb.append(address.getAddressLine1());
-                            }
-                            if (address.getAddressLine2() != null) {
-                                if (sb.length() > 0) sb.append(", ");
-                                sb.append(address.getAddressLine2());
-                            }
-                            if (address.getZip() != null) {
-                                if (sb.length() > 0) sb.append(", ");
-                                sb.append(address.getZip());
-                            }
-                            if (address.getPhone() != null) {
-                                if (sb.length() > 0) sb.append(", ");
-                                sb.append(address.getPhone());
-                            }
-                            return sb.length() > 0 ? sb.toString() : "N/A";
-                        }
-                        return "N/A";
-                    })
-                    .setHeader("Address")
-                    .setFlexGrow(1);
+        grid.addColumn(entity -> {
+            Address address = entity.getAddress();
+            if (address != null) {
+                StringBuilder sb = new StringBuilder();
+        if (address.getAddressLine1() != null) {
+            sb.append(address.getAddressLine1());
+        }
+        if (address.getAddressLine2() != null) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(address.getAddressLine2());
+        }
+        if (address.getZip() != null) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(address.getZip());
+        }
+        if (address.getPhone() != null) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(address.getPhone());
+        }
+                return sb.length() > 0 ? sb.toString() : "N/A";
+            }
+            return "N/A";
+        })
+        .setHeader("Address")
+        .setFlexGrow(1);
 
-            grid.addColumn(entity -> {
-                        Address address = entity.getAddress();
-                        if (address != null) {
-                            City city = address.getCity();
-                            if (city != null) {
-                                StringBuilder sb = new StringBuilder();
-                                if (city.getName() != null) {
-                                    sb.append(city.getName());
-                                }
-                                if (city.getCountryName() != null) {
-                                    if (sb.length() > 0) sb.append(", ");
-                                    sb.append(city.getCountryName());
-                                }
-                                return sb.length() > 0 ? sb.toString() : "N/A";
-                            }
-                        }
-                        return "N/A";
-                    })
-                    .setHeader("Address   City")
-                    .setFlexGrow(1);
+        grid.addColumn(entity -> {
+            Address address = entity.getAddress();
+            if (address != null) {
+                City city = address.getCity();
+                if (city != null) {
+                    StringBuilder sb = new StringBuilder();
+        if (city.getName() != null) {
+            sb.append(city.getName());
+        }
+        if (city.getCountryName() != null) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(city.getCountryName());
+        }
+                    return sb.length() > 0 ? sb.toString() : "N/A";
+                }
+            }
+            return "N/A";
+        })
+        .setHeader("Address   City")
+        .setFlexGrow(1);
 
             grid.setItems(customers);
             return grid;

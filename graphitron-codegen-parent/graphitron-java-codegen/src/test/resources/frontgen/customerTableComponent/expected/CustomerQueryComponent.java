@@ -16,7 +16,7 @@ import no.sikt.frontgen.generate.GeneratedQueryComponent;
 public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     @Override
     protected String getQuery() {
-        return "query { customers(first: 100) { edges { node { id name {  firstName lastName } email address {  addressLine1 addressLine2 city {  name countryName } zip phone } } } } }";
+        return "query { customers(first: 100) { edges { node {  name {  firstName lastName } email address {  id addressLine1 addressLine2 city {  id name countryName } zip phone } } } } }";
     }
 
     @Override
@@ -43,9 +43,6 @@ public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, Cu
     protected Function<List<Customer>, Grid<Customer>> getGridCreator() {
         return customers -> {
             Grid<Customer> grid = new Grid<>(Customer.class, false);
-            grid.addColumn(Customer::getId)
-                    .setHeader("ID")
-                    .setFlexGrow(1);
             grid.addColumn(Customer::getEmail)
                     .setHeader("Email")
                     .setFlexGrow(1);

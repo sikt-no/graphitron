@@ -11,7 +11,8 @@ public class QueryComponents {
         return List.of(
                 new FilmQueryComponent().createComponent(view),
                 new CustomerQueryComponent().createComponent(view),
-                new LanguageQueryComponent().createComponent(view)
+                new LanguageQueryComponent().createComponent(view),
+                new PaymentQueryComponent().createComponent(view)
         );
     }
 }

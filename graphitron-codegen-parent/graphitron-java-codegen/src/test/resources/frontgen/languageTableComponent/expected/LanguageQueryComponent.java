@@ -41,7 +41,7 @@ public class LanguageQueryComponent extends GeneratedQueryComponent<Language, Qu
         return languages -> {
             Grid<Language> grid = new Grid<>(Language.class, false);
             grid.addColumn(Language::getId)
-                    .setHeader("ID")
+                    .setHeader("Id")
                     .setFlexGrow(1);
             grid.addColumn(Language::getName)
                     .setHeader("Name")

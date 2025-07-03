@@ -62,6 +62,11 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     }
 
     private boolean shouldGenerateUIComponent(ObjectField field) {
+
+        if (processedSchema.isInterface(field) || processedSchema.isUnion(field)) {
+            return false; // TODO: Handle interfaces and unions
+        }
+
         // Check for @uiComponent or @asConnection directives
 //        boolean hasUIDirective = field.hasFieldDirective().stream()
 //                .anyMatch(directive -> directive.getName().equals("uiComponent") ||
@@ -155,7 +160,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         String nodeTypeName = getNodeTypeName(field, connectionTypeName);
 
         // Extract field selections for the query
-        StringBuilder queryFields = new StringBuilder("id"); // Always include ID
+        StringBuilder queryFields = new StringBuilder();
 
         // Add relevant fields based on node type from schema
         if (nodeTypeName != null) {
@@ -178,8 +183,8 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         visitedTypes.add(definition.getName());
 
         for (ObjectField nodeField : definition.getFields()) {
-            // Skip ID since we already added it at the beginning
-            if (nodeField.getName().equals("id")) continue;
+            // skip fields generated with resolvers. I.e.
+            if (nodeField.isGeneratedWithResolver()) continue;
 
             // For scalar fields, just add the field name
             if (!processedSchema.isObject(nodeField)) {
@@ -188,7 +193,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
             // For object fields, add nested field selection
             else {
                 ObjectDefinition nestedObject = processedSchema.getObject(nodeField.getTypeName());
-                if (nestedObject != null && !visitedTypes.contains(nestedObject.getName())) {
+                if (nestedObject != null && !visitedTypes.contains(nestedObject.getName()) && !nestedObject.isGeneratedWithResolver()) {
                     queryFields.append(" ").append(nodeField.getName()).append(" { ");
                     addQueryFields(nestedObject, queryFields, new HashSet<>(visitedTypes));
                     queryFields.append(" }");
@@ -286,10 +291,6 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 .addStatement("    $T<$T> grid = new $T<>($T.class, false)",
                         Grid.class, nodeClass, Grid.class, nodeClass);
 
-        // Add base ID column
-        builder.addStatement("    grid.addColumn($T::getId)\n        .setHeader(\"ID\")\n        .setFlexGrow(1)",
-                nodeClass);
-
         // Get object definition from schema
         ObjectDefinition objectDefinition = processedSchema.getObject(nodeTypeName);
         if (objectDefinition != null) {
@@ -309,8 +310,6 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
     private void addBasicColumns(MethodSpec.Builder builder, ObjectDefinition objectDefinition, ClassName nodeClass) {
         for (ObjectField nodeField : objectDefinition.getFields()) {
-            // Skip ID since we already added it
-            if (nodeField.getName().equals("id")) continue;
 
             // Only add simple scalar fields
             if (!processedSchema.isObject(nodeField) && !nodeField.isIterableWrapped()) {
@@ -326,9 +325,8 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
     private void addComplexColumns(MethodSpec.Builder builder, ObjectDefinition objectDefinition, ClassName nodeClass) {
         for (ObjectField nodeField : objectDefinition.getFields()) {
-            if (nodeField.getName().equals("id")) continue;
 
-            if (processedSchema.isObject(nodeField) && !nodeField.isIterableWrapped()) {
+            if (processedSchema.isObject(nodeField) && !nodeField.isIterableWrapped() && !nodeField.isResolver()) {
                 String fieldName = nodeField.getName();
                 String capitalizedFieldName = capitalize(fieldName);
                 String headerText = splitCamelCase(capitalizedFieldName);
