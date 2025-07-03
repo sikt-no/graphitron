@@ -12,7 +12,7 @@ import com.vaadin.flow.router.Route;
 import no.sikt.frontgen.components.QueryBackedView;
 import no.sikt.frontgen.components.QueryComponent;
 import no.sikt.frontgen.graphql.GraphQLQueryAdapter;
-import no.sikt.graphitron.example.temp.generated.QueryComponents;
+import no.sikt.graphitron.example.generated.graphitron.frontend.QueryComponents;
 
 import java.util.List;
 

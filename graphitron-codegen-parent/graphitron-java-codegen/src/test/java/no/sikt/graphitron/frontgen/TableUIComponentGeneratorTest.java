@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-class ComponentGeneratorTest extends GeneratorTest {
+class TableUIComponentGeneratorTest extends GeneratorTest {
 
     @Override
     protected String getSubpath() {

@@ -46,7 +46,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         // Process each connection field
         for (ObjectField field : queryType.getFields()) {
-            if (shouldGenerateUIComponent(field)) {
+            if (shouldGenerateUIComponent(field, processedSchema)) {
                 String connectionTypeName = getConnectionTypeName(field);
                 String nodeTypeName = getNodeTypeName(field, connectionTypeName);
 
@@ -61,7 +61,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         return generatedSpecs;
     }
 
-    private boolean shouldGenerateUIComponent(ObjectField field) {
+    public static boolean shouldGenerateUIComponent(ObjectField field, ProcessedSchema processedSchema) {
 
         if (processedSchema.isInterface(field) || processedSchema.isUnion(field)) {
             return false; // TODO: Handle interfaces and unions

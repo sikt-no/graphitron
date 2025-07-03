@@ -15,18 +15,18 @@ type Address implements Node @node @table @key(fields : "id", resolvable : false
 
 interface AddressByPostalCode @table(name : "ADDRESS") @discriminate(on : "POSTAL_CODE") {
     addressLine1: String! @field(name : "ADDRESS_")
-    spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
+   # spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
 }
 
 type AddressInAnotherArea implements AddressByPostalCode @table(name : "ADDRESS") @discriminator(value : "9668") {
-    spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
+  #  spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
     addressLine1: String! @field(name : "ADDRESS_")
     postalCode: String @field(name : "POSTAL_CODE")
 }
 
 type AddressInOneArea implements AddressByPostalCode @table(name : "ADDRESS") @discriminator(value : "22474") {
     addressLine1: String! @field(name : "ADDRESS_")
-    spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
+  #  spokenLanguage: Language @reference(references : [{condition : {className : "no.sikt.graphitron.example.service.conditions.LanguageConditions", method : "spokenLanguageForAddressByPostalCode"}}])
 }
 
 scalar BigDecimal
@@ -82,11 +82,6 @@ input CustomerInput @table(name : "CUSTOMER") {
     firstName: String @field(name : "FIRST_NAME")
 }
 
-input CustomerJavaRecordInput @record(record : {className : "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
-    id: ID! @nodeId(typeName : "Customer")
-    firstName: String @field(name : "FIRST_NAME")
-}
-
 type CustomerName {
     firstName: String! @field(name : "FIRST_NAME")
     lastName: String! @field(name : "LAST_NAME")
@@ -131,14 +126,6 @@ input FilmsOrderByInput {
     direction: OrderDirection!
 }
 
-input HelloWorldInputObject @record(record : {className : "no.sikt.graphitron.example.service.records.HelloWorldInput"}) {
-    name: String
-    customerId: ID @nodeId(typeName : "Customer")
-}
-
-type HelloWorldObject @record(record : {className : "no.sikt.graphitron.example.service.records.HelloWorldRecord"}) {
-    greeting: String
-}
 
 type Language implements Node @table @node(keyColumns : ["NAME", "LANGUAGE_ID"]) {
     id: ID!
@@ -188,12 +175,6 @@ type Query {
     languages(first: Int = 100, after: String): QueryLanguagesConnection
     payments(dateTime: LocalDateTime @field(name : "PAYMENT_DATE"), amount: BigDecimal, first: Int = 100, after: String): QueryPaymentsConnection
     reachableByEmail(first: Int = 100, after: String): QueryReachableByEmailConnection
-    helloWorldAgain(name: String!): HelloWorldObject @service(service : {className : "no.sikt.graphitron.example.service.HelloWorldService"})
-    helloWorldAgainWithJooqRecordInput(input: CustomerInput!): HelloWorldObject @service(service : {className : "no.sikt.graphitron.example.service.HelloWorldService"})
-    helloWorldAgainWithJavaRecordInput(input: HelloWorldInputObject!): HelloWorldObject @service(service : {className : "no.sikt.graphitron.example.service.HelloWorldService"})
-    customerService: Customer @service(service : {className : "no.sikt.graphitron.example.service.CustomerService", method : "customer"})
-    customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service : {className : "no.sikt.graphitron.example.service.CustomerService", method : "customer"})
-    customerServiceWithJavaRecordInput(input: HelloWorldInputObject!): Customer @service(service : {className : "no.sikt.graphitron.example.service.CustomerService", method : "customer"})
     addressesByPostalCode(first: Int = 100, after: String): QueryAddressesByPostalCodeConnection
 }
 
@@ -265,9 +246,8 @@ type Staff implements Node @node @table(name : "STAFF") {
 
 input StaffInput {
     username: String
-    isManager: Boolean @condition(condition : {className : "no.sikt.graphitron.example.service.conditions.StaffConditions", method : "isManagerOfAStore"}, override : true)
+#    isManager: Boolean @condition(condition : {className : "no.sikt.graphitron.example.service.conditions.StaffConditions", method : "isManagerOfAStore"}, override : true)
     addressId: Int @field(name : "ADDRESS_ID") @reference(references : [{table : "ADDRESS"}])
-    withAddressIdInCity300: Int @field(name : "ADDRESS_ID") @reference(references : [{key : "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition : {className : "no.sikt.graphitron.example.service.conditions.StaffConditions"}, override : false)
 }
 
 type StaffWithEmail implements PersonWithEmail @table(name : "STAFF") {

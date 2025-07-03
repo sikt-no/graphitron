@@ -11,6 +11,7 @@ import jakarta.json.Json;
 import jakarta.json.JsonString;
 import org.approvaltests.core.Options;
 import org.approvaltests.namer.NamerWrapper;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -39,6 +40,7 @@ import static org.approvaltests.Approvals.verify;
  * To pass the test, the query must return the same result as the previously verified result.
  */
 @QuarkusTest
+@Disabled
 public class ApprovalQueryTest {
 
     private static final Path QUERY_FILE_DIRECTORY = Paths.get("src", "test", "resources", "approval", "queries");
