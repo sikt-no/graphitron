@@ -2,38 +2,72 @@ package no.sikt.graphitron.example.server.frontend;
 
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.card.Card;
+import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.FlexLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
 import no.sikt.frontgen.components.QueryBackedView;
 import no.sikt.frontgen.components.QueryComponent;
-import no.sikt.graphitron.example.temp.generated.QueryComponents;
 import no.sikt.frontgen.graphql.GraphQLQueryAdapter;
+import no.sikt.graphitron.example.temp.generated.QueryComponents;
+
+import java.util.List;
 
 @Route("")
 public class MainView extends QueryBackedView {
-    GraphQLQueryAdapter graphQLService;
 
     public MainView() {
         super(new GraphQLQueryAdapter());
-        HorizontalLayout buttonBar = new HorizontalLayout();
-        buttonBar.setWidthFull();
-        buttonBar.setPadding(true);
-        buttonBar.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
 
-        for (QueryComponent component : QueryComponents.getComponents(this)) {
-            Button button = createActionButton(component);
-            buttonBar.add(button);
+        VerticalLayout mainLayout = new VerticalLayout();
+        mainLayout.setSizeFull();
+        mainLayout.setPadding(true);
+        mainLayout.setSpacing(true);
+
+        H2 header = new H2("Generated Components");
+        header.getStyle().set("margin-bottom", "1em");
+
+        List<QueryComponent> components = QueryComponents.getComponents(this);
+
+        FlexLayout cardLayout = new FlexLayout();
+        cardLayout.setFlexWrap(FlexLayout.FlexWrap.WRAP);
+        cardLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.START);
+        cardLayout.getStyle().set("gap", "1rem");
+
+        for (QueryComponent component : components) {
+            cardLayout.add(createComponentCard(component));
         }
 
-        addClassName("centered-content");
-        add(buttonBar);
+        mainLayout.add(header, cardLayout);
+        add(mainLayout);
+        addClassName("main-layout");
     }
 
-    private Button createActionButton(QueryComponent component) {
-        Button button = new Button(component.getButtonText());
-        button.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        button.addClickListener(e -> component.load());
-        return button;
+    private Card createComponentCard(QueryComponent component) {
+        Card card = new Card();
+        card.setWidth("300px");
+        card.addClassName("component-card");
+
+        String displayName = component.getButtonText().replaceFirst("^List\\s+", "");
+
+        VerticalLayout cardContent = new VerticalLayout();
+        cardContent.setPadding(false);
+        cardContent.setSpacing(false);
+
+        H3 title = new H3(displayName);
+        title.getStyle().set("margin", "1rem");
+
+        // Create simple button with no redundant text
+        Button launchButton = new Button("View", e -> component.load());
+        launchButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        launchButton.getStyle().set("margin", "1rem");
+
+        cardContent.add(title, launchButton);
+        card.add(cardContent);
+
+        return card;
     }
 }
