@@ -41,7 +41,7 @@ type PageInfo {
 }
 
 type Query {
-    films(orderBy: FilmsOrderByInput @orderBy, first: Int = 100, after: String): QueryFilmsConnection
+    filmsOrderedBy(orderBy: FilmsOrderByInput @orderBy, first: Int = 100, after: String): QueryFilmsConnection
 }
 
 type QueryFilmsConnection {

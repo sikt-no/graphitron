@@ -6,13 +6,32 @@ scalar BigDecimal
 scalar LocalDateTime
 
 type Query {
+    helloWorld: String @notGenerated
+
     customers(first: Int = 100, after: String): CustomerConnection
+    activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
+    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection @excludeFromUI
+    customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection @excludeFromUI
+    customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection @excludeFromUI
 
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
+    filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
+    filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
+    filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
+    filmLists(category: String): [FilmList]
 
     languages: [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection @excludeFromUI
+
+    staff(input: StaffInput!): [Staff] @asConnection @excludeFromUI
+
+    node(id: ID!): Node
+    cities: [City] @asConnection @excludeFromUI
+    citiesWithoutId: [CityWithoutID] @asConnection
+
+    languageOrStaff: [LanguageStaffUnion] @asConnection
 }
 
 interface Node {
@@ -120,7 +139,7 @@ enum OrderDirection {
 type Payment @table {
     amount: BigDecimal
     dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
-#    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
+    #    customer: CustomerRecord @splitQuery @service(service: {className: "no.sikt.graphitron.example.service.CustomerService"}) # kommentert ut pga bug i mapper
 }
 
 input StaffInput {

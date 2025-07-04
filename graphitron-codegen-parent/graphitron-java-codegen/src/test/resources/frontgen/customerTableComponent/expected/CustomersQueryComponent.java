@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.function.Function;
 import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
-public class CustomerQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
+public class CustomersQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     @Override
     protected String getQuery() {
         return "query { customers(first: 100) { edges { node {  name {  firstName lastName } email address {  id addressLine1 addressLine2 city {  id name countryName } zip phone } } } } }";

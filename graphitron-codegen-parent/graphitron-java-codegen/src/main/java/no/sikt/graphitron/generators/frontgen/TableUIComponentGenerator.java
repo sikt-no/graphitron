@@ -15,6 +15,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -25,6 +26,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.upperCase;
 
 public class TableUIComponentGenerator extends AbstractClassGenerator {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "frontend";
@@ -50,8 +52,8 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 String connectionTypeName = getConnectionTypeName(field);
                 String nodeTypeName = getNodeTypeName(field, connectionTypeName);
 
-                if (connectionTypeName != null && nodeTypeName != null) {
-                    String className = nodeTypeName + FILE_NAME_SUFFIX;
+                if (connectionTypeName != null) {
+                    String className = capitalize(capitalize(field.getName())) + FILE_NAME_SUFFIX;
                     TypeSpec typeSpec = generateComponentClass(className, field, nodeTypeName, connectionTypeName);
                     generatedSpecs.add(typeSpec);
                 }
@@ -63,7 +65,10 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
     public static boolean shouldGenerateUIComponent(ObjectField field, ProcessedSchema processedSchema) {
 
-        if (processedSchema.isInterface(field) || processedSchema.isUnion(field)) {
+        if ( field.getDirectives().stream()
+                .map(Directive::getName)
+                .anyMatch(it -> it.equals(GenerationDirective.EXCLUDE_FROM_UI.getName())
+                        || processedSchema.isInterface(field) || processedSchema.isUnion(field))) {
             return false; // TODO: Handle interfaces and unions
         }
 

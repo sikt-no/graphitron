@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.function.Function;
 import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
-public class LanguageQueryComponent extends GeneratedQueryComponent<Language, QueryLanguagesConnection> {
+public class LanguagesQueryComponent extends GeneratedQueryComponent<Language, QueryLanguagesConnection> {
     @Override
     protected String getQuery() {
         return "query { languages(first: 100) { edges { node { id name } } } }";

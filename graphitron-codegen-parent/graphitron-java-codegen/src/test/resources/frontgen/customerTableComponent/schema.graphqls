@@ -68,4 +68,6 @@ type PageInfo {
 
 type Query {
     customers(first: Int = 100, after: String): CustomerConnection
+    # should not be generated, because of @excludeFromUI
+    customersNotGenerated(first: Int = 10, after: String): CustomerConnection @excludeFromUI
 }

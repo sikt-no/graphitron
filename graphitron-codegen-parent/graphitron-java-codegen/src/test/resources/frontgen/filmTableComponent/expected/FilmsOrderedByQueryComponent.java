@@ -10,15 +10,15 @@ import java.util.List;
 import java.util.function.Function;
 import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
-public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
+public class FilmsOrderedByQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
     @Override
     protected String getQuery() {
-        return "query { films(first: 100) { edges { node { id title } } } }";
+        return "query { filmsOrderedBy(first: 100) { edges { node { id title } } } }";
     }
 
     @Override
     protected String getRootField() {
-        return "films";
+        return "filmsOrderedBy";
     }
 
     @Override
@@ -53,6 +53,6 @@ public class FilmQueryComponent extends GeneratedQueryComponent<Film, QueryFilms
 
     @Override
     protected String getButtonText() {
-        return "List Films";
+        return "List FilmsOrderedBy";
     }
 }

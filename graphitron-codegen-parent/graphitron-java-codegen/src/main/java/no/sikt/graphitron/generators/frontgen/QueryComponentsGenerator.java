@@ -2,7 +2,8 @@ package no.sikt.graphitron.generators.frontgen;
 
 import no.sikt.frontgen.components.QueryBackedView;
 import no.sikt.frontgen.components.QueryComponent;
-import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -10,8 +11,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
-import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -64,19 +63,16 @@ public class QueryComponentsGenerator extends AbstractClassGenerator {
         // For each connection field in the query type
         for (ObjectField field : queryType.getFields()) {
             if (TableUIComponentGenerator.shouldGenerateUIComponent(field, processedSchema)) {
-                String connectionTypeName = getConnectionTypeName(field);
-                String nodeTypeName = getNodeTypeName(field, connectionTypeName);
 
-                if (connectionTypeName != null && nodeTypeName != null) {
-                    String componentClassName = nodeTypeName + "QueryComponent";
+                String componentClassName = field.getName() + "QueryComponent";
 
-                    if (!first) {
-                        methodBuilder.addCode(",\n");
-                    }
-                    methodBuilder.addCode("        new $T().createComponent(view)",
-                            getGeneratedClassName(componentClassName));
-                    first = false;
+                if (!first) {
+                    methodBuilder.addCode(",\n");
                 }
+                methodBuilder.addCode("        new $T().createComponent(view)",
+                        getGeneratedClassName(componentClassName));
+                first = false;
+
             }
         }
 
@@ -97,24 +93,6 @@ public class QueryComponentsGenerator extends AbstractClassGenerator {
                 .returns(listOfQueryComponent)
                 .addStatement("return List.of()")
                 .build();
-    }
-
-    private String getConnectionTypeName(ObjectField field) {
-        String typeName = field.getTypeName();
-        if (processedSchema.isConnectionObject(field)) {
-            return typeName;
-        }
-        return null;
-    }
-
-    private String getNodeTypeName(ObjectField field, String connectionTypeName) {
-        if (connectionTypeName == null) return null;
-
-        // If it's a connection, get the node type from ProcessedSchema
-        if (processedSchema.isConnectionObject(field)) {
-            return processedSchema.getConnectionObject(field).getNodeType();
-        }
-        return null;
     }
 
     @Override

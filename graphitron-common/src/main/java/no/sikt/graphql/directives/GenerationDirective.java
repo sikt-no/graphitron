@@ -9,6 +9,7 @@ import java.util.EnumSet;
 public enum GenerationDirective {
     SPLIT_QUERY("splitQuery"),
     NOT_GENERATED("notGenerated"),
+    EXCLUDE_FROM_UI("excludeFromUI"),
     TABLE("table", EnumSet.of(GenerationDirectiveParam.NAME)),
     FIELD("field", EnumSet.of(GenerationDirectiveParam.NAME, GenerationDirectiveParam.JAVA_NAME)),
     INDEX("index", EnumSet.of(GenerationDirectiveParam.NAME)),

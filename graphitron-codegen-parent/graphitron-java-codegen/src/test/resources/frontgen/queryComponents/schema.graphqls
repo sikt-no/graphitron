@@ -174,7 +174,7 @@ type Query {
     films(orderBy: FilmsOrderByInput @orderBy, first: Int = 100, after: String): QueryFilmsConnection
     languages(first: Int = 100, after: String): QueryLanguagesConnection
     payments(dateTime: LocalDateTime @field(name : "PAYMENT_DATE"), amount: BigDecimal, first: Int = 100, after: String): QueryPaymentsConnection
-    reachableByEmail(first: Int = 100, after: String): QueryReachableByEmailConnection
+    reachableByEmail(first: Int = 100, after: String): QueryReachableByEmailConnection @excludeFromUI # Should not be generated, because of @excludeFromUI
     addressesByPostalCode(first: Int = 100, after: String): QueryAddressesByPostalCodeConnection
 }
 
