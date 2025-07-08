@@ -18,11 +18,17 @@ type Query {
     filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]
     filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
-    filmLists(category: String): [FilmList]
 
-    # These structures are relevant for both queries and mutations.
+    filmLists(category: String): [FilmList]
+    filmListsWithEnumRecord(input: FilmListEnumInput!): FilmList
+
+    # Currently, these structures are only used in mutations, but they are equally viable for queries.
     filmWrapped(filmId: String @field(name: "FILM_ID")): FilmContainer
     filmWrappedListed(filmId: [String!]! @field(name: "FILM_ID")): FilmContainerListed
+    filmWrappedWithInputTable(input: FilmInput!): FilmContainerID
+    filmWrappedWithInputTableListed(input: [FilmInput!]!): FilmContainerListedID
+    filmWrappedWithInputTableAndTableField(input: FilmInput!): FilmContainer
+    filmWrappedWithInputTableAndTableFieldListed(input: [FilmInput!]!): FilmContainerListed
 
     languages: [Language] @asConnection
 
@@ -102,6 +108,11 @@ type FilmList @table(name: "FILM_LIST") {
     category: FilmCategory @field(name: "CATEGORY")
 }
 
+input FilmListEnumInput @table(name: "FILM_LIST") {
+    description: String  # Redundant, but we do not want the test to fetch too much data.
+    category: FilmCategory @field(name: "CATEGORY")
+}
+
 enum FilmCategory { # Note that this enum is not complete, and other values are also present in the database
     SPORTS @field(name: "Sports")
     CLASSICS @field(name: "Classics")
@@ -130,6 +141,11 @@ input FilmsOrderByInput {
     direction: OrderDirection!
 }
 
+# If the table directive is missing here, we get a bad crash without useful feedback.
+input FilmInput @table(name: "FILM") {
+    filmId: ID! @nodeId(typeName: "Film")
+}
+
 enum FilmsOrderByFields {
     TITLE @index(name: "IDX_TITLE")
     LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
@@ -141,6 +157,14 @@ type FilmContainer {
 
 type FilmContainerListed {
     films: [Film]
+}
+
+type FilmContainerID {
+    id: ID! @nodeId(typeName: "Film")
+}
+
+type FilmContainerListedID {
+    ids: [ID!]! @nodeId(typeName: "Film")
 }
 
 enum OrderDirection {

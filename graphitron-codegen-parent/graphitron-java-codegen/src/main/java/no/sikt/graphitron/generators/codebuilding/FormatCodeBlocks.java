@@ -652,7 +652,7 @@ public class FormatCodeBlocks {
      * @return CodeBlock that sends this variable through an enum mapping.
      */
     public static CodeBlock makeEnumMapBlock(String inputVariable, CodeBlock valueLists) {
-        return CodeBlock.of("$T.makeEnumMap($N, $L)", QUERY_HELPER.className, inputVariable, valueLists);
+        return makeEnumMapBlock(CodeBlock.of(inputVariable), valueLists);
     }
 
     /**
@@ -986,7 +986,7 @@ public class FormatCodeBlocks {
         return isIterableWrapped ? hasIdsBlock(idsOrRecord, obj, targetAlias) : hasIdBlock(idsOrRecord, obj, targetAlias);
     }
 
-    public static CodeBlock hasIdBlock(CodeBlock id, ObjectDefinition obj, String targetAlias) {
+    public static CodeBlock hasIdBlock(CodeBlock id, RecordObjectSpecification<?> obj, String targetAlias) {
         return CodeBlock.of("$N.hasId($S, $L, $L)",
                 NODE_ID_STRATEGY_NAME,
                 obj.getTypeId(),

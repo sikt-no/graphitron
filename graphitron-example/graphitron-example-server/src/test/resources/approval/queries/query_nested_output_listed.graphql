@@ -1,4 +1,3 @@
-# query can filter on custom scalar, LocalDateTime
 {
     filmWrappedListed(filmId: ["1", "2"]) {
         films {

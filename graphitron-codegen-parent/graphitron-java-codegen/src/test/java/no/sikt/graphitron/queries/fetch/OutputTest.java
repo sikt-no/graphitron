@@ -92,7 +92,7 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains("fieldOverride", "_customer.FIRST_NAME");
     }
 
-    @Test // Not sure if this is allowed.
+    @Test // Not sure if this is allowed. Note, this is actually invalid in our integration tests, since the IDs are jOOQ fields instead of get methods.
     @DisplayName("Containing ID field annotated with @field and has no @nodeId")
     void fieldOverrideID() {
         assertGeneratedContentContains("fieldOverrideID", "_payment.getCustomerId()");
@@ -140,7 +140,7 @@ public class OutputTest extends GeneratorTest {
                         ".from(_customer)" +
                         ".orderBy(_customer.fields(_customer.getPrimaryKey().getFieldsArray()))))" +
                         ".mapping(a0 -> a0.map(Record1::value1)))" +
-                        ".mapping(Functions.nullOnAllNull(Wrapper::new)))" +
+                        ".mapping(Functions.nullOnAllNull((internal_it_) -> new Wrapper(internal_it_))))" +
                         ".fetchOne(it -> it.into(Wrapper.class))"
         );
     }
@@ -188,7 +188,7 @@ public class OutputTest extends GeneratorTest {
                 "CustomerTable::new))).from(_customer)" +
                         ".where(firstName.size() > 0 ? _customer.FIRST_NAME.in(firstName) : DSL.noCondition())" +
                         ".orderBy(_customer.fields(_customer.getPrimaryKey().getFieldsArray()))",
-                "Outer::new))).fetchOne"
+                "new Outer(internal_it_)))).fetchOne"
         );
     }
 
@@ -365,40 +365,5 @@ public class OutputTest extends GeneratorTest {
                 "subtype",
                 ".getId(),DSL.row(_customer.FIRST_NAME,",
                 ").mapping(Functions.nullOnAllNull(CustomerName::new))).mapping(Functions.nullOnAllNull(Customer::new))");
-    }
-
-    @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.
-    @DisplayName("A query returns a type without a table set")
-    void returningTypeWithoutTable() {
-        assertGeneratedContentContains(
-                "returningTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE),
-                ".row(_customer.getId(),_customer.FIRST_NAME",
-                "CustomerNoTable::new",
-                ".from(_customer)",
-                "_customer.hasId(inRecord.getId()",
-                ".into(CustomerNoTable.class"
-        );
-    }
-
-    @Test
-    @DisplayName("A query returns a type without a table set that contains a table type")
-    void returningTypeWithoutTableContainingTableType() {
-        assertGeneratedContentContains(
-                "returningTypeWithoutTableContainingTableType", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
-                ".row(DSL.row(_customer.getId()",
-                "CustomerTable::new))).mapping(Functions.nullOnAllNull(CustomerNoTable::new",
-                ".into(CustomerNoTable.class"
-        );
-    }
-
-    @Test
-    @DisplayName("A query returns a listed type without a table set")
-    void returningListedTypeWithoutTable() {
-        assertGeneratedContentContains(
-                "returningListedTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
-                ".row(_customer.getId(),_customer.FIRST_NAME",
-                "_customer.getId()).in(",
-                ".into(CustomerNoTable.class"
-        );
     }
 }

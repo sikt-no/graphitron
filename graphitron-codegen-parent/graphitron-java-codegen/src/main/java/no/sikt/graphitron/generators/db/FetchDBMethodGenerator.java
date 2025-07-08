@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
+import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
@@ -36,14 +37,13 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTypeName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.TableReflection.getMethodFromReference;
-import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -114,9 +114,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
         var joins = createSelectJoins(context.getJoinSet());
 
+        var sequence = context.getCurrentJoinSequence();
         var contents = CodeBlock.builder()
                 .add("$T.select($L)", DSL.className, indentIfMultiline(select.build()))
-                .add("\n.from($L)\n", context.getCurrentJoinSequence().getFirst().getMappingName())
+                .add("\n.from($L)\n", sequence.getFirst().getMappingName())
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
@@ -183,7 +184,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (processedSchema.isObject(field)) {
             var table = processedSchema.getObject(field.getTypeName()).getTable();
-            innerRowCode = table != null && !table.equals(context.getTargetTable()) ? generateCorrelatedSubquery(field, context.nextContext(field)) : generateSelectRow(context.nextContext(field));
+            innerRowCode = table != null && !table.equals(context.getTargetTable()) || field.isIterableWrapped()
+                    ? generateCorrelatedSubquery(field, context.nextContext(field))
+                    : generateSelectRow(context.nextContext(field));
         } else if (field.isExternalField()) {
             JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
 
@@ -196,7 +199,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     getImportReferenceOfValidExtensionMethod(field, table.getName()),
                     field.getName(),
                     context.getTargetAlias());
-        } else if (field.hasFieldReferences() || (field.hasNodeID() && !field.getNodeIdTypeName().equals(field.getContainerTypeName()))) {
+        } else if (field.invokesSubquery()) {
             var fieldContext = context.nextContext(field);
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
@@ -238,24 +241,32 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .build();
     }
 
-    private CodeBlock createMappingFunction(FetchContext context, List<? extends GenerationField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExeeded) {
+    private CodeBlock createMappingFunction(FetchContext context, List<? extends GenerationField> fieldsWithoutTable, boolean maxTypeSafeFieldSizeIsExceeded) {
         boolean hasIdField = fieldsWithoutTable.stream().anyMatch(GenerationField::isID);
         boolean hasNullableField = fieldsWithoutTable.stream().anyMatch(GenerationField::isNullable);
 
         boolean canReturnNonNullableObjectWithAllFieldsNull = hasNullableField && context.getReferenceObjectField().isNonNullable() && !hasIdField;
 
-        var mappedObjectCodeBlock = CodeBlock.of(maxTypeSafeFieldSizeIsExeeded ? "new $T(\n" : "$T::new", context.getReferenceObject().getGraphClassName());
-
+        var className = context.getReferenceObject().getGraphClassName();
         if (canReturnNonNullableObjectWithAllFieldsNull) {
             context.setParentContextShouldUseEnhancedNullOnAllNullCheck();
-        } else if(fieldsWithoutTable.stream().anyMatch(objectField -> processedSchema.isUnion(objectField.getTypeName()))) {
-            return createMappingWithUnion(context, fieldsWithoutTable);
-        } else {
-            return maxTypeSafeFieldSizeIsExeeded
-                    ? listedNullCheck("r", mappedObjectCodeBlock)
-                    : CodeBlock.of("$T.nullOnAllNull($L)", FUNCTIONS.className, mappedObjectCodeBlock);
+            return CodeBlock.of(maxTypeSafeFieldSizeIsExceeded ? "new $T(\n" : "$T::new", className);
         }
-        return mappedObjectCodeBlock;
+
+        if (fieldsWithoutTable.stream().anyMatch(objectField -> processedSchema.isUnion(objectField.getTypeName()))) {
+            return createMappingWithUnion(context, fieldsWithoutTable);
+        }
+
+        if (maxTypeSafeFieldSizeIsExceeded) {
+            return listedNullCheck("r", CodeBlock.of("new $T(\n", className));
+        }
+
+        // Made this obscure case because compilation failed on the type safety for some of these. No clue as to why.
+        if (!context.hasPreviousContext() && !context.hasApplicableTable() && fieldsWithoutTable.stream().anyMatch(FieldSpecification::isIterableWrapped)) {
+            return CodeBlock.of("$T.nullOnAllNull(($L) -> new $T($N))", FUNCTIONS.className, VARIABLE_INTERNAL_ITERATION, className, VARIABLE_INTERNAL_ITERATION);
+        }
+
+        return CodeBlock.of("$T.nullOnAllNull($T::new)", FUNCTIONS.className, className);
     }
 
     private CodeBlock createMappingWithUnion(FetchContext context, List<? extends GenerationField> fieldsWithoutTable) {
@@ -440,16 +451,40 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Generate a single argument in the row method call.
      */
     protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
-        var renderedSource = context.renderQuerySource(getLocalTable());
+        return generateForScalarField(field, context, false);
+    }
 
+    /**
+     * Generate a single argument in the row method call.
+     */
+    protected CodeBlock generateForScalarField(GenerationField field, FetchContext context, boolean overrideEnum) {
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
         } else if (field.isID()) {
-            return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
+            return generateForID(field, context);
         }
 
-        var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), processedSchema));
+        var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
+        var content = CodeBlock.of(
+                "$L.$N$L",
+                renderedSource,
+                field.getUpperCaseName(),
+                overrideEnum ? empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
+        );
         return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
+    }
+
+    private CodeBlock generateForID(GenerationField field, FetchContext context) {
+        var renderedSource = context.renderQuerySource(getLocalTable());
+        var table = context.getCurrentJoinSequence().isEmpty() ? null : context.getCurrentJoinSequence().getLast().getTable();
+        if (table != null) { // This may become superfluous if nodeId becomes the only way of handling IDs. This is just temporary insurance that the right thing gets picked.
+            var method = searchTableForMethodOrFieldWithName(table.getMappingName(), field.getMappingFromFieldOverride().getName())
+                    .or(() -> searchTableForMethodOrFieldWithName(table.getMappingName(), field.getMappingFromFieldOverride().asGet()));
+            if (method.isPresent()) {
+                return CodeBlock.of("$L.$L()", renderedSource, method.get());
+            }
+        }
+        return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
     }
 
     /**
@@ -492,11 +527,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (!isRoot && !resolverKeyParamName.isEmpty()) {
             conditionList.add(inResolverKeysBlock(resolverKeyParamName, context));
         }
-        if (!isResolverRoot && context.hasApplicableTable()) {
-            conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
-            var otherConditionsField = context.getConditionSourceField();
-            if (otherConditionsField != null) {
-                conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
+
+        if (!isResolverRoot) {
+            var hasNonSubqueryFields = context.getReferenceObject() == null || context.getReferenceObject()
+                    .getFields()
+                    .stream()
+                    .anyMatch(it -> !it.invokesSubquery());
+            if (hasNonSubqueryFields || context.hasApplicableTable()) {
+                conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
+                var otherConditionsFields = context
+                        .getConditionSourceFields()
+                        .stream()  // In theory this filter should not be necessary, context logic should add these in a way such that this case never arises.
+                        .filter(it -> !it.equals(context.getReferenceObjectField()))
+                        .toList();
+                if (!otherConditionsFields.isEmpty()) {
+                    for (var otherConditionsField : otherConditionsFields) {
+                        conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
+                    }
+                }
             }
         }
 
@@ -525,39 +573,19 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         for (var inputCondition : inputsWithoutRecord) {
             var conditionBuilder = CodeBlock.builder();
             var field = inputCondition.getInput();
-            var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
             var checksNotEmpty = !checks.isEmpty();
             var renderedSequence = context.iterateJoinSequenceFor(field).render();
+            if (renderedSequence.isEmpty()) {
+                continue;
+            }
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
                 if (checksNotEmpty) {
                     conditionBuilder.add(checks + " ? ");
                 }
 
-                if (field.isID()) {
-                    if (processedSchema.isNodeIdField(field)) {
-                        conditionBuilder.add(
-                                hasIdsBlock(
-                                        processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
-                                                CodeBlock.of(inputCondition.getNamePath()) : name,
-                                        processedSchema.getObject(field.getNodeIdTypeName()),
-                                        renderedSequence.toString(),
-                                        field.isIterableWrapped()
-                                )
-                        );
-                    } else {
-                        conditionBuilder
-                                .add(renderedSequence)
-                                .add(field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
-                    }
-                } else {
-                    conditionBuilder
-                            .add(renderedSequence)
-                            .add(".$N$L", field.getUpperCaseName(), toJOOQEnumConverter(
-                                    field.getTypeName(), processedSchema))
-                            .add(field.isIterableWrapped() ? ".in($L)" : ".eq($L)", name);
-                }
+                conditionBuilder.add(formatCondition(inputCondition, renderedSequence));
 
                 if (checksNotEmpty) {
                     conditionBuilder.add(" : $T.noCondition()", DSL.className);
@@ -585,10 +613,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         for (var inputCondition : inputsWithRecord) {
             var field = inputCondition.getInput();
+            var sequence = context.iterateJoinSequenceFor(field).render();
 
-            if (field.hasCondition()) {
-                var conditionInputs = List.of(
-                        context.iterateJoinSequenceFor(field).render(), getCheckedNameWithPath(inputCondition));
+            if (!sequence.isEmpty() && field.hasCondition()) {
+                var conditionInputs = List.of(sequence, getCheckedNameWithPath(inputCondition));
                 allConditionCodeBlocks.add(field.getCondition().formatToString(conditionInputs));
             }
         }
@@ -602,6 +630,32 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             allConditionCodeBlocks.add(condition.getKey().getCondition().formatToString(inputs));
         }
         return allConditionCodeBlocks;
+    }
+
+    private CodeBlock formatCondition(InputCondition inputCondition, CodeBlock renderedSequence) {
+        var field = inputCondition.getInput();
+        var name = inputCondition.getNameWithPath();
+        if (processedSchema.isNodeIdField(field)) {
+            return hasIdsBlock(
+                    processedSchema.hasJOOQRecord(field.getContainerTypeName()) ? CodeBlock.of(inputCondition.getNamePath()) : name,
+                    processedSchema.getObject(field.getNodeIdTypeName()),
+                    renderedSequence.toString(),
+                    field.isIterableWrapped()
+            );
+        }
+
+        if (field.isID()) {
+            return join(renderedSequence, field.getMappingFromFieldOverride().asHasCall(name, field.isIterableWrapped()));
+        }
+
+        return CodeBlock.of(
+                "$L.$N$L.$L($L)",
+                renderedSequence,
+                field.getUpperCaseName(),
+                !processedSchema.hasJOOQRecord(field.getContainerTypeName()) ? toJOOQEnumConverter(field.getTypeName(), processedSchema) : empty(),
+                field.isIterableWrapped() ? "in" : "eq",
+                name
+        );
     }
 
     private CodeBlock getCheckedNameWithPath(InputCondition condition) {
@@ -632,26 +686,26 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         for (var condition : conditions) {
             var field = condition.getInput();
             var fieldSequence = context.iterateJoinSequenceFor(field).render();
-            var unpacked = CodeBlock.of(
-                    "$N$L",
-                    VARIABLE_INTERNAL_ITERATION,
-                    condition.hasRecord()
-                            ? field.getMappingForRecordFieldOverride().asGetCall()
-                            : condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), "")
-            );
+            var unpackedBlock = CodeBlock.builder();
+            if (processedSchema.isNodeIdField(field)) {
+                unpackedBlock.add(hasIdBlock(CodeBlock.of("$N", VARIABLE_INTERNAL_ITERATION), context.getReferenceObject(), context.getTargetAlias()));
+            } else if (condition.hasRecord()) {
+                unpackedBlock.add("$N", VARIABLE_INTERNAL_ITERATION).add(field.getMappingForRecordFieldOverride().asGetCall());
+            } else {
+                unpackedBlock.add("$N", VARIABLE_INTERNAL_ITERATION).add(condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+            }
+            var unpacked = unpackedBlock.build();
 
             if (!field.hasOverridingCondition() && !condition.isOverriddenByAncestors()) {
-                var enumHandling = toJOOQEnumConverter(field.getTypeName(), processedSchema);
-                var tupleBlock = CodeBlock.builder().add(fieldSequence);
-
-                if (field.isID()) {
-                    tupleBlock.add(field.getMappingFromFieldOverride().asGetCall());
+                var tupleBlock = CodeBlock.builder();
+                if (processedSchema.isNodeIdField(field)) {
+                    tupleBlock.add(inline(CodeBlock.of("true")));
                 } else {
-                    tupleBlock.add(".$N$L", field.getUpperCaseName(), enumHandling);
+                    tupleBlock.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context, condition.hasRecord()));
                 }
 
                 tupleFieldBlocks.add(tupleBlock.build());
-                tupleVariableBlocks.add(inline(unpacked));
+                tupleVariableBlocks.add(processedSchema.isNodeIdField(field) ? unpacked : inline(unpacked));
                 selectedConditions.add(condition);
             }
 

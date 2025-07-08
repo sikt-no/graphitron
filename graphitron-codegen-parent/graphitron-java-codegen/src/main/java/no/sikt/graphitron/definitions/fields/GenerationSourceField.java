@@ -123,6 +123,11 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return isResolver;
     }
 
+    @Override
+    public boolean invokesSubquery() {
+        return hasFieldReferences() || (hasNodeID() && !getNodeIdTypeName().equals(getContainerTypeName())) || isIterableWrapped();
+    }
+
     public boolean isExternalField() {
         return isExternalField;
     }

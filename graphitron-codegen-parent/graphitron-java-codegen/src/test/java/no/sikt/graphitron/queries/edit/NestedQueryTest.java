@@ -34,6 +34,6 @@ public class NestedQueryTest extends GeneratorTest {
     @Test  // Works the same for queries, but there were additional null-pointers for mutations.
     @DisplayName("Nested output without table")
     void nestedOutput() {
-        assertGeneratedContentContains("nestedOutput", "CustomerTable::new", "Outer::new", ".fetchOne(it -> it.into(Outer.class))");
+        assertGeneratedContentContains("nestedOutput", "CustomerTable::new", "new Outer(internal_it_)", ".fetchOne(it -> it.into(Outer.class))");
     }
 }

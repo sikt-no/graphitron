@@ -91,4 +91,16 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
                 "this.errors = null"
         );
     }
+
+    @Test
+    @DisplayName("Contains an errors union field")
+    void withErrorsUnion() {
+        assertGeneratedContentContains(
+                "withErrorsUnion", Set.of(ERROR),
+                "Customer(String id, List<ErrorUnion> errors)",
+                "this.errors = errors",
+                "Customer(String id)",
+                "this.errors = null"
+        );
+    }
 }

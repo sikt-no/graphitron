@@ -13,6 +13,7 @@ import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.ObjectSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.*;
 import no.sikt.graphitron.validation.ProcessedDefinitionsValidator;
 import no.sikt.graphql.directives.GenerationDirective;
@@ -819,6 +820,26 @@ public class ProcessedSchema {
     * */
     public boolean hasTableObjectForObject(RecordObjectSpecification<?> object) {
         return objectWithPreviousTable.containsKey(object.getName());
+    }
+
+    /**
+     * Simple method that tries to find a table reference in the input records.
+     * This is not very robust, but we need this to not break existing things.
+     * @return Table mapping for this context based on input records, if any exists.
+     */
+    public JOOQMapping findInputTable(GenerationField field) {
+        if (field instanceof ObjectField objectField) {
+            return objectField
+                    .getArguments()
+                    .stream()
+                    .filter(this::isRecordType)
+                    .map(this::getRecordType)
+                    .filter(RecordObjectSpecification::hasTable)
+                    .map(RecordObjectSpecification::getTable)
+                    .findFirst()
+                    .orElse(null);
+        }
+        return null;
     }
 
     /**

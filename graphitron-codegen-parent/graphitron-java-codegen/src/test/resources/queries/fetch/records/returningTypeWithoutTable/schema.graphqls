@@ -1,5 +1,5 @@
 type Query {
-  query(in: CustomerInputTable): CustomerNoTable
+  query(in: CustomerInputTable!): CustomerNoTable
 }
 
 type CustomerNoTable {

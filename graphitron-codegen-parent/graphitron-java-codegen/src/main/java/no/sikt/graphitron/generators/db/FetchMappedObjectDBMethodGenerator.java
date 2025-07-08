@@ -58,6 +58,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 ? maybeCreateOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
                 : Optional.empty();
 
+        var hasNonSubqueryFields = !processedSchema.isRecordType(target) || processedSchema.getRecordType(target)
+                .getFields()
+                .stream()
+                .anyMatch(it -> !it.invokesSubquery());
         var code = CodeBlock
                 .builder()
                 .add(selectAliasesBlock)
@@ -66,7 +70,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent()
                 .add(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
-                .add(querySource.isEmpty() ? empty() : CodeBlock.of(".from($L)\n", querySource))
+                .add((querySource.isEmpty() || !hasNonSubqueryFields) && maybeOrderFields.isEmpty() ? empty() : CodeBlock.of(".from($L)\n", querySource))
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))

@@ -17,7 +17,6 @@ import java.util.Objects;
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
-import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_TYPE;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public abstract class DTOGenerator extends AbstractClassGenerator {
@@ -43,7 +42,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
 
         List<String> allVariableNames = new ArrayList<>();
 
-        var hasErrors = fields.stream().anyMatch(it -> processedSchema.implementsInterface(it, ERROR_TYPE.getName()));
+        var hasErrors = fields.stream().anyMatch(processedSchema::isExceptionOrExceptionUnion);
         keyMap.values()
                 .stream()
                 .distinct()
@@ -76,7 +75,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                                 variableName,
                                 constructorNoErrorsBuilder,
                                 setValue,
-                                processedSchema.implementsInterface(field, ERROR_TYPE.getName()),
+                                processedSchema.isExceptionOrExceptionUnion(field),
                                 field.isResolver()
                         );
                     }

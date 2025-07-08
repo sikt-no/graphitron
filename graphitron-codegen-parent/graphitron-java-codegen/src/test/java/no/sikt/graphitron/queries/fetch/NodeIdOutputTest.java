@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_QUERY;
 
 @DisplayName("Node ID output - fields with nodeId directive as output")
@@ -27,6 +28,15 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     void reference() {
         assertGeneratedContentContains("reference", Set.of(CUSTOMER_QUERY),
                 "field(DSL.select(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.fields"
+        );
+    }
+
+    @Test
+    @DisplayName("With reference and where statement")
+    void referenceAndInput() {
+        assertGeneratedContentContains("referenceAndInput", Set.of(CUSTOMER_NODE),
+                "_customer.getPrimaryKey().getFieldsArray()))).from(_customer).where(_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
+                "CustomerNoTable::new))).fetchOne("
         );
     }
 

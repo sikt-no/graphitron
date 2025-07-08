@@ -1,7 +1,0 @@
-type Query {
-  query(in: CustomerInputTable): CustomerNoTable
-}
-
-type CustomerNoTable {
-  customer: CustomerTable
-}

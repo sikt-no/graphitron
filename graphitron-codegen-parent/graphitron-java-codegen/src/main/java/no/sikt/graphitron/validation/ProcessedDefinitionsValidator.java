@@ -186,7 +186,11 @@ public class ProcessedDefinitionsValidator {
                         ));
                     } else if (field instanceof ObjectField && (!field.getNodeIdTypeName().equals(field.getContainerTypeName()) || field.hasFieldReferences())) {
                         // Only filter object fields because we currently don't have reference validation on input (GGG-209)
-                        validateReferencePath(field, schema.getRecordType(field.getContainerTypeName()).getTable().getMappingName(), referencedType.getTable().getMappingName());
+                        Optional
+                                .ofNullable(schema.getRecordType(field.getContainerTypeName()))
+                                .flatMap(it -> Optional.ofNullable(it.getTable()))
+                                .or(() -> Optional.ofNullable(schema.findInputTable(field)))
+                                .ifPresent(source -> validateReferencePath(field, source.getMappingName(), referencedType.getTable().getMappingName()));
                     }
 
                     if (field.hasFieldDirective()) {

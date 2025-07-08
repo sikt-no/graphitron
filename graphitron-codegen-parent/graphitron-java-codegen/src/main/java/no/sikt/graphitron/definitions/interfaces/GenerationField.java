@@ -26,6 +26,11 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      */
     boolean isResolver();
 
+    /**
+     * @return Does this field fulfill the conditions for initiating a subquery?
+     */
+    boolean invokesSubquery();
+
     boolean hasCondition();
 
     boolean hasOverridingCondition();

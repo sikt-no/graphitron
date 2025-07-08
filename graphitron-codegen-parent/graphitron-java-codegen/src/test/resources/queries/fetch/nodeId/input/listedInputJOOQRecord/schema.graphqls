@@ -1,0 +1,7 @@
+type Query {
+  customer(in: [In!]!): [CustomerNode]
+}
+
+input In @table(name: "CUSTOMER") {
+  id: ID! @nodeId(typeName: "CustomerNode")
+}
