@@ -41,7 +41,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                 continue;
             }
 
-            if (innerField.hasFieldReferences()) { // TODO: Can not handle references in jOOQ mappers as input records do not contain them.
+            if (innerField.hasFieldReferences() && !innerField.hasNodeID()) { // TODO: Can not handle references in jOOQ mappers as input records do not contain them.
                 continue;
             }
 

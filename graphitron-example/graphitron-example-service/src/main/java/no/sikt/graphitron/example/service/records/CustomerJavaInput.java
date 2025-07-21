@@ -1,7 +1,7 @@
 package no.sikt.graphitron.example.service.records;
 
 public class CustomerJavaInput {
-    private String id, firstName;
+    private String id, firstName, addressId;
 
     public String getFirstName() {
         return firstName;
@@ -17,5 +17,13 @@ public class CustomerJavaInput {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getAddressId() {
+        return addressId;
+    }
+
+    public void setAddressId(String addressId) {
+        this.addressId = addressId;
     }
 }

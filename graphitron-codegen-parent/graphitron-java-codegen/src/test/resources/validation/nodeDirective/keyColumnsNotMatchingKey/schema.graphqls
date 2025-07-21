@@ -1,0 +1,3 @@
+type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID", "NAME"]){
+  id: ID!
+}

@@ -1,0 +1,11 @@
+type Query {
+    query(filter: CustomerFilter!): CustomerNode
+}
+
+input CustomerFilter @table(name: "CUSTOMER") {
+    addressId: ID! @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+}
+
+type Address implements Node @node(typeId: "A", keyColumns: "ADDRESS_ID") @table {
+    id: ID!
+}

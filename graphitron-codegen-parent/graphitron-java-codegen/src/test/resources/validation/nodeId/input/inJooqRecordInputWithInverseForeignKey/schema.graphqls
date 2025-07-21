@@ -1,0 +1,7 @@
+input CustomerFilter @table(name: "CUSTOMER") {
+    paymentId: ID! @nodeId(typeName: "Payment")
+}
+
+type Payment implements Node @node @table {
+    id: ID!
+}

@@ -1,0 +1,15 @@
+type Query {
+    query(filter: FilmActorFilter!): FilmActor
+}
+
+input FilmActorFilter @table(name: "FILM_ACTOR") {
+    actorId: ID! @nodeId(typeName: "Actor") @reference(references: [{key: "FILM_ACTOR__FILM_ACTOR_ACTOR_ID_LAST_NAME_FKEY"}])
+}
+
+type FilmActor implements Node @node @table(name: "FILM_ACTOR") {
+    id: ID!
+}
+
+type Actor implements Node @node(typeId: "A", keyColumns: ["LAST_NAME", "ACTOR_ID"]) @table {
+    id: ID!
+}
