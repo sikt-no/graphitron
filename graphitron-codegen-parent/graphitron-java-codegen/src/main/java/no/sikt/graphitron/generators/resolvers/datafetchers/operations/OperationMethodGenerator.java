@@ -48,7 +48,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .addCode(transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
                 .addCode(methodCall)
-                .addCode(isMutation ? generateSchemaOutputs(target, parser) : empty())
+                .addCode(isMutation ? generateSchemaOutputs(target, parser) : CodeBlock.empty())
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
     }
@@ -58,7 +58,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
      */
     protected CodeBlock generateSchemaOutputs(ObjectField target, InputParser parser) {
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);

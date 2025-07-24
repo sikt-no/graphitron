@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM_CONVERTED;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.toJOOQEnumConverter;
 
 @DisplayName("Query input enums - Enum conversion for queries")
@@ -51,7 +50,7 @@ public class InputEnumConversionFunctionTest extends CodeBlockTest {
                 .findFirst()
                 .orElse(null);
         if (field == null) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         return toJOOQEnumConverter(field.getTypeName(), schema);
