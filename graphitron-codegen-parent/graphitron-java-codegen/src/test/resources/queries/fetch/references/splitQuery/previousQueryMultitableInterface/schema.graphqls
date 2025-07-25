@@ -1,0 +1,16 @@
+type Query {
+    query: FilmCategory
+}
+
+type FilmCategory @table(name: "FILM_CATEGORY") {
+    titledFilms: [Titled] @splitQuery
+}
+
+type Film implements Titled @table {
+    id: ID!
+    title: String!
+}
+
+interface Titled {
+    title: String!
+}

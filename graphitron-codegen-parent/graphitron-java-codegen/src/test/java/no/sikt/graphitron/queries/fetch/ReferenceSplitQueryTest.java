@@ -1,10 +1,15 @@
 package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
+import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_CUSTOMER_CONDITION;
@@ -94,6 +99,24 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "previousQuerySingleTableInterface", Set.of(ADDRESS_BY_DISTRICT),
                 "row(DSL.row(_city.CITY_ID)).mapping"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning multitable interface")
+    void previousQueryMultitableInterface() {
+        assertGeneratedContentContains(
+                "previousQueryMultitableInterface",
+                "row(DSL.row(_filmcategory.FILM_ID, _filmcategory.CATEGORY_ID)).mapping"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning multitable union")
+    void previousQueryMultitableUnion() {
+        assertGeneratedContentContains(
+                "previousQueryMultitableUnion",
+                "row(DSL.row(_filmcategory.FILM_ID, _filmcategory.CATEGORY_ID)).mapping"
         );
     }
 
