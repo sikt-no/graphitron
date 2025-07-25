@@ -27,7 +27,7 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
     private final LinkedHashMap<String, ArgumentField> argumentsByName;
     private final LinkedHashSet<String> lookupKeys;
     private final MutationType mutationType;
-    private final boolean hasLookupKey, fetchByID;
+    private final boolean hasLookupKey;
     public final static List<String> RESERVED_PAGINATION_NAMES = List.of(
             GraphQLReservedName.PAGINATION_FIRST.getName(),
             GraphQLReservedName.PAGINATION_AFTER.getName(),
@@ -42,7 +42,6 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         nonReservedArguments = arguments.stream().filter(inputField ->
                 RESERVED_PAGINATION_NAMES.stream().noneMatch(n -> n.equals(inputField.getName())) && !inputField.equals(orderField)
         ).collect(Collectors.toList());
-        fetchByID = field.hasDirective(FETCH_BY_ID.getName());
 
         mutationType = field.hasDirective(MUTATION.getName())
                 ? MutationType.valueOf(getDirectiveArgumentEnum(field, MUTATION, GenerationDirectiveParam.TYPE))
@@ -91,13 +90,6 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         hasForwardPagination = hasConnection && hasFirst && hasAfter;
         hasBackwardPagination = hasConnection && hasLast && hasBefore;
         return inputFields;
-    }
-
-    /**
-     * @return Should this field use IDs to fetch record data?
-     */
-    public boolean isFetchByID() {
-        return fetchByID;
     }
 
     /**

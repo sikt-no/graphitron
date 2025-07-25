@@ -1,0 +1,15 @@
+type Query {
+  query(in: [FilmInput!]!): [FilmTable]
+}
+
+input FilmInput @table(name: "CUSTOMER") {
+  nested: FilmInputNested
+}
+
+input FilmInputNested {
+  e: DummyEnumConverted @field(name: "RATING")
+}
+
+type FilmTable @table(name: "FILM") {
+  id: ID
+}

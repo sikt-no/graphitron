@@ -97,4 +97,12 @@ public class MapperNodeStrategyTest extends GeneratorTest {
                 "nodeIdStrategy.setReferenceId(customerRecord, itCustomerInputTable.getAddressId(), \"Address\", Customer.CUSTOMER.ADDRESS_ID)"
         );
     }
+
+    @Test
+    @DisplayName("To record with node strategy and an ID field that uses references with multiple available keys")
+    void toRecordReferenceMultikeyID() {
+        assertGeneratedContentContains("toRecord/referenceMultikeyID", Set.of(CUSTOMER_NODE),
+                ".setReferenceId(filmRecord, itFilmInput.getLanguageId(), \"Language\", Film.FILM.LANGUAGE_ID"
+        );
+    }
 }

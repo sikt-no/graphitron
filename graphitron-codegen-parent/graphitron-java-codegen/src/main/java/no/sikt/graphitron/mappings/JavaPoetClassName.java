@@ -55,6 +55,7 @@ public enum JavaPoetClassName {
     EXCEPTION(java.lang.Exception.class),
     EXCEPTION_TO_ERROR_MAPPING_PROVIDER(ExceptionToErrorMappingProvider.class),
     NODE_ID_HANDLER(NodeIdHandler.class),
+    FUNCTION(java.util.function.Function.class),
     FUNCTIONS(org.jooq.Functions.class),
     GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING(GenericExceptionContentToErrorMapping.class),
     GENERIC_EXCEPTION_MAPPING_CONTENT(GenericExceptionMappingContent.class),
