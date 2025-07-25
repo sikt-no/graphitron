@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.operations;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;

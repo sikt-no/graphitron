@@ -61,11 +61,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
             if (!innerCode.isEmpty()) {
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
-                if (notAlreadyDefined) {
-                    fieldCode.add(declare(varName, innerContext.getSourceGetCallBlock()));
-                }
-                var nullBlock = notAlreadyDefined ? CodeBlock.of("$N != null && ", varName) : CodeBlock.empty();
+                var nullBlock = CodeBlock.ofIf(notAlreadyDefined, "$N != null && ", varName);
                 fieldCode
+                        .declareIf(notAlreadyDefined, varName, innerContext.getSourceGetCallBlock())
                         .beginControlFlow("if ($L$L)", nullBlock, selectionSetLookup(innerContext.getPath(), false, toRecord))
                         .add(innerCode.build())
                         .endControlFlow()

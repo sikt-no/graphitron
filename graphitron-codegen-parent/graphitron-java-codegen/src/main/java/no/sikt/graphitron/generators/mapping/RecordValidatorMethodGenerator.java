@@ -37,8 +37,8 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
         var input = processedSchema.getInputType(target);
         return getDefaultSpecBuilder(methodName, asListedName(input.getRecordReferenceName()), wrapList(input.getRecordClassName()), wrapSet(GRAPHQL_ERROR.className))
-                .addCode(declare(VARIABLE_ARGS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME)))
-                .addCode(declare(VARIABLE_ENV, asMethodCall(TRANSFORMER_NAME, METHOD_ENV_NAME)))
+                .declare(VARIABLE_ARGS, asMethodCall(TRANSFORMER_NAME, METHOD_ARGS_NAME))
+                .declare(VARIABLE_ENV, asMethodCall(TRANSFORMER_NAME, METHOD_ENV_NAME))
                 .addCode(declare(VARIABLE_VALIDATION_ERRORS, ParameterizedTypeName.get(HASH_SET.className, GRAPHQL_ERROR.className)))
                 .addCode("\n")
                 .addCode("$L\n", iterateRecords(MapperContext.createValidationContext(target, processedSchema)))

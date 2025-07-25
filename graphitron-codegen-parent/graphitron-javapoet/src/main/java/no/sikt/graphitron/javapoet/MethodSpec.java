@@ -489,6 +489,14 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder addParameterIf(boolean predicate, Supplier<TypeName> type, String name, Modifier... modifiers) {
+            if (predicate) {
+                addParameter(type.get(), name, modifiers);
+            }
+
+            return this;
+        }
+
         public Builder addParameterIf(boolean predicate, Type type, String name, Modifier... modifiers) {
             if (predicate) {
                 addParameter(type, name, modifiers);
@@ -543,6 +551,16 @@ public final class MethodSpec {
 
         public Builder addCode(CodeBlock codeBlock) {
             code.add(codeBlock);
+            return this;
+        }
+
+        public Builder indent() {
+            code.indent();
+            return this;
+        }
+
+        public Builder unindent() {
+            this.code.unindent();
             return this;
         }
 

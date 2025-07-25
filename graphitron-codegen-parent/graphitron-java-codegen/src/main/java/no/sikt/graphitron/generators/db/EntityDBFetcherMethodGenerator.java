@@ -58,7 +58,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
         return getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType)
                 .addParameter(mapType, VARIABLE_INPUT_MAP)
                 .addCode(createAliasDeclarations(context.getAliasSet()))
-                .addCode(declare(VARIABLE_RESULT, code.build()))
+                .declare(VARIABLE_RESULT, code.build())
                 .addCode(
                         returnWrap(
                                 CodeBlock.of(

@@ -61,22 +61,21 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
 
             if (!innerCode.isEmpty()) {
                 var varName = innerContext.getHelperVariableName();
-                CodeBlock declareBlock;
-                if (isType) {
-                    declareBlock = declare(varName, toRecord ? innerContext.getSourceGetCallBlock() : CodeBlock.of("new $T()", innerContext.getTargetType().getGraphClassName()));
-                    if (toRecord) {
-                        fieldCode.add(declareBlock);
-                    }
-                } else {
-                    declareBlock = CodeBlock.empty();
-                }
+                var declareBlock = CodeBlock.declareIf(
+                        isType,
+                        varName,
+                        () -> toRecord
+                                ? innerContext.getSourceGetCallBlock()
+                                : CodeBlock.of("new $T()", innerContext.getTargetType().getGraphClassName())
+                );
 
                 var ifBlock = isType && toRecord ? ifNotNull(varName) : CodeBlock.of("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord));
                 fieldCode
+                        .addIf(isType && toRecord, declareBlock)
                         .beginControlFlow("$L", ifBlock)
-                        .add(isType && !toRecord && previousHadSource ? declareBlock : CodeBlock.empty())
+                        .addIf(isType && !toRecord && previousHadSource, declareBlock)
                         .add(innerCode.build())
-                        .add(isType && !toRecord && previousHadSource ? innerContext.getSetMappingBlock(varName) : CodeBlock.empty())
+                        .addIf(isType && !toRecord && previousHadSource, () -> innerContext.getSetMappingBlock(varName))
                         .endControlFlow()
                         .add("\n");
             }

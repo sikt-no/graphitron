@@ -136,6 +136,14 @@ public final class ParameterSpec {
         return result;
     }
 
+    public static ParameterSpec of(TypeName type, String name, Modifier... modifiers) {
+        return builder(type, name, modifiers).build();
+    }
+
+    public static ParameterSpec of(Type type, String name, Modifier... modifiers) {
+        return builder(type, name, modifiers).build();
+    }
+
     private static boolean isValidParameterName(String name) {
         // Allow "this" for explicit receiver parameters
         // See https://docs.oracle.com/javase/specs/jls/se8/html/jls-8.html#jls-8.4.1.

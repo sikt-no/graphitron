@@ -107,7 +107,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
     private void addConstructorKeyVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder) {
         constructorBuilder
                 .addStatement("this.$N = $N.valuesRow()", name, name)
-                .addParameter(ParameterSpec.builder(fieldType, name).build());
+                .addParameter(fieldType, name);
     }
 
     private void addClassFieldVariable(TypeName fieldType, String name, TypeSpec.Builder classBuilder, boolean isResolver) {
@@ -118,11 +118,9 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
     }
 
     private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver) {
-        constructorBuilder.addStatement("this.$N = $N", name, isError ? "null" : setValueInConstructor);
-
-        if (!isResolver && !isError) {
-            constructorBuilder.addParameter(fieldType, name);
-        }
+        constructorBuilder
+                .addStatement("this.$N = $N", name, isError ? "null" : setValueInConstructor)
+                .addParameterIf(!isResolver && !isError, fieldType, name);
     }
 
     private MethodSpec getGetterMethod(TypeName fieldType, String fieldName) {

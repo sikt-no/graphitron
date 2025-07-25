@@ -60,39 +60,39 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
             targetBlock.add("null");
         }
 
-        var illegalBlock = CodeBlock.builder().addStatement(
+        var illegalBlock = CodeBlock.statementOf(
                 "throw new $T(\"Could not resolve input $N with value \" + $N + \" within type \" + $N)",
                 ILLEGAL_ARGUMENT_EXCEPTION.className,
                 inputFieldName,
                 inputFieldName,
                 GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME
-        ).build();
+        );
 
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
 
-        var spec = getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(interfaceDefinition.getGraphClassName())))
+        return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(interfaceDefinition.getGraphClassName())))
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(declareArgs(target))
                 .addCode(extractParams(target))
-                .addCode(declare(GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, targetBlock.build()))
+                .declare(GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, targetBlock.build())
                 .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, asInternalName(target.getName()))))
-                .addCode(declare(VARIABLE_FETCHER_NAME, newDataFetcher()))
+                .declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, asInternalName(target.getName())))
+                .declare(VARIABLE_FETCHER_NAME, newDataFetcher())
                 .addCode("\n")
-                .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME);
-
-        if (!GeneratorConfig.shouldMakeNodeStrategy() && interfaceDefinition.getName().equals(NODE_TYPE.getName())) {
-            spec.addParameter(NODE_ID_HANDLER.className, NODE_ID_HANDLER_NAME);
-        }
-
-        implementations
-                .stream()
-                .map(implementation -> codeForImplementation(implementation, inputFieldName))
-                .forEach(spec::addCode);
-
-        return spec
+                .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
+                .addParameterIf(
+                        !GeneratorConfig.shouldMakeNodeStrategy() && interfaceDefinition.getName().equals(NODE_TYPE.getName()),
+                        NODE_ID_HANDLER.className,
+                        NODE_ID_HANDLER_NAME
+                )
+                .addCode(
+                        implementations
+                                .stream()
+                                .map(implementation -> codeForImplementation(implementation, inputFieldName))
+                                .collect(CodeBlock.joining())
+                )
                 .addCode("default: $L", illegalBlock)
                 .endControlFlow()
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
@@ -120,10 +120,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
             name = implementationTypeName;
         }
 
-        return CodeBlock
-                .builder()
-                .addStatement("case $S: return $N.$L($N, $N, $L)", name, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction)
-                .build();
+        return CodeBlock.statementOf("case $S: return $N.$L($N, $N, $L)", name, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction);
     }
 
     @Override

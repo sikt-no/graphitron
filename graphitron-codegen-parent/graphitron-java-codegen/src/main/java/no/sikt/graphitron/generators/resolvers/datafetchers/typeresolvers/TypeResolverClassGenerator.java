@@ -1,12 +1,12 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.ClassWiringContainer;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
