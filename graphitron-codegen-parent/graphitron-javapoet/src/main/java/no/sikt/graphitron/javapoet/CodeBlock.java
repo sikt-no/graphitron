@@ -127,6 +127,13 @@ public final class CodeBlock {
         return new Builder().add(format, args).build();
     }
 
+    public static CodeBlock ofIf(boolean predicate, String format, Object... args) {
+        if (predicate) {
+            return of(format, args);
+        }
+        return empty();
+    }
+
     /**
      * Joins {@code codeBlocks} into a single {@link CodeBlock}, each separated by {@code separator}.
      * For example, joining {@code String s}, {@code Object o} and {@code int i} using {@code ", "}
