@@ -24,6 +24,7 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collector;
@@ -136,6 +137,20 @@ public final class CodeBlock {
     }
 
     /**
+     * Joins {@code codeBlocks} into a single {@link CodeBlock}.
+     */
+    public static CodeBlock join(Iterable<CodeBlock> codeBlocks) {
+        return join(codeBlocks, "");
+    }
+
+    /**
+     * Joins {@code codeBlocks} into a single {@link CodeBlock}.
+     */
+    public static CodeBlock join(CodeBlock... codeBlocks) {
+        return join(List.of(codeBlocks), "");
+    }
+
+    /**
      * A {@link Collector} implementation that joins {@link CodeBlock} instances together into one
      * separated by {@code separator}. For example, joining {@code String s}, {@code Object o} and
      * {@code int i} using {@code ", "} would produce {@code String s, Object o, int i}.
@@ -166,8 +181,19 @@ public final class CodeBlock {
                 });
     }
 
+    /**
+     * A {@link Collector} implementation that joins {@link CodeBlock} instances together into one.
+     */
+    public static Collector<CodeBlock, ?, CodeBlock> joining() {
+        return joining("");
+    }
+
     public static Builder builder() {
         return new Builder();
+    }
+
+    public static CodeBlock empty() {
+        return new Builder().build();
     }
 
     public Builder toBuilder() {
@@ -240,6 +266,25 @@ public final class CodeBlock {
                     formatParts.add(format.substring(p, p + 2));
                     p += 2;
                 }
+            }
+
+            return this;
+        }
+
+        /**
+         * Add code with positional or relative arguments if the predicate is true.
+         *
+         * <p>Relative arguments map 1:1 with the placeholders in the format string.
+         *
+         * <p>Positional arguments use an index after the placeholder to identify which argument index
+         * to use. For example, for a literal to reference the 3rd argument: "$3L" (1 based index)
+         *
+         * <p>Mixing relative and positional arguments in a call to add is invalid and will result in an
+         * error.
+         */
+        public Builder addIf(boolean predicate, String format, Object... args) {
+            if (predicate) {
+                add(format, args);
             }
 
             return this;
@@ -449,9 +494,49 @@ public final class CodeBlock {
             return addStatement("$L", codeBlock);
         }
 
+        public Builder addStatementIf(boolean predicate, String format, Object... args) {
+            if (predicate) {
+                addStatement(format, args);
+            }
+
+            return this;
+        }
+
+        public Builder addStatementIf(boolean predicate, CodeBlock codeBlock) {
+            if (predicate) {
+                addStatement(codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder addStatementIf(boolean predicate, Supplier<CodeBlock> supplier) {
+            if (predicate) {
+                addStatement(supplier.get());
+            }
+
+            return this;
+        }
+
         public Builder add(CodeBlock codeBlock) {
             formatParts.addAll(codeBlock.formatParts);
             args.addAll(codeBlock.args);
+            return this;
+        }
+
+        public Builder addIf(boolean predicate, CodeBlock codeBlock) {
+            if (predicate) {
+                add(codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder addIf(boolean predicate, Supplier<CodeBlock> supplier) {
+            if (predicate) {
+                add(supplier.get());
+            }
+
             return this;
         }
 

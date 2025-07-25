@@ -59,7 +59,7 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
                 .addCode(declare(toRecord ? VARIABLE_ARGS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME)))
-                .addCode(toRecord && context.hasTable() && !context.hasJavaRecordReference() ? declare(CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)) : empty())
+                .addCode(toRecord && context.hasTable() && !context.hasJavaRecordReference() ? declare(CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)) : CodeBlock.empty())
                 .addCode(declare(context.getOutputName(), context.getReturnType(), context.hasSourceName() || noRecordIterability))
                 .addCode("\n")
                 .addCode(declareDependencyClasses(methodName))

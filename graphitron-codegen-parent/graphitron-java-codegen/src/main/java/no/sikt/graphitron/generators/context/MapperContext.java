@@ -313,7 +313,7 @@ public class MapperContext {
 
     public CodeBlock wrapFields(CodeBlock fieldCode) {
         if (fieldCode.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
@@ -364,7 +364,7 @@ public class MapperContext {
         return CodeBlock
                 .builder()
                 .add(hasSourceName() ? wrapNotNull(sourceName, forCode.build()) : forCode.build())
-                .add(toRecord && !mapsJavaRecord ? applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS) : empty()) // Note: This is done after records are filled.
+                .add(toRecord && !mapsJavaRecord ? applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS) : CodeBlock.empty()) // Note: This is done after records are filled.
                 .build();
     }
 
@@ -420,9 +420,9 @@ public class MapperContext {
         return CodeBlock.of(
                 "$L$L$S$L)",
                 recordTransformPart(sourceName, targetType.getName()),
-                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : empty(),
+                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
                 path,
-                recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : empty()
+                recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : CodeBlock.empty()
         );
     }
 
@@ -438,7 +438,7 @@ public class MapperContext {
                 ),
                 PATH_HERE_NAME,
                 path,
-                recordValidationEnabled() && !hasJavaRecordReference && toRecord ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
+                recordValidationEnabled() && !hasJavaRecordReference && toRecord ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : CodeBlock.empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
         );
     }
 

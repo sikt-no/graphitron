@@ -104,7 +104,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var shouldHaveOrderByToken = isConnection && maybeOrderByFields.isPresent();
 
         CodeBlock.Builder select = CodeBlock.builder();
-        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : empty());
+        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : CodeBlock.empty());
 
         if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
@@ -121,8 +121,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : empty())
-                .add(isConnection ? createSeekAndLimitBlock() : empty());
+                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : CodeBlock.empty())
+                .add(isConnection ? createSeekAndLimitBlock() : CodeBlock.empty());
 
 
         return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken) : wrapInField(contents.build());
@@ -241,7 +241,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock
                 .builder()
                 .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
-                .add(mappingContent.isEmpty() ? empty() : CodeBlock.of(".mapping($L)", mappingContent))
+                .add(mappingContent.isEmpty() ? CodeBlock.empty() : CodeBlock.of(".mapping($L)", mappingContent))
                 .build();
     }
 
@@ -452,7 +452,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
         } else if (field.isID()) {
-            return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
+            return CodeBlock.join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
         var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), processedSchema));
@@ -671,7 +671,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (tupleFieldBlocks.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var checks = String.join(" && ", selectedConditions

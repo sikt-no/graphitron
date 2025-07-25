@@ -9,10 +9,8 @@ import org.jooq.ForeignKey;
 
 import java.util.Optional;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.referenceNodeIdColumnsBlock;
 import static no.sikt.graphitron.mappings.TableReflection.findImplicitKey;
-import static no.sikt.graphitron.mappings.TableReflection.getForeignKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
 public class JooqRecordReferenceHelpers {
@@ -43,6 +41,6 @@ public class JooqRecordReferenceHelpers {
             var container = schema.getRecordType(target.getContainerTypeName());
             return referenceNodeIdColumnsBlock(container, nodeType, key.get(), targetAlias);
         }
-        return empty();
+        return CodeBlock.empty();
     }
 }

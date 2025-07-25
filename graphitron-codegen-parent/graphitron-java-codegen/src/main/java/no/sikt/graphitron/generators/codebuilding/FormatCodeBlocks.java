@@ -29,7 +29,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
@@ -57,8 +56,7 @@ public class FormatCodeBlocks {
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
-            EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className),
-            EMPTY_BLOCK = CodeBlock.builder().build();
+            EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className);
     private final static String CONNECTION_NAME = "connection", PAGE_NAME = "page", EDGES_NAME = "edges", GRAPH_PAGE_NAME = "graphPage";
 
     /**
@@ -70,7 +68,7 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock declareRecord(String name, RecordObjectSpecification<?> input, boolean isIterable, boolean isResolver) {
         if (!input.hasRecordReference()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var code = CodeBlock.builder().add(declare(name, input.getRecordClassName(), isIterable));
@@ -124,13 +122,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return empty CodeBlock
-     */
-    public static CodeBlock empty() {
-        return EMPTY_BLOCK;
-    }
-
-    /**
      * @param addTarget Name of updatable collection to add something to.
      * @param addition The name of the content that should be added.
      * @return CodeBlock that adds something to an updatable collection.
@@ -173,7 +164,7 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock listOf(CodeBlock code) {
         if (code.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
         return CodeBlock.of("$T.of($L)", LIST.className, code);
     }
@@ -293,7 +284,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock nullIfNullElseThis(CodeBlock code) {
-        return join(nullIfNullElse(code), code);
+        return CodeBlock.join(nullIfNullElse(code), code);
     }
 
     /**
@@ -400,7 +391,7 @@ public class FormatCodeBlocks {
 
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
-                includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : empty(),
+                includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : CodeBlock.empty(),
                 RESOLVER_KEYS_NAME,
                 isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
@@ -512,7 +503,7 @@ public class FormatCodeBlocks {
                 field.isIterableWrapped() ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,
-                field.isIterableWrapped() ? empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
+                field.isIterableWrapped() ? CodeBlock.empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
         );
     }
 
@@ -577,7 +568,7 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock wrapRow(CodeBlock code) {
         if (code.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
         return CodeBlock.of("$T.row($L)", DSL.className, indentIfMultiline(code));
     }
@@ -588,7 +579,7 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock wrapObjectRow(CodeBlock code) {
         if (code.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
         return CodeBlock.of("$T.objectRow($L)", QUERY_HELPER.className, indentIfMultiline(code));
     }
@@ -599,7 +590,7 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock wrapCoalesce(CodeBlock code) {
         if (code.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
         return CodeBlock.of("$T.coalesce($L)", DSL.className, indentIfMultiline(code));
     }
@@ -610,7 +601,7 @@ public class FormatCodeBlocks {
     @NotNull
     public static CodeBlock inline(CodeBlock code) {
         if (code.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         return CodeBlock.of("$T.inline($L)", DSL.className, code);
@@ -638,13 +629,6 @@ public class FormatCodeBlocks {
     }
 
     /**
-     * @return Join several CodeBlocks.
-     */
-    public static CodeBlock join(CodeBlock... code) {
-        return CodeBlock.join(List.of(code), "");
-    }
-
-    /**
      * @return CodeBlock that sends this variable through an enum mapping.
      */
     public static CodeBlock makeEnumMapBlock(CodeBlock inputVariable, CodeBlock valueLists) {
@@ -663,7 +647,7 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock toJOOQEnumConverter(String enumType, ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var enumEntry = schema.getEnum(enumType);
@@ -684,7 +668,7 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock toGraphEnumConverter(String enumType, CodeBlock field, boolean toRecord, ProcessedSchema schema) {
         if (!schema.isEnum(enumType)) {
-            return empty();
+            return CodeBlock.empty();
         }
         return makeEnumMapBlock(field, renderEnumMapElements(schema.getEnum(enumType), !toRecord));
     }
@@ -766,7 +750,7 @@ public class FormatCodeBlocks {
     public static CodeBlock makeResponses(MapperContext context, ObjectField field, ProcessedSchema schema, InputParser parser) {
         var target = context.getTarget();
         if (!context.targetIsType() || schema.isExceptionOrExceptionUnion(target)) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var targetTypeName = target.getTypeName();
@@ -900,7 +884,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock declareArgs(ObjectField target) {
-        return target.getArguments().isEmpty() ? empty() : declare(VARIABLE_ARGS, asMethodCall(VARIABLE_ENV, METHOD_ARGS_NAME));
+        return target.getArguments().isEmpty() ? CodeBlock.empty() : declare(VARIABLE_ARGS, asMethodCall(VARIABLE_ENV, METHOD_ARGS_NAME));
     }
 
     /**
@@ -986,11 +970,11 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock hasIdBlock(CodeBlock id, ObjectDefinition obj, String targetAlias) {
-        return hasIdOrIdsBlock(id, obj, targetAlias, empty(), false);
+        return hasIdOrIdsBlock(id, obj, targetAlias, CodeBlock.empty(), false);
     }
 
     public static CodeBlock hasIdsBlock(ObjectDefinition obj, String targetAlias) {
-        return hasIdOrIdsBlock(CodeBlock.of(IDS_NAME), obj, targetAlias, empty(), true);
+        return hasIdOrIdsBlock(CodeBlock.of(IDS_NAME), obj, targetAlias, CodeBlock.empty(), true);
     }
 
     public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, ObjectDefinition obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {

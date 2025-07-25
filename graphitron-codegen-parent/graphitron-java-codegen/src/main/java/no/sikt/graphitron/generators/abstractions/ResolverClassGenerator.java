@@ -13,7 +13,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Optional;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_MAP_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.MAP;
@@ -40,7 +39,7 @@ abstract public class ResolverClassGenerator<T extends GenerationTarget> extends
                 .map(it -> {
                             var table = it.getTable();
                             if (seenTables.contains(table.getMappingName())) {
-                                return empty(); // Can not handle having duplicate tables for nodes.
+                                return CodeBlock.empty(); // Can not handle having duplicate tables for nodes.
                             }
 
                             seenTables.add(table.getMappingName());

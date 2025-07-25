@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
-import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -28,7 +27,7 @@ public class JoinListSequence extends LinkedList<JoinElement> {
      */
     public CodeBlock render(JoinElement limitElement) {
         if (isEmpty()) {
-            return FormatCodeBlocks.empty();
+            return CodeBlock.empty();
         }
 
         var first = getFirst();
