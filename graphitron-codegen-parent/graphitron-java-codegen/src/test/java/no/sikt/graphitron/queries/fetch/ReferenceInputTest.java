@@ -1,8 +1,13 @@
 package no.sikt.graphitron.queries.fetch;
 
+import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
+import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
@@ -12,6 +17,11 @@ public class ReferenceInputTest extends ReferenceTest {
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "/input";
+    }
+
+    @Override
+    protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
+        return List.of(new MapOnlyFetchDBClassGenerator(schema), new InterfaceOnlyFetchDBClassGenerator(schema));
     }
 
     @Test

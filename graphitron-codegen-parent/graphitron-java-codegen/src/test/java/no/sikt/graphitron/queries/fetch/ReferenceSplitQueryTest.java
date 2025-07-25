@@ -98,6 +98,24 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning multitable interface")
+    void previousQueryMultitableInterface() {
+        assertGeneratedContentContains(
+                "previousQueryMultitableInterface",
+                "row(DSL.row(_filmcategory.FILM_ID, _filmcategory.CATEGORY_ID)).mapping"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning multitable union")
+    void previousQueryMultitableUnion() {
+        assertGeneratedContentContains(
+                "previousQueryMultitableUnion",
+                "row(DSL.row(_filmcategory.FILM_ID, _filmcategory.CATEGORY_ID)).mapping"
+        );
+    }
+
+    @Test
     @DisplayName("Table path")
     void table() {
         assertGeneratedContentContains(
