@@ -81,7 +81,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         if (hasLookup) { // Assume all keys are correlated.
             return CodeBlock
                     .builder()
-                    .add(declare(LOOKUP_KEYS_NAME, LookupHelpers.getLookupKeysAsList(target, processedSchema)))
+                    .declare(LOOKUP_KEYS_NAME, LookupHelpers.getLookupKeysAsList(target, processedSchema))
                     .addStatement("return $L.$L($N, $L)", newDataFetcher(), "loadLookup", LOOKUP_KEYS_NAME, queryFunction)
                     .build();
         }
@@ -95,17 +95,14 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
             return CodeBlock.empty();
         }
 
-        return CodeBlock
-                .builder()
-                .addStatement(
-                        "$T.$L($L$L, $L)",
-                        getQueryClassName(objectToCall),
-                        methodName,
-                        asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                        GeneratorConfig.shouldMakeNodeStrategy() ? CodeBlock.of(", $L", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
-                        parser.getInputParamString()
-                )
-                .build();
+        return CodeBlock.statementOf(
+                "$T.$L($L$L, $L)",
+                getQueryClassName(objectToCall),
+                methodName,
+                asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
+                CodeBlock.ofIf(GeneratorConfig.shouldMakeNodeStrategy(), ", $L", NODE_ID_STRATEGY_NAME),
+                parser.getInputParamString()
+        );
     }
 
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
@@ -130,14 +127,12 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         var transformFunction = target.hasServiceReference() && object != null
                 ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
                 : CodeBlock.empty();
-        var transformWrap = transformFunction.isEmpty() ? CodeBlock.empty() : CodeBlock.of(",\n$L", transformFunction);
+        var transformWrap = CodeBlock.ofIf(!transformFunction.isEmpty(), ",\n$L", transformFunction);
         if (!target.hasRequiredPaginationFields()) {
-            var dataBlock = CodeBlock.builder();
-            if (!localObject.isOperationRoot()) {
-                dataBlock.add("\n");
-            }
-            return dataBlock
-                    .add(CodeBlock.join(queryFunction, transformWrap))
+            return CodeBlock
+                    .builder()
+                    .addIf(!localObject.isOperationRoot(), "\n")
+                    .addAll(queryFunction, transformWrap)
                     .build();
         }
 
@@ -159,11 +154,12 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
      * @return CodeBlock for the mapping of a record.
      */
     private static CodeBlock transformOutputRecord(String typeName, boolean isJava) {
-        return CodeBlock.of("($L, $L) -> $L$L$S)",
+        return CodeBlock.of(
+                "($L, $L) -> $L$L$S)",
                 TRANSFORMER_LAMBDA_NAME,
                 RESPONSE_NAME,
                 recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false),
-                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
                 ""
         );
     }
@@ -200,10 +196,10 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
 
         var outputIDField = outputIDFieldOptional.get();
 
-        var extraction = CodeBlock.builder().add(VARIABLE_RESULT);
-        if (isRecord) {
-            extraction.add(outputIDField.getMappingFromSchemaName().asGetCall());
-        }
+        var extraction = CodeBlock
+                .builder()
+                .add(VARIABLE_RESULT)
+                .addIf(isRecord, outputIDField.getMappingFromSchemaName().asGetCall());
 
         var filter = CodeBlock.builder();
         if (outputIDField.isIterableWrapped()) {
@@ -356,7 +352,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         var target = context.getTarget();
         var targetName = target.getName();
         var code = CodeBlock.builder();
-        var declareBlock = declare(asListedRecordNameIf(targetName, context.isIterable()), context.transformInputRecord());
+        var declareBlock = CodeBlock.declare(asListedRecordNameIf(targetName, context.isIterable()), context.transformInputRecord());
         if (context.hasJavaRecordReference()) {
             return declareBlock; // If the input type is a Java record, no further records should be declared.
         }
@@ -398,7 +394,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         for (var in : containedInputTypes) {
             var innerContext = context.iterateContext(in);
             fieldCode
-                    .add(declare(in.getName(), innerContext.getSourceGetCallBlock()))
+                    .declare(in.getName(), innerContext.getSourceGetCallBlock())
                     .add(unwrapRecords(innerContext));
         }
 
@@ -433,8 +429,8 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
 
         var code = CodeBlock
                 .builder()
-                .add(declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT)));
-        contextFields.forEach((name, type) -> code.add(declare(asContextFieldName(name), asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name)))));
+                .declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT));
+        contextFields.forEach((name, type) -> code.declare(asContextFieldName(name), asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name))));
         return code.build();
     }
 }

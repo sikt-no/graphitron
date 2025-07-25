@@ -39,9 +39,10 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRecordTypeName;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
@@ -93,7 +94,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected static CodeBlock createAliasDeclarations(Set<Alias> aliasSet) {
         var codeBuilder = CodeBlock.builder();
         for (var alias : aliasSet) {
-            codeBuilder.add(declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName())));
+            codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
         }
         return codeBuilder.build();
     }
@@ -101,12 +102,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
         var isConnection = ((ObjectField) field).hasForwardPagination();
         var isMultiset = field.isIterableWrapped() || isConnection;
-        Optional<CodeBlock> maybeOrderByFields = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName()) ? Optional.of(CodeBlock.of(ORDER_FIELDS_NAME)) : maybeCreateOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
-        var shouldBeOrdered = isMultiset && maybeOrderByFields.isPresent();
-        var shouldHaveOrderByToken = isConnection && maybeOrderByFields.isPresent();
+        var orderByFieldsBlock = field.isResolver() && tableHasPrimaryKey(context.getTargetTableName())
+                ? CodeBlock.of(ORDER_FIELDS_NAME)
+                : createOrderFieldsBlock((ObjectField) field, context.getTargetAlias(), context.getTargetTableName());
+        var shouldBeOrdered = isMultiset && !orderByFieldsBlock.isEmpty();
+        var shouldHaveOrderByToken = isConnection && !orderByFieldsBlock.isEmpty();
 
         CodeBlock.Builder select = CodeBlock.builder();
-        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : CodeBlock.empty());
+        select.addIf(shouldHaveOrderByToken, "\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), orderByFieldsBlock);
 
         if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
@@ -124,11 +127,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : CodeBlock.empty())
-                .add(isConnection ? createSeekAndLimitBlock() : CodeBlock.empty());
+                .addIf(shouldBeOrdered, ".orderBy($L)", orderByFieldsBlock)
+                .addIf(isConnection, this::createSeekAndLimitBlock)
+                .build();
 
+        if (!isMultiset) {
+            return wrapInField(contents);
+        }
 
-        return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken) : wrapInField(contents.build());
+        return field.isResolver()
+                ? wrapInMultiset(contents)
+                : wrapInMultisetWithMapping(contents, shouldHaveOrderByToken);
     }
 
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
@@ -240,7 +249,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock
                 .builder()
                 .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
-                .add(mappingContent.isEmpty() ? CodeBlock.empty() : CodeBlock.of(".mapping($L)", mappingContent))
+                .addIf(!mappingContent.isEmpty(), ".mapping($L)", mappingContent)
                 .build();
     }
 
@@ -548,22 +557,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             conditionList.add(inResolverKeysBlock(resolverKeyParamName, context));
         }
 
-        if (!isResolverRoot) {
-            var hasNonSubqueryFields = context.getReferenceObject() == null || context.getReferenceObject()
-                    .getFields()
-                    .stream()
-                    .anyMatch(it -> !it.invokesSubquery() || processedSchema.isRecordType(it) && processedSchema.getRecordType(it).hasTable() && !processedSchema.getRecordType(it).getTable().equals(context.getTargetTable()));
-            if (hasNonSubqueryFields || context.hasApplicableTable()) {
-                conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
-                var otherConditionsFields = context
-                        .getConditionSourceFields()
-                        .stream()  // In theory this filter should not be necessary, context logic should add these in a way such that this case never arises.
-                        .filter(it -> !it.equals(context.getReferenceObjectField()))
-                        .toList();
-                if (!otherConditionsFields.isEmpty()) {
-                    for (var otherConditionsField : otherConditionsFields) {
-                        conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
-                    }
+        if (!isResolverRoot && (context.hasNonSubqueryFields() || context.hasApplicableTable())) {
+            conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
+            var otherConditionsFields = context
+                    .getConditionSourceFields()
+                    .stream()  // In theory this filter should not be necessary, context logic should add these in a way such that this case never arises.
+                    .filter(it -> !it.equals(context.getReferenceObjectField()))
+                    .toList();
+            if (!otherConditionsFields.isEmpty()) {
+                for (var otherConditionsField : otherConditionsFields) {
+                    conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
                 }
             }
         }
@@ -922,29 +925,34 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     protected CodeBlock createSeekAndLimitBlock() {
-        var code = CodeBlock.builder();
-
-        code.add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, CONTEXT_NAME, ORDER_FIELDS_NAME, GraphQLReservedName.PAGINATION_AFTER.getName());
-        code.add(".limit($N + 1)\n", PAGE_SIZE_NAME);
-        return code.build();
+        return CodeBlock
+                .builder()
+                .add(".seek($T.getOrderByValues($N, $L, $N))\n", QUERY_HELPER.className, CONTEXT_NAME, ORDER_FIELDS_NAME, GraphQLReservedName.PAGINATION_AFTER.getName())
+                .add(".limit($N + 1)\n", PAGE_SIZE_NAME)
+                .build();
     }
 
-    protected Optional<CodeBlock> maybeCreateOrderFieldsDeclarationBlock(ObjectField referenceField, String actualRefTable, String tableName) {
-        return maybeCreateOrderFieldsBlock(referenceField, actualRefTable, tableName).map(codeBlock -> declare(ORDER_FIELDS_NAME, codeBlock));
+    protected CodeBlock createOrderFieldsDeclarationBlock(ObjectField referenceField, String actualRefTable, String tableName) {
+        var fieldsBlock = createOrderFieldsBlock(referenceField, actualRefTable, tableName);
+        return !fieldsBlock.isEmpty() ? CodeBlock.declare(ORDER_FIELDS_NAME, fieldsBlock) : CodeBlock.empty();
     }
 
-    protected Optional<CodeBlock> maybeCreateOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
+    protected CodeBlock createOrderFieldsBlock(ObjectField referenceField, String actualRefTable, String tableName) {
         var orderByField = referenceField.getOrderField();
         var hasPrimaryKey = tableHasPrimaryKey(tableName);
 
-        if (orderByField.isEmpty() && !hasPrimaryKey) return Optional.empty();
+        if (orderByField.isEmpty() && !hasPrimaryKey) {
+            return CodeBlock.empty();
+        }
 
-        var defaultOrderByFields = hasPrimaryKey ? getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable) : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
+        var defaultOrderByFields = hasPrimaryKey
+                ? getPrimaryKeyFieldsWithTableAliasBlock(actualRefTable)
+                : CodeBlock.of("new $T[] {}", SORT_FIELD.className);
         var code = CodeBlock.builder();
         orderByField.ifPresentOrElse(
                 it -> code.add(createCustomOrderBy(it, actualRefTable, defaultOrderByFields, tableName)),
-                () -> code.add("$L", defaultOrderByFields));
-        return Optional.of(code.build());
+                () -> code.add(defaultOrderByFields));
+        return code.build();
     }
 
     @NotNull
@@ -962,7 +970,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .stream()
                 .map(it -> CodeBlock.of("Map.entry($S, $S)", it.getKey(), it.getValue()))
                 .collect(CodeBlock.joining(",\n"));
-        var sortFieldsMapBlock = CodeBlock.builder().add("$T.ofEntries(\n", MAP.className)
+        var sortFieldsMapBlock = CodeBlock.builder()
+                .add("$T.ofEntries(\n", MAP.className)
                 .indent()
                 .add("$L)", sortFieldMapEntries)
                 .add("\n")
@@ -982,27 +991,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     @NotNull
     protected MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName, InputParser parser) {
-        var spec = getDefaultSpecBuilder(
+        return getDefaultSpecBuilder(
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
-        );
-        if (!isRoot) {
-            spec.addParameter(wrapSet(getKeyRecordTypeName(referenceField, processedSchema)), resolverKeyParamName);
-        }
-
-        parser.getMethodInputsWithOrderField().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
-
-        if (referenceField.hasForwardPagination()) {
-            spec
-                    .addParameter(INTEGER.className, PAGE_SIZE_NAME)
-                    .addParameter(STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName());
-        }
-        processedSchema
-                .getAllContextFields(referenceField)
-                .forEach((key, value) -> spec.addParameter(value, asContextFieldName(key)));
-        spec.addParameter(SELECTION_SET.className, VARIABLE_SELECT);
-
-        return spec;
+        )
+                .addParameterIf(!isRoot, () -> wrapSet(getKeyRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameters(getMethodParametersWithOrderField(parser))
+                .addParameterIf(referenceField.hasForwardPagination(), INTEGER.className, PAGE_SIZE_NAME)
+                .addParameterIf(referenceField.hasForwardPagination(), STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName())
+                .addParameters(getContextParameters(referenceField))
+                .addParameter(SELECTION_SET.className, VARIABLE_SELECT);
     }
 
     @NotNull

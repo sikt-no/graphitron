@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -51,38 +50,37 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             return MethodSpec.methodBuilder(target.getName()).build();
         }
 
-        var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), TypeName.INT);
+        var parser = new InputParser(target, processedSchema);
+        var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), TypeName.INT)
+                .addParameters(getMethodParametersWithOrderField(parser));
 
-        var inputs = new InputParser(target, processedSchema).getMethodInputsWithOrderField();
-        inputs.forEach((inputName, inputType) -> spec.addParameter(iterableWrapType(inputType), inputName));
-
-        var recordInputs = inputs
+        var recordInputs = parser
+                .getMethodInputsWithOrderField()
                 .entrySet()
                 .stream()
                 .filter(it -> processedSchema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        if (recordInputs.isEmpty()) {
+            return spec.addCode(returnWrap("0")).build();
+        }
 
         var code = CodeBlock.builder();
-        if (recordInputs.isEmpty()) {
-            code.add(returnWrap("0"));
+        String batchInputVariable;
+        if (recordInputs.size() == 1) {
+            batchInputVariable = recordInputs.keySet().stream().findFirst().get();
         } else {
-            String batchInputVariable;
-            if (recordInputs.size() == 1) {
-                batchInputVariable = recordInputs.keySet().stream().findFirst().get();
-            } else {
-                batchInputVariable = VARIABLE_RECORD_LIST;
-                code.add(declare(VARIABLE_RECORD_LIST, ARRAY_LIST.className));
-                recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
-            }
-            code.addStatement(
-                    "return $N.transactionResult(config -> $T.stream($T.using(config).$L($N).execute()).sum())",
-                    VariableNames.CONTEXT_NAME,
-                    ARRAYS.className,
-                    DSL.className,
-                    recordMethod,
-                    batchInputVariable
-            );
+            batchInputVariable = VARIABLE_RECORD_LIST;
+            code.declareNew(VARIABLE_RECORD_LIST, ARRAY_LIST.className);
+            recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
         }
+        code.addStatement(
+                "return $N.transactionResult(config -> $T.stream($T.using(config).$L($N).execute()).sum())",
+                VariableNames.CONTEXT_NAME,
+                ARRAYS.className,
+                DSL.className,
+                recordMethod,
+                batchInputVariable
+        );
 
         return spec
                 .addCode(code.build())

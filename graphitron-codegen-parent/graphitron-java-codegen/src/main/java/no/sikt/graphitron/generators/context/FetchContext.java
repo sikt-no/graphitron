@@ -17,8 +17,8 @@ import java.util.*;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -255,6 +255,13 @@ public class FetchContext {
 
     public boolean hasApplicableTable() {
         return hasApplicableTable;
+    }
+
+    public boolean hasNonSubqueryFields() {
+        return getReferenceObject() == null || getReferenceObject()
+                .getFields()
+                .stream()
+                .anyMatch(it -> !it.invokesSubquery() || processedSchema.isRecordType(it) && processedSchema.getRecordType(it).hasTable() && !processedSchema.getRecordType(it).getTable().equals(getTargetTable()));
     }
 
     public boolean hasPreviousContext() {

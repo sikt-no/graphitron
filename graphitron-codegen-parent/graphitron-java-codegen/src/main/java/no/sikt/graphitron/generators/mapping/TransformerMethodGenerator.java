@@ -35,28 +35,28 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         var type = processedSchema.getRecordType(target);
         var methodName = recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord);
         var currentSource = type.asSourceClassName(toRecord);
-        var spec = getDefaultSpecBuilder(
+        return getDefaultSpecBuilder(
                 methodName,
                 wrapListIf(type.asTargetClassName(toRecord), currentSource == null && target.isIterableWrapped()),
                 currentSource != null || !target.hasServiceReference() ? currentSource : target.getService().getGenericReturnType()
-        );
-        if (toRecord && useValidation(type)) {
-            spec.addParameter(STRING.className, PATH_INDEX_NAME);
-        }
-
-        return spec.addCode(getMethodContent(target)).build();
+        )
+                .addParameterIf(toRecord && useValidation(type), STRING.className, PATH_INDEX_NAME)
+                .addCode(getMethodContent(target))
+                .build();
     }
 
     protected CodeBlock getMethodContent(GenerationField target) {
         var toRecord = target.isInput();
 
         var type = processedSchema.getRecordType(target);
-        var code = CodeBlock.builder();
         var useValidation = toRecord && useValidation(type);
         if (type.asSourceClassName(toRecord) == null) {
             var hasReference = type.hasJavaRecordReference();
             var mapperClass = getGeneratedClassName(RecordMapperClassGenerator.DEFAULT_SAVE_DIRECTORY_NAME, asRecordMapperClass(type.getName(), hasReference, toRecord));
-            code.addStatement(transformCallCode(useValidation, mapperClass, hasReference, toRecord));
+
+            var code = CodeBlock
+                    .builder()
+                    .addStatement(transformCallCode(useValidation, mapperClass, hasReference, toRecord));
 
             if (!useValidation) {
                 return code.build();
@@ -68,16 +68,16 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                     .build(); // TODO: Test this.
         }
 
-        return code.addStatement(
+        return CodeBlock.statementOf(
                 "return $N($T.of($N)$L, $N$L).stream().findFirst().orElse($L)",
                 recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord),
                 LIST.className,
                 VARIABLE_INPUT,
-                shouldMakeNodeStrategy() ? CodeBlock.of(", $N", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $N", NODE_ID_STRATEGY_NAME),
                 PATH_NAME,
-                useValidation ? CodeBlock.of(", $N", PATH_INDEX_NAME) : CodeBlock.empty(),
+                CodeBlock.ofIf(useValidation, ", $N", PATH_INDEX_NAME),
                 toRecord ? CodeBlock.of("new $T()", type.getRecordClassName()) : CodeBlock.of("null")
-        ).build();
+        );
     }
 
     protected static CodeBlock transformCallCode(boolean useValidation, ClassName mapperClass, boolean hasReference, boolean toRecord) {
@@ -87,7 +87,7 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                 mapperClass,
                 recordTransformMethod(hasReference, toRecord),
                 VARIABLE_INPUT,
-                shouldMakeNodeStrategy() ? CodeBlock.of(" $N,", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), " $N,", NODE_ID_STRATEGY_NAME),
                 PATH_NAME
         );
     }
@@ -97,14 +97,10 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
     }
 
     protected MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType, TypeName source) {
-        var spec = getDefaultSpecBuilder(methodName, returnType)
-                .addParameter(source, VARIABLE_INPUT);
-
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-        }
-
-        return spec.addParameter(STRING.className, PATH_NAME);
+        return getDefaultSpecBuilder(methodName, returnType)
+                .addParameter(source, VARIABLE_INPUT)
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
+                .addParameter(STRING.className, PATH_NAME);
     }
 
     protected static boolean useValidation(RecordObjectSpecification<?> type) {

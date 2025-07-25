@@ -56,13 +56,13 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
             targetBlock.add("null");
         }
 
-        var illegalBlock = CodeBlock.builder().addStatement(
+        var illegalBlock = CodeBlock.statementOf(
                 "throw new $T(\"Could not resolve input $N with value \" + $N + \" within type \" + $N)",
                 ILLEGAL_ARGUMENT_EXCEPTION.className,
                 inputFieldName,
                 inputFieldName,
                 VARIABLE_TYPE_NAME
-        ).build();
+        );
 
         var spec = getDefaultSpecBuilder(target.getName(), interfaceDefinition.getGraphClassName());
         if (!localObject.isOperationRoot()) {
@@ -71,12 +71,12 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
         spec
                 .addParameter(iterableWrapType(inputField), inputFieldName)
                 .addParameter(DATA_FETCHING_ENVIRONMENT.className, VARIABLE_ENV)
-                .addCode(declare(VARIABLE_TYPE_NAME, targetBlock.build()))
+                .declare(VARIABLE_TYPE_NAME, targetBlock.build())
                 .beginControlFlow("if ($N == null)", VARIABLE_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .addCode(declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", VARIABLE_TYPE_NAME, asInternalName(target.getName()))))
-                .addCode(declare(VARIABLE_FETCHER_NAME, newDataFetcher()))
+                .declare(VARIABLE_LOADER, "$N + $S", VARIABLE_TYPE_NAME, asInternalName(target.getName()))
+                .declare(VARIABLE_FETCHER_NAME, newDataFetcher())
                 .addCode("\n")
                 .beginControlFlow("switch ($N)", VARIABLE_TYPE_NAME);
 
@@ -103,10 +103,7 @@ public class FetchNodeResolverMethodGenerator extends KickstartResolverMethodGen
                 SELECTION_SET_NAME
         );
 
-        return CodeBlock
-                .builder()
-                .addStatement("case $S: return $N.$L($N, $N, $L)", implementationTypeName, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction)
-                .build();
+        return CodeBlock.statementOf("case $S: return $N.$L($N, $N, $L)", implementationTypeName, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction);
     }
 
     @Override
