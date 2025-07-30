@@ -70,7 +70,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent()
                 .add(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
-                .addIf(!(querySource.isEmpty() || !hasNonSubqueryFields), ".from($L)\n", querySource)
+                .addIf(!querySource.isEmpty() && (hasNonSubqueryFields || processedSchema.getRecordType(target).hasTable()), ".from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
