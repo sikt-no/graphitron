@@ -174,7 +174,7 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
                 "containingListedRecordFetchedByID", Set.of(ADDRESS_SERVICE),
                 "customerForNode = CustomerDBQueries.customerForNode(" +
                         "transform.getCtx(), customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + \"customerList\"));" +
-                        "address.setCustomerList(customerList.stream().map(it -> customerForNode.get(it.getId())).collect(Collectors.toList())"
+                        "address.setCustomerList(customerList.stream().map(it -> customerForNode.get(it.getId())).toList()"
         );
     }
 

@@ -8,7 +8,7 @@ import java.lang.Object;
 import java.lang.String;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+
 
 import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
@@ -21,6 +21,6 @@ public class QueryEntityGeneratedDataFetcher {
                 case "Customer": return ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
                 default: return null;
             }
-        } ).collect(Collectors.toList());
+        } ).toList();
     }
 }

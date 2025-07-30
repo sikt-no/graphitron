@@ -12,7 +12,7 @@ import java.lang.Integer;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
+
 import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
@@ -26,7 +26,7 @@ public class WrapperGeneratedResolver implements WrapperResolver {
                 (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, resolverKeys, pageSize,after, selectionSet),
                 (ctx, resolverKeys) -> WrapperDBQueries.countQueryForWrapper(ctx, resolverKeys),
                 (connection) ->  {
-                    var edges = connection.getEdges().stream().map(it -> new DummyConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());
+                    var edges = connection.getEdges().stream().map(it -> new DummyConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).toList();
                     var page = connection.getPageInfo();
                     var graphPage = new PageInfo(page.isHasPreviousPage(), page.isHasNextPage(), page.getStartCursor() == null ? null : page.getStartCursor().getValue(), page.getEndCursor() == null ? null : page.getEndCursor().getValue());
                     return new DummyConnection(edges, graphPage, connection.getNodes(), connection.getTotalCount());
