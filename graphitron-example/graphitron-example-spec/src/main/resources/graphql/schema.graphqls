@@ -10,7 +10,7 @@ type Query {
 
     customers(first: Int = 100, after: String): CustomerConnection
     activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
-    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection @excludeFromUI
+    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection #@excludeFromUI
     customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection @excludeFromUI
     customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection @excludeFromUI
 

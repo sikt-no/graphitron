@@ -63,4 +63,8 @@ public class GraphQLQueryAdapter {
             throw new RuntimeException("Failed to execute GraphQL query", e);
         }
     }
+
+    public <T> T executeQueryWithVariables(String query, Map<String, Object> variables, Class<T> responseType) {
+        return executeQuery(query, variables, responseType);
+    }
 }

@@ -1,6 +1,8 @@
 package no.sikt.graphitron.generators.frontgen;
 
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextField;
 import graphql.language.Argument;
 import graphql.language.Directive;
 import graphql.language.StringValue;
@@ -19,10 +21,7 @@ import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -132,22 +131,109 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         ClassName nodeClass = ClassName.get(GeneratorConfig.generatedModelsPackage(), nodeTypeName);
         ClassName connectionClass = ClassName.get(GeneratorConfig.generatedModelsPackage(), connectionTypeName);
 
-        return TypeSpec.classBuilder(className)
+        List<ParameterInfo> parameters = analyzeParameters(field);
+
+        TypeSpec.Builder builder = TypeSpec.classBuilder(className)
                 .addModifiers(Modifier.PUBLIC)
                 .superclass(ParameterizedTypeName.get(
                         ClassName.get(GeneratedQueryComponent.class), nodeClass, connectionClass))
-                .addMethod(generateQueryMethod(field))
+                .addMethod(generateQueryMethod(field, parameters))
                 .addMethod(generateRootFieldMethod(field))
                 .addMethod(generateConnectionClassMethod(connectionTypeName))
                 .addMethod(generateEdgesFunctionMethod(connectionTypeName))
                 .addMethod(generateNodeFunctionMethod(connectionTypeName + "Edge", nodeTypeName))
                 .addMethod(generateGridCreatorMethod(field, nodeTypeName))
-                .addMethod(generateButtonTextMethod(field))
+                .addMethod(generateButtonTextMethod(field));
+
+        // Add parameter handling methods if needed
+        if (!parameters.isEmpty()) {
+            builder.addMethod(generateHasParametersMethod())
+                    .addMethod(generateCreateInputSectionMethod(parameters))
+                    .addMethod(generateGetQueryVariablesMethod(parameters))
+                    .addMethod(generateValidateInputsMethod(parameters));
+
+            // Add field declarations for input components
+            for (ParameterInfo param : parameters) {
+                builder.addField(TextField.class, param.name + "Field", Modifier.PRIVATE);
+            }
+        }
+
+        return builder.build();
+    }
+
+    private MethodSpec generateHasParametersMethod() {
+        return MethodSpec.methodBuilder("hasParameters")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(boolean.class)
+                .addStatement("return true")
                 .build();
     }
 
-    private MethodSpec generateQueryMethod(ObjectField field) {
-        String query = buildGraphQLQuery(field);
+    private MethodSpec generateCreateInputSectionMethod(List<ParameterInfo> parameters) {
+        MethodSpec.Builder builder = MethodSpec.methodBuilder("createInputSection")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(VerticalLayout.class)
+                .addStatement("$T inputLayout = new $T()", VerticalLayout.class, VerticalLayout.class);
+
+        for (ParameterInfo param : parameters) {
+            String fieldName = param.name + "Field";
+            builder.addStatement("$L = new $T($S)", fieldName, TextField.class, param.name)
+                    .addStatement("$L.setRequired($L)", fieldName, param.required)
+                    .addStatement("inputLayout.add($L)", fieldName);
+        }
+
+        builder.addStatement("return inputLayout");
+        return builder.build();
+    }
+
+    private MethodSpec generateGetQueryVariablesMethod(List<ParameterInfo> parameters) {
+        MethodSpec.Builder builder = MethodSpec.methodBuilder("getQueryVariables")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(ParameterizedTypeName.get(Map.class, String.class, Object.class))
+                .addStatement("$T<String, Object> variables = new $T<>()", Map.class, HashMap.class);
+
+        for (ParameterInfo param : parameters) {
+            String fieldName = param.name + "Field";
+            builder.beginControlFlow("if ($L != null && !$L.isEmpty())", fieldName, fieldName)
+                    .addStatement("variables.put($S, $L.getValue())", param.name, fieldName)
+                    .endControlFlow();
+        }
+
+        builder.addStatement("return variables");
+        return builder.build();
+    }
+
+    private MethodSpec generateValidateInputsMethod(List<ParameterInfo> parameters) {
+        MethodSpec.Builder builder = MethodSpec.methodBuilder("validateInputs")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PROTECTED)
+                .returns(boolean.class);
+
+        if (parameters.isEmpty()) {
+            builder.addStatement("return true");
+        } else {
+            StringBuilder validation = new StringBuilder("return ");
+            for (int i = 0; i < parameters.size(); i++) {
+                if (i > 0) validation.append(" && ");
+                ParameterInfo param = parameters.get(i);
+                String fieldName = param.name + "Field";
+                if (param.required) {
+                    validation.append("(").append(fieldName).append(" != null && !").append(fieldName).append(".isEmpty())");
+                } else {
+                    validation.append("(").append(fieldName).append(" == null || !").append(fieldName).append(".isEmpty())");
+                }
+            }
+            builder.addStatement(validation.toString());
+        }
+
+        return builder.build();
+    }
+
+    private MethodSpec generateQueryMethod(ObjectField field, List<ParameterInfo> parameters) {
+        String query = buildGraphQLQuery(field, parameters);
 
         return MethodSpec.methodBuilder("getQuery")
                 .addAnnotation(Override.class)
@@ -157,28 +243,61 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 .build();
     }
 
-    private String buildGraphQLQuery(ObjectField field) {
+    private String buildGraphQLQuery(ObjectField field, List<ParameterInfo> parameters) {
         String fieldName = field.getName();
-
-        // Get node type name to determine which fields to include
         String connectionTypeName = getConnectionTypeName(field);
         String nodeTypeName = getNodeTypeName(field, connectionTypeName);
 
-        // Extract field selections for the query
-        StringBuilder queryFields = new StringBuilder();
+        StringBuilder queryBuilder = new StringBuilder("query");
 
-        // Add relevant fields based on node type from schema
+        // Add parameter declarations
+        if (!parameters.isEmpty()) {
+            queryBuilder.append("(");
+            for (int i = 0; i < parameters.size(); i++) {
+                if (i > 0) queryBuilder.append(", ");
+                ParameterInfo param = parameters.get(i);
+                queryBuilder.append("$").append(param.name).append(": ");
+                queryBuilder.append(mapJavaTypeToGraphQL(param.type));
+                if (param.required) queryBuilder.append("!");
+            }
+            queryBuilder.append(")");
+        }
+
+        queryBuilder.append(" { ").append(fieldName).append("(");
+
+        // Add arguments
+        boolean firstArg = true;
+        for (ParameterInfo param : parameters) {
+            if (!firstArg) queryBuilder.append(", ");
+            queryBuilder.append(param.name).append(": $").append(param.name);
+            firstArg = false;
+        }
+
+        // Add pagination arguments
+        if (!firstArg) queryBuilder.append(", ");
+        queryBuilder.append("first: 100");
+
+        // Build field selections
+        StringBuilder queryFields = new StringBuilder();
         if (nodeTypeName != null) {
             ObjectDefinition objectDefinition = processedSchema.getObject(nodeTypeName);
             if (objectDefinition != null) {
-                // Add all fields and nested objects
                 addQueryFields(objectDefinition, queryFields, new HashSet<>());
             }
         }
 
-        // Format the query with connection pattern
-        return String.format("query { %s(first: 100) { edges { node { %s } } } }",
-                fieldName, queryFields);
+        queryBuilder.append(") { edges { node {").append(queryFields).append(" } } } }");
+        return queryBuilder.toString();
+    }
+
+    private String mapJavaTypeToGraphQL(String javaType) {
+        return switch (javaType) {
+            case "String" -> "String";
+            case "Integer" -> "Int";
+            case "Double" -> "Float";
+            case "Boolean" -> "Boolean";
+            default -> "String";
+        };
     }
 
     private void addQueryFields(ObjectDefinition definition, StringBuilder queryFields, Set<String> visitedTypes) {
@@ -495,6 +614,41 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         // Default text based on field name
         return "List " + capitalize(field.getName());
+    }
+
+    // Add this method to TableUIComponentGenerator to analyze parameters
+    private List<ParameterInfo> analyzeParameters(ObjectField field) {
+        return field.getArguments().stream()
+                .filter(arg -> arg.isNonNullable() && !arg.getName().equals("first") && !arg.getName().equals("after"))
+                .map(arg -> new ParameterInfo(
+                        arg.getName(),
+                        mapGraphQLTypeToJava(arg.getTypeName()),
+                        arg.isNonNullable()
+                ))
+                .toList();
+    }
+
+    private static class ParameterInfo {
+        final String name;
+        final String type;
+        final boolean required;
+
+        ParameterInfo(String name, String type, boolean required) {
+            this.name = name;
+            this.type = type;
+            this.required = required;
+        }
+    }
+
+    private String mapGraphQLTypeToJava(String graphqlType) {
+        String baseType = graphqlType.replaceAll("[!\\[\\]]", "");
+        return switch (baseType) {
+            case "ID", "String" -> "String";
+            case "Int" -> "Integer";
+            case "Float" -> "Double";
+            case "Boolean" -> "Boolean";
+            default -> "String";
+        };
     }
 
     @Override
