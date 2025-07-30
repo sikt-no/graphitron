@@ -85,4 +85,9 @@ public class OperationField implements FieldSpecification {
     public MethodMapping getMappingFromFieldOverride() {
         return null;
     }
+
+    @Override
+    public boolean isRootField() {
+        return true;
+    }
 }

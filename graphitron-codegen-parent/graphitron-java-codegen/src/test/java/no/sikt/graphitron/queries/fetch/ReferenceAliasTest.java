@@ -16,7 +16,8 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "field/table", Set.of(CUSTOMER_QUERY),
                 "customer_2952383337_address = _customer.address().as(\"address_1214171484\")",
                 "customer_2952383337_address.DISTRICT",
-                ".from(_customer"
+                ".from(_customer",
+                ".from(customer_2952383337_address"
         );
     }
 

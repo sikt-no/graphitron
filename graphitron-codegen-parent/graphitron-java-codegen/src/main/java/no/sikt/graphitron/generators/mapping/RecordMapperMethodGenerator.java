@@ -37,11 +37,12 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                 .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
                 .toList();
         for (var innerField : fields) {
-            if (innerField.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName())) { //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
+            if (innerField.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName())) {
                 continue;
             }
 
-            if (innerField.hasFieldReferences() && !innerField.hasNodeID()) { // TODO: Can not handle references in jOOQ mappers as input records do not contain them.
+            // Can not handle references in jOOQ mappers as input records do not contain them.
+            if (!innerField.hasNodeID() && innerField.hasFieldReferences()) {
                 continue;
             }
 

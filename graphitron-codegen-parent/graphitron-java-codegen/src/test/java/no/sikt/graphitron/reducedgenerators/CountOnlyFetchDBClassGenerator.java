@@ -2,11 +2,11 @@ package no.sikt.graphitron.reducedgenerators;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.db.fetch.FetchCountDBMethodGenerator;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
+import no.sikt.graphitron.generators.db.FetchCountDBMethodGenerator;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-public class CountOnlyFetchDBClassGenerator extends FetchDBClassGenerator {
+public class CountOnlyFetchDBClassGenerator extends DBClassGenerator {
     public CountOnlyFetchDBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }

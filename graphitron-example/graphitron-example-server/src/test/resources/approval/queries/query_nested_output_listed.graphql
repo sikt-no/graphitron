@@ -1,0 +1,8 @@
+{
+    filmWrappedListed(filmId: ["1", "2"]) {
+        films {
+            id
+            title
+        }
+    }
+}
