@@ -9,7 +9,6 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 
-
 import no.sikt.graphql.helpers.resolvers.EnvironmentHandler;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 
@@ -18,7 +17,7 @@ public class QueryEntityGeneratedDataFetcher {
         return env -> ((List<Map<String, Object>>) env.getArgument("representations")).stream().map(internal_it_ -> {
             var ctx = new EnvironmentHandler(env).getCtx();
             switch ((String) internal_it_.get("__typename")) {
-                case "Customer": return ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
+                case "Customer": return (_Entity) ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
                 default: return null;
             }
         } ).toList();
