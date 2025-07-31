@@ -24,7 +24,7 @@
 
     <properties>
         <revision>5</revision>
-        <changelist>-SNAPSHOT</changelist>
+        <changelist>.757-SNAPSHOT</changelist>
 
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>

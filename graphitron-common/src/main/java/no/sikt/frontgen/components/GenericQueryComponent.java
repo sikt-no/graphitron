@@ -7,21 +7,23 @@ import java.util.List;
 import java.util.function.Function;
 
 public class GenericQueryComponent<T, C> extends QueryComponent {
-    private final String query;
-    private final String rootField;
-    private final Class<C> connectionClass;
-    private final Function<C, List<T>> nodeExtractor;
-    private final Function<List<T>, Grid<T>> gridCreator;
-    private final String buttonText;
+    protected final String query;
+    protected final String rootField;
+    protected final Class<C> connectionClass;
+    protected final Function<C, List<T>> nodeExtractor;
+    protected final Function<List<T>, Grid<T>> gridCreator;
+    protected final String buttonText;
 
-    private GenericQueryComponent(Builder<T, C> builder) {
-        super(builder.queryView);
-        this.query = builder.query;
-        this.rootField = builder.rootField;
-        this.connectionClass = builder.connectionClass;
-        this.nodeExtractor = builder.nodeExtractor;
-        this.gridCreator = builder.gridCreator;
-        this.buttonText = builder.buttonText;
+    public GenericQueryComponent(QueryBackedView queryView, String query, String rootField,
+                                 Class<C> connectionClass, Function<C, List<T>> nodeExtractor,
+                                 Function<List<T>, Grid<T>> gridCreator, String buttonText) {
+        super(queryView);
+        this.query = query;
+        this.rootField = rootField;
+        this.connectionClass = connectionClass;
+        this.nodeExtractor = nodeExtractor;
+        this.gridCreator = gridCreator;
+        this.buttonText = buttonText;
 
         setSizeFull();
     }
@@ -47,53 +49,5 @@ public class GenericQueryComponent<T, C> extends QueryComponent {
     @Override
     public Runnable getLoadAction() {
         return this::load;
-    }
-
-    public static class Builder<T, C> {
-        private final QueryBackedView queryView;
-        private String query;
-        private String rootField;
-        private Class<C> connectionClass;
-        private Function<C, List<T>> nodeExtractor;
-        private Function<List<T>, Grid<T>> gridCreator;
-        private String buttonText;
-
-        public Builder(QueryBackedView queryView) {
-            this.queryView = queryView;
-        }
-
-        public Builder<T, C> query(String query) {
-            this.query = query;
-            return this;
-        }
-
-        public Builder<T, C> rootField(String rootField) {
-            this.rootField = rootField;
-            return this;
-        }
-
-        public Builder<T, C> connectionClass(Class<C> connectionClass) {
-            this.connectionClass = connectionClass;
-            return this;
-        }
-
-        public Builder<T, C> nodeExtractor(Function<C, List<T>> nodeExtractor) {
-            this.nodeExtractor = nodeExtractor;
-            return this;
-        }
-
-        public Builder<T, C> gridCreator(Function<List<T>, Grid<T>> gridCreator) {
-            this.gridCreator = gridCreator;
-            return this;
-        }
-
-        public Builder<T, C> buttonText(String buttonText) {
-            this.buttonText = buttonText;
-            return this;
-        }
-
-        public GenericQueryComponent<T, C> build() {
-            return new GenericQueryComponent<>(this);
-        }
     }
 }

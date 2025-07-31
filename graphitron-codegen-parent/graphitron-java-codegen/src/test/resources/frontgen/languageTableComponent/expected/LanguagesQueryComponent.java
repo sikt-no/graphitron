@@ -12,32 +12,32 @@ import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
 public class LanguagesQueryComponent extends GeneratedQueryComponent<Language, QueryLanguagesConnection> {
     @Override
-    protected String getQuery() {
+    public String getQuery() {
         return "query { languages(first: 100) { edges { node { id name } } } }";
     }
 
     @Override
-    protected String getRootField() {
+    public String getRootField() {
         return "languages";
     }
 
     @Override
-    protected Class<QueryLanguagesConnection> getConnectionClass() {
+    public Class<QueryLanguagesConnection> getConnectionClass() {
         return QueryLanguagesConnection.class;
     }
 
     @Override
-    protected Function<QueryLanguagesConnection, List<?>> getEdgesFunction() {
+    public Function<QueryLanguagesConnection, List<?>> getEdgesFunction() {
         return QueryLanguagesConnection::getEdges;
     }
 
     @Override
-    protected Function<Object, Language> getNodeFunction() {
+    public Function<Object, Language> getNodeFunction() {
         return edge -> ((QueryLanguagesConnectionEdge) edge).getNode();
     }
 
     @Override
-    protected Function<List<Language>, Grid<Language>> getGridCreator() {
+    public Function<List<Language>, Grid<Language>> getGridCreator() {
         return languages -> {
             Grid<Language> grid = new Grid<>(Language.class, false);
             grid.addColumn(Language::getId)
@@ -52,7 +52,7 @@ public class LanguagesQueryComponent extends GeneratedQueryComponent<Language, Q
     }
 
     @Override
-    protected String getButtonText() {
+    public String getButtonText() {
         return "List Languages";
     }
 }

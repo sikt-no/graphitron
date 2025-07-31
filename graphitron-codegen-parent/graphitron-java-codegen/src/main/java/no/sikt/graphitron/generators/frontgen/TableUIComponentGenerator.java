@@ -164,7 +164,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private MethodSpec generateHasParametersMethod() {
         return MethodSpec.methodBuilder("hasParameters")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(boolean.class)
                 .addStatement("return true")
                 .build();
@@ -173,7 +173,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private MethodSpec generateCreateInputSectionMethod(List<ParameterInfo> parameters) {
         MethodSpec.Builder builder = MethodSpec.methodBuilder("createInputSection")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(VerticalLayout.class)
                 .addStatement("$T inputLayout = new $T()", VerticalLayout.class, VerticalLayout.class);
 
@@ -191,7 +191,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private MethodSpec generateGetQueryVariablesMethod(List<ParameterInfo> parameters) {
         MethodSpec.Builder builder = MethodSpec.methodBuilder("getQueryVariables")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(ParameterizedTypeName.get(Map.class, String.class, Object.class))
                 .addStatement("$T<String, Object> variables = new $T<>()", Map.class, HashMap.class);
 
@@ -209,7 +209,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private MethodSpec generateValidateInputsMethod(List<ParameterInfo> parameters) {
         MethodSpec.Builder builder = MethodSpec.methodBuilder("validateInputs")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(boolean.class);
 
         if (parameters.isEmpty()) {
@@ -237,7 +237,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         return MethodSpec.methodBuilder("getQuery")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(String.class)
                 .addStatement("return $S", query)
                 .build();
@@ -292,7 +292,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
     private String mapJavaTypeToGraphQL(String javaType) {
         return switch (javaType) {
-            case "String" -> "String";
+            case "ID" -> "ID";
             case "Integer" -> "Int";
             case "Double" -> "Float";
             case "Boolean" -> "Boolean";
@@ -329,7 +329,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private MethodSpec generateRootFieldMethod(ObjectField field) {
         return MethodSpec.methodBuilder("getRootField")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(String.class)
                 .addStatement("return $S", field.getName())
                 .build();
@@ -345,7 +345,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         return MethodSpec.methodBuilder("getConnectionClass")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addStatement("return $T.class", connectionClass)
                 .build();
@@ -369,7 +369,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         return MethodSpec.methodBuilder("getEdgesFunction")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addStatement("return $L::getEdges", connectionTypeName)
                 .build();
@@ -386,7 +386,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         return MethodSpec.methodBuilder("getNodeFunction")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addStatement("return edge -> (($T) edge).getNode()",
                         ClassName.get(GeneratorConfig.generatedModelsPackage(), edgeTypeName))
@@ -409,7 +409,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         MethodSpec.Builder builder = MethodSpec.methodBuilder("getGridCreator")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addCode("return $L -> {\n", itemsParam)
                 .addStatement("    $T<$T> grid = new $T<>($T.class, false)",
@@ -594,7 +594,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         return MethodSpec.methodBuilder("getButtonText")
                 .addAnnotation(Override.class)
-                .addModifiers(Modifier.PROTECTED)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(String.class)
                 .addStatement("return $S", buttonText)
                 .build();
@@ -643,7 +643,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private String mapGraphQLTypeToJava(String graphqlType) {
         String baseType = graphqlType.replaceAll("[!\\[\\]]", "");
         return switch (baseType) {
-            case "ID", "String" -> "String";
+            case "ID" -> "ID";
             case "Int" -> "Integer";
             case "Float" -> "Double";
             case "Boolean" -> "Boolean";

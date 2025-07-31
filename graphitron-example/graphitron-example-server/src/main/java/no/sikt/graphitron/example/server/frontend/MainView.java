@@ -11,6 +11,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
 import no.sikt.frontgen.components.QueryBackedView;
 import no.sikt.frontgen.components.QueryComponent;
+import no.sikt.frontgen.components.ParameterizedQueryComponent;
 import no.sikt.frontgen.graphql.GraphQLQueryAdapter;
 import no.sikt.graphitron.example.generated.graphitron.frontend.QueryComponents;
 
@@ -60,8 +61,8 @@ public class MainView extends QueryBackedView {
         H3 title = new H3(displayName);
         title.getStyle().set("margin", "1rem");
 
-        // Create simple button with no redundant text
-        Button launchButton = new Button("View", e -> component.load());
+        // Don't call load() immediately - navigate to the component view instead
+        Button launchButton = new Button("View", e -> navigateToComponent(component));
         launchButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         launchButton.getStyle().set("margin", "1rem");
 
@@ -69,5 +70,16 @@ public class MainView extends QueryBackedView {
         card.add(cardContent);
 
         return card;
+    }
+
+    private void navigateToComponent(QueryComponent component) {
+        removeAll();
+        add(component);
+
+        // Only autoload for non-parameterized components
+        // Parameterized components will show their input form and wait for user action
+        if (!(component instanceof ParameterizedQueryComponent)) {
+            component.load();
+        }
     }
 }

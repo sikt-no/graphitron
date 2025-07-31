@@ -12,32 +12,32 @@ import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
 public class FilmsOrderedByQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
     @Override
-    protected String getQuery() {
+    public String getQuery() {
         return "query { filmsOrderedBy(first: 100) { edges { node { id title } } } }";
     }
 
     @Override
-    protected String getRootField() {
+    public String getRootField() {
         return "filmsOrderedBy";
     }
 
     @Override
-    protected Class<QueryFilmsConnection> getConnectionClass() {
+    public Class<QueryFilmsConnection> getConnectionClass() {
         return QueryFilmsConnection.class;
     }
 
     @Override
-    protected Function<QueryFilmsConnection, List<?>> getEdgesFunction() {
+    public Function<QueryFilmsConnection, List<?>> getEdgesFunction() {
         return QueryFilmsConnection::getEdges;
     }
 
     @Override
-    protected Function<Object, Film> getNodeFunction() {
+    public Function<Object, Film> getNodeFunction() {
         return edge -> ((QueryFilmsConnectionEdge) edge).getNode();
     }
 
     @Override
-    protected Function<List<Film>, Grid<Film>> getGridCreator() {
+    public Function<List<Film>, Grid<Film>> getGridCreator() {
         return films -> {
             Grid<Film> grid = new Grid<>(Film.class, false);
             grid.addColumn(Film::getId)
@@ -52,7 +52,7 @@ public class FilmsOrderedByQueryComponent extends GeneratedQueryComponent<Film, 
     }
 
     @Override
-    protected String getButtonText() {
+    public String getButtonText() {
         return "List FilmsOrderedBy";
     }
 }

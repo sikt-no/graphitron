@@ -1,4 +1,6 @@
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextField;
 import fake.graphql.example.model.Address;
 import fake.graphql.example.model.City;
 import fake.graphql.example.model.Customer;
@@ -9,19 +11,23 @@ import java.lang.Class;
 import java.lang.Object;
 import java.lang.Override;
 import java.lang.String;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
-public class CustomersQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
+public class CustomersByIDQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
+    private TextField idField;
+
     @Override
     public String getQuery() {
-        return "query { customers(first: 100) { edges { node {  name {  firstName lastName } email address {  id addressLine1 addressLine2 city {  id name countryName } zip phone } } } } }";
+        return "query($id: ID!) { customersByID(id: $id, first: 100) { edges { node { name {  firstName lastName } email address {  id addressLine1 addressLine2 city {  id name countryName } zip phone } } } } }";
     }
 
     @Override
     public String getRootField() {
-        return "customers";
+        return "customersByID";
     }
 
     @Override
@@ -118,6 +124,34 @@ public class CustomersQueryComponent extends GeneratedQueryComponent<Customer, C
 
     @Override
     public String getButtonText() {
-        return "List Customers";
+        return "List CustomersByID";
+    }
+
+    @Override
+    public boolean hasParameters() {
+        return true;
+    }
+
+    @Override
+    public VerticalLayout createInputSection() {
+        VerticalLayout inputLayout = new VerticalLayout();
+        idField = new TextField("id");
+        idField.setRequired(true);
+        inputLayout.add(idField);
+        return inputLayout;
+    }
+
+    @Override
+    public Map<String, Object> getQueryVariables() {
+        Map<String, Object> variables = new HashMap<>();
+        if (idField != null && !idField.isEmpty()) {
+            variables.put("id", idField.getValue());
+        }
+        return variables;
+    }
+
+    @Override
+    public boolean validateInputs() {
+        return (idField != null && !idField.isEmpty());
     }
 }

@@ -68,6 +68,7 @@ type PageInfo {
 
 type Query {
     customers(first: Int = 100, after: String): CustomerConnection
+    customersByID(id: ID!): CustomerConnection #with nonNullable/required input
     # should not be generated, because of @excludeFromUI
     customersNotGenerated(first: Int = 10, after: String): CustomerConnection @excludeFromUI
 }

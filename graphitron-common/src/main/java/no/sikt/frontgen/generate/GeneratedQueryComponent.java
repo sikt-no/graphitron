@@ -1,11 +1,9 @@
 package no.sikt.frontgen.generate;
 
-import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.textfield.TextField;
+import no.sikt.frontgen.components.GenericQueryComponent;
+import no.sikt.frontgen.components.ParameterizedQueryComponent;
 import no.sikt.frontgen.components.QueryBackedView;
 import no.sikt.frontgen.components.QueryComponent;
 
@@ -16,102 +14,59 @@ import java.util.function.Function;
 
 public abstract class GeneratedQueryComponent<T, C> {
 
-    protected abstract String getQuery();
-    protected abstract String getRootField();
-    protected abstract Class<C> getConnectionClass();
-    protected abstract Function<C, List<?>> getEdgesFunction();
-    protected abstract Function<Object, T> getNodeFunction();
-    protected abstract Function<List<T>, Grid<T>> getGridCreator();
-    protected abstract String getButtonText();
+    public abstract String getQuery();
+    public abstract String getRootField();
+    public abstract Class<C> getConnectionClass();
+    public abstract Function<C, List<?>> getEdgesFunction();
+    public abstract Function<Object, T> getNodeFunction();
+    public abstract Function<List<T>, Grid<T>> getGridCreator();
+    public abstract String getButtonText();
 
     // Methods for input handling - can be overridden by generated classes
-    protected Map<String, Object> getQueryVariables() {
+    public Map<String, Object> getQueryVariables() {
         return new HashMap<>();
     }
 
-    protected VerticalLayout createInputSection() {
+    public VerticalLayout createInputSection() {
         return new VerticalLayout();
     }
 
-    protected boolean validateInputs() {
+    public boolean validateInputs() {
         return true;
     }
 
-    protected boolean hasParameters() {
+    public boolean hasParameters() {
         return false;
     }
 
     public QueryComponent createComponent(QueryBackedView view) {
-        return new ParameterizedQueryComponent(view);
-    }
-
-    private class ParameterizedQueryComponent extends QueryComponent {
-        private VerticalLayout inputSection;
-
-        public ParameterizedQueryComponent(QueryBackedView queryView) {
-            super(queryView);
-            initializeComponent();
-        }
-
-        private void initializeComponent() {
-            setSizeFull();
-
-            // Add input section if the component has parameters
-            if (hasParameters()) {
-                inputSection = createInputSection();
-                if (inputSection.getComponentCount() > 0) {
-                    add(inputSection);
-                }
-            }
-
-            // Add execute button
-            Button executeButton = new Button(getButtonText());
-            executeButton.addClickListener(e -> load());
-            add(executeButton);
-        }
-
-        @Override
-        public void load() {
-            if (!validateInputs()) {
-                Notification.show("Please fill in all required fields");
-                return;
-            }
-
-            if (hasParameters()) {
-                queryView.fetchWithVariables(
-                        getQuery(),
-                        getQueryVariables(),
-                        getRootField(),
-                        getConnectionClass(),
-                        customers -> getGridCreator().apply(customers),
-                        getEdgesFunction(),
-                        getNodeFunction()
-                );
-            } else {
-                // Use the existing fetch method for non-parameterized queries
-                queryView.fetch(
-                        getQuery(),
-                        getRootField(),
-                        getConnectionClass(),
-                        customers -> getGridCreator().apply(customers),
-                        connection -> {
-                            List<?> edges = getEdgesFunction().apply(connection);
-                            return edges.stream().map(getNodeFunction()).toList();
-                        },
-                        getButtonText(),
-                        this::load
-                );
-            }
-        }
-
-        @Override
-        public String getButtonText() {
-            return GeneratedQueryComponent.this.getButtonText();
-        }
-
-        @Override
-        public Runnable getLoadAction() {
-            return this::load;
+        if (hasParameters()) {
+            return new ParameterizedQueryComponent<>(
+                    view, this, getQuery(), getRootField(), getConnectionClass(),
+                    connection -> {
+                        List<?> edges = getEdgesFunction().apply(connection);
+                        if (edges == null) return List.of();
+                        return edges.stream()
+                                .map(getNodeFunction())
+                                .map(node -> (T) node)
+                                .toList();
+                    },
+                    getGridCreator(), getButtonText(), getEdgesFunction(), getNodeFunction()
+            );
+        } else {
+            return new GenericQueryComponent<>(
+                    view, getQuery(), getRootField(), getConnectionClass(),
+                    connection -> {
+                        List<?> edges = getEdgesFunction().apply(connection);
+                        if (edges == null) return List.of();
+                        return edges.stream()
+                                .map(getNodeFunction())
+                                .map(node -> (T) node)
+                                .toList();
+                    },
+                    getGridCreator(), getButtonText()
+            );
         }
     }
+
 }
