@@ -125,7 +125,7 @@ public class ConditionRecordsTest extends GeneratorTest {
                         "DSL.row(DSL.trueCondition()).in(" +
                                 "input3Record.getInputs2().stream().map(internal_it_ ->" +
                                         "DSL.row(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_staff, internal_it_.getInput1()))" +
-                                ").collect(Collectors.toList())" +
+                                ").toList()" +
                         ") : DSL.noCondition()" +
                 ")" +
                 ".orderBy"

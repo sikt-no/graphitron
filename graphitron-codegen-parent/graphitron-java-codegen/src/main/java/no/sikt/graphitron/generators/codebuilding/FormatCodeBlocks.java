@@ -46,7 +46,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  */
 public class FormatCodeBlocks {
     private final static CodeBlock
-            COLLECT_TO_LIST = CodeBlock.of(".collect($T.toList())", COLLECTORS.className),
+            COLLECT_TO_LIST = CodeBlock.of(".toList()"),
             NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VARIABLE_ENV),
             DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
             NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_HELPER.className, VARIABLE_ENV),
