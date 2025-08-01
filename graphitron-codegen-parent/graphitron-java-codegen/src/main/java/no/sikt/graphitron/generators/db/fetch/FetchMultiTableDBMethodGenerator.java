@@ -78,7 +78,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
             mappedDeclarationBlock.add(declare(mappedVariableName,
                     CodeBlock.of("$N($L)",
                             getMappedMethodName(target, implementation),
-                            GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : empty()))
+                            GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : CodeBlock.empty()))
             );
 
             joins.add("\n.leftJoin($N)\n.on($N.field($S, $T.class).eq($N.field($S, $T.class)))",
@@ -93,7 +93,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var returnsMultiple = target.isIterableWrapped() || target.hasForwardPagination();
 
         return CodeBlock.builder()
-                .add(target.hasForwardPagination() ? declare(TOKEN, getTokenVariableDeclaration(implementations)) : empty())
+                .add(target.hasForwardPagination() ? declare(TOKEN, getTokenVariableDeclaration(implementations)) : CodeBlock.empty())
                 .add(declare(UNION_KEYS_QUERY, unionQuery))
                 .add("\n")
                 .add(mappedDeclarationBlock.build())
@@ -104,11 +104,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("\n.from($L)", UNION_KEYS_QUERY)
                 .add(joins.build())
                 .add("\n.orderBy($N.field($S), $N.field($S))", UNION_KEYS_QUERY, TYPE_FIELD, UNION_KEYS_QUERY, INNER_ROW_NUM)
-                .add(target.hasForwardPagination() ? CodeBlock.of(".limit($N + 1)\n", PAGE_SIZE_NAME) : empty())
+                .add(target.hasForwardPagination() ? CodeBlock.of(".limit($N + 1)\n", PAGE_SIZE_NAME) : CodeBlock.empty())
                 .add(returnsMultiple ? "\n.fetch()\n" : "\n.fetchOne();")
-                .add(returnsMultiple ? mapping : empty())
+                .add(returnsMultiple ? mapping : CodeBlock.empty())
                 .unindent()
-                .add(returnsMultiple ? empty() : mapping)
+                .add(returnsMultiple ? CodeBlock.empty() : mapping)
                 .build();
     }
 
@@ -132,7 +132,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private static @NotNull CodeBlock getUnionQuery(List<String> subselectVariableNames, Set<String> inputNames, boolean isConnection) {
 
         var inputs = CodeBlock.builder()
-                .add(isConnection ? CodeBlock.of("$N, $N", PAGE_SIZE_NAME, TOKEN) : empty())
+                .add(isConnection ? CodeBlock.of("$N, $N", PAGE_SIZE_NAME, TOKEN) : CodeBlock.empty())
                 .add(isConnection && !inputNames.isEmpty() ? ", " : "")
                 .add(CodeBlock.join(inputNames.stream().map(CodeBlock::of).collect(Collectors.toSet()), ", "))
                 .build();
@@ -183,7 +183,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder()
                 .indent()
                 .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
-                .add(isConnection ? CodeBlock.of("$T $N;\n", RECORD2.className, RESULT) : empty())
+                .add(isConnection ? CodeBlock.of("$T $N;\n", RECORD2.className, RESULT) : CodeBlock.empty())
                 .beginControlFlow("switch ($N.get(0, $T.class))", VARIABLE_INTERNAL_ITERATION, STRING.className);
 
         if (isConnection) {
@@ -287,12 +287,12 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(getPrimaryKeyFieldsArray(implementation.getName(), querySource.toString(), context.getTargetTable().getName()))
                 .add(".as($S),\n$T.field(\n", PK_FIELDS, DSL.className)
                 .indent()
-                .add(target.hasForwardPagination() ? CodeBlock.of("$T.row(\n", DSL.className) : empty())
+                .add(target.hasForwardPagination() ? CodeBlock.of("$T.row(\n", DSL.className) : CodeBlock.empty())
                 .add(target.hasForwardPagination() ? CodeBlock.of("$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
-                        QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName()) : empty())
+                        QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName()) : CodeBlock.empty())
                 .add("$T.select($L)", DSL.className, indentIfMultiline(selectCode))
                 .unindent()
-                .add(target.hasForwardPagination() ? CodeBlock.of(")\n") : empty())
+                .add(target.hasForwardPagination() ? CodeBlock.of(")\n") : CodeBlock.empty())
                 .add("\n).as($S))", DATA_FIELD)
                 .add("\n.from($L);", querySource)
                 .unindent()

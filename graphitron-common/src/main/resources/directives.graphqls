@@ -173,8 +173,10 @@ directive @node(
   typeId: String
 
   """
-  Specifies which columns are included in the key and in which order.
-  We strongly recommend that what is specified matches the primary key (or another unique key) in the database. If you do not specify keyColumns, we use the primary key in the database and the order set there.
+  Defines the order of the primary or unique key columns in the node ID.
+  These columns must correspond to the primary key or another unique key defined in the database schema.
+
+  If you do not specify keyColumns, we use the primary key in the database and the order set there.
   Note that in such a case, changing the primary key will cause the IDs to change, which can be undesirable.
   """
   keyColumns: [String!]
@@ -182,6 +184,7 @@ directive @node(
 
 """
 Specifies that the field is a globally unique ID in accordance with our implementation of [Global Object Identification](https://graphql.org/learn/global-object-identification/).
+If used as a reference in jOOQ record input types, the primary or unique key the foreign targets must match the key defined in the referenced type's @node-configuration.
 """
 directive @nodeId(
   """

@@ -211,4 +211,37 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
                 "this.addressesKey = primaryKey;"
         );
     }
+
+    @Test
+    @DisplayName("Field referencing multitable interface")
+    void referencingMultitableInterface() {
+        assertGeneratedContentContains("referencingMultitableInterface",
+                "FilmCategory(Record2<Long, Long> primaryKey)",
+                "this.titledFilmsKey = primaryKey;"
+        );
+    }
+
+    @Test
+    @DisplayName("Field referencing multitable interface connection")
+    void referencingMultitableInterfaceConnection() {
+        assertGeneratedContentContains("referencingMultitableInterfaceConnection",
+                "this.titledFilmsKey = primaryKey;"
+        );
+    }
+
+    @Test
+    @DisplayName("Field referencing multitable union")
+    void referencingMultitableUnion() {
+        assertGeneratedContentContains("referencingMultitableUnion",
+                "this.filmsKey = primaryKey;"
+        );
+    }
+
+    @Test
+    @DisplayName("Field referencing multitable interface union")
+    void referencingMultitableUnionConnection() {
+        assertGeneratedContentContains("referencingMultitableUnionConnection",
+                "this.filmsKey = primaryKey;"
+        );
+    }
 }

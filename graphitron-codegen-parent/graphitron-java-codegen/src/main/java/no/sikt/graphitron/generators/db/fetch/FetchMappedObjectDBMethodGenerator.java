@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -62,7 +61,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock
                 .builder()
                 .add(selectAliasesBlock)
-                .add(maybeOrderFields.orElse(empty()))
+                .add(maybeOrderFields.orElse(CodeBlock.empty()))
                 .add("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
@@ -72,12 +71,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(target.isResolver() ? empty() : maybeOrderFields
+                .add(target.isResolver() ? CodeBlock.empty() : maybeOrderFields
                         .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
-                        .orElse(empty()))
+                        .orElse(CodeBlock.empty()))
                 .add(target.hasForwardPagination() && !target.isResolver()
                         ? createSeekAndLimitBlock()
-                        : empty())
+                        : CodeBlock.empty())
                 .add(setFetch(target))
                 .unindent()
                 .unindent();
@@ -92,9 +91,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return indentIfMultiline(
                 Stream.of(
                         getInitialKey(context),
-                        target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
+                        target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : CodeBlock.empty(),
                         selectRowBlock
-                ).collect(CodeBlock.joining(""))
+                ).collect(CodeBlock.joining())
         );
     }
 
@@ -119,7 +118,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (!refObject.hasTable()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         if (referenceField.hasForwardPagination()) {

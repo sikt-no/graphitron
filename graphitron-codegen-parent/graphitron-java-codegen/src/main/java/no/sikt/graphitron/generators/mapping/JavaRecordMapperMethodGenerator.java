@@ -27,7 +27,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
     @NotNull
     protected CodeBlock iterateRecords(MapperContext context) {
         if (context.isIterable() && !context.hasRecordReference()) {
-            return empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
+            return CodeBlock.empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
         }
 
         var fieldCode = CodeBlock.builder();
@@ -55,7 +55,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 if (notAlreadyDefined) {
                     fieldCode.add(declare(varName, innerContext.getSourceGetCallBlock()));
                 }
-                var nullBlock = notAlreadyDefined ? CodeBlock.of("$N != null && ", varName) : empty();
+                var nullBlock = notAlreadyDefined ? CodeBlock.of("$N != null && ", varName) : CodeBlock.empty();
                 fieldCode
                         .beginControlFlow("if ($L$L)", nullBlock, selectionSetLookup(innerContext.getPath(), false, toRecord))
                         .add(innerCode.build())

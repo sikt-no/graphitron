@@ -11,6 +11,9 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
+import org.jooq.ForeignKey;
+
+import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
@@ -18,9 +21,10 @@ import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.ReflectionHelpers.classHasMethod;
-import static no.sikt.graphitron.mappings.TableReflection.recordUsesFSHack;
+import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_ID;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -309,7 +313,7 @@ public class MapperContext {
 
     public CodeBlock wrapFields(CodeBlock fieldCode) {
         if (fieldCode.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
@@ -360,19 +364,22 @@ public class MapperContext {
         return CodeBlock
                 .builder()
                 .add(hasSourceName() ? wrapNotNull(sourceName, forCode.build()) : forCode.build())
-                .add(toRecord && !mapsJavaRecord ? applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS) : empty()) // Note: This is done after records are filled.
+                .add(toRecord && !mapsJavaRecord ? applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS) : CodeBlock.empty()) // Note: This is done after records are filled.
                 .build();
     }
 
     public CodeBlock getSetMappingBlock(CodeBlock valueToSet) {
         if (schema.isNodeIdField(target) && toRecord && !mapsJavaRecord) {
             var nodeType = schema.getRecordType(target.getNodeIdTypeName());
-            return CodeBlock.of("$N.setId($N, $L, $S, $L);",
+            var foreignKey = getForeignKeyForNodeIdReference(target, schema);
+
+            return CodeBlock.of("$N.$L($N, $L, $S, $L);",
                     NODE_ID_STRATEGY_NAME,
+                    foreignKey.isPresent() ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
                     previousContext.targetName,
                     valueToSet,
                     nodeType.getTypeId(),
-                    nodeIdColumnsBlock(nodeType)
+                    foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
             );
         }
         return setValue(previousContext.targetName, setTargetMapping, valueToSet);
@@ -413,9 +420,9 @@ public class MapperContext {
         return CodeBlock.of(
                 "$L$L$S$L)",
                 recordTransformPart(sourceName, targetType.getName()),
-                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : empty(),
+                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
                 path,
-                recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : empty()
+                recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : CodeBlock.empty()
         );
     }
 
@@ -431,7 +438,7 @@ public class MapperContext {
                 ),
                 PATH_HERE_NAME,
                 path,
-                recordValidationEnabled() && !hasJavaRecordReference && toRecord ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
+                recordValidationEnabled() && !hasJavaRecordReference && toRecord ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : CodeBlock.empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
         );
     }
 

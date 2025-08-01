@@ -5,7 +5,7 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.util.List;
-import java.util.stream.Collectors;
+
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
@@ -32,7 +32,7 @@ public class QueryDBQueries {
                                                         no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getId()),
                                                         no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirstName())
                                                 )
-                                        ).collect(Collectors.toList())
+                                        ).toList()
                                 ) : DSL.noCondition()
                 )
                 .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_customer, inRecordList))

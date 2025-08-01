@@ -15,7 +15,6 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
@@ -74,9 +73,9 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                 recordTransformMethod(type.getName(), type.hasJavaRecordReference(), toRecord),
                 LIST.className,
                 VARIABLE_INPUT,
-                shouldMakeNodeStrategy() ? CodeBlock.of(", $N", NODE_ID_STRATEGY_NAME) : empty(),
+                shouldMakeNodeStrategy() ? CodeBlock.of(", $N", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
                 PATH_NAME,
-                useValidation ? CodeBlock.of(", $N", PATH_INDEX_NAME) : empty(),
+                useValidation ? CodeBlock.of(", $N", PATH_INDEX_NAME) : CodeBlock.empty(),
                 toRecord ? CodeBlock.of("new $T()", type.getRecordClassName()) : CodeBlock.of("null")
         ).build();
     }
@@ -88,7 +87,7 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
                 mapperClass,
                 recordTransformMethod(hasReference, toRecord),
                 VARIABLE_INPUT,
-                shouldMakeNodeStrategy() ? CodeBlock.of(" $N,", NODE_ID_STRATEGY_NAME) : empty(),
+                shouldMakeNodeStrategy() ? CodeBlock.of(" $N,", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
                 PATH_NAME
         );
     }

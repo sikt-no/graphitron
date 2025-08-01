@@ -1,0 +1,11 @@
+type Query {
+  query(in: CustomerInputTable): ID @service(service: {name: "DUMMY_SERVICE"})
+}
+
+input CustomerInputTable @table(name: "CUSTOMER") {
+  addressId: ID! @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+}
+
+type Address implements Node @node @table {
+  id: ID!
+}

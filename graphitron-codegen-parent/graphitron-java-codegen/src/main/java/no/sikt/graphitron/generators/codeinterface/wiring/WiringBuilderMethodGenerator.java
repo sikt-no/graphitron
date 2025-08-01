@@ -23,9 +23,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.join;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
@@ -99,7 +97,7 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
                         .add("$N.type(", VAR_WIRING)
                         .add(
                                 indentIfMultiline(
-                                        join(
+                                        CodeBlock.join(
                                                 newTypeWiring(k),
                                                 indentIfMultiline(v.stream().map(ClassWiringContainer::toCode).collect(CodeBlock.joining("\n")))
                                         )
@@ -133,7 +131,7 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
                         return CodeBlock.of("$N.scalar($L);", VAR_WIRING, scalarTypeToCodeBlockMapping.get(scalarName));
                     } else {
                         LOGGER.info("Scalar type '{}' is not recognized and must be added manually to the wiring.", scalarName);
-                        return empty();
+                        return CodeBlock.empty();
                     }
                 }).collect(CodeBlock.joining("\n"));
     }

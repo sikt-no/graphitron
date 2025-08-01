@@ -724,6 +724,30 @@ public final class TypeSpec {
             return addField(TypeName.get(type), name, modifiers);
         }
 
+        public Builder addFieldIf(boolean predicate, FieldSpec fieldSpec) {
+            if (predicate) {
+                addField(fieldSpec);
+            }
+
+            return this;
+        }
+
+        public Builder addFieldIf(boolean predicate, TypeName type, String name, Modifier... modifiers) {
+            if (predicate) {
+                addField(type, name, modifiers);
+            }
+
+            return this;
+        }
+
+        public Builder addFieldIf(boolean predicate, Type type, String name, Modifier... modifiers) {
+            if (predicate) {
+                addField(type, name, modifiers);
+            }
+
+            return this;
+        }
+
         public Builder addStaticBlock(CodeBlock block) {
             staticBlock.beginControlFlow("static").add(block).endControlFlow();
             return this;

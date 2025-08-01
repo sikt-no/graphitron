@@ -47,7 +47,7 @@ public class MutationTypeResolverMethodGenerator extends UpdateResolverMethodGen
     @Override
     protected CodeBlock generateSchemaOutputs(ObjectField target) {
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);

@@ -1,0 +1,23 @@
+type FilmCategory @table(name: "FILM_CATEGORY") {
+    titledFilms(first: Int = 100, after: String): TitledConnection
+}
+
+type Film implements Titled @table {
+    id: ID!
+    title: String!
+}
+
+interface Titled {
+    title: String!
+}
+
+type TitledConnection {
+    edges: [TitledConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Titled!]!
+}
+
+type TitledConnectionEdge {
+    cursor: String
+    node: Titled
+}

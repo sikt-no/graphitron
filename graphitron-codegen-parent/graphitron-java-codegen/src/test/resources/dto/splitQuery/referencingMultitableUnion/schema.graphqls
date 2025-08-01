@@ -1,0 +1,9 @@
+type FilmCategory @table(name: "FILM_CATEGORY") {
+    films: [FilmUnion] @splitQuery
+}
+
+union FilmUnion = Film
+
+type Film @table {
+    id: ID!
+}

@@ -1,0 +1,21 @@
+type FilmCategory @table(name: "FILM_CATEGORY") {
+    films(first: Int = 100, after: String): FilmUnionConnection
+}
+
+union FilmUnion = Film
+
+type Film @table {
+    id: ID!
+}
+
+
+type FilmUnionConnection {
+    edges: [FilmUnionConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [FilmUnion!]!
+}
+
+type FilmUnionConnectionEdge {
+    cursor: String
+    node: FilmUnion
+}

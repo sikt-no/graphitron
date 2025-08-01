@@ -41,6 +41,7 @@ import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getK
 import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getMethodFromReference;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -103,7 +104,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var shouldHaveOrderByToken = isConnection && maybeOrderByFields.isPresent();
 
         CodeBlock.Builder select = CodeBlock.builder();
-        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : empty());
+        select.add(shouldHaveOrderByToken ? CodeBlock.of("\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), maybeOrderByFields.get()) : CodeBlock.empty());
 
         if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
@@ -120,8 +121,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : empty())
-                .add(isConnection ? createSeekAndLimitBlock() : empty());
+                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : CodeBlock.empty())
+                .add(isConnection ? createSeekAndLimitBlock() : CodeBlock.empty());
 
 
         return isMultiset ? field.isResolver() ? wrapInMultiset(contents.build()) : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken) : wrapInField(contents.build());
@@ -240,7 +241,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock
                 .builder()
                 .add(wrapRow(CodeBlock.join(rowElements, ",\n")))
-                .add(mappingContent.isEmpty() ? empty() : CodeBlock.of(".mapping($L)", mappingContent))
+                .add(mappingContent.isEmpty() ? CodeBlock.empty() : CodeBlock.of(".mapping($L)", mappingContent))
                 .build();
     }
 
@@ -451,7 +452,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
         } else if (field.isID()) {
-            return join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
+            return CodeBlock.join(renderedSource, field.getMappingFromFieldOverride().asGetCall());
         }
 
         var content = CodeBlock.of("$L.$N$L", renderedSource, field.getUpperCaseName(), toJOOQEnumConverter(field.getTypeName(), processedSchema));
@@ -533,8 +534,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var field = inputCondition.getInput();
             var name = inputCondition.getNameWithPath();
             var checks = inputCondition.getChecksAsSequence();
-            var checksNotEmpty = !checks.isEmpty();
-            var renderedSequence = context.iterateJoinSequenceFor(field).render();
+            var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
+            var checksNotEmpty = !checks.isEmpty()
+                    && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs
+            var renderedSequence = isInRecordInput ?
+                    CodeBlock.of(context.getTargetAlias())
+                    :  context.iterateJoinSequenceFor(field).render();
 
             if (!inputCondition.isOverriddenByAncestors() && !field.hasOverridingCondition()) {
                 if (checksNotEmpty) {
@@ -543,14 +548,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
                 if (field.isID()) {
                     if (processedSchema.isNodeIdField(field)) {
-                        conditionBuilder.add(
-                                hasIdsBlock(
-                                        processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
-                                                CodeBlock.of(inputCondition.getNamePath()) : name,
-                                        processedSchema.getObject(field.getNodeIdTypeName()),
-                                        renderedSequence.toString(),
-                                        field.isIterableWrapped()
-                                )
+                        conditionBuilder.add(hasIdOrIdsBlock(
+                                processedSchema.hasJOOQRecord(field.getContainerTypeName()) ?
+                                        CodeBlock.of(inputCondition.getNamePath()) : name,
+                                processedSchema.getObject(field.getNodeIdTypeName()),
+                                renderedSequence.toString(),
+                                getSourceFieldsForForeignKey(field, processedSchema, renderedSequence),
+                                field.isIterableWrapped())
                         );
                     } else {
                         conditionBuilder
@@ -667,7 +671,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (tupleFieldBlocks.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var checks = String.join(" && ", selectedConditions

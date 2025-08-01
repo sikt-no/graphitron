@@ -13,7 +13,6 @@ import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_SERV
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.MAPPER_RECORD_ENUM;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.DUMMY_ENUM_CONVERTED;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.toGraphEnumConverter;
 
 @DisplayName("Graph enums - Enum conversion when mapping enums")
@@ -38,7 +37,7 @@ public class MapperEnumConversionFunctionTest extends CodeBlockTest {
                 .findFirst()
                 .orElse(null);
         if (field == null) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         return toGraphEnumConverter(field.getTypeName(), CodeBlock.of(field.getName()), field.isInput(), schema);

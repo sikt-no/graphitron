@@ -64,7 +64,7 @@ public class ResolverTest extends GeneratorTest {
                 "inRecordList =",
                 "in, \"in\"",
                 ".getCtx(), inRecordList",
-                ".completedFuture(inRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()"
+                ".completedFuture(inRecordList.stream().map(it -> it.getId()).toList()"
         );
     }
 
@@ -94,7 +94,7 @@ public class ResolverTest extends GeneratorTest {
                 "in1RecordList =",
                 "in1, \"in1\"",
                 ".getCtx(), in0RecordList, in1RecordList",
-                ".completedFuture(in0RecordList.stream().map(it -> it.getId()).collect("
+                ".completedFuture(in0RecordList.stream().map(it -> it.getId()).toList()"
         );
     }
 
@@ -109,7 +109,7 @@ public class ResolverTest extends GeneratorTest {
                 "in1Record =",
                 "in1, \"in1\"",
                 ".getCtx(), in0RecordList, in1Record",
-                ".completedFuture(in0RecordList.stream().map(it -> it.getId()).collect("
+                ".completedFuture(in0RecordList.stream().map(it -> it.getId()).toList()"
         );
     }
 
@@ -154,7 +154,7 @@ public class ResolverTest extends GeneratorTest {
     void responseTypeListedIds() {
         assertGeneratedContentContains(
                 "responseTypeListedIds",
-                ".setId(inRecordList.stream().map(it -> it.getId()).collect(Collectors.toList()"
+                ".setId(inRecordList.stream().map(it -> it.getId()).toList()"
         );
     }
 
@@ -179,7 +179,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "responseRecordListed",
                 "customerForNode = CustomerDBQueries.customerForNode(transform.getCtx(), inRecordList.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
-                        "response.setCustomer(inRecordList.stream().map(it -> customerForNode.get(it.getId())).collect(Collectors.toList()"
+                        "response.setCustomer(inRecordList.stream().map(it -> customerForNode.get(it.getId())).toList()"
         );
     }
 

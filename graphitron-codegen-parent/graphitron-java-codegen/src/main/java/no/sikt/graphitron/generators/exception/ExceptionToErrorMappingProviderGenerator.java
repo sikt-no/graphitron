@@ -60,7 +60,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
         var mutationErrorListsCodeblock = mutationTypeDefinition.getFields().stream()
                 .sorted(Comparator.comparing(ObjectField::getName))
                 .map(mutation -> new MutationProcessor(mutation).process(exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
-                .collect(CodeBlock.joining(""));
+                .collect(CodeBlock.joining());
 
         var codeBuilder = CodeBlock.builder();
         mappingVariablesToBlocks.forEach((key, value) -> codeBuilder.add(declare(MAPPING_VARIABLE_PREFIX + key, value)));

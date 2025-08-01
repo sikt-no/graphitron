@@ -52,7 +52,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
     @NotNull
     protected CodeBlock iterateRecords(MapperContext context) {
         if (context.isIterable() && !context.hasTable()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var fieldCode = CodeBlock.builder();

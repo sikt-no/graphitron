@@ -14,7 +14,6 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.empty;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asIterable;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -153,11 +152,11 @@ public class LookupHelpers {
     private static CodeBlock buildKey(String key, ObjectField ref, ProcessedSchema schema) {
         var components = key.split(",");
         if (components.length < 2) {
-            return components.length < 1 ? empty() : Optional
+            return components.length < 1 ? CodeBlock.empty() : Optional
                     .ofNullable(ref.getArgumentByName(components[0]))
                     .map(it -> it.isID() ? it.getMappingFromFieldOverride().asGetCall().toString().substring(1) : it.getUpperCaseName())
                     .map(CodeBlock::of)
-                    .orElse(empty());
+                    .orElse(CodeBlock.empty());
         }
 
         var lastInput = lastInput(components, schema, ref);
@@ -171,7 +170,7 @@ public class LookupHelpers {
     private static CodeBlock formatKeyAsList(ObjectField referenceField, String keySequence, ProcessedSchema schema) {
         var components = keySequence.split(",");
         if (components.length < 1) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var path = iterateComponents(components, schema, referenceField);

@@ -249,7 +249,7 @@ public class ResolverTest extends GeneratorTest {
                 "responseFetchByIDList", Set.of(NODE),
                 "customerForNode = CustomerDBQueries.customerForNode(" +
                         "transform.getCtx(), mutation.stream().map(it -> it.getId()).collect(Collectors.toSet()), transform.getSelect().withPrefix(\"customer\"));" +
-                "response.setCustomer(mutation.stream().map(it -> customerForNode.get(it.getId())).collect(Collectors.toList()"
+                "response.setCustomer(mutation.stream().map(it -> customerForNode.get(it.getId())).toList()"
         );
     }
 

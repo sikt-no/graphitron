@@ -5,12 +5,14 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
@@ -54,7 +56,11 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                     VARIABLE_INTERNAL_ITERATION);
             cases
                     .add("case $S: ", entity.getName())
-                    .add(returnWrap(transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock)));
+                    .add(returnWrap(CodeBlock.of("($T) $L",
+                                    processedSchema.getUnion(target.getTypeName()).getGraphClassName(),
+                                    transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock))
+                            )
+                    );
         }
 
         return getDefaultSpecBuilder(METHOD_NAME, wrapFetcher(wrapList(processedSchema.getUnion(target.getTypeName()).getGraphClassName())))

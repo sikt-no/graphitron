@@ -19,5 +19,6 @@ input HelloWorldInputObject @record(record: {className: "no.sikt.graphitron.exam
 
 input CustomerInput @table(name: "CUSTOMER") {
     id: ID! @nodeId(typeName: "Customer")
+    addressId: ID @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
 }

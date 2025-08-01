@@ -69,7 +69,7 @@ public class ResolverKeyHelpers {
         String foreignKeyName;
         var primaryKeyOptional = getPrimaryKeyForTable(containerTypeTable.getName());
 
-        if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries()) {
+        if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries() || processedSchema.isMultiTableField(field)) {
             return primaryKeyOptional
                     .orElseThrow(() -> new IllegalArgumentException(
                             String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",

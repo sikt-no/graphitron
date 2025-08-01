@@ -55,7 +55,7 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
                 "DSL.row(_customer.getId(), _customer.getId()).in(" +
-                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).collect(Collectors.toList())" +
+                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).toList()" +
                         ") : DSL.noCondition()"
         );
     }
@@ -78,7 +78,7 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
                 "DSL.row(_customer.getId(), _customer.FIRST_NAME).in(" +
-                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).collect(Collectors.toList())" +
+                        "    inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).toList()" +
                         ") : DSL.noCondition()"
         );
     }

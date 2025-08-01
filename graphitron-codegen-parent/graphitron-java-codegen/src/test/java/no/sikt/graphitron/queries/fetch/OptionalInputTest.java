@@ -71,7 +71,7 @@ public class OptionalInputTest extends GeneratorTest {
                         "        DSL.row(_customer.getId()).in(" +
                         "            in0.stream().map(internal_it_ ->" +
                         "                DSL.row(DSL.inline(internal_it_.getIn1().getId()))" +
-                        "            ).collect(Collectors.toList())" +
+                        "            ).toList()" +
                         "        ) : DSL.noCondition())"
         );
     }
@@ -85,7 +85,7 @@ public class OptionalInputTest extends GeneratorTest {
                         "        DSL.row(_customer.getId()).in(" +
                         "            in.getIn().stream().map(internal_it_ ->" +
                         "                DSL.row(DSL.inline(internal_it_.getId()))" +
-                        "            ).collect(Collectors.toList())" +
+                        "            ).toList()" +
                         "        ) : DSL.noCondition())"
         );
     }

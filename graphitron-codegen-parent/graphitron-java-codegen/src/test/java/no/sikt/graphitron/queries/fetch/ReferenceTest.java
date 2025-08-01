@@ -25,6 +25,6 @@ abstract public class ReferenceTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new MapOnlyFetchDBClassGenerator(schema), new InterfaceOnlyFetchDBClassGenerator(schema));
+        return List.of(new MapOnlyFetchDBClassGenerator(schema));
     }
 }

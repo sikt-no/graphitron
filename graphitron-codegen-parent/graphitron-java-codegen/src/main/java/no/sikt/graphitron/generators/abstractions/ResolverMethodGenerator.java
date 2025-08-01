@@ -85,7 +85,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                     .builder()
                     .add(isService ? CodeBlock.of("$N", uncapitalize(objectToCall)) : CodeBlock.of("$T", getQueryClassName(objectToCall)))
                     .add(".$L(", methodName)
-                    .add(isService ? empty() : CodeBlock.of("$L, ", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)))
+                    .add(isService ? CodeBlock.empty() : CodeBlock.of("$L, ", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)))
                     .add("$L)", parser.getInputParamString());
             return declare(asResultName(target.getName()), methodCall.build());
         }
@@ -102,14 +102,14 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         var object = processedSchema.getObjectOrConnectionNode(target);
         var transformFunction = isService && object != null
                 ? transformOutputRecord(object.getName(), object.hasJavaRecordReference())
-                : empty();
-        var transformWrap = transformFunction.isEmpty() ? empty() : CodeBlock.of(",\n$L", transformFunction);
+                : CodeBlock.empty();
+        var transformWrap = transformFunction.isEmpty() ? CodeBlock.empty() : CodeBlock.of(",\n$L", transformFunction);
         if (!target.hasRequiredPaginationFields()) {
             if (!localObject.isOperationRoot()) {
                 dataBlock.add("\n");
             }
             return dataBlock
-                    .add(join(queryFunction, transformWrap))
+                    .add(CodeBlock.join(queryFunction, transformWrap))
                     .unindent()
                     .unindent()
                     .addStatement(")")
@@ -143,7 +143,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 TRANSFORMER_LAMBDA_NAME,
                 RESPONSE_NAME,
                 recordTransformPart(TRANSFORMER_LAMBDA_NAME, RESPONSE_NAME, typeName, isJava, false),
-                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : empty(),
+                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
                 ""
         );
     }
@@ -188,7 +188,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 return declareTransform();
             }
 
-            return empty();
+            return CodeBlock.empty();
         }
 
         return inputTransform(field.getNonReservedArguments());
@@ -220,7 +220,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         }
 
         if (code.isEmpty() && recordCode.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         code.add("\n").add(recordCode.build());
@@ -235,7 +235,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     private CodeBlock declareRecords(MapperContext context, int recursion) {
         recursionCheck(recursion);
         if (!context.targetIsType()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var target = context.getTarget();
@@ -267,7 +267,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
      */
     private CodeBlock unwrapRecords(MapperContext context) {
         if (context.hasJavaRecordReference()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var schema = context.getSchema();
@@ -313,7 +313,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     protected CodeBlock declareContextArgs(ObjectField target) {
         var contextFields = processedSchema.getAllContextFields(target);
         if (contextFields.isEmpty()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var code = CodeBlock
