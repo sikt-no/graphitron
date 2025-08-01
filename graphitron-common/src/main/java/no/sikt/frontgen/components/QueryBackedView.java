@@ -1,15 +1,12 @@
 package no.sikt.frontgen.components;
 
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-
 import no.sikt.frontgen.graphql.GraphQLQueryAdapter;
 import no.sikt.frontgen.graphql.GraphQLResponse;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
@@ -119,6 +116,22 @@ public class QueryBackedView extends VerticalLayout {
 
             removeAll();
 
+            if (response.hasErrors()) {
+                add(new H2("Error"));
+
+                HorizontalLayout buttonLayout = new HorizontalLayout();
+                Button backButton = new Button("Back", e -> {
+                    getUI().ifPresent(ui -> ui.getPage().setLocation("/frontgen"));
+                });
+                backButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+                buttonLayout.add(backButton);
+                add(buttonLayout);
+
+                add(new Paragraph("GraphQL error: " + response.getErrorMessage()));
+                return;
+            }
+
+
             // Add page header
             String viewName = "Query Results";
             add(new H2(viewName));
@@ -133,7 +146,6 @@ public class QueryBackedView extends VerticalLayout {
 
             buttonLayout.add(backButton);
             buttonLayout.setJustifyContentMode(JustifyContentMode.START);
-
             add(buttonLayout);
 
             if (response.getData() != null) {
@@ -149,14 +161,21 @@ public class QueryBackedView extends VerticalLayout {
                 } else {
                     add(new Paragraph("No data returned"));
                 }
-            } else if (response.hasErrors()) {
-                add(new Paragraph("GraphQL error: " + response.getErrorMessage()));
             } else {
                 add(new Paragraph("No data returned"));
             }
         } catch (Exception ex) {
             removeAll();
             add(new H2("Error"));
+
+            HorizontalLayout buttonLayout = new HorizontalLayout();
+            Button backButton = new Button("Back", e -> {
+                getUI().ifPresent(ui -> ui.getPage().setLocation("/frontgen"));
+            });
+            backButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+            buttonLayout.add(backButton);
+            add(buttonLayout);
+
             add(new Paragraph("Error executing query: " + ex.getMessage()));
         }
     }
