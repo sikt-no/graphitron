@@ -16,7 +16,7 @@ public class MappingCodeBlocks {
      */
     public static CodeBlock generateSchemaOutputs(MapperContext mapperContext, ProcessedSchema schema) {
         if (!mapperContext.targetIsType()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var code = CodeBlock.builder();

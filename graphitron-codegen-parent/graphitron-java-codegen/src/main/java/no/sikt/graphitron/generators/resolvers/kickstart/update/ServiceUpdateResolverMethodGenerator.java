@@ -1,19 +1,16 @@
 package no.sikt.graphitron.generators.resolvers.kickstart.update;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asResultName;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnCompletedFuture;
 
 /**
  * This class generates the resolvers for update queries with the {@link GenerationDirective#SERVICE} directive set.
@@ -28,7 +25,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
      */
     protected CodeBlock generateSchemaOutputs(ObjectField target) {
         if (processedSchema.isExceptionOrExceptionUnion(target.getTypeName())) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var mapperContext = MapperContext.createResolverContext(target, false, processedSchema);

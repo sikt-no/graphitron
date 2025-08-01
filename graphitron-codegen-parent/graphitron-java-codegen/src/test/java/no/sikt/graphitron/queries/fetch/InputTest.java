@@ -143,7 +143,7 @@ public class InputTest extends GeneratorTest {
                         "DSL.row(_customer.FIRST_NAME, _customer.LAST_NAME).in(" +
                         "        in.getIn().stream().map(internal_it_ ->" +
                         "                DSL.row(DSL.inline(internal_it_.getFirst()), DSL.inline(internal_it_.getLast()))" +
-                        "        ).collect(Collectors.toList())" +
+                        "        ).toList()" +
                         ") : DSL.noCondition()"
                 );
     }

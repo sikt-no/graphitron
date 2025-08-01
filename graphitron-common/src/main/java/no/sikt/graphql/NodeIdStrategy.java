@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
 
 public class NodeIdStrategy {
@@ -67,7 +68,9 @@ public class NodeIdStrategy {
     }
 
     public Condition hasId(String typeId, UpdatableRecordImpl<?> record, Field<?>... keyColumnFields) {
-        return hasIds(typeId, Set.of(createId(record, typeId, keyColumnFields)), keyColumnFields);
+        return Arrays.stream(keyColumnFields).anyMatch(it -> record.get(it) == null) ?
+                noCondition()
+                : hasIds(typeId, Set.of(createId(record, typeId, keyColumnFields)), keyColumnFields);
     }
 
     public Condition hasIds(String typeId, List<UpdatableRecordImpl<?>> records, Field<?>... keyColumnFields) {
@@ -79,13 +82,23 @@ public class NodeIdStrategy {
         return row(keyColumnFields).in(rows);
     }
 
-    public void setId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
+    public void setId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {
+        setFields(record, id, typeId, idFields);
+
+        Arrays.stream(idFields)
+                .forEach(field -> record.changed(field, false));
+    }
+
+    public void setReferenceId(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... idFields) {
+        setFields(record, id, typeId, idFields);
+    }
+
+    private void setFields(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
         var values = new String[keyColumnFields.length];
         if (id != null) {
             values = unpack(typeId, keyColumnFields, id);
         }
         record.from(values, keyColumnFields);
-        for (var field : keyColumnFields) { record.changed(field, false); }
     }
 
     private static List<? extends RowN> getRows(String typeId, Field<?>[] fields, Set<String> base64Ids) {

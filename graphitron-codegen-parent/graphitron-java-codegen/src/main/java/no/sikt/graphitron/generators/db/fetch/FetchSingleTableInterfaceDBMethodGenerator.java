@@ -59,7 +59,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         return CodeBlock.builder()
                 .add(createAliasDeclarations(context.getAliasSet()))
-                .add(maybeOrderFields.orElse(empty()))
+                .add(maybeOrderFields.orElse(CodeBlock.empty()))
                 .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode))
                 .add("\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
@@ -67,8 +67,8 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .add(whereBlock)
                 .add(maybeOrderFields
                         .map(it -> CodeBlock.of("\n.orderBy($L)", ORDER_FIELDS_NAME))
-                        .orElse(empty()))
-                .add(target.hasForwardPagination() ? createSeekAndLimitBlock() : empty())
+                        .orElse(CodeBlock.empty()))
+                .add(target.hasForwardPagination() ? createSeekAndLimitBlock() : CodeBlock.empty())
                 .add(fetchAndMap)
                 .build();
     }
@@ -119,7 +119,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
             mapping.add("case $S:\n", implementation.getDiscriminator())
                     .indent()
                     .add("return ")
-                    .add(target.hasForwardPagination() ? CodeBlock.of("$T.of($N.get($S, $T.class), ", PAIR.className, VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className) : empty())
+                    .add(target.hasForwardPagination() ? CodeBlock.of("$T.of($N.get($S, $T.class), ", PAIR.className, VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className) : CodeBlock.empty())
                     .add("$N.into($T.class)$L;\n", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName(), target.hasForwardPagination() ? ")" : "")
                     .unindent();
         }

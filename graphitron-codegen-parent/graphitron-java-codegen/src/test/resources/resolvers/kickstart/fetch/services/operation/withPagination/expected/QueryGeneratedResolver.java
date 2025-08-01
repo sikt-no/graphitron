@@ -11,7 +11,7 @@ import java.lang.Integer;
 import java.lang.Override;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
+
 import no.sikt.graphitron.codereferences.services.ResolverFetchService;
 import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
@@ -29,7 +29,7 @@ public class QueryGeneratedResolver implements QueryResolver {
                 (resolverKeys) -> resolverFetchService.countQueryList(),
                 (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, ""),
                 (connection) ->  {
-                    var edges = connection.getEdges().stream().map(it -> new CustomerConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).collect(Collectors.toList());
+                    var edges = connection.getEdges().stream().map(it -> new CustomerConnectionEdge(it.getCursor() == null ? null : it.getCursor().getValue(), it.getNode())).toList();
                     var page = connection.getPageInfo();
                     var graphPage = new PageInfo(page.isHasPreviousPage(), page.isHasNextPage(), page.getStartCursor() == null ? null : page.getStartCursor().getValue(), page.getEndCursor() == null ? null : page.getEndCursor().getValue());
                     return new CustomerConnection(edges, graphPage, connection.getNodes(), connection.getTotalCount());

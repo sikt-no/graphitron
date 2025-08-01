@@ -328,7 +328,7 @@ public class ConditionTest extends GeneratorTest {
     @Disabled("Does not unwrap listed fields.")
     @DisplayName("Condition on a field with a listed input type parameter")
     void withListedInput() {
-        assertGeneratedContentContains("withListedInput", ".query(_customer, input.stream().map(it -> it.getId()).collect(Collectors.toList()))");
+        assertGeneratedContentContains("withListedInput", ".query(_customer, input.stream().map(it -> it.getId()).toList())");
     }
 
     @Test

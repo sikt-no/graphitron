@@ -52,6 +52,7 @@ public final class CodeBlockTest {
     public void isEmpty() {
         assertTrue(CodeBlock.builder().isEmpty());
         assertTrue(CodeBlock.builder().add("").isEmpty());
+        assertTrue(CodeBlock.builder().addIf(false, "a").isEmpty());
         assertFalse(CodeBlock.builder().add(" ").isEmpty());
     }
 

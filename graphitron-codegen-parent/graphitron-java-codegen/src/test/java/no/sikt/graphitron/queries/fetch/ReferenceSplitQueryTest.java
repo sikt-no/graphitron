@@ -98,6 +98,24 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning multitable interface")
+    void previousQueryMultitableInterface() {
+        assertGeneratedContentContains(
+                "previousQueryMultitableInterface",
+                "row(DSL.row(_filmcategory.FILM_ID, _filmcategory.CATEGORY_ID)).mapping"
+        );
+    }
+
+    @Test
+    @DisplayName("Primary key columns should be selected in previous query for field returning multitable union")
+    void previousQueryMultitableUnion() {
+        assertGeneratedContentContains(
+                "previousQueryMultitableUnion",
+                "row(DSL.row(_filmcategory.FILM_ID, _filmcategory.CATEGORY_ID)).mapping"
+        );
+    }
+
+    @Test
     @DisplayName("Table path")
     void table() {
         assertGeneratedContentContains(
@@ -288,5 +306,15 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "CustomerTable::new))).from(payment_425747824_customer)",
                 ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream()"
         );
+    }
+
+    @Test
+    @DisplayName("Temporary test for reference ID argument (not node strategy) outside root ")
+    void idArgumentOnNonRootQueryWithoutNodeStrategy() {
+        assertGeneratedContentContains(
+                "idArgumentOnNonRootQueryWithoutNodeStrategy", Set.of(CUSTOMER_TABLE),
+                "customer_2337142794_store_left.hasStaffId(staffId)"
+        );
+
     }
 }

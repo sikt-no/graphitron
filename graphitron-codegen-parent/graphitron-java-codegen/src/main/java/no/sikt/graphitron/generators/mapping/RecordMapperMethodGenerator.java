@@ -27,7 +27,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     @NotNull
     protected CodeBlock iterateRecords(MapperContext context) {
         if (context.isIterable() && !context.hasTable() && context.hasSourceName()) {
-            return empty();
+            return CodeBlock.empty();
         }
 
         var fieldCode = CodeBlock.builder();
@@ -41,7 +41,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                 continue;
             }
 
-            if (innerField.hasFieldReferences()) { // TODO: Can not handle references in jOOQ mappers as input records do not contain them.
+            if (innerField.hasFieldReferences() && !innerField.hasNodeID()) { // TODO: Can not handle references in jOOQ mappers as input records do not contain them.
                 continue;
             }
 
@@ -67,15 +67,15 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                         fieldCode.add(declareBlock);
                     }
                 } else {
-                    declareBlock = empty();
+                    declareBlock = CodeBlock.empty();
                 }
 
                 var ifBlock = isType && toRecord ? ifNotNull(varName) : CodeBlock.of("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord));
                 fieldCode
                         .beginControlFlow("$L", ifBlock)
-                        .add(isType && !toRecord && previousHadSource ? declareBlock : empty())
+                        .add(isType && !toRecord && previousHadSource ? declareBlock : CodeBlock.empty())
                         .add(innerCode.build())
-                        .add(isType && !toRecord && previousHadSource ? innerContext.getSetMappingBlock(varName) : empty())
+                        .add(isType && !toRecord && previousHadSource ? innerContext.getSetMappingBlock(varName) : CodeBlock.empty())
                         .endControlFlow()
                         .add("\n");
             }

@@ -36,6 +36,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import static no.sikt.graphitron.javapoet.Util.checkArgument;
 import static no.sikt.graphitron.javapoet.Util.checkNotNull;
@@ -472,6 +473,30 @@ public final class MethodSpec {
             return addParameter(TypeName.get(type), name, modifiers);
         }
 
+        public Builder addParameterIf(boolean predicate, ParameterSpec parameterSpec) {
+            if (predicate) {
+                addParameter(parameterSpec);
+            }
+
+            return this;
+        }
+
+        public Builder addParameterIf(boolean predicate, TypeName type, String name, Modifier... modifiers) {
+            if (predicate) {
+                addParameter(type, name, modifiers);
+            }
+
+            return this;
+        }
+
+        public Builder addParameterIf(boolean predicate, Type type, String name, Modifier... modifiers) {
+            if (predicate) {
+                addParameter(type, name, modifiers);
+            }
+
+            return this;
+        }
+
         public Builder varargs() {
             return varargs(true);
         }
@@ -503,6 +528,14 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder addCodeIf(boolean predicate, String format, Object... args) {
+            if (predicate) {
+                addCode(format, args);
+            }
+
+            return this;
+        }
+
         public Builder addNamedCode(String format, Map<String, ?> args) {
             code.addNamed(format, args);
             return this;
@@ -510,6 +543,22 @@ public final class MethodSpec {
 
         public Builder addCode(CodeBlock codeBlock) {
             code.add(codeBlock);
+            return this;
+        }
+
+        public Builder addCodeIf(boolean predicate, CodeBlock codeBlock) {
+            if (predicate) {
+                addCode(codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder addCodeIf(boolean predicate, Supplier<CodeBlock> supplier) {
+            if (predicate) {
+                addCode(supplier.get());
+            }
+
             return this;
         }
 
@@ -591,6 +640,30 @@ public final class MethodSpec {
 
         public Builder addStatement(CodeBlock codeBlock) {
             code.addStatement(codeBlock);
+            return this;
+        }
+
+        public Builder addStatementIf(boolean predicate, String format, Object... args) {
+            if (predicate) {
+                addStatement(format, args);
+            }
+
+            return this;
+        }
+
+        public Builder addStatementIf(boolean predicate, CodeBlock codeBlock) {
+            if (predicate) {
+                addStatement(codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder addStatementIf(boolean predicate, Supplier<CodeBlock> supplier) {
+            if (predicate) {
+                addStatement(supplier.get());
+            }
+
             return this;
         }
 

@@ -1,5 +1,5 @@
-{
-    customerWithJooqRecordInput(input: {id: "Q3VzdG9tZXI6MQ"}) {
+query QueryWithJooqRecordInput ($input: CustomerInput!){
+    customerWithJooqRecordInput(input: $input) {
         nodes {
             id
         }

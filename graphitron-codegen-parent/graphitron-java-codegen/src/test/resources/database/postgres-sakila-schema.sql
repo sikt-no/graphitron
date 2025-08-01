@@ -182,6 +182,7 @@ ALTER TABLE public.film OWNER TO postgres;
 
 CREATE TABLE film_actor (
     actor_id bigint NOT NULL,
+    actor_last_name character varying(45) NOT NULL,
     film_id bigint NOT NULL,
     last_update timestamp without time zone DEFAULT now() NOT NULL
 );
@@ -909,6 +910,8 @@ ALTER FUNCTION public.rewards_report(min_monthly_purchases integer, min_dollar_a
 ALTER TABLE ONLY actor
     ADD CONSTRAINT actor_pkey PRIMARY KEY (actor_id);
 
+ALTER TABLE ONLY actor
+    ADD CONSTRAINT actor_ukey UNIQUE (actor_id, last_name);
 
 --
 -- Name: address_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres; Tablespace: 
@@ -1456,6 +1459,9 @@ ALTER TABLE ONLY customer
 ALTER TABLE ONLY film_actor
     ADD CONSTRAINT film_actor_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES actor(actor_id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
+
+ALTER TABLE ONLY film_actor
+    ADD CONSTRAINT film_actor_actor_id_last_name_fkey FOREIGN KEY (actor_id, actor_last_name) REFERENCES actor(actor_id, last_name) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 --
 -- Name: film_actor_film_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres

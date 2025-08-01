@@ -81,4 +81,20 @@ public class MapperNodeStrategyTest extends GeneratorTest {
                 ".toJOOQRecord(input, nodeIdStrategy, path, this)"
         );
     }
+
+    @Test
+    @DisplayName("Node ID in jooq record with implicit reference")
+    void toRecordWithImplicitReference() {
+        assertGeneratedContentContains("toRecord/withImplicitReference", Set.of(CUSTOMER_NODE),
+                "nodeIdStrategy.setReferenceId(customerRecord, itCustomerInputTable.getAddressId(), \"Address\", Customer.CUSTOMER.ADDRESS_ID)"
+        );
+    }
+
+    @Test
+    @DisplayName("Node ID in jooq record with key reference")
+    void toRecordWithReferenceKey() {
+        assertGeneratedContentContains("toRecord/withReferenceKey", Set.of(CUSTOMER_NODE),
+                "nodeIdStrategy.setReferenceId(customerRecord, itCustomerInputTable.getAddressId(), \"Address\", Customer.CUSTOMER.ADDRESS_ID)"
+        );
+    }
 }

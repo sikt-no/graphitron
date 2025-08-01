@@ -451,7 +451,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     private void addComplexColumns(MethodSpec.Builder builder, ObjectDefinition objectDefinition, ClassName nodeClass) {
         for (ObjectField nodeField : objectDefinition.getFields()) {
 
-            if (processedSchema.isObject(nodeField) && !nodeField.isIterableWrapped() && !nodeField.isResolver()) {
+            if (processedSchema.isObject(nodeField) && shouldBeGenerated( nodeField)) {
                 String fieldName = nodeField.getName();
                 String capitalizedFieldName = capitalize(fieldName);
                 String headerText = splitCamelCase(capitalizedFieldName);
@@ -459,7 +459,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
                 if (nestedObjectDef != null) {
                     List<String> scalarFields = nestedObjectDef.getFields().stream()
-                            .filter(f -> !processedSchema.isObject(f) && !f.isIterableWrapped() && !f.getName().equals("id"))
+                            .filter(f -> !processedSchema.isObject(f) && shouldBeGenerated( f) && !f.getName().equals("id"))
                             .map(ObjectField::getName)
                             .toList();
 
@@ -509,7 +509,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                     for (ObjectField nestedField : nestedObjectDef.getFields()) {
                         if (nestedField.getName().equals("id")) continue;
 
-                        if (processedSchema.isObject(nestedField) && !nestedField.isIterableWrapped()) {
+                        if (processedSchema.isObject(nestedField) && shouldBeGenerated( nestedField)) {
                             String nestedFieldName = nestedField.getName();
                             String nestedCapitalizedName = capitalize(nestedFieldName);
                             String nestedHeaderText = splitCamelCase(capitalizedFieldName + " " + nestedCapitalizedName);
@@ -518,7 +518,7 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                             if (level2ObjectDef != null) {
                                 // Get scalar fields of the second-level nested object
                                 List<String> level2ScalarFields = level2ObjectDef.getFields().stream()
-                                        .filter(f -> !processedSchema.isObject(f) && !f.isIterableWrapped() && !f.getName().equals("id"))
+                                        .filter(f -> !processedSchema.isObject(f) && shouldBeGenerated(f) && !f.getName().equals("id"))
                                         .map(ObjectField::getName)
                                         .toList();
 
@@ -573,6 +573,10 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 }
             }
         }
+    }
+
+    private static boolean shouldBeGenerated(ObjectField objectField) {
+        return !objectField.isIterableWrapped() && !objectField.isResolver() && !objectField.isGeneratedWithResolver();
     }
 
     // Helper method to convert camelCase to human-readable form
