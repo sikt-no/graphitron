@@ -10,7 +10,7 @@ type Query {
 
     customers(first: Int = 100, after: String): CustomerConnection
     activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
-    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection #@excludeFromUI
+    customersByAddress(addressId: ID! @nodeId(typeName: "Address")): [Customer] @asConnection
     customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection @excludeFromUI
     customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection @excludeFromUI
 
@@ -23,12 +23,12 @@ type Query {
     languages: [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
-    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection @excludeFromUI
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
 
     staff(input: StaffInput!): [Staff] @asConnection @excludeFromUI
 
     node(id: ID!): Node
-    cities: [City] @asConnection @excludeFromUI
+    cities: [City] @asConnection
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection

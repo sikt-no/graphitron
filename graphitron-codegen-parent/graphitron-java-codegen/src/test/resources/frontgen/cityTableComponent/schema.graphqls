@@ -1,0 +1,89 @@
+schema @link(url : "https://specs.apollo.dev/federation/v2.4", import : ["@key"]){
+    query: Query
+}
+
+type Address implements Node @node @table @key(fields : "id", resolvable : false) {
+    id: ID!
+    addressLine1: String! @field(name : "ADDRESS_")
+    addressLine2: String @field(name : "ADDRESS2")
+    city: City!
+    zip: String @field(name : "POSTAL_CODE")
+    phone: String!
+}
+
+scalar BigDecimal
+
+type City implements Node @table @node(typeId : "CityType") {
+    id: ID!
+    name: String! @field(name : "CITY_")
+    countryName: String! @field(name : "COUNTRY_") @reference(references : [{table : "COUNTRY"}])
+    addressExample: Address @splitQuery @notGenerated
+    addresses: [Address] @splitQuery
+    addressesPaginated(first: Int = 100, after: String): CityAddressesPaginatedConnection @splitQuery
+    payments: [Payment] @reference(references : [{table : "ADDRESS"}, {key : "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table : "PAYMENT"}])
+}
+
+type CityAddressesPaginatedConnection {
+    edges: [CityAddressesPaginatedConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Address]
+    totalCount: Int
+}
+
+type CityAddressesPaginatedConnectionEdge {
+    cursor: String
+    node: Address
+}
+
+
+scalar LocalDateTime
+
+
+interface Node {
+    id: ID!
+}
+
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+type Query {
+    cities(first: Int = 100, after: String): QueryCitiesConnection
+}
+
+
+
+type QueryCitiesConnection {
+    edges: [QueryCitiesConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [City]
+    totalCount: Int
+}
+
+type QueryCitiesConnectionEdge {
+    cursor: String
+    node: City
+}
+
+type QueryPaymentsConnection {
+    edges: [QueryPaymentsConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Payment]
+    totalCount: Int
+}
+
+type QueryPaymentsConnectionEdge {
+    cursor: String
+    node: Payment
+}
+
+type Payment @table {
+    amount: BigDecimal
+    dateTime: LocalDateTime @field(name: "PAYMENT_DATE")
+}
+
+

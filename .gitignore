@@ -32,3 +32,4 @@ graphitron-schema-transform/.approval_tests_temp/**
 /graphitron-example/graphitron-example-server/types.d.ts
 /graphitron-example/graphitron-example-server/vite.config.ts
 /graphitron-example/graphitron-example-server/vite.generated.ts
+/graphitron-example/graphitron-example-server/.vaadin-node-tasks.lock

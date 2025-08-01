@@ -307,8 +307,9 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         visitedTypes.add(definition.getName());
 
         for (ObjectField nodeField : definition.getFields()) {
-            // skip fields generated with resolvers. I.e.
-            if (nodeField.isGeneratedWithResolver()) continue;
+            if (nodeField.isGeneratedWithResolver() || nodeField.isResolver()) {
+                continue;
+            }
 
             // For scalar fields, just add the field name
             if (!processedSchema.isObject(nodeField)) {
@@ -619,7 +620,8 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
     // Add this method to TableUIComponentGenerator to analyze parameters
     private List<ParameterInfo> analyzeParameters(ObjectField field) {
         return field.getArguments().stream()
-                .filter(arg -> arg.isNonNullable() && !arg.getName().equals("first") && !arg.getName().equals("after"))
+                .filter(arg -> arg.isNonNullable()
+                        && !arg.getName().equals("first") && !arg.getName().equals("after"))
                 .map(arg -> new ParameterInfo(
                         arg.getName(),
                         mapGraphQLTypeToJava(arg.getTypeName()),
