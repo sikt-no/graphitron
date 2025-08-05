@@ -8,6 +8,7 @@ import org.jooq.DSLContext;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Fake service for resolver tests. Does not need to return meaningful values as only the generated result is tested.
@@ -47,8 +48,8 @@ public class ResolverFetchService {
         return Map.of();
     }
 
-    public Integer countQueryMap(Set<String> ids) {
-        return 0;
+    public Map<String, Integer> countQueryMap(Set<String> ids) {
+        return ids.stream().collect(Collectors.toMap(id -> id, id -> 0));
     }
 
     public List<CustomerRecord> queryList(CustomerRecord record, int pageSize, String after) {

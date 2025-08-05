@@ -1,0 +1,14 @@
+query MyQuery {
+  cities(first: 2, after: "WzQxXQ") {
+    nodes {
+      id
+      name
+      addressesPaginated {
+        nodes {
+          id
+        }
+        totalCount
+      }
+    }
+  }
+}

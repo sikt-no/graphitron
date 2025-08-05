@@ -876,10 +876,7 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock getSelectKeyColumnRow(Key<?> key, String tableName, String aliasVariableName) {
         return wrapRow(
-                getJavaFieldNamesForKey(tableName, key)
-                        .stream()
-                        .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
-                        .collect(CodeBlock.joining(", "))
+                getSelectKeyColumn(key, tableName, aliasVariableName)
         );
     }
 
@@ -890,6 +887,17 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
         return getSelectKeyColumnRow(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
+    }
+
+    public static CodeBlock getSelectKeyColumn(Key<?> key, String tableName, String aliasVariableName) {
+        return getJavaFieldNamesForKey(tableName, key)
+                .stream()
+                .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
+                .collect(CodeBlock.joining(", "));
+    }
+
+    public static CodeBlock getSelectKeyColumn(FetchContext context) {
+        return getSelectKeyColumn(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {

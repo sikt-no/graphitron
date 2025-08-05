@@ -60,7 +60,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                 getPaginatedConnection(
                         dbFunction.callDBMethod(dslContext, connectionSelect),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, Set.of()) : -1,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? (Integer) countFunction.callDBMethod(dslContext, Set.of()) : null,
                         maxNodes,
                         connectionFunction
                 )
@@ -213,7 +213,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                 getPaginatedConnection(
                         resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : -1,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : null,
                         maxNodes,
                         connectionFunction
                 )

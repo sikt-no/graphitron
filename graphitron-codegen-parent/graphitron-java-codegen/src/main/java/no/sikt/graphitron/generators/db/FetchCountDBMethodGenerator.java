@@ -17,11 +17,13 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumn;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapMap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
  * Generator that creates methods for counting all available elements for a type.
@@ -44,26 +46,36 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
+        CodeBlock code;
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
-            return getSpecBuilder(target, parser).addCode(getCodeForMultitableCountMethod(target)).build();
+            return getSpecBuilder(target, parser)
+                    .addCode(getCodeForMultitableCountMethod(target))
+                    .build();
         }
-
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
         var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-        var contextToUse = target.isResolver() ? context.nextContext(target) : context;
+
+        var nextContext = target.isResolver() ? context.nextContext(target) : context;
+        code = CodeBlock.builder()
+
+                .build();
 
         return getSpecBuilder(target, parser)
-                .addCode(createAliasDeclarations(contextToUse.getAliasSet()))
+                .addCode(createAliasDeclarations(nextContext.getAliasSet()))
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .addCode(".select($T.count())\n", DSL.className)
+                .addCode(".select(")
+                .addCodeIf(!isRoot,() -> CodeBlock.of("$L, ",getSelectKeyColumnRow(context)))
+                .addCode("$T.count())\n", DSL.className)
                 .addCode(".from($L)\n", targetSource)
-                .addCode(createSelectJoins(contextToUse.getJoinSet()))
+                .addCode(createSelectJoins(nextContext.getJoinSet()))
                 .addCode(where)
-                .addCode(createSelectConditions(contextToUse.getConditionList(), !where.isEmpty()))
-                .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
+                .addCode(createSelectConditions(nextContext.getConditionList(), !where.isEmpty()))
+                .addCodeIf(!isRoot,() -> CodeBlock.of(".groupBy($L)\n", getSelectKeyColumn(context)))
+                .addStatementIf(isRoot, ".fetchOne(0, $T.class)", INTEGER.className)
+                .addStatementIf(!isRoot, ".fetchMap(r -> r.value1().valuesRow(), $T::value2)", RECORD2.className)
                 .unindent()
                 .unindent()
                 .build();
@@ -112,7 +124,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
         return getDefaultSpecBuilder(
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
-                INTEGER.className
+                isRoot ? INTEGER.className : wrapMap(getKeyRowTypeName(referenceField, processedSchema), INTEGER.className)
         )
                 .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(getMethodParameters(parser))

@@ -74,8 +74,38 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
         return connectionFunction.apply(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null));
     }
 
-    protected static <K, V, C> Map<KeyWithPath<K>, C> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<V>, C> connectionFunction) {
-        return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null))));
+    protected static <K, V, C> Map<KeyWithPath<K>, C> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Object countFunctionResult, int maxNodes, Function<ConnectionImpl<V>, C> connectionFunction) {
+
+        if (countFunctionResult == null) {
+            return dbResult.entrySet().stream().collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, null))
+            ));
+        }
+
+        if (countFunctionResult instanceof Integer singleCount) {
+            int limitedCount = Math.min(maxNodes, singleCount);
+            return dbResult.entrySet().stream().collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, limitedCount))
+            ));
+        } else if (countFunctionResult instanceof Map<?, ?> countMap) {
+            @SuppressWarnings("unchecked")
+            Map<K, Integer> typedCountMap = (Map<K, Integer>) countMap;
+            return dbResult.entrySet().stream().collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> {
+                        Integer count = typedCountMap.get(entry.getKey().key());
+                        int limitedCount = Math.min(maxNodes, count != null ? count : 0);
+                        return connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, limitedCount));
+                    }
+            ));
+        } else {
+            throw new IllegalStateException(
+                    "Unsupported count result type: " + countFunctionResult.getClass().getSimpleName() +
+                            ". Expected Integer or Map<K, Integer>."
+            );
+        }
     }
 
     protected static <T> ConnectionImpl<T> createPagedResult(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount) {

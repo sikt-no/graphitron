@@ -6,5 +6,5 @@ import java.util.Set;
 
 @FunctionalInterface
 public interface DBCount<T> {
-    Integer callDBMethod(DSLContext ctx, Set<T> idSet);
+    Object callDBMethod(DSLContext ctx, Set<T> idSet);
 }
