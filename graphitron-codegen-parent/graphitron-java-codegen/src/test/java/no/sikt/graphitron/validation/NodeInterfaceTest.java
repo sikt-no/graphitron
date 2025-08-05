@@ -30,13 +30,13 @@ public class NodeInterfaceTest extends ValidationTest {
     @Test
     @DisplayName("Interface query taking too many arguments")
     void tooManyArguments() {
-        assertErrorsContain("tooManyArguments", "Only exactly one input field is currently supported for fields returning 'Node' interface. 'node' has 2 input fields");
+        assertErrorsContain("tooManyArguments", "Only exactly one input field is currently supported for fields returning the 'Node' interface. 'Query.node' has 2 input fields");
     }
 
     @Test
     @DisplayName("Interface query taking too few arguments")
     void tooFewArguments() {
-        assertErrorsContain("tooFewArguments", "Only exactly one input field is currently supported for fields returning 'Node' interface. 'node' has 0 input fields");
+        assertErrorsContain("tooFewArguments", "Only exactly one input field is currently supported for fields returning the 'Node' interface. 'Query.node' has 0 input fields");
     }
 
     @Test

@@ -767,8 +767,8 @@ public class ProcessedDefinitionsValidator {
                 if (name.equalsIgnoreCase(NODE_TYPE.getName())) {
                     Validate.isTrue(
                             field.getArguments().size() == 1,
-                            "Only exactly one input field is currently supported for fields returning '%s' interface. " +
-                                    "'%s' has %s input fields", NODE_TYPE.getName(), field.getName(), field.getArguments().size()
+                            "Only exactly one input field is currently supported for fields returning the '%s' interface. " +
+                                    "'%s.%s' has %s input fields", NODE_TYPE.getName(), field.getContainerTypeName(), field.getName(), field.getArguments().size()
                     );
                     Validate.isTrue(
                             !field.isIterableWrapped(),
