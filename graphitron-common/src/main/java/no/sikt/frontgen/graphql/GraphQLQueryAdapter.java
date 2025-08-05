@@ -47,12 +47,13 @@ public class GraphQLQueryAdapter {
 
         String requestBody = jsonb.toJson(request);
 
-        String url = "http://localhost:8088/graphql";
+        String url = "http://localhost:8080/graphql";
 
         try {
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
+                    .header("Authorization", "Basic YWRtaW46YWRtaW4=")  // "admin:admin"
                     .POST(BodyPublishers.ofString(requestBody))
                     .build();
 
