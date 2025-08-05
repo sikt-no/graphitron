@@ -5,6 +5,7 @@ import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphql.exception.ValidationViolationGraphQLException;
 import no.sikt.graphql.helpers.functions.DBCount;
+import no.sikt.graphql.helpers.functions.DBCountMany;
 import no.sikt.graphql.helpers.functions.DBQuery;
 import no.sikt.graphql.helpers.functions.DBQueryRoot;
 import no.sikt.graphql.helpers.selection.SelectionSet;
@@ -95,6 +96,19 @@ public class DataFetcherHelper extends AbstractFetcher {
             int maxNodes,
             DBQuery<K, List<Pair<String, V>>> dbFunction,
             DBCount<K> countFunction,
+            Function<ConnectionImpl<V>, C> connectionFunction
+    ) {
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, connectionFunction))
+                .load(asKeyPath(key), env);
+    }
+
+
+    public <K, V, C> CompletableFuture<C> loadPaginatedMany(
+            K key,
+            int pageSize,
+            int maxNodes,
+            DBQuery<K, List<Pair<String, V>>> dbFunction,
+            DBCountMany<K> countFunction,
             Function<ConnectionImpl<V>, C> connectionFunction
     ) {
         return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, connectionFunction))
@@ -203,6 +217,31 @@ public class DataFetcherHelper extends AbstractFetcher {
                         resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : -1,
+                        maxNodes,
+                        connectionFunction
+                )
+        );
+    }
+
+    private <K, V, C> CompletableFuture<Map<KeyWithPath<K>, C>> getMappedDataLoader(
+            Set<KeyWithPath<K>> keys,
+            SelectionSet selectionSet,
+            int maxNodes,
+            int pageSize,
+            DBQuery<K, List<Pair<String, V>>> dbFunction,
+            DBCountMany<K> countFunction,
+            Function<ConnectionImpl<V>, C> connectionFunction
+    ) {
+        if (keys.isEmpty()) {
+            return CompletableFuture.completedFuture(Map.of());
+        }
+
+        var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
+        return CompletableFuture.completedFuture(
+                getPaginatedConnection(
+                        resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
+                        pageSize,
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : null,
                         maxNodes,
                         connectionFunction
                 )

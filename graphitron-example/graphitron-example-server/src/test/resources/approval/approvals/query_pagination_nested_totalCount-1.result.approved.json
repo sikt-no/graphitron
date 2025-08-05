@@ -1,0 +1,35 @@
+{
+    "data": {
+        "cities": {
+            "nodes": [
+                {
+                    "id": "Q2l0eVR5cGU6NDI",
+                    "name": "Aurora",
+                    "addressesPaginated": {
+                        "nodes": [
+                            {
+                                "id": "QWRkcmVzczozMzU"
+                            },
+                            {
+                                "id": "QWRkcmVzczo1NDM"
+                            }
+                        ],
+                        "totalCount": 2
+                    }
+                },
+                {
+                    "id": "Q2l0eVR5cGU6NDM",
+                    "name": "Avellaneda",
+                    "addressesPaginated": {
+                        "nodes": [
+                            {
+                                "id": "QWRkcmVzczo1NjY"
+                            }
+                        ],
+                        "totalCount": 1
+                    }
+                }
+            ]
+        }
+    }
+}

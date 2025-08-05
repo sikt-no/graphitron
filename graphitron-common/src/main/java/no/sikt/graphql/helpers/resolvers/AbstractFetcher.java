@@ -78,6 +78,10 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
         return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null))));
     }
 
+    protected static <K, V, C> Map<KeyWithPath<K>, C> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Map<K, Integer> totalCount, int maxNodes, Function<ConnectionImpl<V>, C> connectionFunction) {
+        return dbResult.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, totalCount != null ? Math.min(maxNodes, totalCount.get(entry.getKey().key())) : null))));
+    }
+
     protected static <T> ConnectionImpl<T> createPagedResult(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount) {
         var items = dbResult.subList(0, Math.min(dbResult.size(), pageSize));
         var pageInfo = getDefaultPageInfo(dbResult, pageSize, items);
