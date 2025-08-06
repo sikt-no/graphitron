@@ -110,15 +110,15 @@ type CityWithoutID @table(name: "CITY") {
 
 type FilmList @table(name: "FILM_LIST") {
     description: String
-    category: FilmCategory @field(name: "CATEGORY")
+    category: FilmCategoryEnum @field(name: "CATEGORY")
 }
 
 input FilmListEnumInput @table(name: "FILM_LIST") {
     description: String  # Redundant, but we do not want the test to fetch too much data.
-    category: FilmCategory @field(name: "CATEGORY")
+    category: FilmCategoryEnum @field(name: "CATEGORY")
 }
 
-enum FilmCategory { # Note that this enum is not complete, and other values are also present in the database
+enum FilmCategoryEnum { # Note that this enum is not complete, and other values are also present in the database
     SPORTS @field(name: "Sports")
     CLASSICS @field(name: "Classics")
     COMEDY @field(name: "Comedy")
@@ -197,4 +197,12 @@ input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.ex
     id: ID! @nodeId(typeName: "Customer")
     addressId: ID @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
+}
+
+type FilmActor implements Node @node @table(name: "FILM_ACTOR") {
+    id: ID!
+}
+
+type FilmCategory implements Node @node @table(name: "FILM_CATEGORY") {
+    id: ID!
 }

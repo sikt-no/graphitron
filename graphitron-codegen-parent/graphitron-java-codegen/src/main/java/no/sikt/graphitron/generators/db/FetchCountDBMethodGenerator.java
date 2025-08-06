@@ -5,7 +5,6 @@ import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -23,6 +22,7 @@ import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTyp
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapMap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.CONTEXT_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 /**
@@ -63,7 +63,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         return getSpecBuilder(target, parser)
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
-                .addCode("return $N\n", VariableNames.CONTEXT_NAME)
+                .addCode("return $N\n", CONTEXT_NAME)
                 .indent()
                 .indent()
                 .addCode(".select(")
@@ -85,19 +85,36 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder();
         var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
+        if (target.isResolver()) {
+            implementations
+                    .stream()
+                    .findFirst()
+                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(FetchContext::getAliasSet)
+                    .ifPresent(it -> code.add(createAliasDeclarations(it)));
+        }
+
         implementations.forEach(implementation -> {
-            var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
-            var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+            var virtualTarget = new VirtualSourceField(implementation, target);
+            var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
+            var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
             var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
             var countForImplementation = CodeBlock.builder()
-                    .add("$T.select($T.count().as($S))", DSL.className, DSL.className, COUNT_FIELD_NAME)
+                    .add("$T.select(", DSL.className)
+                    .addIf(!isRoot,() -> CodeBlock.of("$L)",getSelectKeyColumnRow(context)))
+                    .addIf(isRoot, "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
                     .add("\n.from($L)\n", context.getTargetAlias())
-                    .add(createSelectJoins(context.getJoinSet()))
+                    .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
+            var aliasesToDeclare = !target.isResolver() ? refContext.getAliasSet() :
+                    context.getAliasSet().stream().findFirst()
+                            .map(startAlias -> context.getAliasSet().stream().filter(it -> !it.equals(startAlias)).collect(Collectors.toSet()))
+                            .orElse(refContext.getAliasSet());
+
             code
-                    .add(createAliasDeclarations(context.getAliasSet()))
+                    .add(createAliasDeclarations(aliasesToDeclare))
                     .declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });
 
@@ -106,13 +123,20 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .reduce("", (currString, element) ->
                         String.format(currString.isEmpty() ? "%s" : "%s\n.unionAll(%s)", getCountVariableName(element), currString));
 
+        var resolverKey = implementations.stream()
+                .findFirst()
+                .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, true))
+                .map(FetchContext::getResolverKey);
+
         return code
                 .declare(UNION_COUNT_QUERY, "$L\n.asTable()", unionQuery)
-                .add("\nreturn ctx.select($T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
-                .indent()
+                .add("\nreturn $N.select(", CONTEXT_NAME)
+                .addIf(!isRoot,() -> CodeBlock.of("$N.field(0), $T.count())", UNION_COUNT_QUERY, DSL.className))
+                .addIf(isRoot, "$T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
                 .add("\n.from($N)", UNION_COUNT_QUERY)
-                .add("\n.fetchOne(0, $T.class);", INTEGER.className)
-                .unindent()
+                .addStatementIf(isRoot, "\n.fetchOne(0, $T.class)", INTEGER.className)
+                .addIf(!isRoot, "\n.groupBy($N.field(0))", UNION_COUNT_QUERY)
+                .addStatementIf(!isRoot && resolverKey.isPresent(), () -> CodeBlock.of("\n.fetchMap(r -> (($T) r.value1()).valuesRow(), $T::value2)", resolverKey.get().getRecordTypeName(), RECORD2.className))
                 .build();
     }
 

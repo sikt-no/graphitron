@@ -63,6 +63,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         super(localObject, processedSchema);
     }
 
+    protected CodeBlock getInitialKey(FetchContext context) {
+        var code = CodeBlock.builder();
+
+        var ref = (ObjectField) context.getReferenceObjectField();
+        var table = context.renderQuerySource(getLocalTable());
+        if (LookupHelpers.lookupExists(ref, processedSchema)) {
+            var concatBlock = LookupHelpers.getLookUpKeysAsColumnList(ref, table, processedSchema);
+            if (concatBlock.toString().contains(".inline(")) {
+                code.add("$T.concat($L),\n", DSL.className, concatBlock);
+            } else {
+                code.add(concatBlock).add(",\n");
+            }
+        } else if (!isRoot) {
+            code.add("$L,\n", getSelectKeyColumnRow(context));
+        }
+        return code.build();
+    }
+
     /**
      * @param joinList List of join statements that should be applied to a select query.
      * @return Code block containing all the join statements and their conditions.
@@ -97,6 +115,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
         }
         return codeBuilder.build();
+    }
+
+    protected static CodeBlock createAliasDeclarations(Alias alias) {
+        return createAliasDeclarations(Set.of(alias));
     }
 
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
@@ -149,7 +171,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         );
     }
 
-    private CodeBlock wrapInMultiset(CodeBlock contents) {
+    protected CodeBlock wrapInMultiset(CodeBlock contents) {
         return CodeBlock.of("$T.multiset($L)", DSL.className, indentIfMultiline(contents));
     }
 
@@ -553,7 +575,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        if (!isRoot && !resolverKeyParamName.isEmpty()) {
+        if (!isRoot && !resolverKeyParamName.isEmpty() && isResolverRoot) {
             conditionList.add(inResolverKeysBlock(resolverKeyParamName, context));
         }
 

@@ -1,0 +1,10 @@
+{
+  payments(first: 1) {
+    nodes {
+      staffAndCustomers {
+        __typename
+        email
+      }
+    }
+  }
+}

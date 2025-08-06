@@ -79,8 +79,9 @@ public class ProcessedDefinitionsValidator {
         validateTablesAndKeys();
         validateRequiredMethodCalls();
         validateUnionFieldsTable();
-        validateInterfaceDefinitions();
+        validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
+        validateMultitableFieldsOutsideRoot();
         validateTypesUsingNodeInterface();
         validateInputFields();
         validateExternalMappingReferences();
@@ -355,6 +356,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(field -> recordTypes.get(field.getTypeName()).hasTable() || field.hasFieldReferences() || field.isResolver())
                 .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
                 .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
+                .filter(it -> !schema.isMultiTableField(it)) // TODO: fix reference validation for multitable (GG-229)
                 .forEach((field) -> {
                             var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
                             var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
@@ -617,7 +619,46 @@ public class ProcessedDefinitionsValidator {
         }
     }
 
-    private void validateInterfaceDefinitions() {
+    private void validateMultitableFieldsOutsideRoot() {
+        allFields.stream()
+                .filter(GenerationSourceField::isGeneratedWithResolver)
+                .filter(it -> !it.isRootField())
+                .filter(it -> schema.isObjectWithPreviousTableObject(it.getContainerTypeName()))
+                .filter(schema::isMultiTableField)
+                .forEach(field -> {
+                    if (field.hasFieldReferences()) {
+                        errorMessages.add(
+                                String.format("'%s.%s' has the %s directive which is not supported on multitable queries outside root.",
+                                        field.getContainerTypeName(), field.getName(), REFERENCE.getName())
+                        );
+                    }
+
+                    if (!field.isIterableWrapped() && !field.hasForwardPagination()) {
+                        errorMessages.add(
+                                String.format("Multitable queries returning a single object outside root is not currently supported. '%s.%s' is not a list.",
+                                        field.getContainerTypeName(), field.getName())
+                        );
+                    }
+
+                    var containingType = schema.getObject(field.getContainerTypeName());
+                    var previousTable = schema.getPreviousTableObjectForObject(containingType).getTable().getName();
+
+                    schema.getTypesFromInterfaceOrUnion(field.getTypeName())
+                            .stream()
+                            .filter(RecordObjectDefinition::hasTable)
+                            .map(it -> it.getTable().getName())
+                            .filter(it -> findImplicitKey(it, previousTable).isEmpty())
+                            .forEach(targetTable ->
+                                    errorMessages.add(
+                                            String.format("'%s.%s' returns a multitable query, but there is no implicit key between %s and %s. " +
+                                                            "Multitable queries outside root is currently only supported between tables with one path.",
+                                                    field.getContainerTypeName(), field.getName(), previousTable, targetTable)
+                                    )
+                            );
+                });
+    }
+
+    private void validateSingleTableInterfaceDefinitions() {
         schema.getInterfaces().forEach((name, interfaceDefinition) -> {
                     if (name.equalsIgnoreCase(NODE_TYPE.getName()) || name.equalsIgnoreCase(ERROR_TYPE.getName())) return;
 
@@ -763,47 +804,49 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateInterfacesReturnedInFields() {
-        for (var field : allFields.stream().filter(ObjectField::isGeneratedWithResolver).toList()) {
-            var typeName = field.getTypeName();
-            var name = Optional
-                    .ofNullable(schema.getObjectOrConnectionNode(typeName))
-                    .map(AbstractObjectDefinition::getName)
-                    .orElse(typeName);
+        allFields.stream()
+                .filter(ObjectField::isGeneratedWithResolver)
+                .filter(schema::isInterface)
+                .forEach(field -> {
+                            var typeName = field.getTypeName();
+                            var name = Optional
+                                    .ofNullable(schema.getObjectOrConnectionNode(typeName))
+                                    .map(AbstractObjectDefinition::getName)
+                                    .orElse(typeName);
+                            if (!field.isRootField() && (schema.isSingleTableInterface(field) || name.equals(NODE_TYPE.getName()))) {
+                                errorMessages.add(String.format("interface (%s) returned in non root object. This is not fully " +
+                                        "supported. Use with care", name));
+                            }
 
-            if (schema.isInterface(name)) {
-                if (!(field.isRootField())) {
-                    errorMessages.add(String.format("interface (%s) returned in non root object. This is not fully " +
-                            "supported. Use with care", name));
-                }
+                            if (name.equalsIgnoreCase(NODE_TYPE.getName())) {
+                                Validate.isTrue(
+                                        field.getArguments().size() == 1,
+                                        "Only exactly one input field is currently supported for fields returning the '%s' interface. " +
+                                                "'%s.%s' has %s input fields", NODE_TYPE.getName(), field.getContainerTypeName(), field.getName(), field.getArguments().size()
+                                );
+                                Validate.isTrue(
+                                        !field.isIterableWrapped(),
+                                        "Generating fields returning a list of '%s' is not supported. " +
+                                                "'%s' must return only one %s", name, field.getName(), field.getTypeName()
+                                );
+                            } else {
+                                schema.getObjects()
+                                        .values()
+                                        .stream()
+                                        .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
+                                        .forEach(implementation -> {
+                                            if (!implementation.hasTable()) {
+                                                errorMessages.add(String.format("Interface '%s' is returned in field '%s', but type '%s' " +
+                                                        "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name));
+                                            } else if (!tableHasPrimaryKey(implementation.getTable().getName())) {
+                                                errorMessages.add(String.format("Interface '%s' is returned in field '%s', but implementing type '%s' " +
+                                                        "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName()));
+                                            }
+                                        });
+                            }
 
-                if (name.equalsIgnoreCase(NODE_TYPE.getName())) {
-                    Validate.isTrue(
-                            field.getArguments().size() == 1,
-                            "Only exactly one input field is currently supported for fields returning the '%s' interface. " +
-                                    "'%s.%s' has %s input fields", NODE_TYPE.getName(), field.getContainerTypeName(), field.getName(), field.getArguments().size()
-                    );
-                    Validate.isTrue(
-                            !field.isIterableWrapped(),
-                            "Generating fields returning a list of '%s' is not supported. " +
-                                    "'%s' must return only one %s", name, field.getName(), field.getTypeName()
-                    );
-                } else {
-                    schema.getObjects()
-                            .values()
-                            .stream()
-                            .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
-                            .forEach(implementation -> {
-                                if (!implementation.hasTable()) {
-                                    errorMessages.add(String.format("Interface '%s' is returned in field '%s', but type '%s' " +
-                                            "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name));
-                                } else if (!tableHasPrimaryKey(implementation.getTable().getName())) {
-                                    errorMessages.add(String.format("Interface '%s' is returned in field '%s', but implementing type '%s' " +
-                                            "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName()));
-                                }
-                            });
-                }
-            }
-        }
+                        }
+                );
     }
 
     private void validateTypesUsingNodeInterface() {

@@ -1,0 +1,27 @@
+extend type Query {
+    reachableByEmail: [PersonWithEmail] @asConnection
+}
+
+interface PersonWithEmail {
+    email: String
+}
+
+type StaffWithEmail implements PersonWithEmail @table(name: "STAFF") {
+    email: String
+}
+
+type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
+    name: CustomerName
+    email: String
+}
+
+extend type Payment {
+    staffAndCustomers(email: String): [PersonWithEmail] @splitQuery
+    staffAndCustomersPaginated: [PersonWithEmail] @asConnection @splitQuery
+}
+
+extend type Film {
+    actorsAndCategories: [FilmActorAndFilmCategoryUnion] @asConnection
+}
+
+union FilmActorAndFilmCategoryUnion = FilmActor | FilmCategory

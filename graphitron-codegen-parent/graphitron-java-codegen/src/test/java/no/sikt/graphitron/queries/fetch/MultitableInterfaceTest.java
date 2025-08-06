@@ -151,4 +151,25 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 "QueryPaymentInterfaceCondition.payments(_paymentp2007_01, customerId)"
         );
     }
+
+    @Test
+    @DisplayName("Listed multitable interface in splitQuery field")
+    void listedInSplitQuery() {
+        assertGeneratedContentMatches("splitQueryListed");
+    }
+
+    @Test
+    @DisplayName("Paginated multitable interface in splitQuery field")
+    void paginatedInSplitQuery() {
+        assertGeneratedContentMatches("splitQueryPaginated");
+    }
+
+    @Test
+    @DisplayName("Multitable interface in splitQuery field with input")
+    void splitQueryWithInput() {
+        assertGeneratedContentContains("splitQueryWithInput",
+                ".from(payment_425747824_customer).where(payment_425747824_customer.EMAIL.eq(email))",
+                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys)).fetch"
+                );
+    }
 }

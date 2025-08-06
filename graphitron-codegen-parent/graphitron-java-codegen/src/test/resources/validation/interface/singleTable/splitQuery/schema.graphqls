@@ -1,0 +1,7 @@
+type Customer @table {
+  address: AddressInterface @splitQuery
+}
+
+interface AddressInterface @discriminate(on: "DISTRICT") @table(name: "ADDRESS") {
+  postalCode: String @field(name: "POSTAL_CODE")
+}
