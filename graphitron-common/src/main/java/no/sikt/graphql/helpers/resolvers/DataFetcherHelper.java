@@ -85,7 +85,7 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param pageSize Size of the pages for pagination.
      * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
-     * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
+     * @param countFunction Function to call to retrieve a map of the total count of elements that could be potentially retrieved.
      * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <C> Connection type that the resolver fetches.

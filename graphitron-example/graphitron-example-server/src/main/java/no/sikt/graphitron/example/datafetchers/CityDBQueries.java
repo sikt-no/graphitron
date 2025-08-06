@@ -159,7 +159,7 @@ public class CityDBQueries {
                 .join(city_1887334959_address)
                 .where(DSL.row(_city.CITY_ID).in(cityResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .groupBy(_city.CITY_ID)
-                .fetchMap(Record2::value1, r -> r.value2());
+                .fetchMap(Record2::value1, Record2::value2);
 
     }
 
