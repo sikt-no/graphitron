@@ -1,0 +1,22 @@
+{
+    "data": {
+        "payments": {
+            "nodes": [
+                {
+                    "staffAndCustomersPaginated": {
+                        "nodes": [
+                            {
+                                "__typename": "CustomerWithEmail",
+                                "email": "MARY.SMITH@sakilacustomer.org"
+                            },
+                            {
+                                "__typename": "StaffWithEmail",
+                                "email": "Mike.Hillyer@sakilastaff.com"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

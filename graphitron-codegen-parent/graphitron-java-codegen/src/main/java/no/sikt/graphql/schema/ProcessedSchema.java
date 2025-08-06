@@ -829,6 +829,13 @@ public class ProcessedSchema {
         return objectWithPreviousTable.containsKey(object.getName());
     }
 
+    /*
+     * @return Returns whether name belongs to an object with a previous table
+     * */
+    public boolean isObjectWithPreviousTableObject(String name) {
+        return isObject(name) && objectWithPreviousTable.containsKey(name);
+    }
+
     /**
      * Simple method that tries to find a table reference in the input records.
      * This is not very robust, but we need this to not break existing things.
