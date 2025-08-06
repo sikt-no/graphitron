@@ -66,9 +66,17 @@ type PageInfo {
     endCursor: String
 }
 
+input CustomerInput {
+    id: ID!
+    email: String!
+    isActive: Boolean = true
+}
+
 type Query {
     customers(first: Int = 100, after: String): CustomerConnection
     customersByID(id: ID!): CustomerConnection #with nonNullable/required input
+    customersByInput(input: CustomerInput!): CustomerConnection #with nonNullable nested input
+
     # should not be generated, because of @excludeFromUI
     customersNotGenerated(first: Int = 10, after: String): CustomerConnection @excludeFromUI
 }

@@ -1,6 +1,6 @@
 quarkus:
   http:
-    port: 8088
+    port: 8080
   datasource:
     db-kind: postgresql
     username: ${quarkus.datasource.devservices.properties.POSTGRES_USER}

@@ -1,14 +1,18 @@
 package no.sikt.graphitron.generators.frontgen;
 
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.router.internal.ParameterInfo;
 import graphql.language.Argument;
 import graphql.language.Directive;
 import graphql.language.StringValue;
 import no.sikt.frontgen.generate.GeneratedQueryComponent;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.objects.InputDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -23,6 +27,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.upperCase;
@@ -154,11 +159,29 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
             // Add field declarations for input components
             for (ParameterInfo param : parameters) {
-                builder.addField(TextField.class, param.name + "Field", Modifier.PRIVATE);
+                if (param.isNested) {
+                    // Add fields for each nested field
+                    for (NestedFieldInfo nestedField : param.nestedFields) {
+                        String fieldName = param.name + capitalize(nestedField.name) + "Field";
+                        Class<?> fieldType = getVaadinComponentType(nestedField.type);
+                        builder.addField(fieldType, fieldName, Modifier.PRIVATE);
+                    }
+                } else {
+                    String fieldName = param.name + "Field";
+                    Class<?> fieldType = getVaadinComponentType(param.type);
+                    builder.addField(fieldType, fieldName, Modifier.PRIVATE);
+                }
             }
         }
-
         return builder.build();
+    }
+
+    private Class<?> getVaadinComponentType(String javaType) {
+        return switch (javaType) {
+            case "Boolean" -> Checkbox.class;
+            case "Integer" -> IntegerField.class;
+            default -> TextField.class;
+        };
     }
 
     private MethodSpec generateHasParametersMethod() {
@@ -178,10 +201,38 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 .addStatement("$T inputLayout = new $T()", VerticalLayout.class, VerticalLayout.class);
 
         for (ParameterInfo param : parameters) {
-            String fieldName = param.name + "Field";
-            builder.addStatement("$L = new $T($S)", fieldName, TextField.class, param.name)
-                    .addStatement("$L.setRequired($L)", fieldName, param.required)
-                    .addStatement("inputLayout.add($L)", fieldName);
+            if (param.isNested) {
+                // Create a section for nested input
+                builder.addStatement("// Fields for $L", param.name);
+                for (NestedFieldInfo nestedField : param.nestedFields) {
+                    String fieldName = param.name + capitalize(nestedField.name) + "Field";
+                    String label = param.name + " " + nestedField.name;
+                    Class<?> componentType = getVaadinComponentType(nestedField.type);
+
+                    if (componentType == Checkbox.class) {
+                        builder.addStatement("$L = new $T($S)", fieldName, componentType, label);
+                    } else {
+                        builder.addStatement("$L = new $T($S)", fieldName, componentType, label);
+                        if (nestedField.required) {
+                            builder.addStatement("$L.setRequired($L)", fieldName, nestedField.required);
+                        }
+                    }
+                    builder.addStatement("inputLayout.add($L)", fieldName);
+                }
+            } else {
+                String fieldName = param.name + "Field";
+                Class<?> componentType = getVaadinComponentType(param.type);
+
+                if (componentType == Checkbox.class) {
+                    builder.addStatement("$L = new $T($S)", fieldName, componentType, param.name);
+                } else {
+                    builder.addStatement("$L = new $T($S)", fieldName, componentType, param.name);
+                    if (param.required) {
+                        builder.addStatement("$L.setRequired($L)", fieldName, param.required);
+                    }
+                }
+                builder.addStatement("inputLayout.add($L)", fieldName);
+            }
         }
 
         builder.addStatement("return inputLayout");
@@ -196,14 +247,74 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 .addStatement("$T<String, Object> variables = new $T<>()", Map.class, HashMap.class);
 
         for (ParameterInfo param : parameters) {
-            String fieldName = param.name + "Field";
-            builder.beginControlFlow("if ($L != null && !$L.isEmpty())", fieldName, fieldName)
-                    .addStatement("variables.put($S, $L.getValue())", param.name, fieldName)
-                    .endControlFlow();
+            if (param.isNested) {
+                // Create nested object
+                builder.addStatement("$T<String, Object> $LObj = new $T<>()",
+                        Map.class, param.name, HashMap.class);
+
+                boolean hasRequiredCheck = param.nestedFields.stream().anyMatch(f -> f.required);
+                if (hasRequiredCheck) {
+                    builder.addStatement("boolean $LHasValues = false", param.name);
+                }
+
+                for (NestedFieldInfo nestedField : param.nestedFields) {
+                    String fieldName = param.name + capitalize(nestedField.name) + "Field";
+                    String condition = getFieldCondition(nestedField.type, fieldName);
+
+                    builder.beginControlFlow("if ($L)", condition);
+
+                    if (nestedField.type.equals("Boolean")) {
+                        builder.addStatement("$LObj.put($S, $L.getValue())", param.name, nestedField.name, fieldName);
+                    } else if (nestedField.type.equals("Integer")) {
+                        builder.addStatement("$LObj.put($S, $L.getValue())", param.name, nestedField.name, fieldName);
+                    } else {
+                        builder.addStatement("$LObj.put($S, $L.getValue())", param.name, nestedField.name, fieldName);
+                    }
+
+                    if (hasRequiredCheck) {
+                        builder.addStatement("$LHasValues = true", param.name);
+                    }
+
+                    builder.endControlFlow();
+                }
+
+                if (hasRequiredCheck) {
+                    builder.beginControlFlow("if ($LHasValues)", param.name)
+                            .addStatement("variables.put($S, $LObj)", param.name, param.name)
+                            .endControlFlow();
+                } else {
+                    builder.beginControlFlow("if (!$LObj.isEmpty())", param.name)
+                            .addStatement("variables.put($S, $LObj)", param.name, param.name)
+                            .endControlFlow();
+                }
+            } else {
+                String fieldName = param.name + "Field";
+                String condition = getFieldCondition(param.type, fieldName);
+
+                builder.beginControlFlow("if ($L)", condition);
+
+                if (param.type.equals("Boolean")) {
+                    builder.addStatement("variables.put($S, $L.getValue())", param.name, fieldName);
+                } else if (param.type.equals("Integer")) {
+                    builder.addStatement("variables.put($S, $L.getValue())", param.name, fieldName);
+                } else {
+                    builder.addStatement("variables.put($S, $L.getValue())", param.name, fieldName);
+                }
+
+                builder.endControlFlow();
+            }
         }
 
         builder.addStatement("return variables");
         return builder.build();
+    }
+
+    private String getFieldCondition(String javaType, String fieldName) {
+        return switch (javaType) {
+            case "Boolean" -> fieldName + " != null"; // Checkbox always has a value
+            case "Integer" -> fieldName + " != null && " + fieldName + ".getValue() != null";
+            default -> fieldName + " != null && !" + fieldName + ".isEmpty()";
+        };
     }
 
     private MethodSpec generateValidateInputsMethod(List<ParameterInfo> parameters) {
@@ -215,21 +326,55 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         if (parameters.isEmpty()) {
             builder.addStatement("return true");
         } else {
-            StringBuilder validation = new StringBuilder("return ");
-            for (int i = 0; i < parameters.size(); i++) {
-                if (i > 0) validation.append(" && ");
-                ParameterInfo param = parameters.get(i);
-                String fieldName = param.name + "Field";
-                if (param.required) {
-                    validation.append("(").append(fieldName).append(" != null && !").append(fieldName).append(".isEmpty())");
+            List<String> validationConditions = new ArrayList<>();
+
+            for (ParameterInfo param : parameters) {
+                if (param.isNested) {
+                    if (param.required) {
+                        // For required nested objects, at least one required field must be filled
+                        List<String> requiredNestedFields = param.nestedFields.stream()
+                                .filter(f -> f.required)
+                                .map(f -> param.name + capitalize(f.name) + "Field")
+                                .toList();
+
+                        if (!requiredNestedFields.isEmpty()) {
+                            String condition = requiredNestedFields.stream()
+                                    .map(fieldName -> getValidationCondition(
+                                            param.nestedFields.stream()
+                                                    .filter(nf -> (param.name + capitalize(nf.name) + "Field").equals(fieldName))
+                                                    .findFirst()
+                                                    .map(nf -> nf.type)
+                                                    .orElse("String"),
+                                            fieldName))
+                                    .collect(Collectors.joining(" || "));
+                            validationConditions.add("(" + condition + ")");
+                        }
+                    }
                 } else {
-                    validation.append("(").append(fieldName).append(" == null || !").append(fieldName).append(".isEmpty())");
+                    String fieldName = param.name + "Field";
+                    if (param.required) {
+                        validationConditions.add("(" + getValidationCondition(param.type, fieldName) + ")");
+                    }
                 }
             }
-            builder.addStatement(validation.toString());
+
+            if (validationConditions.isEmpty()) {
+                builder.addStatement("return true");
+            } else {
+                String validation = "return " + String.join(" && ", validationConditions);
+                builder.addStatement(validation);
+            }
         }
 
         return builder.build();
+    }
+
+    private String getValidationCondition(String javaType, String fieldName) {
+        return switch (javaType) {
+            case "Boolean" -> fieldName + " != null"; // Checkbox is always valid
+            case "Integer" -> fieldName + " != null && " + fieldName + ".getValue() != null";
+            default -> fieldName + " != null && !" + fieldName + ".isEmpty()";
+        };
     }
 
     private MethodSpec generateQueryMethod(ObjectField field, List<ParameterInfo> parameters) {
@@ -257,7 +402,14 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 if (i > 0) queryBuilder.append(", ");
                 ParameterInfo param = parameters.get(i);
                 queryBuilder.append("$").append(param.name).append(": ");
-                queryBuilder.append(mapJavaTypeToGraphQL(param.type));
+
+                // For nested types, use the original GraphQL type name
+                if (param.isNested) {
+                    queryBuilder.append(getOriginalGraphQLTypeName(param.name, field));
+                } else {
+                    queryBuilder.append(mapJavaTypeToGraphQL(param.type));
+                }
+
                 if (param.required) queryBuilder.append("!");
             }
             queryBuilder.append(")");
@@ -288,6 +440,15 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
 
         queryBuilder.append(") { edges { node {").append(queryFields).append(" } } } }");
         return queryBuilder.toString();
+    }
+
+    private String getOriginalGraphQLTypeName(String paramName, ObjectField field) {
+        // Find the argument in the field to get its original GraphQL type
+        return field.getArguments().stream()
+                .filter(arg -> arg.getName().equals(paramName))
+                .findFirst()
+                .map(arg -> arg.getTypeName().replaceAll("[!\\[\\]]", "")) // Remove nullability and list markers
+                .orElse("String"); // fallback
     }
 
     private String mapJavaTypeToGraphQL(String javaType) {
@@ -621,25 +782,60 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
         return "List " + capitalize(field.getName());
     }
 
-    // Add this method to TableUIComponentGenerator to analyze parameters
     private List<ParameterInfo> analyzeParameters(ObjectField field) {
         return field.getArguments().stream()
-                .filter(arg -> arg.isNonNullable()
-                        && !arg.getName().equals("first") && !arg.getName().equals("after"))
-                .map(arg -> new ParameterInfo(
-                        arg.getName(),
-                        mapGraphQLTypeToJava(arg.getTypeName()),
-                        arg.isNonNullable()
-                ))
+                .filter(arg -> !arg.getName().equals("first") && !arg.getName().equals("after"))
+                .map(arg -> {
+                    String typeName = arg.getTypeName().replaceAll("[!\\[\\]]", ""); // Clean type name
+                    boolean isNested = processedSchema.isInputType(typeName) || processedSchema.isObject(typeName);
+                    return new ParameterInfo(
+                            arg.getName(),
+                            mapGraphQLTypeToJava(typeName),
+                            arg.isNonNullable(),
+                            isNested,
+                            isNested ? getNestedFields(typeName) : List.of()
+                    );
+                })
                 .toList();
+    }
+
+    private List<NestedFieldInfo> getNestedFields(String typeName) {
+        InputDefinition inputObject = processedSchema.getInputType(typeName);
+
+        if (inputObject != null) {
+            return inputObject.getFields().stream()
+                    .map(field -> new NestedFieldInfo(
+                            field.getName(),
+                            mapGraphQLTypeToJava(field.getTypeName()),
+                            field.isNonNullable()
+                    ))
+                    .toList();
+        }
+        return List.of();
     }
 
     private static class ParameterInfo {
         final String name;
         final String type;
         final boolean required;
+        final boolean isNested;
+        final List<NestedFieldInfo> nestedFields;
 
-        ParameterInfo(String name, String type, boolean required) {
+        ParameterInfo(String name, String type, boolean required, boolean isNested, List<NestedFieldInfo> nestedFields) {
+            this.name = name;
+            this.type = type;
+            this.required = required;
+            this.isNested = isNested;
+            this.nestedFields = nestedFields;
+        }
+    }
+
+    private static class NestedFieldInfo {
+        final String name;
+        final String type;
+        final boolean required;
+
+        NestedFieldInfo(String name, String type, boolean required) {
             this.name = name;
             this.type = type;
             this.required = required;
