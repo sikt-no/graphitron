@@ -1,0 +1,12 @@
+query MyQuery($first: Int, $after: String) {
+  payments(first: 1) {
+    nodes {
+      staffAndCustomersPaginated(first: $first, after: $after) {
+        nodes {
+          __typename
+          email
+        }
+      }
+    }
+  }
+}

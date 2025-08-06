@@ -1,0 +1,18 @@
+{
+    "data": {
+        "payments": {
+            "nodes": [
+                {
+                    "staffAndCustomersPaginated": {
+                        "nodes": [
+                            {
+                                "__typename": "StaffWithEmail",
+                                "email": "Mike.Hillyer@sakilastaff.com"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

@@ -1,5 +1,5 @@
 extend type Query {
-    reachableByEmail: [PersonWithEmail] @asConnection #TODO: throws json-error (GGG-132)
+    reachableByEmail: [PersonWithEmail] @asConnection
 }
 
 interface PersonWithEmail {
@@ -13,4 +13,9 @@ type StaffWithEmail implements PersonWithEmail @table(name: "STAFF") {
 type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
     name: CustomerName
     email: String
+}
+
+extend type Payment {
+    staffAndCustomers(email: String): [PersonWithEmail] @splitQuery
+    staffAndCustomersPaginated: [PersonWithEmail] @asConnection @splitQuery
 }
