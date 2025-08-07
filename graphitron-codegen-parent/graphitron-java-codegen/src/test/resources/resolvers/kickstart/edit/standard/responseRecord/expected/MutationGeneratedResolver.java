@@ -18,7 +18,7 @@ public class MutationGeneratedResolver implements MutationMutationResolver {
             throws Exception {
         var transform = new RecordTransformer(env);
         var inRecord = transform.customerInputTableToJOOQRecord(in, "in");
-        var mutation = MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
+        MutationDBQueries.mutationForMutation(transform.getCtx(), inRecord);
 
         var response = new Response();
         if (inRecord != null && transform.getSelect().contains("customer")) {

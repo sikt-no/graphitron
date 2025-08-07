@@ -1,0 +1,8 @@
+type Query {
+  query(in: CustomerInputTable!): CustomerNoTable
+}
+
+type CustomerNoTable {
+  id: ID
+  name: String @field(name: "FIRST_NAME")
+}

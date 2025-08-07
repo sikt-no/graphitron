@@ -157,25 +157,9 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Responses containing a jOOQ record fetched by ID")
-    void recordFetchedByID() {
-        assertGeneratedContentContains(
-                "containingRecordFetchedByID", Set.of(ADDRESS_SERVICE),
-                "address.setCustomer(CustomerDBQueries.customerForNode(" +
-                        "transform.getCtx(), Set.of(customer.getId()), select.withPrefix(pathHere + \"customer\"" +
-                        ")).values().stream().findFirst().orElse(null)"
-        );
-    }
-
-    @Test
-    @DisplayName("Responses containing listed jOOQ records fetched by ID")
-    void listedRecordFetchedByID() {
-        assertGeneratedContentContains(
-                "containingListedRecordFetchedByID", Set.of(ADDRESS_SERVICE),
-                "customerForNode = CustomerDBQueries.customerForNode(" +
-                        "transform.getCtx(), customerList.stream().map(it -> it.getId()).collect(Collectors.toSet()), select.withPrefix(pathHere + \"customerList\"));" +
-                        "address.setCustomerList(customerList.stream().map(it -> customerForNode.get(it.getId())).toList()"
-        );
+    @DisplayName("Responses containing a jOOQ record with split query")
+    void recordWithSplitQuery() {
+        resultDoesNotContain("containingRecordWithSplitQuery", Set.of(ADDRESS_SERVICE), "address.setCustomer(");
     }
 
     @Test

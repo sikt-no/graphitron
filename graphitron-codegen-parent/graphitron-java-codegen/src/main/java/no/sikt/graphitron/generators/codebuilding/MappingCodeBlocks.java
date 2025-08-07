@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -39,13 +39,11 @@ public class MappingCodeBlocks {
 
             var innerCode = CodeBlock.builder();
 
-            if (!innerField.isExplicitlyNotGenerated() && !innerContext.getPreviousContext().hasRecordReference()) {
+            if (!innerField.isExplicitlyNotGenerated() && !innerContext.getTarget().isResolver() && !innerContext.getPreviousContext().hasRecordReference()) {
                 if (!innerContext.targetIsType()) {
                     innerCode.add(innerContext.getSetMappingBlock(getFieldSetContent((ObjectField) innerField, (ObjectField) previousTarget, schema)));
-                } else if (innerContext.shouldUseStandardRecordFetch()) {
-                    innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else if (innerContext.hasRecordReference()) {
-                    innerCode.add(idFetchAllowingDuplicates(innerContext, innerField, previousTarget.getName(), true));
+                    innerCode.add(innerContext.getRecordSetMappingBlock(previousTarget.getName()));
                 } else {
                     innerCode.add(generateSchemaOutputs(innerContext, schema));
                 }

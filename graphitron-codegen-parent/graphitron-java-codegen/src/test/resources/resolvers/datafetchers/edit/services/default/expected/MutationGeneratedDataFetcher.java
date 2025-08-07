@@ -5,14 +5,14 @@ import graphql.schema.DataFetcher;
 import java.lang.String;
 import java.util.concurrent.CompletableFuture;
 import no.sikt.graphitron.codereferences.services.ResolverMutationService;
+import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 
 public class MutationGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<String>> mutation() {
         return env -> {
             var transform = new RecordTransformer(env);
             var resolverMutationService = new ResolverMutationService(transform.getCtx());
-            var mutation = resolverMutationService.mutation();
-            return CompletableFuture.completedFuture(mutation);
+            return new ServiceDataFetcherHelper<>(transform).load(() -> resolverMutationService.mutation());
         };
     }
 }

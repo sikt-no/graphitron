@@ -1,0 +1,11 @@
+type Query {
+  query(firstName: String @field(name: "FIRST_NAME")): Wrapper1
+}
+
+type Wrapper1 {
+  customer: Wrapper2
+}
+
+type Wrapper2 {
+  customer: CustomerTable
+}

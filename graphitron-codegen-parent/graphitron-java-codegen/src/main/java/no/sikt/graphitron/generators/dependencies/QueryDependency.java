@@ -2,7 +2,7 @@ package no.sikt.graphitron.generators.dependencies;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 
 import javax.lang.model.element.Modifier;
 

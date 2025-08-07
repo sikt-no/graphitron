@@ -5,8 +5,7 @@ import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.CodeInterfaceClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
-import no.sikt.graphitron.generators.db.fetch.FetchDBClassGenerator;
-import no.sikt.graphitron.generators.db.update.UpdateDBClassGenerator;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.generators.dto.*;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
 import no.sikt.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
@@ -58,9 +57,7 @@ public class GraphQLGenerator {
                 new InterfaceDTOGenerator(processedSchema),
                 new UnionDTOGenerator(processedSchema),
                 new EnumDTOGenerator(processedSchema),
-                new FetchDBClassGenerator(processedSchema),
-                new UpdateDBClassGenerator(processedSchema),
-                new OperationClassGenerator(processedSchema),
+                new DBClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
                 new RecordMapperClassGenerator(processedSchema, true),
                 new RecordMapperClassGenerator(processedSchema, false),
@@ -68,19 +65,23 @@ public class GraphQLGenerator {
                 new JavaRecordMapperClassGenerator(processedSchema, false),
                 new MutationExceptionStrategyConfigurationGenerator(processedSchema),
                 new ExceptionToErrorMappingProviderGenerator(processedSchema),
-                new EntityFetcherClassGenerator(processedSchema),
-                new TypeResolverClassGenerator(processedSchema),
                 new TypeRegistryClassGenerator(),
                 new CodeInterfaceClassGenerator(processedSchema)
         );
+        List<ClassGenerator> dataFetcherGenerators = !GeneratorConfig.shouldMakeKickstart() ? List.of(
+                new OperationClassGenerator(processedSchema),
+                new EntityFetcherClassGenerator(processedSchema),
+                new TypeResolverClassGenerator(processedSchema)
+        ) : List.of();
         List<ClassGenerator> kickstartGenerators = GeneratorConfig.shouldMakeKickstart() ? List.of(
                 new FetchResolverClassGenerator(processedSchema),
                 new UpdateResolverClassGenerator(processedSchema)
         ) : List.of();
-        var allGenerators = Stream.concat(generators.stream(), kickstartGenerators.stream());
+        var generatorsWithFetchers = Stream.concat(generators.stream(), dataFetcherGenerators.stream()).toList();
+        var allGenerators = Stream.concat(generatorsWithFetchers.stream(), kickstartGenerators.stream());
         return Stream.concat(
                 allGenerators,
-                Stream.of(new WiringClassGenerator(generators, processedSchema))  // This one must be the last generator.
+                Stream.of(new WiringClassGenerator(generatorsWithFetchers, processedSchema))  // These must be the last.
         ).toList();
     }
 

@@ -1,0 +1,30 @@
+extend type Query {
+    # Currently, these structures are only used in mutations, but they are equally viable for queries.
+    filmWrapped(filmId: String @field(name: "FILM_ID")): FilmContainer
+    filmWrappedListed(filmId: [String!]! @field(name: "FILM_ID")): FilmContainerListed
+    filmWrappedWithInputTable(input: FilmInput!): FilmContainerID
+    filmWrappedWithInputTableListed(input: [FilmInput!]!): FilmContainerListedID
+    filmWrappedWithInputTableAndTableField(input: FilmInput!): FilmContainer
+    filmWrappedWithInputTableAndTableFieldListed(input: [FilmInput!]!): FilmContainerListed
+}
+
+extend type Mutation {
+    deleteFilmWrapped(in: FilmInput): FilmContainerID @mutation(typeName: DELETE)
+    deleteFilmListedWrapped(in: [FilmInput!]!): FilmContainerListedID @mutation(typeName: DELETE)
+}
+
+type FilmContainer {
+    films: Film
+}
+
+type FilmContainerListed {
+    films: [Film]
+}
+
+type FilmContainerID {
+    id: ID! @nodeId(typeName: "Film")
+}
+
+type FilmContainerListedID {
+    ids: [ID!]! @nodeId(typeName: "Film")
+}

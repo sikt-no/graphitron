@@ -10,10 +10,10 @@ import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.generators.abstractions.DBClassGenerator;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -32,7 +32,6 @@ import java.util.HashMap;
 
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
-import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -639,7 +638,7 @@ public class FormatCodeBlocks {
      * @return CodeBlock that sends this variable through an enum mapping.
      */
     public static CodeBlock makeEnumMapBlock(String inputVariable, CodeBlock valueLists) {
-        return CodeBlock.of("$T.makeEnumMap($N, $L)", QUERY_HELPER.className, inputVariable, valueLists);
+        return makeEnumMapBlock(CodeBlock.of(inputVariable), valueLists);
     }
 
     /**
@@ -923,7 +922,7 @@ public class FormatCodeBlocks {
         return CodeBlock.of("$L.in($N.stream().map($T::valuesRow).toList())",
                 getSelectKeyColumnRow(context),
                 resolverKeyParamName,
-                getKeyTypeName(context.getResolverKey(), false)
+                context.getResolverKey().getTypeName(false)
         );
     }
 
@@ -949,7 +948,7 @@ public class FormatCodeBlocks {
      * @return Select code for the columns in the resolver key
      */
     public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
-        return getSelectKeyColumnRow(context.getResolverKey(), context.getTargetTableName(), context.getTargetAlias());
+        return getSelectKeyColumnRow(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
@@ -969,15 +968,15 @@ public class FormatCodeBlocks {
         );
     }
 
-    public static CodeBlock hasIdBlock(CodeBlock id, ObjectDefinition obj, String targetAlias) {
+    public static CodeBlock hasIdBlock(CodeBlock id, RecordObjectSpecification<?> obj, String targetAlias) {
         return hasIdOrIdsBlock(id, obj, targetAlias, CodeBlock.empty(), false);
     }
 
-    public static CodeBlock hasIdsBlock(ObjectDefinition obj, String targetAlias) {
+    public static CodeBlock hasIdsBlock(RecordObjectSpecification<?> obj, String targetAlias) {
         return hasIdOrIdsBlock(CodeBlock.of(IDS_NAME), obj, targetAlias, CodeBlock.empty(), true);
     }
 
-    public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, ObjectDefinition obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {
+    public static CodeBlock hasIdOrIdsBlock(CodeBlock idOrRecordParamName, RecordObjectSpecification<?> obj, String targetAlias, CodeBlock mappedFkFields, boolean isMultiple) {
         return CodeBlock.of("$N.$L($S, $L, $L)",
                 NODE_ID_STRATEGY_NAME,
                 isMultiple ? "hasIds" : "hasId",

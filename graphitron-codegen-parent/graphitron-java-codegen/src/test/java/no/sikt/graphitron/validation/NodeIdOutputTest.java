@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE_INPUT_TABLE;
 
 @DisplayName("Node directive output validation - Checks run when building the schema for types with node directive")
 public class NodeIdOutputTest extends ValidationTest {
@@ -81,5 +82,11 @@ public class NodeIdOutputTest extends ValidationTest {
                 () -> getProcessedSchema("invalidSelfReference", Set.of(CUSTOMER_NODE)),
                 "Error on field \"parent\" in type \"Customer\": No foreign key found between tables \"CUSTOMER\" and \"CUSTOMER\""
         );
+    }
+
+    @Test
+    @DisplayName("Returning ID without type wrapping")
+    void noWrapping() {
+        getProcessedSchema("noWrapping", Set.of(CUSTOMER_NODE_INPUT_TABLE, CUSTOMER_NODE));
     }
 }

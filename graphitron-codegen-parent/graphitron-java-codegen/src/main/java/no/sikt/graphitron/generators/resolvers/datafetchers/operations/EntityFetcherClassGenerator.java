@@ -11,7 +11,7 @@ import java.util.List;
  * Class generator for wrapping the entity resolver.
  */
 public class EntityFetcherClassGenerator extends DataFetcherClassGenerator<ObjectDefinition> {
-    public static final String SAVE_DIRECTORY_NAME = "query", CLASS_NAME = "Entity";
+    public static final String SAVE_DIRECTORY_NAME = "operations", CLASS_NAME = "Entity";
 
     public EntityFetcherClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);

@@ -1,0 +1,11 @@
+type Query {
+  query(in: In!): CustomerNoTable
+}
+
+input In @table(name: "CUSTOMER") {
+  firstname: String! @field(name: "FIRST_NAME")
+}
+
+type CustomerNoTable {
+  id: ID! @nodeId(typeName: "CustomerNode")
+}

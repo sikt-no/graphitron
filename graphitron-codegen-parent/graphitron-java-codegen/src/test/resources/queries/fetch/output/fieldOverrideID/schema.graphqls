@@ -1,0 +1,7 @@
+type Query {
+  query: Payment
+}
+
+type Payment @table {
+  customerID: ID @field(name: "customerId")
+}

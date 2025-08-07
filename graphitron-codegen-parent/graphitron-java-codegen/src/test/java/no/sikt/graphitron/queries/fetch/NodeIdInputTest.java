@@ -8,6 +8,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.DUMMY_RECORD;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE_INPUT_TABLE;
 
 @DisplayName("Node ID input - input fields with nodeId directive")
 public class NodeIdInputTest extends NodeIdDirectiveTest {
@@ -75,8 +76,8 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @Test
     @DisplayName("In jOOQ record input")
     void jooqRecord() {
-        assertGeneratedContentContains("jooqRecord",
-                ".where(nodeIdStrategy.hasId(\"Customer\", filterRecord, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))"
+        assertGeneratedContentContains("jooqRecord", Set.of(CUSTOMER_NODE),
+                ".where(nodeIdStrategy.hasId(\"CustomerNode\", filterRecord, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))"
         );
     }
 
@@ -145,6 +146,29 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
         assertGeneratedContentContains("javaRecordReference", Set.of(CUSTOMER_NODE),
                 ".leftJoin(customer_2952383337_address_left)",
                 ".where(nodeIdStrategy.hasId(\"Address\", inRecord.getAddressId(), customer_2952383337_address_left.fields("
+        );
+    }
+
+    @Test
+    @DisplayName("A query returns a type without a table set")
+    void typeWithoutTable() {
+        assertGeneratedContentContains(
+                "typeWithoutTable", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
+                "_customer.getPrimaryKey().getFieldsArray())))" +
+                        ".from(_customer)" +
+                        ".where(nodeIdStrategy.hasId(\"CustomerNode\"",
+                "CustomerNoTable::new))).fetchOne("
+        );
+    }
+
+    @Test
+    @DisplayName("Listed input jOOQ records")
+    void listedInputJOOQRecord() {
+        assertGeneratedContentContains(
+                "listedInputJOOQRecord", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
+                ".where(inRecordList.size() > 0 ? DSL.row(DSL.trueCondition()).in(inRecordList.stream().map(internal_it_ ->" +
+                        "DSL.row(nodeIdStrategy.hasId(\"CustomerNode\", internal_it_, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))" +
+                        ").toList()) : DSL.noCondition()"
         );
     }
 }
