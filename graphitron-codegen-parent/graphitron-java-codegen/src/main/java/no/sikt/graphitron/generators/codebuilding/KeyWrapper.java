@@ -29,26 +29,39 @@ public record KeyWrapper(Key<?> key) {
     }
 
     /**
-     * Get the TypeName for the key variable
+     * Get the Row TypeName for the key variable
      *
-     * @return TypeName of the key variable
+     * @return Row TypeName of the key variable
      */
-    public TypeName getTypeName() {
-        return getTypeName(true);
+    public TypeName getRowTypeName() {
+        return getTypeName(true, false);
     }
 
     /**
-     * Get the TypeName for the key variable
+     * Get the Record TypeName for the key variable
      *
-     * @return TypeName of the key variable
+     * @return Record TypeName of the key variable
      */
-    public TypeName getTypeName(boolean parameterized) {
+    public TypeName getRecordTypeName() {
+        return getRecordTypeName(true);
+    }
+
+    /**
+     * Get the Record TypeName for the key variable
+     *
+     * @return Record TypeName of the key variable
+     */
+    public TypeName getRecordTypeName(boolean parameterized) {
+        return getTypeName(parameterized, true);
+    }
+
+    private TypeName getTypeName(boolean parameterized, boolean asRecordType) {
         var keyFields = key.getFields();
 
         if (keyFields.size() > 22) {
             throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
         }
-        var recordClassName = ClassName.get("org.jooq", String.format("Record%d", keyFields.size()));
+        var recordClassName = ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size()));
         return parameterized ?
                 ParameterizedTypeName.get(
                         recordClassName,
@@ -153,12 +166,12 @@ public record KeyWrapper(Key<?> key) {
     }
 
     /**
-     * Get the TypeName for the key used for a resolver field
+     * Get the Record TypeName for the key used for a resolver field
      *
      * @param field The resolver field
      * @return TypeName of the key variable
      */
-    public static TypeName getKeyTypeName(GenerationField field, ProcessedSchema schema) {
-        return findKeyForResolverField(field, schema).getTypeName();
+    public static TypeName getKeyRecordTypeName(GenerationField field, ProcessedSchema schema) {
+        return findKeyForResolverField(field, schema).getRowTypeName();
     }
 }

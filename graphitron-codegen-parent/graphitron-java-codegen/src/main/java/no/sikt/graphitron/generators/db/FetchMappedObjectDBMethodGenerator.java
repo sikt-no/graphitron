@@ -146,7 +146,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                     .build();
         }
 
-        var code = CodeBlock.builder().add(".fetchMap($T::value1, ", RECORD2.className);
+        var code = CodeBlock.builder()
+                .add(".fetchMap(")
+                .addIf(lookupExists, "$T::value1, ", RECORD2.className)
+                .addIf(!lookupExists, "r -> r.value1().valuesRow(), ");
+
         if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
             if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
                 return code.addStatement("r -> r.value2().map($T::value2))", RECORD2.className).build();
@@ -168,7 +172,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             code
                     .add(".fetchMap(\n")
                     .indent()
-                    .add("$T::value1,\n", RECORD2.className)
+                    .add("r -> r.value1().valuesRow(),\n")
                     .add("it ->  it.value2().map(r -> r.value2() == null ? null : new $T<>(r.value1(), r.value2()))", IMMUTABLE_PAIR.className)
                     .unindent()
                     .addStatement(")");

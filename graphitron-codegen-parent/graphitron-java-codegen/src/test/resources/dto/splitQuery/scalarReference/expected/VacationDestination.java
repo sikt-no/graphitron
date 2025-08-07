@@ -6,27 +6,32 @@ import java.lang.Object;
 import java.lang.Override;
 import java.util.Objects;
 import org.jooq.Record1;
+import org.jooq.Row1;
 
 public class VacationDestination implements Serializable {
 
-    private Record1<Long> vacation_destination_vacation_fkey;
+    private Row1<Long> vacation_destination_vacation_fkey;
 
-    private Record1<Long> vacationDescriptionKey;
+    private Row1<Long> vacationDescriptionKey;
 
     public VacationDestination() {
     }
 
     public VacationDestination(Record1<Long> vacation_destination_vacation_fkey) {
-        this.vacation_destination_vacation_fkey = vacation_destination_vacation_fkey;
-        this.vacationDescriptionKey = vacation_destination_vacation_fkey;
+        this.vacation_destination_vacation_fkey = vacation_destination_vacation_fkey.valuesRow();
+        this.vacationDescriptionKey = vacation_destination_vacation_fkey.valuesRow();
     }
 
-    public Record1<Long> getVacation_destination_vacation_fkey() {
+    public Row1<Long> getVacation_destination_vacation_fkey() {
         return vacation_destination_vacation_fkey;
     }
 
-    public Record1<Long> getVacationDescriptionKey() {
+    public Row1<Long> getVacationDescriptionKey() {
         return vacationDescriptionKey;
+    }
+
+    public void setVacationDescriptionKey(Row1<Long> vacationDescriptionKey) {
+        this.vacationDescriptionKey = vacationDescriptionKey;
     }
 
     @Override

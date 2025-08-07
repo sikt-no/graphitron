@@ -76,7 +76,7 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "_customer.address().as(",
                 "DSL.row(customer_2952383337_address.getId()",
                 ".from(_customer",
-                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))"
+                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))"
         );
     }
 

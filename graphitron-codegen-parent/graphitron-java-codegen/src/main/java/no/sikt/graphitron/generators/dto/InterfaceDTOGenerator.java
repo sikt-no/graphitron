@@ -30,7 +30,7 @@ public class InterfaceDTOGenerator extends DTOGenerator {
                 .forEach(( key) -> {
                     interfaceBuilder.addMethod(
                             MethodSpec.methodBuilder("get" + capitalize(key.key() instanceof UniqueKey ? PRIMARY_KEY : key.key().getName()))
-                                    .returns(key.getTypeName())
+                                    .returns(key.getRowTypeName())
                                     .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                                     .build()
                     );
