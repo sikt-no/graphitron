@@ -9,6 +9,7 @@ import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
@@ -711,34 +712,33 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         for (var condition : conditions) {
             var field = condition.getInput();
-            var fieldSequence = context.iterateJoinSequenceFor(field).render();
-            var unpackedBlock = CodeBlock.builder();
-            if (processedSchema.isNodeIdField(field)) {
-                unpackedBlock.add(hasIdBlock(CodeBlock.of("$N", VARIABLE_INTERNAL_ITERATION), context.getReferenceObject(), context.getTargetAlias()));
-            } else if (condition.hasRecord()) {
-                unpackedBlock.add("$N", VARIABLE_INTERNAL_ITERATION).add(field.getMappingForRecordFieldOverride().asGetCall());
-            } else {
-                unpackedBlock.add("$N", VARIABLE_INTERNAL_ITERATION).add(condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
-            }
-            var unpacked = unpackedBlock.build();
+            var fieldSequence = context.iterateJoinSequenceFor(field);
+            var lastTable = fieldSequence.getLast().getTable();
+            var unpacked = unpackElement(context, argumentInputFieldName, condition, lastTable);
 
             if (!field.hasOverridingCondition() && !condition.isOverriddenByAncestors()) {
                 var tupleBlock = CodeBlock.builder();
-                if (processedSchema.isNodeIdField(field)) {
+                if (processedSchema.isNodeIdField(field) || field.isID()) {
                     tupleBlock.add(CodeBlock.of("$T.trueCondition()", DSL.className));
                 } else {
                     tupleBlock.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context, condition.hasRecord()));
                 }
 
                 tupleFieldBlocks.add(tupleBlock.build());
-                tupleVariableBlocks.add(processedSchema.isNodeIdField(field) ? unpacked : inline(unpacked));
+                if (processedSchema.isNodeIdField(field)) {
+                    tupleVariableBlocks.add(unpacked);
+                } else if (field.isID()) {
+                    tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
+                } else {
+                    tupleVariableBlocks.add(inline(unpacked));
+                }
                 selectedConditions.add(condition);
             }
 
             if (field.hasCondition() && !condition.isOverriddenByAncestors()) {
                 tupleFieldBlocks.add(CodeBlock.of("$T.trueCondition()", DSL.className));
 
-                var conditionInputs = List.of(fieldSequence, unpacked);
+                var conditionInputs = List.of(fieldSequence.render(), unpacked);
                 tupleVariableBlocks.add(field.getCondition().formatToString(conditionInputs));
                 selectedConditions.add(condition);
             }
@@ -775,6 +775,22 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .unindent()
                 .unindent()
                 .build();
+    }
+
+    private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
+        var field = condition.getInput();
+        if (processedSchema.isNodeIdField(field)) {
+            return hasIdBlock(CodeBlock.of("$N", VARIABLE_INTERNAL_ITERATION), context.getReferenceObject(), context.getTargetAlias());
+        }
+
+        if (!condition.hasRecord()) {
+            return CodeBlock.of("$N$L", VARIABLE_INTERNAL_ITERATION, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+        }
+
+        var mapping = field.isID() && !Optional.ofNullable(processedSchema.getRecordType(condition.getSourceInput())).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false)
+                ? generateGetForID(field.getMappingFromFieldOverride(), table)
+                : field.getMappingForRecordFieldOverride().asGetCall();
+        return CodeBlock.of("$N$L", VARIABLE_INTERNAL_ITERATION, mapping);
     }
 
     @NotNull

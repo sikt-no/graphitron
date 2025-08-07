@@ -22,13 +22,13 @@ public class QueryDBQueries {
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
                                 DSL.row(
-                                        _customer.getId(),
+                                        DSL.trueCondition(),
                                         DSL.trueCondition(),
                                         DSL.trueCondition()
                                 ).in(
                                         inRecordList.stream().map(internal_it_ ->
                                                 DSL.row(
-                                                        DSL.inline(internal_it_.getId()),
+                                                        _customer.hasId(internal_it_.getId()),
                                                         no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getId()),
                                                         no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirstName())
                                                 )
