@@ -10,6 +10,7 @@ import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -18,9 +19,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
 import static no.sikt.graphitron.generators.codebuilding.ResolverKeyHelpers.getKeyTypeName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapMap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
@@ -53,20 +56,39 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
             var context = new FetchContext(processedSchema, target, getLocalObject(), true);
             var targetSource = context.renderQuerySource(getLocalTable());
             var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+            var selectId = getSelectKeyColumnRow(context);
             if (target.isResolver()) context = context.nextContext(target);
 
-            code.add(createAliasDeclarations(context.getAliasSet()))
-                .add("return $N\n", VariableNames.CONTEXT_NAME)
-                .indent()
-                .indent()
-                .add(".select($T.count())\n", DSL.className)
-                .add(".from($L)\n", targetSource)
-                .add(createSelectJoins(context.getJoinSet()))
-                .add(where)
-                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
-                .unindent()
-                .unindent();
+            if (!isRoot) {
+
+                code.add(createAliasDeclarations(context.getAliasSet()))
+                        .add("return $N\n", VariableNames.CONTEXT_NAME)
+                        .indent()
+                        .indent()
+                        .add(".select($L, $T.count())\n", selectId, DSL.className)
+                        .add(".from($L)\n", targetSource)
+                        .add(createSelectJoins(context.getJoinSet()))
+                        .add(where)
+                        .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                        .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
+                        .unindent()
+                        .unindent();
+            } else {
+                code.add(createAliasDeclarations(context.getAliasSet()))
+                        .add("return $N\n", VariableNames.CONTEXT_NAME)
+                        .indent()
+                        .indent()
+                        .add(".select($T.count())\n", DSL.className)
+                        .add(".from($L)\n", targetSource)
+                        .add(createSelectJoins(context.getJoinSet()))
+                        .add(where)
+                        .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                        .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
+                        .unindent()
+                        .unindent();
+            }
+
+
         }
 
         var parser = new InputParser(target, processedSchema);
@@ -115,7 +137,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
         var spec = getDefaultSpecBuilder(
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
-                INTEGER.className
+                isRoot ? INTEGER.className : wrapMap(getKeyTypeName(referenceField, processedSchema), INTEGER.className)
         );
 
         if (!isRoot) {
