@@ -952,6 +952,17 @@ public class FormatCodeBlocks {
         return getSelectKeyColumnRow(context.getResolverKey(), context.getTargetTableName(), context.getTargetAlias());
     }
 
+    public static CodeBlock getSelectKeyColumn(Key<?> key, String tableName, String aliasVariableName) {
+        return getJavaFieldNamesForKey(tableName, key)
+                .stream()
+                .map(it -> CodeBlock.of("$N.$L", aliasVariableName, it))
+                .collect(CodeBlock.joining(", "));
+    }
+
+    public static CodeBlock getSelectKeyColumn(FetchContext context) {
+        return getSelectKeyColumn(context.getResolverKey(), context.getTargetTableName(), context.getTargetAlias());
+    }
+
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
         return CodeBlock.of("$N.createId($S, $L)",
                 NODE_ID_STRATEGY_NAME,
