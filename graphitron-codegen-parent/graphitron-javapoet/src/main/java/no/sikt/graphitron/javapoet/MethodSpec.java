@@ -562,6 +562,74 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder declare(String name, String format, Object... args) {
+            code.declare(name, format, args);
+            return this;
+        }
+
+        public Builder declare(String name, CodeBlock codeBlock) {
+            code.declare(name, codeBlock);
+            return this;
+        }
+
+        public Builder declare(TypeName type, String name, String format, Object... args) {
+            code.declare(type, name, format, args);
+            return this;
+        }
+
+        public Builder declare(TypeName type, String name, CodeBlock codeBlock) {
+            code.declare(type, name, codeBlock);
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, String name, String format, Object... args) {
+            if (predicate) {
+                declare(name, format, args);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, String name, CodeBlock codeBlock) {
+            if (predicate) {
+                declare(name, codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, String name, Supplier<CodeBlock> codeBlock) {
+            if (predicate) {
+                declare(name, codeBlock.get());
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, TypeName type, String name, String format, Object... args) {
+            if (predicate) {
+                declare(type, name, format, args);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, TypeName type, String name, CodeBlock codeBlock) {
+            if (predicate) {
+                declare(type, name, codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
+            if (predicate) {
+                declare(type, name, codeBlock.get());
+            }
+
+            return this;
+        }
+
         public Builder addComment(String format, Object... args) {
             code.add("// " + format + "\n", args);
             return this;

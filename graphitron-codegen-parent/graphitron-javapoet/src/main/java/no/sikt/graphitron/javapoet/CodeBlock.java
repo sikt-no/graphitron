@@ -134,6 +134,88 @@ public final class CodeBlock {
         return empty();
     }
 
+    public static CodeBlock ofIf(boolean predicate, Supplier<CodeBlock> codeBlock) {
+        if (predicate) {
+            return codeBlock.get();
+        }
+        return empty();
+    }
+
+    public static CodeBlock statementOf(String format, Object... args) {
+        return new Builder().addStatement(format, args).build();
+    }
+
+    public static CodeBlock statementOfIf(boolean predicate, String format, Object... args) {
+        if (predicate) {
+            return statementOf(format, args);
+        }
+        return empty();
+    }
+
+    public static CodeBlock declare(String name, String format, Object... args) {
+        return new Builder().declare(of("var"), name, of(format, args)).build();
+    }
+
+    public static CodeBlock declare(String name, CodeBlock codeBlock) {
+        return new Builder().declare(of("var"), name, codeBlock).build();
+    }
+
+    public static CodeBlock declare(TypeName type, String name, String format, Object... args) {
+        return new Builder().declare(of("$T", type), name, of(format, args)).build();
+    }
+
+    public static CodeBlock declare(TypeName type, String name, CodeBlock codeBlock) {
+        return new Builder().declare(type, name, codeBlock).build();
+    }
+
+    public static CodeBlock declareIf(boolean predicate, String name, String format, Object... args) {
+        if (predicate) {
+            return declare(name, format, args);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareIf(boolean predicate, String name, CodeBlock codeBlock) {
+        if (predicate) {
+            return declare(name, codeBlock);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareIf(boolean predicate, String name, Supplier<CodeBlock> codeBlock) {
+        if (predicate) {
+            return declare(name, codeBlock.get());
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareIf(boolean predicate, TypeName type, String name, String format, Object... args) {
+        if (predicate) {
+            return declare(type, name, format, args);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareIf(boolean predicate, TypeName type, String name, CodeBlock codeBlock) {
+        if (predicate) {
+            return declare(type, name, codeBlock);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
+        if (predicate) {
+            return declare(type, name, codeBlock.get());
+        }
+
+        return empty();
+    }
+
     /**
      * Joins {@code codeBlocks} into a single {@link CodeBlock}, each separated by {@code separator}.
      * For example, joining {@code String s}, {@code Object o} and {@code int i} using {@code ", "}
@@ -208,6 +290,12 @@ public final class CodeBlock {
         builder.formatParts.addAll(formatParts);
         builder.args.addAll(args);
         return builder;
+    }
+
+    private static String uncapitalize(String s) {
+        char[] c = s.toCharArray();
+        c[0] = Character.toLowerCase(c[0]);
+        return new String(c);
     }
 
     public static final class Builder {
@@ -364,7 +452,7 @@ public final class CodeBlock {
                         index + 1, format.substring(indexStart - 1, indexEnd + 1), args.length);
                 checkArgument(!hasIndexed || !hasRelative, "cannot mix indexed and positional parameters");
 
-                addArgument(format, c, args[index]);
+                addArgument(format, c, args[index] instanceof Supplier<?> supplier ? supplier.get() : args[index]);
 
                 formatParts.add("$" + c);
             }
@@ -384,6 +472,74 @@ public final class CodeBlock {
                 checkArgument(unused.isEmpty(), "unused argument%s: %s", s, String.join(", ", unused));
             }
             return this;
+        }
+
+        public Builder declare(String name, String format, Object... args) {
+            return declare(of("var"), name, of(format, args));
+        }
+
+        public Builder declare(String name, CodeBlock codeBlock) {
+            return declare(of("var"), name, codeBlock);
+        }
+
+        public Builder declare(TypeName type, String name, String format, Object... args) {
+            return declare(of("$T", type), name, of(format, args));
+        }
+
+        public Builder declare(TypeName type, String name, CodeBlock codeBlock) {
+            return declare(of("$T", type), name, codeBlock);
+        }
+
+        public Builder declareIf(boolean predicate, String name, String format, Object... args) {
+            if (predicate) {
+                declare(name, format, args);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, String name, CodeBlock codeBlock) {
+            if (predicate) {
+                declare(name, codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, String name, Supplier<CodeBlock> codeBlock) {
+            if (predicate) {
+                declare(name, codeBlock.get());
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, TypeName type, String name, String format, Object... args) {
+            if (predicate) {
+                declare(type, name, format, args);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, TypeName type, String name, CodeBlock codeBlock) {
+            if (predicate) {
+                declare(type, name, codeBlock);
+            }
+
+            return this;
+        }
+
+        public Builder declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
+            if (predicate) {
+                declare(type, name, codeBlock.get());
+            }
+
+            return this;
+        }
+
+        private Builder declare(CodeBlock type, String name, CodeBlock codeBlock) {
+            return addStatement("$L $L = $L", type, uncapitalize(name), codeBlock);
         }
 
         private boolean isNoArgPlaceholder(char c) {
@@ -545,6 +701,27 @@ public final class CodeBlock {
             }
 
             return this;
+        }
+
+        public Builder addAll(Iterable<CodeBlock> codeBlocks) {
+            codeBlocks.forEach(this::add);
+            return this;
+        }
+
+        public Builder addAll(CodeBlock... codeBlocks) {
+            return addAll(List.of(codeBlocks));
+        }
+
+        public Builder addAllIf(boolean predicate, Iterable<CodeBlock> codeBlocks) {
+            if (predicate) {
+                addAll(codeBlocks);
+            }
+
+            return this;
+        }
+
+        public Builder addAllIf(boolean predicate, CodeBlock... codeBlocks) {
+            return addAllIf(predicate, List.of(codeBlocks));
         }
 
         public Builder indent() {
