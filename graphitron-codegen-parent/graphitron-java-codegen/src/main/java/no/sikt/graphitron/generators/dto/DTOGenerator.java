@@ -49,8 +49,8 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                 .forEach((key) -> {
                     var dtoVarName = key.getDTOVariableName();
                     allVariableNames.add(dtoVarName);
-                    var typeName = key.getTypeName();
-                    addClassKeyVariable(typeName, dtoVarName, classBuilder);
+                    var typeName = key.getRecordTypeName();
+                    addClassKeyVariable(key.getRowTypeName(), dtoVarName, classBuilder);
                     addConstructorKeyVariable(typeName, dtoVarName, constructorBuilder);
                     if (hasErrors) {
                         addConstructorKeyVariable(typeName, dtoVarName, constructorNoErrorsBuilder);
@@ -64,7 +64,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     var key = keyMap.getOrDefault(field.getName(), null);
                     var variableName = getDTOVariableNameForField(field);
                     var typeName = getTypeNameForField(field, key);
-                    var setValue = field.isResolver() ? key.getDTOVariableName() : field.getName();
+                    var setValue = field.isResolver() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
                     allVariableNames.add(variableName);
 
                     addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
@@ -106,18 +106,15 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
 
     private void addConstructorKeyVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder) {
         constructorBuilder
-                .addStatement("this.$N = $N", name, name)
+                .addStatement("this.$N = $N.valuesRow()", name, name)
                 .addParameter(ParameterSpec.builder(fieldType, name).build());
     }
 
     private void addClassFieldVariable(TypeName fieldType, String name, TypeSpec.Builder classBuilder, boolean isResolver) {
         classBuilder
                 .addField(fieldType, name, Modifier.PRIVATE)
-                .addMethod(getGetterMethod(fieldType, name));
-
-        if (!isResolver) {
-            classBuilder.addMethod(getSetterMethod(fieldType, name));
-        }
+                .addMethod(getGetterMethod(fieldType, name))
+                .addMethod(getSetterMethod(fieldType, name));
     }
 
     private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver) {
@@ -192,7 +189,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     : typeClass;
 
         } else { // Fields with @splitQuery
-            return firstStepKeyForField.getTypeName();
+            return firstStepKeyForField.getRowTypeName();
         }
     }
 

@@ -919,11 +919,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock inResolverKeysBlock(String resolverKeyParamName, FetchContext context) {
-        return CodeBlock.of("$L.in($N.stream().map($T::valuesRow).toList())",
-                getSelectKeyColumnRow(context),
-                resolverKeyParamName,
-                context.getResolverKey().getTypeName(false)
-        );
+        return CodeBlock.of("$L.in($N)", getSelectKeyColumnRow(context), resolverKeyParamName);
     }
 
     /**

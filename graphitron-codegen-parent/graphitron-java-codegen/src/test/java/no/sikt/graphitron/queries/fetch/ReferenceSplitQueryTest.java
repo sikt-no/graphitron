@@ -199,7 +199,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2952383337_address = _customer.address().as(", // Note, implicit join is present when we use a key, but not table.
                 ".from(customer_2952383337_address).where(",
                 ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
-                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream"
+                ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys"
         );
     }
 
@@ -250,7 +250,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "list", Set.of(CUSTOMER_NOT_GENERATED),
                 ".from(customer_2952383337_address)",
                 "DSL.multiset(DSL.select(",
-                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
+                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1))"
         );
     }
 
@@ -304,7 +304,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
                 "DSL.row(_payment.PAYMENT_ID), DSL.field(",
                 "CustomerTable::new))).from(payment_425747824_customer)",
-                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream()"
+                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys"
         );
     }
 

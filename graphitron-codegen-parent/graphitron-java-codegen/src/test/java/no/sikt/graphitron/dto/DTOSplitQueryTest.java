@@ -48,9 +48,9 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Field with splitQuery referencing another table should store foreign key fields")
     void reference() {
         assertGeneratedContentContains("reference",
-                "Record1<Long> vacationKey",
+                "Row1<Long> vacationKey",
                 "VacationDestination(Record1<Long> vacation_destination_vacation_fkey)",
-                "this.vacationKey = vacation_destination_vacation_fkey"
+                "this.vacationKey = vacation_destination_vacation_fkey.valuesRow()"
         );
     }
 
@@ -58,7 +58,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Listed field should keep primary key fields")
     void listedReference() {
         assertGeneratedContentContains("listedReference",
-                "Record1<Long> destinationKey",
+                "Row1<Long> destinationKey",
                 "Vacation(Record1<Long> primaryKey)",
                 "this.destinationKey = primaryKey"
         );
@@ -68,7 +68,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Fields with reverse reference should keep primary key fields even if they are not listed")
     void reverseReference() {
         assertGeneratedContentContains("reverseReference",
-                "Record1<Long> destinationKey",
+                "Row1<Long> destinationKey",
                 "Vacation(Record1<Long> primaryKey)",
                 "this.destinationKey = primaryKey"
         );
@@ -88,8 +88,8 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void conditionPath() {
         assertGeneratedContentContains("conditionPath",
                 "VacationDestination(Record2<Long, String> primaryKey) " +
-                        "{ this.primaryKey = primaryKey; this.someStringsKey = primaryKey; }",
-                "private Record2<Long, String> someStringsKey"
+                        "{ this.primaryKey = primaryKey.valuesRow(); this.someStringsKey = primaryKey.valuesRow(); }",
+                "private Row2<Long, String> someStringsKey"
         );
     }
 
@@ -140,8 +140,8 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Field with self reference should store foreign key fields")
     void selfReference() {
         assertGeneratedContentContains("selfReference",
-                "Record1<Long> sequelKey",
-                "this.sequel_fkey = sequel_fkey; this.sequelKey = sequel_fkey;"
+                "Row1<Long> sequelKey",
+                "this.sequel_fkey = sequel_fkey.valuesRow(); this.sequelKey = sequel_fkey.valuesRow();"
         );
     }
 
@@ -149,7 +149,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Single table interface with splitQuery field")
     void interfaceWithTable() {
         assertGeneratedContentContains("interfaceWithTable",
-                "Record1<Long> getSomeStringKey()"
+                "Row1<Long> getSomeStringKey()"
         );
     }
 
@@ -157,8 +157,8 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Single table interface with splitQuery field")
     void conditionPathFromInterfaceWithTable() {
         assertGeneratedContentContains("conditionPathFromInterfaceWithTable",
-                "Record2<Long, String> getPrimaryKey()",
-                "Record2<Long, String> getSomeStringKey()"
+                "Row2<Long, String> getPrimaryKey()",
+                "Row2<Long, String> getSomeStringKey()"
         );
     }
 
@@ -199,7 +199,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void referencingSingleTableInterface() {
         assertGeneratedContentContains("referencingSingleTableInterface", Set.of(ADDRESS_BY_DISTRICT),
                 "City(Record1<Long> primaryKey)",
-                "this.addressesKey = primaryKey;"
+                "this.addressesKey = primaryKey"
         );
     }
 
@@ -208,7 +208,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void referencingSingleTableInterfaceConnection() {
         assertGeneratedContentContains("referencingSingleTableInterfaceConnection", Set.of(ADDRESS_BY_DISTRICT, ADDRESS_BY_DISTRICT_CONNECTION),
                 "City(Record1<Long> primaryKey)",
-                "this.addressesKey = primaryKey;"
+                "this.addressesKey = primaryKey"
         );
     }
 
@@ -217,7 +217,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void referencingMultitableInterface() {
         assertGeneratedContentContains("referencingMultitableInterface",
                 "FilmCategory(Record2<Long, Long> primaryKey)",
-                "this.titledFilmsKey = primaryKey;"
+                "this.titledFilmsKey = primaryKey"
         );
     }
 
@@ -225,7 +225,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Field referencing multitable interface connection")
     void referencingMultitableInterfaceConnection() {
         assertGeneratedContentContains("referencingMultitableInterfaceConnection",
-                "this.titledFilmsKey = primaryKey;"
+                "this.titledFilmsKey = primaryKey"
         );
     }
 
@@ -233,7 +233,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Field referencing multitable union")
     void referencingMultitableUnion() {
         assertGeneratedContentContains("referencingMultitableUnion",
-                "this.filmsKey = primaryKey;"
+                "this.filmsKey = primaryKey"
         );
     }
 
@@ -241,7 +241,7 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Field referencing multitable interface union")
     void referencingMultitableUnionConnection() {
         assertGeneratedContentContains("referencingMultitableUnionConnection",
-                "this.filmsKey = primaryKey;"
+                "this.filmsKey = primaryKey"
         );
     }
 }
