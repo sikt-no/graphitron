@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.codebuilding;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.configuration.GeneratorConfig;
 
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
@@ -41,6 +41,13 @@ public class TypeNameFormat {
      */
     public static ParameterizedTypeName wrapList(TypeName type) {
         return ParameterizedTypeName.get(LIST.className, type);
+    }
+
+    /**
+     * @return The type wrapped in a ArrayList ParameterizedTypeName.
+     */
+    public static ParameterizedTypeName wrapArrayList(TypeName type) {
+        return ParameterizedTypeName.get(ARRAY_LIST.className, type);
     }
 
     /**

@@ -11,7 +11,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnCompletedFuture;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -25,7 +24,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     @Override
     protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
-        return declare(target.getName(), CodeBlock.of("$N.$L($L)", uncapitalize(createServiceDependency(target).getName()), target.getService().getMethodName(), parser.getInputParamString()));
+        return CodeBlock.declare(target.getName(), "$N.$L($L)", uncapitalize(createServiceDependency(target).getName()), target.getService().getMethodName(), parser.getInputParamString());
     }
 
     /**

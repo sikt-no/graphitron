@@ -1,7 +1,5 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
@@ -9,15 +7,16 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -54,21 +53,18 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var querySource = context.getTargetAlias();
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
         var fetchAndMap = fetchAndMap(target, implementations, querySource);
-
-        Optional<CodeBlock> maybeOrderFields = maybeCreateOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());
+        var orderFields = createOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());
 
         return CodeBlock.builder()
                 .add(createAliasDeclarations(context.getAliasSet()))
-                .add(maybeOrderFields.orElse(CodeBlock.empty()))
+                .add(orderFields)
                 .add("return $N.select($L)", VariableNames.CONTEXT_NAME, indentIfMultiline(selectCode))
                 .add("\n.from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add("\n")
                 .add(whereBlock)
-                .add(maybeOrderFields
-                        .map(it -> CodeBlock.of("\n.orderBy($L)", ORDER_FIELDS_NAME))
-                        .orElse(CodeBlock.empty()))
-                .add(target.hasForwardPagination() ? createSeekAndLimitBlock() : CodeBlock.empty())
+                .addIf(!orderFields.isEmpty(), ".orderBy($L)", ORDER_FIELDS_NAME)
+                .addIf(target.hasForwardPagination(), this::createSeekAndLimitBlock)
                 .add(fetchAndMap)
                 .build();
     }
@@ -110,17 +106,18 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var mapping = CodeBlock.builder()
                 .indent()
                 .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
-                .add(declare(DISCRIMINATOR_VALUE,
-                        CodeBlock.of("$N.get($S, $L.$L.getConverter())",
-                                VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatorFieldName())))
-                .beginControlFlow("switch ($N)", DISCRIMINATOR_VALUE
-                );
+                .declare(
+                        DISCRIMINATOR_VALUE,
+                        "$N.get($S, $L.$L.getConverter())",
+                        VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatorFieldName()
+                )
+                .beginControlFlow("switch ($N)", DISCRIMINATOR_VALUE);
 
         for (var implementation : implementations) {
             mapping.add("case $S:\n", implementation.getDiscriminator())
                     .indent()
                     .add("return ")
-                    .add(target.hasForwardPagination() ? CodeBlock.of("$T.of($N.get($S, $T.class), ", PAIR.className, VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className) : CodeBlock.empty())
+                    .addIf(target.hasForwardPagination(), "$T.of($N.get($S, $T.class), ", PAIR.className, VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className)
                     .add("$N.into($T.class)$L;\n", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName(), target.hasForwardPagination() ? ")" : "")
                     .unindent();
         }

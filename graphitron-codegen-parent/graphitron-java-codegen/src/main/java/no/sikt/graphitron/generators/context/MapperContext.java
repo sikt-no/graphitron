@@ -316,26 +316,22 @@ public class MapperContext {
         var targetEqualsPrevious = targetName.equals(previousContext.targetName);
         var code = CodeBlock.builder();
         if (isIterable && hasSourceName()) {
-            if (isResolver || isValidation) {
-                code.add(declare(asIterable(sourceName), CodeBlock.of("$N.get($N)", formatSourceForIndexLoop(), getIndexName())));
-            }
+            code.declareIf(isResolver || isValidation, asIterable(sourceName), "$N.get($N)", formatSourceForIndexLoop(), getIndexName());
 
             if (!isValidation) {
                 code.add(continueCheck(asIterable(sourceName)));
 
                 if (!isResolver && !mapsJavaRecord && !targetEqualsPrevious) {
-                    code.add(select(declareRecord(targetName, targetType, false, false), declare(targetName, targetType.getGraphClassName())));
+                    code.add(select(declareRecord(targetName, targetType, false, false), CodeBlock.declareNew(targetName, targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
-                code.add(declare(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className)));
+                code.declareNew(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className));
             }
         }
 
-        if (!isValidation && mapsJavaRecord && !targetEqualsPrevious) {
-            code.add(declare(targetName, targetType.asTargetClassName(toRecord)));
-        }
-
-        code.add(fieldCode);
+        code
+                .declareNewIf(!isValidation && mapsJavaRecord && !targetEqualsPrevious, targetName, targetType.asTargetClassName(toRecord))
+                .add(fieldCode);
 
         if (isResolver) {
             return isIterable ? wrapForIndexed(sourceName, code.build()) : code.build();
@@ -361,7 +357,7 @@ public class MapperContext {
         return CodeBlock
                 .builder()
                 .add(hasSourceName() ? wrapNotNull(sourceName, forCode.build()) : forCode.build())
-                .add(toRecord && !mapsJavaRecord ? applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS) : CodeBlock.empty()) // Note: This is done after records are filled.
+                .addIf(toRecord && !mapsJavaRecord, () -> applyGlobalTransforms(targetName, targetType.getRecordClassName(), TransformScope.ALL_MUTATIONS)) // Note: This is done after records are filled.
                 .build();
     }
 
@@ -370,14 +366,14 @@ public class MapperContext {
             var nodeType = schema.getRecordType(target.getNodeIdTypeName());
             var foreignKey = getForeignKeyForNodeIdReference(target, schema);
 
-            return CodeBlock.builder().addStatement("$N.$L($N, $L, $S, $L)",
+            return CodeBlock.statementOf("$N.$L($N, $L, $S, $L)",
                     NODE_ID_STRATEGY_NAME,
                     foreignKey.isPresent() ? METHOD_SET_RECORD_REFERENCE_ID : METHOD_SET_RECORD_ID,
                     previousContext.targetName,
                     valueToSet,
                     nodeType.getTypeId(),
                     foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
-            ).build();
+            );
         }
         return setValue(previousContext.targetName, setTargetMapping, valueToSet);
     }
@@ -417,9 +413,9 @@ public class MapperContext {
         return CodeBlock.of(
                 "$L$L$S$L)",
                 recordTransformPart(sourceName, targetType.getName()),
-                shouldMakeNodeStrategy() ? CodeBlock.of("$N, ", NODE_ID_STRATEGY_NAME) : CodeBlock.empty(),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
                 path,
-                recordValidationEnabled() && !hasJavaRecordReference ? CodeBlock.of(", \"$L\"", indexPath) : CodeBlock.empty()
+                CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference, ", \"$L\"", indexPath)
         );
     }
 
@@ -435,7 +431,7 @@ public class MapperContext {
                 ),
                 PATH_HERE_NAME,
                 path,
-                recordValidationEnabled() && !hasJavaRecordReference && toRecord ? CodeBlock.of(", $N + $S", PATH_HERE_NAME, path) : CodeBlock.empty() // This one may need more work. Does not actually include indices here, but not sure if needed.
+                CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", PATH_HERE_NAME, path) // This one may need more work. Does not actually include indices here, but not sure if needed.
         );
     }
 

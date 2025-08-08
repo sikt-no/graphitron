@@ -489,6 +489,14 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder addParameterIf(boolean predicate, Supplier<TypeName> type, String name, Modifier... modifiers) {
+            if (predicate) {
+                addParameter(type.get(), name, modifiers);
+            }
+
+            return this;
+        }
+
         public Builder addParameterIf(boolean predicate, Type type, String name, Modifier... modifiers) {
             if (predicate) {
                 addParameter(type, name, modifiers);
@@ -546,6 +554,16 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder indent() {
+            code.indent();
+            return this;
+        }
+
+        public Builder unindent() {
+            this.code.unindent();
+            return this;
+        }
+
         public Builder addCodeIf(boolean predicate, CodeBlock codeBlock) {
             if (predicate) {
                 addCode(codeBlock);
@@ -579,6 +597,26 @@ public final class MethodSpec {
 
         public Builder declare(TypeName type, String name, CodeBlock codeBlock) {
             code.declare(type, name, codeBlock);
+            return this;
+        }
+
+        public Builder declareNew(String name, TypeName declareType) {
+            code.declareNew(name, declareType);
+            return this;
+        }
+
+        public Builder declareNew(String name, TypeName declareType, CodeBlock params) {
+            code.declareNew(name, declareType, params);
+            return this;
+        }
+
+        public Builder declareNew(TypeName declareType, String name) {
+            code.declareNew(declareType, name);
+            return this;
+        }
+
+        public Builder declareNew(TypeName declareType, String name, CodeBlock params) {
+            code.declareNew(name, declareType, params);
             return this;
         }
 
@@ -625,6 +663,38 @@ public final class MethodSpec {
         public Builder declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
             if (predicate) {
                 declare(type, name, codeBlock.get());
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, String name, TypeName declareType) {
+            if (predicate) {
+                declareNew(name, declareType);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, String name, TypeName declareType, CodeBlock params) {
+            if (predicate) {
+                declareNew(name, declareType, params);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, TypeName declareType, String name) {
+            if (predicate) {
+                declareNew(declareType, name);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, TypeName declareType, String name, CodeBlock params) {
+            if (predicate) {
+                declareNew(name, declareType, params);
             }
 
             return this;

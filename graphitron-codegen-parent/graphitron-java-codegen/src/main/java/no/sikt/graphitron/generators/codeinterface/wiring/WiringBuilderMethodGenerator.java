@@ -22,7 +22,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
@@ -91,7 +90,7 @@ public class WiringBuilderMethodGenerator extends SimpleMethodGenerator {
 
         var code = CodeBlock
                 .builder()
-                .add(declare(VAR_WIRING, asMethodCall(RUNTIME_WIRING.className, "newRuntimeWiring")));
+                .declare(VAR_WIRING, asMethodCall(RUNTIME_WIRING.className, "newRuntimeWiring"));
         wiringByType.forEach((k, v) ->
                 code
                         .add("$N.type(", VAR_WIRING)

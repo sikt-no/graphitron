@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.mapping;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperClassGenerator;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 public class JavaRecordMapperClassGenerator extends AbstractMapperClassGenerator<GenerationField> {

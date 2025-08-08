@@ -1,18 +1,15 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers;
 
+import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
+import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
-import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
-import no.sikt.graphitron.definitions.objects.UnionDefinition;
-import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_OBJECT;

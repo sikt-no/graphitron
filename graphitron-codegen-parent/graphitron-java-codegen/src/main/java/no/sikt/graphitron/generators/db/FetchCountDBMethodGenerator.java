@@ -17,10 +17,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRecordTypeName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INTEGER;
@@ -45,39 +43,35 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-
-        var code = CodeBlock.builder();
+        var parser = new InputParser(target, processedSchema);
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
-            code = getCodeForMultitableCountMethod(target);
-        } else {
-            var context = new FetchContext(processedSchema, target, getLocalObject(), true);
-            var targetSource = context.renderQuerySource(getLocalTable());
-            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-            if (target.isResolver()) context = context.nextContext(target);
-
-            code.add(createAliasDeclarations(context.getAliasSet()))
-                .add("return $N\n", VariableNames.CONTEXT_NAME)
-                .indent()
-                .indent()
-                .add(".select($T.count())\n", DSL.className)
-                .add(".from($L)\n", targetSource)
-                .add(createSelectJoins(context.getJoinSet()))
-                .add(where)
-                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
-                .unindent()
-                .unindent();
+            return getSpecBuilder(target, parser).addCode(getCodeForMultitableCountMethod(target)).build();
         }
 
-        var parser = new InputParser(target, processedSchema);
+        var context = new FetchContext(processedSchema, target, getLocalObject(), true);
+        var targetSource = context.renderQuerySource(getLocalTable());
+        var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+        var contextToUse = target.isResolver() ? context.nextContext(target) : context;
+
         return getSpecBuilder(target, parser)
-                .addCode(code.build())
+                .addCode(createAliasDeclarations(contextToUse.getAliasSet()))
+                .addCode("return $N\n", VariableNames.CONTEXT_NAME)
+                .indent()
+                .indent()
+                .addCode(".select($T.count())\n", DSL.className)
+                .addCode(".from($L)\n", targetSource)
+                .addCode(createSelectJoins(contextToUse.getJoinSet()))
+                .addCode(where)
+                .addCode(createSelectConditions(contextToUse.getConditionList(), !where.isEmpty()))
+                .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
+                .unindent()
+                .unindent()
                 .build();
     }
 
-    private CodeBlock.Builder getCodeForMultitableCountMethod(ObjectField target) {
+    private CodeBlock getCodeForMultitableCountMethod(ObjectField target) {
         var code = CodeBlock.builder();
-        var implementations= processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
+        var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
         implementations.forEach(implementation -> {
             var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
@@ -90,8 +84,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            code.add(createAliasDeclarations(context.getAliasSet()));
-            code.add(declare(getCountVariableName(implementation.getName()), countForImplementation.build()));
+            code
+                    .add(createAliasDeclarations(context.getAliasSet()))
+                    .declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });
 
         var unionQuery = implementations.stream()
@@ -99,12 +94,14 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .reduce("", (currString, element) ->
                         String.format(currString.isEmpty() ? "%s" : "%s\n.unionAll(%s)", getCountVariableName(element), currString));
 
-        return code.add(declare(UNION_COUNT_QUERY, CodeBlock.of("$L\n.asTable()", unionQuery)))
-                    .add("\nreturn ctx.select($T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
-                    .indent()
-                    .add("\n.from($N)", UNION_COUNT_QUERY)
-                    .add("\n.fetchOne(0, $T.class);", INTEGER.className)
-                    .unindent();
+        return code
+                .declare(UNION_COUNT_QUERY, "$L\n.asTable()", unionQuery)
+                .add("\nreturn ctx.select($T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
+                .indent()
+                .add("\n.from($N)", UNION_COUNT_QUERY)
+                .add("\n.fetchOne(0, $T.class);", INTEGER.className)
+                .unindent()
+                .build();
     }
 
     private static String getCountVariableName(String implementationName) {
@@ -113,21 +110,13 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     @NotNull
     private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
-        var spec = getDefaultSpecBuilder(
+        return getDefaultSpecBuilder(
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 INTEGER.className
-        );
-
-        if (!isRoot) {
-            spec.addParameter(wrapSet(getKeyRecordTypeName(referenceField, processedSchema)), resolverKeyParamName);
-        }
-
-        parser.getMethodInputs().forEach((key, value) -> spec.addParameter(iterableWrapType(value), key));
-        processedSchema
-                .getAllContextFields(referenceField)
-                .forEach((key, value) -> spec.addParameter(value, asInternalName(key)));
-
-        return spec;
+        )
+                .addParameterIf(!isRoot, () -> wrapSet(getKeyRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameters(getMethodParameters(parser))
+                .addParameters(getContextParameters(referenceField));
     }
 
     @Override

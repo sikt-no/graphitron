@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.mapping;
 
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
@@ -27,12 +27,10 @@ public class TransformerListMethodGenerator extends TransformerMethodGenerator {
             return MethodSpec.methodBuilder(methodName).build();
         }
 
-        var spec = getDefaultSpecBuilder(methodName, wrapList(type.asTargetClassName(toRecord)), wrapList(type.asSourceClassName(toRecord)));
-        if (toRecord && useValidation(type)) {
-            spec.addParameter(STRING.className, PATH_INDEX_NAME);
-        }
-
-        return spec.addCode(getMethodContent(target)).build();
+        return getDefaultSpecBuilder(methodName, wrapList(type.asTargetClassName(toRecord)), wrapList(type.asSourceClassName(toRecord)))
+                .addParameterIf(toRecord && useValidation(type), STRING.className, PATH_INDEX_NAME)
+                .addCode(getMethodContent(target))
+                .build();
     }
 
     @Override

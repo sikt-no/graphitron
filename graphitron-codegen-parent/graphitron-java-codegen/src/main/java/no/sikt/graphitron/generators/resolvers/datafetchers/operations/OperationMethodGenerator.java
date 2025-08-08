@@ -13,10 +13,10 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declareArgs;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
-import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_ENV;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 /**

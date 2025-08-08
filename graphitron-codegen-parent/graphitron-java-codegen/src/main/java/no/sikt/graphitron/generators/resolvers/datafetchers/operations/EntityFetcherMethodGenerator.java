@@ -5,14 +5,12 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
-import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
@@ -72,7 +70,7 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
                         FEDERATION_REPRESENTATIONS_ARGUMENT.getName(),
                         VARIABLE_INTERNAL_ITERATION
                 )
-                .addCode(declare(CONTEXT_NAME, CodeBlock.of("new $T($N)$L", ENVIRONMENT_HANDLER.className, VARIABLE_ENV, asMethodCall(METHOD_CONTEXT_NAME))))
+                .declare(CONTEXT_NAME, "new $T($N)$L", ENVIRONMENT_HANDLER.className, VARIABLE_ENV, asMethodCall(METHOD_CONTEXT_NAME))
                 .beginControlFlow("switch (($T) $N.get($S))", STRING.className, VARIABLE_INTERNAL_ITERATION, TYPE_NAME.getName())
                 .addCode(cases.build())
                 .addCode("default: $L", returnWrap("null"))

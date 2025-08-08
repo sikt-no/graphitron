@@ -1,12 +1,11 @@
 package no.sikt.graphitron.generators.dependencies;
 
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.generators.db.DBClassGenerator;
 
 import javax.lang.model.element.Modifier;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.INJECT;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -21,7 +20,7 @@ public class QueryDependency extends NamedDependency {
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return declare(uncapitalize(getName()), getTypeName());
+        return CodeBlock.declareNew(uncapitalize(getName()), getTypeName());
     }
 
     @Override

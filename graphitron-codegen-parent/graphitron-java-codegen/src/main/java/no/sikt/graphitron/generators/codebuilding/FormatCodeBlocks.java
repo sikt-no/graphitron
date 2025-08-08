@@ -16,7 +16,6 @@ import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -33,6 +32,7 @@ import java.util.HashMap;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
@@ -47,7 +47,7 @@ public class FormatCodeBlocks {
     private final static CodeBlock
             COLLECT_TO_LIST = CodeBlock.of(".toList()"),
             NEW_TRANSFORM = CodeBlock.of("new $T($N)", RECORD_TRANSFORMER.className, VARIABLE_ENV),
-            DECLARE_TRANSFORM = declare(TRANSFORMER_NAME, NEW_TRANSFORM),
+            DECLARE_TRANSFORM = CodeBlock.declare(TRANSFORMER_NAME, NEW_TRANSFORM),
             NEW_DATA_FETCHER = CodeBlock.of("new $T($N)", DATA_FETCHER_HELPER.className, VARIABLE_ENV),
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
@@ -70,46 +70,16 @@ public class FormatCodeBlocks {
             return CodeBlock.empty();
         }
 
-        var code = CodeBlock.builder().add(declare(name, input.getRecordClassName(), isIterable));
-        if (!input.hasJavaRecordReference() && !isIterable) {
-            code.addStatement("$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH);
-        }
-        return code.build();
+        return CodeBlock
+                .builder()
+                .declareNewIf(isIterable, asListedName(name), wrapArrayList(input.getRecordClassName()))
+                .declareNewIf(!isIterable, name, input.getRecordClassName())
+                .addStatementIf(!input.hasJavaRecordReference() && !isIterable, "$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH)
+                .build();
     }
 
     public static CodeBlock recordTransformPart(String transformerName, String varName, String typeName, boolean isJava, boolean isInput) {
         return CodeBlock.of("$N.$L($N, ", transformerName, recordTransformMethod(typeName, isJava, isInput), uncapitalize(varName));
-    }
-
-    /**
-     * @param name Name of the variable.
-     * @param typeName The type of the variable to declare.
-     * @param asList Declare this type as an ArrayList?
-     * @return CodeBlock that declares a simple variable.
-     */
-    public static CodeBlock declare(String name, TypeName typeName, boolean asList) {
-        if (asList) {
-            return declare(asListedName(name), ParameterizedTypeName.get(ARRAY_LIST.className, typeName));
-        }
-        return declare(name, typeName);
-    }
-
-    /**
-     * @param name Name of the variable.
-     * @param block The statement result to declare.
-     * @return CodeBlock that declares a simple variable.
-     */
-    public static CodeBlock declare(String name, CodeBlock block) {
-        return CodeBlock.builder().addStatement("var $L = $L", uncapitalize(name), block).build();
-    }
-
-    /**
-     * @param name Name of the variable.
-     * @param type The type to declare.
-     * @return CodeBlock that declares a simple variable.
-     */
-    public static CodeBlock declare(String name, TypeName type) {
-        return CodeBlock.builder().addStatement("var $L = new $T()", uncapitalize(name), type).build();
     }
 
     /**
@@ -127,7 +97,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock addToList(String addTarget, String addition) {
-        return CodeBlock.builder().addStatement("$N.add($N)", addTarget, addition).build();
+        return CodeBlock.statementOf("$N.add($N)", addTarget, addition);
     }
 
     /**
@@ -146,7 +116,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock addToList(String addTarget, CodeBlock codeAddition) {
-        return CodeBlock.builder().addStatement("$N.add($L)", addTarget, codeAddition).build();
+        return CodeBlock.statementOf("$N.add($L)", addTarget, codeAddition);
     }
 
     /**
@@ -162,10 +132,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock listOf(CodeBlock code) {
-        if (code.isEmpty()) {
-            return CodeBlock.empty();
-        }
-        return CodeBlock.of("$T.of($L)", LIST.className, code);
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.of($L)", LIST.className, code);
     }
 
     /**
@@ -200,7 +167,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock setOf(CodeBlock code) {
-        return CodeBlock.of("$T.of($L)", SET.className, code);
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.of($L)", SET.className, code);
     }
 
     /**
@@ -365,7 +332,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock continueCheck(String value) {
-        return CodeBlock.builder().addStatement("if ($N == null) continue", value).build();
+        return CodeBlock.statementOf("if ($N == null) continue", value);
     }
 
     /**
@@ -390,7 +357,7 @@ public class FormatCodeBlocks {
 
         return CodeBlock.of(
                 isService ? "($L$L) -> $L.count$L($L)" : "($L$L) -> $T.count$L($L)",
-                includeContext ? CodeBlock.of("$L, ", CONTEXT_NAME) : CodeBlock.empty(),
+                CodeBlock.ofIf(includeContext, "$L, ", CONTEXT_NAME),
                 RESOLVER_KEYS_NAME,
                 isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
                 capitalize(queryMethodName),
@@ -445,31 +412,23 @@ public class FormatCodeBlocks {
         return CodeBlock
                 .builder()
                 .beginControlFlow("($L) -> ", CONNECTION_NAME)
-                .add(
-                        declare(
-                                EDGES_NAME,
-                                CodeBlock.of(
-                                        "$N.getEdges().stream().map(it -> new $T($L.getValue(), it.getNode()))$L",
-                                        CONNECTION_NAME,
-                                        connectionType.getEdgeObject().getGraphClassName(),
-                                        nullIfNullElseThis(CodeBlock.of("it.getCursor()")),
-                                        collectToList()
-                                )
-                        )
+                .declare(
+                        EDGES_NAME,
+                        "$N.getEdges().stream().map(it -> new $T($L.getValue(), it.getNode()))$L",
+                        CONNECTION_NAME,
+                        connectionType.getEdgeObject().getGraphClassName(),
+                        nullIfNullElseThis(CodeBlock.of("it.getCursor()")),
+                        collectToList()
                 )
-                .add(declare(PAGE_NAME, CodeBlock.of("$N.getPageInfo()", CONNECTION_NAME)))
-                .add(
-                        declare(
-                                GRAPH_PAGE_NAME,
-                                CodeBlock.of(
-                                        "new $T($N.isHasPreviousPage(), $N.isHasNextPage(), $L.getValue(), $L.getValue())",
-                                        pageInfoType.getGraphClassName(),
-                                        PAGE_NAME,
-                                        PAGE_NAME,
-                                        nullIfNullElseThis(CodeBlock.of("$N.getStartCursor()", PAGE_NAME)),
-                                        nullIfNullElseThis(CodeBlock.of("$N.getEndCursor()", PAGE_NAME))
-                                )
-                        )
+                .declare(PAGE_NAME, "$N.getPageInfo()", CONNECTION_NAME)
+                .declare(
+                        GRAPH_PAGE_NAME,
+                        "new $T($N.isHasPreviousPage(), $N.isHasNextPage(), $L.getValue(), $L.getValue())",
+                        pageInfoType.getGraphClassName(),
+                        PAGE_NAME,
+                        PAGE_NAME,
+                        nullIfNullElseThis(CodeBlock.of("$N.getStartCursor()", PAGE_NAME)),
+                        nullIfNullElseThis(CodeBlock.of("$N.getEndCursor()", PAGE_NAME))
                 )
                 .add(
                         returnWrap(
@@ -502,7 +461,7 @@ public class FormatCodeBlocks {
                 field.isIterableWrapped() ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
                 path,
-                field.isIterableWrapped() ? CodeBlock.empty() : CodeBlock.of(".values()$L.orElse(null)", findFirst())
+                CodeBlock.ofIf(!field.isIterableWrapped(), ".values()$L.orElse(null)", findFirst())
         );
     }
 
@@ -511,14 +470,14 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock declarePageSize(int defaultFirst) {
-        return CodeBlock.builder().addStatement(
+        return CodeBlock.statementOf(
                 "int $L = $T.getPageSize($N, $L, $L)",
                 PAGE_SIZE_NAME,
                 RESOLVER_HELPERS.className,
                 GraphQLReservedName.PAGINATION_FIRST.getName(),
                 GeneratorConfig.getMaxAllowedPageSize(),
                 defaultFirst
-        ).build();
+        );
     }
 
     /**
@@ -552,10 +511,9 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock wrapForIndexed(String variable, CodeBlock code) {
-        var indexName = asIndexName(asIterable(variable));
         return CodeBlock
                 .builder()
-                .beginControlFlow("for (int $L = 0; $N < $N.size(); $N++)", indexName, indexName, variable, indexName)
+                .beginControlFlow("for (int $1L = 0; $1N < $2N.size(); $1N++)", asIndexName(asIterable(variable)), variable)
                 .add(code)
                 .endControlFlow()
                 .build();
@@ -566,10 +524,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock wrapRow(CodeBlock code) {
-        if (code.isEmpty()) {
-            return CodeBlock.empty();
-        }
-        return CodeBlock.of("$T.row($L)", DSL.className, indentIfMultiline(code));
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.row($L)", DSL.className, indentIfMultiline(code));
     }
 
     /**
@@ -577,10 +532,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock wrapObjectRow(CodeBlock code) {
-        if (code.isEmpty()) {
-            return CodeBlock.empty();
-        }
-        return CodeBlock.of("$T.objectRow($L)", QUERY_HELPER.className, indentIfMultiline(code));
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.objectRow($L)", QUERY_HELPER.className, indentIfMultiline(code));
     }
 
     /**
@@ -588,10 +540,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock wrapCoalesce(CodeBlock code) {
-        if (code.isEmpty()) {
-            return CodeBlock.empty();
-        }
-        return CodeBlock.of("$T.coalesce($L)", DSL.className, indentIfMultiline(code));
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.coalesce($L)", DSL.className, indentIfMultiline(code));
     }
 
     /**
@@ -599,11 +548,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock inline(CodeBlock code) {
-        if (code.isEmpty()) {
-            return CodeBlock.empty();
-        }
-
-        return CodeBlock.of("$T.inline($L)", DSL.className, code);
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.inline($L)", DSL.className, code);
     }
 
     /**
@@ -703,13 +648,12 @@ public class FormatCodeBlocks {
      * @return CodeBlock where all defined global transforms are applied to the record.
      */
     public static CodeBlock applyGlobalTransforms(String recordName, TypeName recordTypeName, TransformScope scope) {
-        var code = CodeBlock.builder();
-        GeneratorConfig
+        return GeneratorConfig
                 .getGlobalTransforms(scope)
                 .stream()
                 .map(it -> getMethodFrom(it.getFullyQualifiedClassName(), it.getMethod()))
-                .forEach(transform -> code.add(applyTransform(recordName, recordTypeName, transform)));
-        return code.build();
+                .map(transform -> applyTransform(recordName, recordTypeName, transform))
+                .collect(CodeBlock.joining());
     }
 
     private static Method getMethodFrom(String fullyQualifiedClassName, String methodName) {
@@ -731,16 +675,15 @@ public class FormatCodeBlocks {
      * @return CodeBlock where the transform is applied to the record.
      */
     public static CodeBlock applyTransform(String recordName, TypeName recordTypeName, Method transform) {
-        var declaringClass = transform.getDeclaringClass();
-        return CodeBlock.builder().addStatement(
+        return CodeBlock.statementOf(
                 "$N = ($T) $T.$L($N, $N)",
                 asListedName(recordName),
-                ParameterizedTypeName.get(ARRAY_LIST.className, recordTypeName),
-                ClassName.get(declaringClass),
+                wrapArrayList(recordTypeName),
+                ClassName.get(transform.getDeclaringClass()),
                 transform.getName(),
                 CONTEXT_NAME,
                 asListedName(recordName)
-        ).build();
+        );
     }
 
     /**
@@ -759,7 +702,7 @@ public class FormatCodeBlocks {
         var code = CodeBlock
                 .builder()
                 .add("\n")
-                .add(declare(targetTypeName, object.getGraphClassName()));
+                .declareNew(targetTypeName, object.getGraphClassName());
         var filteredFields = object
                 .getFields()
                 .stream()
@@ -778,30 +721,15 @@ public class FormatCodeBlocks {
                 continue;
             }
 
-            var innerCode = CodeBlock.builder();
             var recordField = findUsableRecord(innerField, schema, parser); // In practice this supports only one record type at once. Can't map to types that are not records.
             var recordName = asIterableIf(asListedRecordNameIf(recordField.getName(), recordField.isIterableWrapped()), wrapInFor);
-            if (schema.implementsNode(innerField)) {
-                innerCode.add(idFetchAllowingDuplicates(innerContext, innerField, recordName, true));
-            } else {
-                innerCode.add(makeResponses(innerContext, field, schema, parser));
-                var inputSource = !innerContext.getTargetType().hasTable()
-                        ? innerField.getTypeName()
-                        : asGetMethodVariableName(asRecordName(recordField.getName()), innerField.getName());
-
-                var recordIterable = recordField.isIterableWrapped();
-                if (recordIterable == innerContext.isIterable()) {
-                    innerCode.add(innerContext.getSetMappingBlock(asListedNameIf(inputSource, innerContext.isIterable())));
-                } else if (!recordIterable && innerContext.isIterable()) {
-                    innerCode.add(innerContext.getSetMappingBlock(listOf(uncapitalize(inputSource))));
-                } else {
-                    innerCode.add(innerContext.getSetMappingBlock(CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf())));
-                }
-            }
+            var innerCode = schema.implementsNode(innerField)
+                    ? idFetchAllowingDuplicates(innerContext, innerField, recordName, true)
+                    : CodeBlock.join(makeResponses(innerContext, field, schema, parser), formatResponseMapping(innerContext, innerField, recordField));
 
             code
                     .beginControlFlow("if ($N != null && $L)", recordName, selectionSetLookup(innerContext.getPath(), true, false))
-                    .add(innerCode.build())
+                    .add(innerCode)
                     .endControlFlow()
                     .add("\n");
         }
@@ -812,9 +740,26 @@ public class FormatCodeBlocks {
 
         return CodeBlock
                 .builder()
-                .add(declare(targetTypeName, object.getGraphClassName(), true))
+                .declareNew(asListedName(targetTypeName), wrapArrayList(object.getGraphClassName()))
                 .add(wrapFor(asListedRecordName(record.getName()), code.add(addToList(targetTypeName)).build()))
                 .build();
+    }
+
+    private static CodeBlock formatResponseMapping(MapperContext context, GenerationField innerField, InputField recordField) {
+        var inputSource = !context.getTargetType().hasTable()
+                ? innerField.getTypeName()
+                : asGetMethodVariableName(asRecordName(recordField.getName()), innerField.getName());
+
+        var recordIterable = recordField.isIterableWrapped();
+        if (recordIterable == context.isIterable()) {
+            return context.getSetMappingBlock(asListedNameIf(inputSource, context.isIterable()));
+        }
+
+        if (!recordIterable && context.isIterable()) {
+            return context.getSetMappingBlock(listOf(uncapitalize(inputSource)));
+        }
+
+        return context.getSetMappingBlock(CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf()));
     }
 
     public static CodeBlock getIDMappingCode(MapperContext context, ObjectField field, ProcessedSchema schema, InputParser parser) {
@@ -844,15 +789,15 @@ public class FormatCodeBlocks {
         }
 
         var code = CodeBlock.builder().add("$N", idSource);
-        if (shouldMap) {
-            if (isIterable) {
-                code.add(".stream().map(it -> it.getId())$L", collectToList());
-            } else {
-                code.add(".getId()");
-            }
+        if (!shouldMap) {
+            return code.build();
         }
 
-        return code.build();
+        if (!isIterable) {
+            return code.add(".getId()").build();
+        }
+
+        return code.add(".stream().map(it -> it.getId())$L", collectToList()).build();
     }
 
     private static InputField findUsableRecord(GenerationField target, ProcessedSchema schema, InputParser parser) {
@@ -883,7 +828,7 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock declareArgs(ObjectField target) {
-        return target.getArguments().isEmpty() ? CodeBlock.empty() : declare(VARIABLE_ARGS, asMethodCall(VARIABLE_ENV, METHOD_ARGS_NAME));
+        return CodeBlock.declareIf(!target.getArguments().isEmpty(), VARIABLE_ARGS, asMethodCall(VARIABLE_ENV, METHOD_ARGS_NAME));
     }
 
     /**
@@ -891,7 +836,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock returnWrap(String variable) {
-        return CodeBlock.builder().addStatement("return $N", variable).build();
+        return CodeBlock.statementOf("return $N", variable);
     }
 
     /**
@@ -899,7 +844,7 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock returnWrap(CodeBlock code) {
-        return CodeBlock.builder().addStatement("return $L", code).build();
+        return CodeBlock.statementOf("return $L", code);
     }
 
     /**
