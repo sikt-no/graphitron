@@ -39,7 +39,7 @@ public class LookupTest extends GeneratorTest {
     @Test
     @DisplayName("Key other than an ID")
     void nonIDKey() {
-        assertGeneratedContentContains("nonIDKey", ",List<Integer> integer,", ".select(_film.LENGTH,");
+        assertGeneratedContentContains("nonIDKey", ",List<Integer> integer,", ".select(_film.LENGTH.cast(String.class),");
     }
 
     @Test
