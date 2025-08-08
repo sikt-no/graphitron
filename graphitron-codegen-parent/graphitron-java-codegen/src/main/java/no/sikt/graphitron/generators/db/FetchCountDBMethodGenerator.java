@@ -79,18 +79,33 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder();
         var implementations= processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
+        if (target.isResolver()) {
+            implementations
+                    .stream()
+                    .findFirst()
+                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(FetchContext::getAliasSet)
+                    .ifPresent(it -> code.add(createAliasDeclarations(it)));
+        }
+
         implementations.forEach(implementation -> {
-            var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
-            var context = new FetchContext(processedSchema, virtualReference, implementation, false);
-            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+            var virtualTarget = new VirtualSourceField(implementation, target);
+            var initialContext = new FetchContext(processedSchema, virtualTarget, localObject, true);
+            var refContext = virtualTarget.isResolver() ? initialContext.nextContext(virtualTarget) : initialContext;
+            var where = formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.isResolver());
             var countForImplementation = CodeBlock.builder()
                     .add("$T.select($T.count().as($S))", DSL.className, DSL.className, COUNT_FIELD_NAME)
-                    .add("\n.from($L)\n", context.getTargetAlias())
-                    .add(createSelectJoins(context.getJoinSet()))
+                    .add("\n.from($L)\n", initialContext.getTargetAlias())
+                    .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
-                    .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
+                    .add(createSelectConditions(initialContext.getConditionList(), !where.isEmpty()));
 
-            code.add(createAliasDeclarations(context.getAliasSet()));
+            var aliasesToDeclare = !target.isResolver() ? refContext.getAliasSet() :
+                    initialContext.getAliasSet().stream().findFirst()
+                            .map(startAlias -> initialContext.getAliasSet().stream().filter(it -> !it.equals(startAlias)).collect(Collectors.toSet()))
+                            .orElse(refContext.getAliasSet());
+
+            code.add(createAliasDeclarations(aliasesToDeclare));
             code.add(declare(getCountVariableName(implementation.getName()), countForImplementation.build()));
         });
 

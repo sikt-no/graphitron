@@ -56,6 +56,13 @@ public class CountTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Multitable connection outside query")
+    void multiTableInterfaceSplitQuery() {
+        // TODO: count is incorrect on all fields outside root, so this test is just to ensure we generate compilable code in the meantime (A51-339)
+        assertGeneratedContentMatches("multiTableInterfaceSplitQuery");
+    }
+
+    @Test
     @DisplayName("Connection on multitable interface with an extra field")
     void multiTableInterfaceWithOtherField() {
         assertGeneratedContentContains("multiTableInterfaceWithOtherField",
