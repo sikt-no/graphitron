@@ -1,9 +1,11 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.InputDefinition;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -154,13 +156,20 @@ public class LookupHelpers {
         if (components.length < 2) {
             return components.length < 1 ? CodeBlock.empty() : Optional
                     .ofNullable(ref.getArgumentByName(components[0]))
-                    .map(it -> it.isID() ? it.getMappingFromFieldOverride().asGetCall().toString().substring(1) : it.getUpperCaseName())
-                    .map(CodeBlock::of)
+                    .map(LookupHelpers::fieldToKeyCodeBlock)
                     .orElse(CodeBlock.empty());
         }
 
-        var lastInput = lastInput(components, schema, ref);
-        return CodeBlock.of(lastInput.isID() ? lastInput.getMappingFromFieldOverride().asGetCall().toString().substring(1) : lastInput.getUpperCaseName());
+        return fieldToKeyCodeBlock(lastInput(components, schema, ref));
+    }
+
+    private static CodeBlock fieldToKeyCodeBlock(GenerationField field) {
+        if (field.isID()) {
+            return CodeBlock.of(field.getMappingFromFieldOverride().asGetCall().toString().substring(1));
+        } else if (field.getTypeClass().equals(ClassName.get(Integer.class))) {
+            return CodeBlock.of("$L.cast($T.class)", field.getUpperCaseName(), STRING.className);
+        }
+        return CodeBlock.of(field.getUpperCaseName());
     }
 
     public static CodeBlock getLookupKeysAsList(ObjectField referenceField, ProcessedSchema processedSchema) {

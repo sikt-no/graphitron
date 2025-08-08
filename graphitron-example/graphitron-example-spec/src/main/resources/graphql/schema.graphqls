@@ -34,6 +34,7 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
+    customerLookup(id: Int! @field(name: "CUSTOMER_ID") @lookupKey): [Customer]
 }
 
 type Mutation {
