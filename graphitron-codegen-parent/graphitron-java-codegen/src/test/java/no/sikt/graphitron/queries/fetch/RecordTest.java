@@ -55,8 +55,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
-                "DSL.row(_customer.getId(), _customer.getId()).in(" +
-                        "inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getOtherID()))).toList()" +
+                "DSL.row(DSL.trueCondition(), DSL.trueCondition()).in(" +
+                        "inRecordList.stream().map(internal_it_ -> DSL.row(_customer.hasId(internal_it_.getId()), _customer.hasId(internal_it_.getOtherID()))).toList()" +
                         ") : DSL.noCondition()"
         );
     }
@@ -78,8 +78,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
-                "DSL.row(_customer.getId(), _customer.FIRST_NAME).in(" +
-                        "inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).toList()" +
+                "DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(" +
+                        "inRecordList.stream().map(internal_it_ -> DSL.row(_customer.hasId(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).toList()" +
                         ") : DSL.noCondition()"
         );
     }
@@ -93,7 +93,7 @@ public class RecordTest extends GeneratorTest {
     @Test // Not sure if this is allowed.
     @DisplayName("Input type with an ID field annotated with @field without @nodeId")
     void fieldOverrideID() {
-        assertGeneratedContentContains("fieldOverrideID", "_payment.getCustomerId()", "_payment.getPaymentId()");
+        assertGeneratedContentContains("fieldOverrideID", "_payment.hasCustomerId(internal_it_.getCustomerId())", "_payment.hasPaymentId(internal_it_.getPaymentId())");
     }
 
     @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.

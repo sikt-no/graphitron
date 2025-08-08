@@ -10,7 +10,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 
 public class InputCondition {
-    private final InputField input;
+    private final InputField input, sourceInput;
     private final String namePath, startName;
     private final LinkedHashSet<String> nullChecks;
     private final boolean pastWasIterable, hasRecord;
@@ -18,6 +18,7 @@ public class InputCondition {
 
     private InputCondition(
             InputField input,
+            InputField sourceInput,
             String startName,
             String namePath,
             LinkedHashSet<String> nullChecks,
@@ -26,6 +27,7 @@ public class InputCondition {
             Boolean isOverriddenByAncestors,
             Boolean isWrappedInList) {
         this.input = input;
+        this.sourceInput = sourceInput;
         this.startName = startName;
         this.namePath = namePath;
         this.nullChecks = new LinkedHashSet<>(nullChecks);
@@ -38,15 +40,19 @@ public class InputCondition {
     }
 
     public InputCondition(InputField input, String startName, boolean hasRecord, Boolean isOverriddenByAncestors) {
-        this(input, startName, "", new LinkedHashSet<>(), false, hasRecord, isOverriddenByAncestors, false);
+        this(input, input, startName, "", new LinkedHashSet<>(), false, hasRecord, isOverriddenByAncestors, false);
     }
 
     public InputCondition(InputField input, boolean hasRecord) {
-        this(input, "", "",  new LinkedHashSet<>(), false, hasRecord, false, false);
+        this(input, input, "", "",  new LinkedHashSet<>(), false, hasRecord, false, false);
     }
 
     public InputField getInput() {
         return input;
+    }
+
+    public InputField getSourceInput() {
+        return sourceInput;
     }
 
     private void inferAdditionalChecks(InputField input) {
@@ -69,10 +75,15 @@ public class InputCondition {
     }
 
     public String getNameWithPathString() {
-        return namePath.isEmpty()
-                ? uncapitalize(startName.isEmpty() ? input.getName() : startName)
-                : (namePath + (hasRecord ? input.getMappingForRecordFieldOverride().asGetCall()
-                                         : input.getMappingFromSchemaName().asGetCall()).toString());
+        if (namePath.isEmpty()) {
+            return uncapitalize(startName.isEmpty() ? input.getName() : startName);
+        }
+
+        return namePath + (
+                hasRecord
+                        ? input.getMappingForRecordFieldOverride().asGetCall()
+                        : input.getMappingFromSchemaName().asGetCall()
+        ).toString();
     }
 
     public Boolean isOverriddenByAncestors() {
@@ -90,6 +101,7 @@ public class InputCondition {
     public InputCondition iterate(InputField input) {
         return new InputCondition(
                 input,
+                sourceInput,
                 startName,
                 getNameWithPathString(),
                 nullChecks,
@@ -102,6 +114,7 @@ public class InputCondition {
     public InputCondition applyTo(InputField input) {
         return new InputCondition(
                 input,
+                sourceInput,
                 startName,
                 namePath,
                 nullChecks,
