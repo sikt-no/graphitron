@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -71,7 +70,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             batchInputVariable = recordInputs.keySet().stream().findFirst().get();
         } else {
             batchInputVariable = VARIABLE_RECORD_LIST;
-            code.add(declare(VARIABLE_RECORD_LIST, ARRAY_LIST.className));
+            code.declareNew(VARIABLE_RECORD_LIST, ARRAY_LIST.className);
             recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
         }
         code.addStatement(

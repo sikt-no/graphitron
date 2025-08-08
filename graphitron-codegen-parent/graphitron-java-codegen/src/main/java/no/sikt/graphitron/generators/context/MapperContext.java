@@ -322,15 +322,15 @@ public class MapperContext {
                 code.add(continueCheck(asIterable(sourceName)));
 
                 if (!isResolver && !mapsJavaRecord && !targetEqualsPrevious) {
-                    code.add(select(declareRecord(targetName, targetType, false, false), declare(targetName, targetType.getGraphClassName())));
+                    code.add(select(declareRecord(targetName, targetType, false, false), CodeBlock.declareNew(targetName, targetType.getGraphClassName())));
                 }
             } else if (previousContext.isInitContext) {
-                code.add(declare(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className)));
+                code.declareNew(VARIABLE_PATHS_FOR_PROPERTIES, ParameterizedTypeName.get(HASH_MAP.className, STRING.className, STRING.className));
             }
         }
 
         code
-                .addIf(!isValidation && mapsJavaRecord && !targetEqualsPrevious, () -> declare(targetName, targetType.asTargetClassName(toRecord)))
+                .declareNewIf(!isValidation && mapsJavaRecord && !targetEqualsPrevious, targetName, targetType.asTargetClassName(toRecord))
                 .add(fieldCode);
 
         if (isResolver) {

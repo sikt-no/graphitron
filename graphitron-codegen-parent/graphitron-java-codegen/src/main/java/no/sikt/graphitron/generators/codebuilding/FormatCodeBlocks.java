@@ -16,7 +16,6 @@ import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -33,6 +32,7 @@ import java.util.HashMap;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
@@ -72,35 +72,14 @@ public class FormatCodeBlocks {
 
         return CodeBlock
                 .builder()
-                .add(declare(name, input.getRecordClassName(), isIterable))
+                .declareNewIf(isIterable, asListedName(name), wrapArrayList(input.getRecordClassName()))
+                .declareNewIf(!isIterable, name, input.getRecordClassName())
                 .addStatementIf(!input.hasJavaRecordReference() && !isIterable, "$N$L", name, isResolver ? ATTACH_RESOLVER : ATTACH)
                 .build();
     }
 
     public static CodeBlock recordTransformPart(String transformerName, String varName, String typeName, boolean isJava, boolean isInput) {
         return CodeBlock.of("$N.$L($N, ", transformerName, recordTransformMethod(typeName, isJava, isInput), uncapitalize(varName));
-    }
-
-    /**
-     * @param name Name of the variable.
-     * @param typeName The type of the variable to declare.
-     * @param asList Declare this type as an ArrayList?
-     * @return CodeBlock that declares a simple variable.
-     */
-    public static CodeBlock declare(String name, TypeName typeName, boolean asList) {
-        if (asList) {
-            return declare(asListedName(name), ParameterizedTypeName.get(ARRAY_LIST.className, typeName));
-        }
-        return declare(name, typeName);
-    }
-
-    /**
-     * @param name Name of the variable.
-     * @param type The type to declare.
-     * @return CodeBlock that declares a simple variable.
-     */
-    public static CodeBlock declare(String name, TypeName type) {
-        return CodeBlock.declare(name, CodeBlock.of("new $T()", type));
     }
 
     /**
@@ -699,7 +678,7 @@ public class FormatCodeBlocks {
         return CodeBlock.statementOf(
                 "$N = ($T) $T.$L($N, $N)",
                 asListedName(recordName),
-                ParameterizedTypeName.get(ARRAY_LIST.className, recordTypeName),
+                wrapArrayList(recordTypeName),
                 ClassName.get(transform.getDeclaringClass()),
                 transform.getName(),
                 CONTEXT_NAME,
@@ -723,7 +702,7 @@ public class FormatCodeBlocks {
         var code = CodeBlock
                 .builder()
                 .add("\n")
-                .add(declare(targetTypeName, object.getGraphClassName()));
+                .declareNew(targetTypeName, object.getGraphClassName());
         var filteredFields = object
                 .getFields()
                 .stream()
@@ -761,7 +740,7 @@ public class FormatCodeBlocks {
 
         return CodeBlock
                 .builder()
-                .add(declare(targetTypeName, object.getGraphClassName(), true))
+                .declareNew(asListedName(targetTypeName), wrapArrayList(object.getGraphClassName()))
                 .add(wrapFor(asListedRecordName(record.getName()), code.add(addToList(targetTypeName)).build()))
                 .build();
     }

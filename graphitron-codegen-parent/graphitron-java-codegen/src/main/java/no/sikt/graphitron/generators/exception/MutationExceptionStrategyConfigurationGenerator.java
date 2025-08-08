@@ -1,11 +1,11 @@
 package no.sikt.graphitron.generators.exception;
 
-import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
@@ -14,7 +14,8 @@ import java.util.*;
 import static no.sikt.graphitron.configuration.ErrorHandlerType.DATABASE;
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.setValue;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
@@ -115,14 +116,10 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractSch
     }
 
     private CodeBlock createPayloadForMutationBlock(ObjectField mutation, InputParser ctx) {
-        var codeBuilder = CodeBlock
-                .builder()
-                .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
-                .beginControlFlow("$L ->", ERRORS_NAME)
-                .add(declare(PAYLOAD_NAME, processedSchema.getObject(mutation.getTypeName()).getGraphClassName()));
-
-        ctx.getAllErrors().forEach(errorField ->
-                codeBuilder.add(
+        var errorBlocks = ctx
+                .getAllErrors()
+                .stream()
+                .map(errorField ->
                         setValue(
                                 PAYLOAD_NAME,
                                 errorField.getMappingFromSchemaName(),
@@ -133,9 +130,13 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractSch
                                 )
                         )
                 )
-        );
-
-        return codeBuilder
+                .toList();
+        return CodeBlock
+                .builder()
+                .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
+                .beginControlFlow("$L ->", ERRORS_NAME)
+                .declareNew(PAYLOAD_NAME, processedSchema.getObject(mutation.getTypeName()).getGraphClassName())
+                .addAll(errorBlocks)
                 .add(returnWrap(PAYLOAD_NAME))
                 .endControlFlow(")")
                 .build();

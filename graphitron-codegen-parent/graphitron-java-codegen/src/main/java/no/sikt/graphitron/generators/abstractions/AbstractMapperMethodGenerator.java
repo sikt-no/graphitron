@@ -7,6 +7,7 @@ import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.dependencies.Dependency;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -14,7 +15,9 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
+import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -54,10 +57,12 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         var currentSource = type.asSourceClassName(toRecord);
         var source = wrapListIf(currentSource != null ? currentSource : target.getService().getGenericReturnType(), context.hasSourceName());
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
+        var hasIterable = context.hasSourceName() || noRecordIterability;
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
                 .declare(toRecord ? VARIABLE_ARGS : VARIABLE_SELECT, asMethodCall(TRANSFORMER_NAME, toRecord ? METHOD_ARGS_NAME : METHOD_SELECT_NAME))
                 .declareIf(toRecord && context.hasTable() && !context.hasJavaRecordReference(), CONTEXT_NAME, asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME))
-                .addCode(declare(context.getOutputName(), context.getReturnType(), context.hasSourceName() || noRecordIterability))
+                .declareNewIf(hasIterable, asListedName(context.getOutputName()), wrapArrayList(context.getReturnType()))
+                .declareNewIf(!hasIterable, context.getOutputName(), context.getReturnType())
                 .addCode("\n")
                 .addCode(declareDependencyClasses(methodName))
                 .addCode(fillCode)

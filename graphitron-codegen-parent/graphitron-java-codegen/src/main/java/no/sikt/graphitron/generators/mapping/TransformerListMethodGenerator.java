@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.mapping;
 
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;

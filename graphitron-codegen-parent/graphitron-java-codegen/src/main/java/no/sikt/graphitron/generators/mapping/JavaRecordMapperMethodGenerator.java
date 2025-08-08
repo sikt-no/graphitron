@@ -8,7 +8,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {

@@ -600,6 +600,26 @@ public final class MethodSpec {
             return this;
         }
 
+        public Builder declareNew(String name, TypeName declareType) {
+            code.declareNew(name, declareType);
+            return this;
+        }
+
+        public Builder declareNew(String name, TypeName declareType, CodeBlock params) {
+            code.declareNew(name, declareType, params);
+            return this;
+        }
+
+        public Builder declareNew(TypeName declareType, String name) {
+            code.declareNew(declareType, name);
+            return this;
+        }
+
+        public Builder declareNew(TypeName declareType, String name, CodeBlock params) {
+            code.declareNew(name, declareType, params);
+            return this;
+        }
+
         public Builder declareIf(boolean predicate, String name, String format, Object... args) {
             if (predicate) {
                 declare(name, format, args);
@@ -643,6 +663,38 @@ public final class MethodSpec {
         public Builder declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
             if (predicate) {
                 declare(type, name, codeBlock.get());
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, String name, TypeName declareType) {
+            if (predicate) {
+                declareNew(name, declareType);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, String name, TypeName declareType, CodeBlock params) {
+            if (predicate) {
+                declareNew(name, declareType, params);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, TypeName declareType, String name) {
+            if (predicate) {
+                declareNew(declareType, name);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, TypeName declareType, String name, CodeBlock params) {
+            if (predicate) {
+                declareNew(name, declareType, params);
             }
 
             return this;

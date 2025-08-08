@@ -1,9 +1,9 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.InputDefinition;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -17,7 +17,8 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.collectToList;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asIterable;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 
 public class LookupHelpers {
     public static boolean lookupExists(ObjectField referenceField, ProcessedSchema processedSchema) {
