@@ -48,7 +48,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
 
-        var code = CodeBlock.builder();
+        CodeBlock code;
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
             code = getCodeForMultitableCountMethod(target);
         } else {
@@ -57,51 +57,62 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
             var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
 
 
-            if (!isRoot) {
-                var selectId = getSelectKeyColumnRow(context);
-                var groupBy = CodeBlock.builder().add(".groupBy($L)", getSelectKeyColumn(context)).build();
-                if (target.isResolver()) context = context.nextContext(target);
-
-                code.add(createAliasDeclarations(context.getAliasSet()))
-                        .add("return $N\n", VariableNames.CONTEXT_NAME)
-                        .indent()
-                        .indent()
-                        .add(".select($L, $T.count())\n", selectId, DSL.className)
-                        .add(".from($L)\n", targetSource)
-                        .add(createSelectJoins(context.getJoinSet()))
-                        .add(where)
-                        .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                        .add(groupBy)
-                        .addStatement(".fetchMap($T::$L, $T::$L)", RECORD2.className,"value1", RECORD2.className, "value2")
-                        .unindent()
-                        .unindent();
+            if (isRoot) {
+                code = getCodeForRootQueryCountMethod(target, context, targetSource, where);
             } else {
-                if (target.isResolver()) context = context.nextContext(target);
-
-                code.add(createAliasDeclarations(context.getAliasSet()))
-                        .add("return $N\n", VariableNames.CONTEXT_NAME)
-                        .indent()
-                        .indent()
-                        .add(".select($T.count())\n", DSL.className)
-                        .add(".from($L)\n", targetSource)
-                        .add(createSelectJoins(context.getJoinSet()))
-                        .add(where)
-                        .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                        .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
-                        .unindent()
-                        .unindent();
+                code = getCodeForSplitQueryCountMethod(target, context, targetSource, where);
             }
-
-
         }
 
         var parser = new InputParser(target, processedSchema);
         return getSpecBuilder(target, parser)
-                .addCode(code.build())
+                .addCode(code)
                 .build();
     }
 
-    private CodeBlock.Builder getCodeForMultitableCountMethod(ObjectField target) {
+    private CodeBlock getCodeForRootQueryCountMethod(ObjectField target, FetchContext context, CodeBlock targetSource, CodeBlock where) {
+        if (target.isResolver()) context = context.nextContext(target);
+
+        CodeBlock.Builder code = CodeBlock.builder();
+        return code.add(createAliasDeclarations(context.getAliasSet()))
+                .add("return $N\n", VariableNames.CONTEXT_NAME)
+                .indent()
+                .indent()
+                .add(".select($T.count())\n", DSL.className)
+                .add(".from($L)\n", targetSource)
+                .add(createSelectJoins(context.getJoinSet()))
+                .add(where)
+                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                .addStatement(".fetchOne(0, $T.class)", INTEGER.className)
+                .unindent()
+                .unindent()
+                .build();
+    }
+
+    private CodeBlock getCodeForSplitQueryCountMethod(ObjectField target, FetchContext context, CodeBlock targetSource, CodeBlock where) {
+        var selectId = getSelectKeyColumnRow(context);
+        var groupBy = CodeBlock.builder().add(".groupBy($L)", getSelectKeyColumn(context)).build();
+        if (target.isResolver()) context = context.nextContext(target);
+
+        CodeBlock.Builder code = CodeBlock.builder();
+
+        return code.add(createAliasDeclarations(context.getAliasSet()))
+                .add("return $N\n", VariableNames.CONTEXT_NAME)
+                .indent()
+                .indent()
+                .add(".select($L, $T.count())\n", selectId, DSL.className)
+                .add(".from($L)\n", targetSource)
+                .add(createSelectJoins(context.getJoinSet()))
+                .add(where)
+                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+                .add(groupBy)
+                .addStatement(".fetchMap($T::$L, $T::$L)", RECORD2.className,"value1", RECORD2.className, "value2")
+                .unindent()
+                .unindent()
+                .build();
+    }
+
+    private CodeBlock getCodeForMultitableCountMethod(ObjectField target) {
         var code = CodeBlock.builder();
         var implementations= processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
@@ -130,7 +141,8 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .indent()
                     .add("\n.from($N)", UNION_COUNT_QUERY)
                     .add("\n.fetchOne(0, $T.class);", INTEGER.className)
-                    .unindent();
+                    .unindent()
+                    .build();
     }
 
     private static String getCountVariableName(String implementationName) {

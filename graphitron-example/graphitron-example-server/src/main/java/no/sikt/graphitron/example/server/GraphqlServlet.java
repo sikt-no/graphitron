@@ -34,13 +34,6 @@ public class GraphqlServlet extends GraphitronServlet {
         var registry = Graphitron.getTypeRegistry();
         var newWiring = Graphitron.getRuntimeWiringBuilder(nodeIdStrategy);
 
-        newWiring.strictMode(false);
-
-        newWiring.type(
-                TypeRuntimeWiring.newTypeWiring("City")
-                        .dataFetcher("addresses", CityDataFetcher.addresses(nodeIdStrategy))
-                        .dataFetcher("addressesPaginated", CityDataFetcher.addressesPaginated(nodeIdStrategy))
-        );
 
         newWiring.type(
                 TypeRuntimeWiring.newTypeWiring("Query")

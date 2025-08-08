@@ -151,7 +151,9 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     private static CodeBlock fetcherCodeInit(ObjectField target, RecordObjectSpecification<?> localObject, CodeBlock fetcher) {
         var methodName = !localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable()
                 ? "loadNonNullable"
-                : target.hasForwardPagination() ? "loadPaginated" : "load";
+                : target.hasForwardPagination() ?
+                (!localObject.isOperationRoot() && !target.hasServiceReference() ? "loadPaginatedMany" : "loadPaginated")
+                : "load";
         var code = CodeBlock
                 .builder()
                 .add("return $L.$L(\n", fetcher, methodName)
