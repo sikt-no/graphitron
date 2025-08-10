@@ -57,7 +57,10 @@ public class SortingTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
                 "orderFields = address_2030472956_customer",
-                "_customer).orderBy(orderFields"
+                """
+                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .orderBy(orderFields)
+                """
         );
     }
 

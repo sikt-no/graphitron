@@ -35,7 +35,7 @@ public class JoinListSequence extends LinkedList<JoinElement> {
 
         var first = getFirst();
         var code = CodeBlock.builder().add(first.getMappingName());
-        if (first.equals(limitElement)) {
+        if (first.equals(limitElement) || first.getTable().equals(limitElement)) {
             return code.build();
         }
 
@@ -48,7 +48,7 @@ public class JoinListSequence extends LinkedList<JoinElement> {
                     code.add(asMethodCall(element.getCodeName()));
                 }
 
-                if (element.equals(limitElement)) {
+                if (element.equals(limitElement) || element.getTable().equals(limitElement)) {
                     return code.build();
                 }
             }
