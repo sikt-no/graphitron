@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.context;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
@@ -35,7 +36,7 @@ public class FetchContext {
     private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
     private final int recCounter;
-    private Key<?> resolverKey;
+    private final Key<?> resolverKey;
     private boolean shouldUseOptional;
     private boolean shouldUseEnhancedNullOnAllNullCheck = false;
     private final ProcessedSchema processedSchema;
@@ -183,6 +184,29 @@ public class FetchContext {
     }
 
     /**
+     * @return The name of the previously used reference table.
+     */
+    public String getPreviousTableName() {
+        return getPreviousTable() == null ? "" : getPreviousTable().getName();
+    }
+
+    public JOOQMapping getSourceTable() {
+        return currentJoinSequence.isEmpty()
+               ? getPreviousTable()
+               : currentJoinSequence.getFirst().getTable();
+    }
+
+    public String getSourceTableName() {
+        return getSourceTable() == null
+               ? ""
+               : currentJoinSequence.getFirst().getTable().getName();
+    }
+
+    public String getSourceAlias() {
+        return currentJoinSequence.render(currentJoinSequence.getFirst()).toString();
+    }
+
+    /**
      * @return The target table of this context.
      */
     public JOOQMapping getTargetTable() {
@@ -326,11 +350,10 @@ public class FetchContext {
             return previousJoinSequence;
         }
 
-        var directiveReferencesFromField = referenceObjectField.getFieldReferences();
         var joinSequenceFromFieldReferences = processFieldReferences(
                 previousJoinSequence,
                 getReferenceOrPreviousTable(),
-                directiveReferencesFromField,
+                referenceObjectField.getFieldReferences(),
                 false,
                 true
         );
@@ -350,14 +373,15 @@ public class FetchContext {
                         : getPreviousTable(); // Wrong if key was reverse.
 
         if (Objects.equals(lastTable, referenceObjectTable) &&
-            (!directiveReferencesFromField.isEmpty() ||
+            (!referenceObjectField.getFieldReferences().isEmpty() ||
              processedSchema.isInterface(referenceObjectField.getContainerTypeName()))
         ) {
             if (updatedJoinSequence.isEmpty()) {
                 var alias = new Alias(
                         "_" + referenceObjectTable.getCodeName(),
                         JoinListSequence.of(referenceObjectTable),
-                        false
+                        false,
+                        null
                 );
                 aliasSet.add(alias);
                 return JoinListSequence.of(alias);
@@ -366,12 +390,14 @@ public class FetchContext {
             }
         }
 
-        // Add fake reference to the reference table so that the last step is also executed if no table or key is specified.
+        // Add fake reference to the reference table so that the last step is also executed if no table or key is
+        // specified. If method creates an alias that has previously been generated, the new alias will be "ignored"
         var finalSequence = resolveNextSequence(
                 new FieldReference(referenceObjectTable),
                 new TableRelation(lastTable, referenceObjectTable),
                 updatedJoinSequence,
-                false
+                false,
+                this.aliasSet.isEmpty()
         );
 
         if (!finalSequence.isEmpty()) {
@@ -381,7 +407,8 @@ public class FetchContext {
         var alias = new Alias(
                 "_" + referenceObjectTable.getCodeName(),
                 JoinListSequence.of(referenceObjectTable),
-                false
+                false,
+                null
         );
         aliasSet.add(alias);
 
@@ -394,6 +421,7 @@ public class FetchContext {
      * @param joinSequence The current join sequence.
      * @param refTable The reference table to be used.
      * @param directiveReferences The references to be processed.
+     * @param checkLastRef Should the previous reference table be checked?
      * @return The new join sequence, with the provided join sequence extended by all the references provided. If no
      * references are provided, the join sequence will be returned as is.
      */
@@ -404,84 +432,95 @@ public class FetchContext {
             boolean requiresLeftJoin,
             boolean checkLastRef
     ) {
-        var previousTable = joinSequence.isEmpty() ? getPreviousTable() : joinSequence.getLast().getTable();
+        var previousTable = joinSequence.isEmpty()
+                            ? getPreviousTable()
+                            : joinSequence.getLast().getTable();
 
         if (getReferenceObjectField().isResolver() && this.previousContext != null && checkLastRef)
             previousTable = this.previousContext.getPreviousTable();
 
-        var relations = createTableRelationsFromFieldReferences(directiveReferences, previousTable, refTable);
+        var relations = new ArrayList<TableRelation>();
+
+        for (var fieldReference : directiveReferences) {
+            var nextTable = inferNextTable(
+                    fieldReference.getTable(), fieldReference.getKey(), previousTable, refTable);
+            relations.add(new TableRelation(previousTable, nextTable, fieldReference.getKey()));
+            previousTable = nextTable;
+        }
 
         if (previousTable == null) {
             previousTable = getPreviousTable();
         }
 
-        // TODO: Seem to be adding unnecessary relations here, so this should be checked
+        // TODO: Is this added relation necessary? It does not seem to be used anywhere.
         if (checkLastRef && !Objects.equals(previousTable, refTable)) {
             relations.add(new TableRelation(previousTable, refTable));
         }
 
         for (int i = 0; i < directiveReferences.size(); i++) {
-            if (getReferenceObjectField().isResolver() && this.previousContext == null && i > 0)
-                break;
-
-            joinSequence = resolveNextSequence(directiveReferences.get(i), relations.get(i), joinSequence, requiresLeftJoin);
+            joinSequence = resolveNextSequence(
+                    directiveReferences.get(i),
+                    relations.get(i),
+                    joinSequence,
+                    requiresLeftJoin,
+                    i < 1
+            );
         }
 
         return joinSequence;
     }
 
     /**
+     * Resolves the next sequence of joins based on the specified field reference and relation. If necessary, updates
+     * the set of aliases, the list of joins and the list of conditions in the given context to ensure consistency with
+     * the resolved joins.
      *
      * @param fieldRef The current field reference to be used (from the assigned reference directive).
      * @param relation From what table are we coming from and to what table are we going to.
      * @param joinSequence The current join sequence.
      * @return The new join sequence, with the provided join sequence extended by the references provided.
-     *
      */
     private JoinListSequence resolveNextSequence(
             FieldReference fieldRef,
             TableRelation relation,
             JoinListSequence joinSequence,
-            boolean requiresLeftJoin
+            boolean requiresLeftJoin,
+            boolean checkResolver
     ) {
-        var previous = relation.getFrom();
-        var target = relation.getToTable();
+        var previousTable = relation.getFrom();
+        var targetTable = relation.getToTable();
 
-        if (previous == null) {
-            var alias = new Alias("_" + target.getCodeName(), JoinListSequence.of(target), false);
+        // This indicates that the field we are processing is a field in the root type, Query.
+        if (previousTable == null) {
+            var alias = new Alias("_" + targetTable.getCodeName(), JoinListSequence.of(targetTable), false, null);
             this.aliasSet.add(alias);
             return JoinListSequence.of(alias);
         }
 
-        if (getReferenceObjectField().isResolver() && this.previousContext == null) {
-            var alias = new Alias("_" + previous.getCodeName(), JoinListSequence.of(previous), false);
+        // When field has a @splitQuery directive or field has arguments and are not in the root type Query.
+        if (getReferenceObjectField().isResolver() && this.previousContext == null && checkResolver) {
+            var alias = new Alias("_" + previousTable.getCodeName(), JoinListSequence.of(previousTable), false, null);
             this.aliasSet.add(alias);
-            return JoinListSequence.of(alias);
+            joinSequence = JoinListSequence.of(alias);
         }
 
-        var targetOrPrevious = target != null ? target : previous;
+        var targetOrPrevious = targetTable != null ? targetTable : previousTable;
         var newSequence = joinSequence;
-
-        var keyToUse = fieldRef.hasKey() || fieldRef.hasTableCondition()
-                ? fieldRef.getKey()
-                : findImplicitKey(previous.getMappingName(), targetOrPrevious.getMappingName())
-                               .map(JOOQMapping::fromKey)
-                               .orElse(null);
-
-        if (keyToUse != null && !keyToUse.getTable().equals(target)) {
-            keyToUse = keyToUse.getInverseKey();
-        }
+        var keyToUse = getKey(fieldRef, relation);
 
         if (fieldRef.hasTableCondition() && keyToUse == null) {
-            if (newSequence.isEmpty()) {
+            if (referenceObjectField.isResolver()) {
                 var alias = new Alias(
-                        previous.getCodeName() + "_" + getReferenceObjectField().getName(),
-                        JoinListSequence.of(target/*previous*/),  // TODO: Changed from previous to target. Correct?
-                        false
+                        previousTable.getCodeName() + "_" + getReferenceObjectField().getName(),
+                        JoinListSequence.of(targetTable),
+                        false,
+                        null
                 );
 
                 this.joinSet.add(fieldRef.createConditionJoinFor(
-                        this.previousContext != null ? JoinListSequence.of(this.previousContext.getCurrentJoinSequence().getLast()) : newSequence,
+                        this.previousContext != null && this.referenceObjectField.isResolver()
+                        ? JoinListSequence.of(this.previousContext.getCurrentJoinSequence().getLast())
+                        : newSequence,
                         alias,
                         targetOrPrevious,
                         requiresLeftJoin
@@ -490,38 +529,45 @@ public class FetchContext {
                 newSequence.add(alias);
                 this.aliasSet.add(alias);
                 return newSequence.cloneAdd(alias);
-
-
-                // Original -->
-                // We have a WHERE clause
-//                var primaryKey = getTable(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
-//                        .orElseThrow(() ->
-//                                new IllegalArgumentException(String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
-//                                        referenceObjectField.getContainerTypeName(), referenceObjectField.getName(), previous.getName())));
-//
-//                for (var fieldName : getJavaFieldNamesForKey(previous.getName(), primaryKey)) {
-//                    this.conditionList.add(CodeBlock.of(
-//                            "$L.$L.eq($L.$L)",
-//                            previousContext.getCurrentJoinSequence().getLast().getMappingName(),
-//                            fieldName,
-//                            alias.getMappingName(),
-//                            fieldName));
-//                }
-                // <--
-
-//            return newSequence.cloneAdd(join.getJoinAlias());
             }
 
+            // Indicates first alias in new subquery.
+            if (newSequence.isEmpty()) {
+                var alias = new Alias(
+                        previousTable.getCodeName() + "_" + getReferenceObjectField().getName(),
+                        JoinListSequence.of(previousTable),
+                        false,
+                        previousTable
+                );
 
-            // TODO: Is this necessary if only one condition in split query? Creates an extra new alias
-//            var join = fieldRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
-//            if (!newSequence.isEmpty() || this.addAllJoinsToJoinSet) {
-//                this.joinSet.add(join);
-////                this.previousContext.joinSet.add(join);
-//            }
-//            this.aliasSet.add(join.getJoinAlias());
-//            return newSequence.cloneAdd(join.getJoinAlias());
-            return newSequence;
+                newSequence.add(alias);
+                this.aliasSet.add(alias);
+
+                var primaryKey = getTable(previousTable.getName()).map(Table::getPrimaryKey).stream().findFirst()
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(String.format(
+                                        "Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
+                                        referenceObjectField.getContainerTypeName(),
+                                        referenceObjectField.getName(),
+                                        previousTable.getName())));
+
+                for (var fieldName : getJavaFieldNamesForKey(previousTable.getName(), primaryKey)) {
+                    this.conditionList.add(CodeBlock.of(
+                            "$L.$L.eq($L.$L)",
+                            previousContext.getCurrentJoinSequence().getLast().getMappingName(),
+                            fieldName,
+                            alias.getMappingName(),
+                            fieldName));
+                }
+            }
+
+            var join = fieldRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin, targetTable);
+            if (!newSequence.isEmpty() || this.addAllJoinsToJoinSet) {
+                this.joinSet.add(join);
+            }
+
+            this.aliasSet.add(join.getJoinAlias());
+            return newSequence.cloneAdd(join.getJoinAlias());
         }
 
         if (keyToUse != null) {
@@ -530,14 +576,14 @@ public class FetchContext {
             if (newSequence.isEmpty()) {
                 aliasJoinSequence = aliasJoinSequence.cloneAdd(
                         this.previousContext == null || this.previousContext.getCurrentJoinSequence().isEmpty()
-                        ? previous
+                        ? previousTable
                         : previousContext.getCurrentJoinSequence().getLast());
             }
             aliasJoinSequence = aliasJoinSequence.cloneAdd(keyToUse);
 
-            var join = fieldRef.createJoinOnExplicitPathFor(keyToUse, aliasJoinSequence, target, requiresLeftJoin);
+            var join = fieldRef.createJoinOnExplicitPathFor(keyToUse, aliasJoinSequence, targetTable, requiresLeftJoin);
 
-            if (!newSequence.isEmpty() || addAllJoinsToJoinSet || this.referenceObjectField.isResolver()) {
+            if (!newSequence.isEmpty() || addAllJoinsToJoinSet) {
                 joinSet.add(join);
             }
 
@@ -550,16 +596,15 @@ public class FetchContext {
                                          ? this.previousContext.getCurrentJoinSequence().render()
                                          : newSequence.render(newSequence.getSecondLast());
 
-                this.conditionList.add(
-                        fieldRef.getTableCondition().formatToString(
-                                List.of(previousTableWithAlias, newSequence.render())));
+            this.conditionList.add(fieldRef.getTableCondition().formatToString(
+                    List.of(previousTableWithAlias, newSequence.render())));
         }
 
         return newSequence;
     }
 
 
-    public CodeBlock renderQuerySource(JOOQMapping localTable) {
+    public CodeBlock renderQuerySource(JoinElement localTable) {
         return currentJoinSequence.render(localTable == null ? getReferenceTable() : localTable);
     }
 
@@ -605,21 +650,32 @@ public class FetchContext {
         return getReferenceTable() == null && !this.referenceObjectField.hasFieldReferences();
     }
 
-    List<TableRelation> createTableRelationsFromFieldReferences(
-            List<FieldReference> fieldReferences,
-            JOOQMapping previousTable,
-            JOOQMapping referenceTable
-    ) {
-        var relations = new ArrayList<TableRelation>();
 
-        for (var fieldReference : fieldReferences) {
-            var nextTable =
-                    inferNextTable(fieldReference.getTable(), fieldReference.getKey(), previousTable, referenceTable);
-            relations.add(new TableRelation(previousTable, nextTable, fieldReference.getKey()));
+    /**
+     * This method returns the key either from the field reference, or if no key is provided and no condition given, it
+     * will find the implicit key based on the previous and target table names.
+     *
+     * @param fieldReference The current field reference to be used.
+     * @param relation The relation specifying what table we are coming from and to what table are we going to.
+     * @return The key, if it exists, or null if no key is found.
+     */
+    private JOOQMapping getKey(FieldReference fieldReference, TableRelation relation) {
+        var previousTable = relation.getFrom();
+        var targetTable = relation.getToTable();
+        var targetOrPrevious = targetTable != null ? targetTable : previousTable;
 
-            previousTable = nextTable;
+        // TODO: If a condition exists but no key is provided in the field reference, no key is registered, even though
+        //  an implicit key might exist. Should this case be handled differently?
+        var keyToUse = fieldReference.hasKey() || fieldReference.hasTableCondition()
+                       ? fieldReference.getKey()
+                       : findImplicitKey(previousTable.getMappingName(), targetOrPrevious.getMappingName())
+                               .map(JOOQMapping::fromKey)
+                               .orElse(null);
+
+        if (keyToUse != null && !keyToUse.getTable().equals(targetTable)) {
+            keyToUse = keyToUse.getInverseKey();
         }
 
-        return relations;
+        return keyToUse;
     }
 }

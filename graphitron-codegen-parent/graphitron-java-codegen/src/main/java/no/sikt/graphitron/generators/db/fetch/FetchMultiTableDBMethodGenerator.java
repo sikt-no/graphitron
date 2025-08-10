@@ -307,7 +307,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var isConnection = queryTarget.hasForwardPagination();
         var code = CodeBlock.builder();
         var alias = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false, true);
+        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, true);
         String implName = implementation.getName();
 
         code.add(createAliasDeclarations(context.getAliasSet()))

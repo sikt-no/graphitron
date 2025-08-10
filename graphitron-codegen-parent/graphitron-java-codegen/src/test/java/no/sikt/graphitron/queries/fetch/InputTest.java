@@ -153,11 +153,13 @@ public class InputTest extends GeneratorTest {
    void multiLevelInput() {
         assertGeneratedContentContains(
                 "multiLevelInput", Set.of(STAFF, NAME_INPUT),
-                ".where(_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
-                ".and(_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
-                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
-                ".and(_staff.ACTIVE.eq(staff.getActive()))" +
-                ".orderBy"
+                """
+                .where(_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))
+                .and(_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))
+                .and(staff.getInfo().getJobEmail().getEmail() != null ? _staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())
+                .and(_staff.ACTIVE.eq(staff.getActive()))
+                .orderBy(orderFields)
+                """
         );
    }
 
@@ -169,20 +171,19 @@ public class InputTest extends GeneratorTest {
                 ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()))");
     }
 
+    /**
+     * Given that A has a field referencing B, and this field has a scalar input parameter, and there is no direct
+     * relation from A to B but an inverse relation from B to A exists, when a new resolver is generated, a JOIN clause
+     * and a WHERE clause should be created. The JOIN clause must include table B retrieved through the inverse
+     * relation, and the WHERE clause must include the scalar condition on B.
+     */
     @Test
-//    @DisplayName("SplitQuery field")
-    @DisplayName("""
-                 Given that A has a field referencing B, and this field has a scalar input parameter, and there is no
-                 direct relation from A to B but an inverse relation from B to A exists, when a new resolver is
-                 generated, a JOIN clause and a WHERE clause should be created. The JOIN clause must include table B
-                 retrieved through the inverse relation and the WHERE clause includes the scalar condition on B
-                 """)
+    @DisplayName("SplitQuery field")
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
-//                ".from(address_2030472956_customer).where(address_2030472956_customer.EMAIL.eq(email))",
-//                ".from(_address).where(_address.hasIds(addressIds)).fetch" // Make sure conditon is not applied on outer query
                   "_address = ADDRESS.as",
                  "address_2030472956_customer = _address.customer().as",
+                 "orderFields = address_2030472956_customer.fields(address_2030472956_customer.getPrimaryKey().getFieldsArray())",
                  """
                  .select(
                         DSL.row(_address.ADDRESS_ID),

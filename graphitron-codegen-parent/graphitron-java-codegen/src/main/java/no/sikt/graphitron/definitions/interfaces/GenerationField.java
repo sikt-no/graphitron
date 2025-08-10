@@ -15,15 +15,11 @@ import java.util.List;
 public interface GenerationField extends GenerationTarget, FieldSpecification {
     boolean hasFieldReferences();
 
-    boolean hasSplitQueryDirective();
-
     boolean isExternalField();
 
     boolean isInput();
 
     /**
-
-     *
      * @return Does this field point to a resolver method?
      */
     boolean isResolver();
@@ -65,7 +61,4 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
      * @return Record-side method mapping based on the name of the field or the directive {@link GenerationDirective#FIELD} set on this type.
      */
     MethodMapping getMappingForRecordFieldOverride();
-
-
-    boolean hasFieldReferencesWithAllConditions();
 }

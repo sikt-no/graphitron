@@ -48,7 +48,7 @@ public class OutputTest extends GeneratorTest {
                 "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<Record1<Long>, CustomerTable> queryForWrapper",
                 "Set<Record1<Long>> wrapperResolverKeys",
-                ".select(DSL.row(_address.ADDRESS_ID),DSL.field(",
+                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(",
                 ".where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys.stream().map(Record1::valuesRow).toList()))",
                 ".fetchMap(Record2::value1, Record2::value2"
         );
@@ -60,8 +60,8 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
                 "Map<Record1<Long>, List<CustomerTable>> queryForWrapper",
-                ".select(DSL.row(_address.ADDRESS_ID),DSL.multiset(DSL.select",
-                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
+                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(address_2030472956_customer.getId()).mapping",
+                ".fetchGroups(Record2::value1, Record2::value2)"
         );
     }
 
@@ -283,7 +283,7 @@ public class OutputTest extends GeneratorTest {
     void innerTableSelfReference() {
         assertGeneratedContentContains(
                 "innerTableSelfReference",
-                ".row(_film.FILM_ID),DSL.field(",
+                ".row(_film.FILM_ID),DSL.row(DSL.row(",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
 

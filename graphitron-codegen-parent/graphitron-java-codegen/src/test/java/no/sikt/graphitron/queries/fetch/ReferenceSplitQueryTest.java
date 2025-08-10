@@ -105,23 +105,16 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     // ===== Reference directive with only tables =====
 
+    /**
+     * Given that A has a field referencing B, and this field includes a single reference directive with only the table
+     * parameter B, and there exists a direct relation from A to B, when a new resolver is generated, a JOIN clause
+     * should be created. The JOIN clause must include table B retrieved through A.
+     */
     @Test
     @DisplayName("Table path")
-    // TODO: The descriptions for the different tests below can be omitted if we do not find them useful.
-    // Thought they could be useful as a way to document the expected behaviour under different conditions. The problem
-    // can be a lot of textchanges if we make adjustments to the "rules" of expected behaviour. Has also added more of
-    // the generated code to be validated than previously. (Previous validation text is commented out if we want to use
-    // it again.) Perhaps more output validation can replace the descriptions? (Descriptions might not be correct or
-    // are incomplete)
-    /**
-     * Given that A has a field referencing B and this field includes a single reference directive with only the table
-     * parameter B, and there exists a direct relation from A to B, when a new resolver is generated, then a JOIN
-     * clause should be created. The JOIN clause must include table B retrieved through A.
-     */
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 """
@@ -137,18 +130,17 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         );
     }
 
-    @Test
-    @DisplayName("Reverse table path")
     /**
      * Given that A has a field referencing B, and this field includes a single reference directive with only the table
      * parameter B, and there is no direct relation from A to B, but an inverse relation exists from B to A, when a new
-     * resolver is generated, a JOIN clause should be created. The JOIN clause must include table B retrieved through
+     * resolver is generated, a JOIN clause should be created. The JOIN clause must include table B, retrieved through
      * the inverse relation.
      */
+    @Test
+    @DisplayName("Reverse table path")
     void tableBackwards() {
         assertGeneratedContentContains(
                 "tableBackwards", Set.of(CUSTOMER_TABLE),
-//                ".from(address_2030472956_customer"
                 "_address = ADDRESS.as",
                 "address_2030472956_customer = _address.customer().as",
                 """
@@ -158,23 +150,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Reference on a nullable field")
     /**
      * Given that A has a field referencing B and this field is nullable and has a single reference directive with only
      * the table parameter B, and a direct relation exists from A to B, when a new resolver is generated, then a JOIN
      * clause should be created. The JOIN clause must include table B retrieved through A.
      */
+    @Test
+    @DisplayName("Reference on a nullable field")
     void nullableField() {
         assertGeneratedContentContains(
                 "nullableField", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 """
@@ -184,44 +173,36 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Indirect table path")
     /**
      * Given that A has a field referencing C and this field has a single reference directive with only the table
      * parameter B, and there is no direct relation from A to C, but there are relations from A to B and from B to C,
      * when a new resolver is generated, multiple JOIN clauses should be created. The first JOIN clause must include
      * table B retrieved through A, and the second JOIN clause must include C retrieved through B.
      */
+    @Test
+    @DisplayName("Indirect table path")
     void throughTable() {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address",
-//                ".join(address_1214171484_city"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 "address_1214171484_city = customer_2952383337_address.city().as",
                 """
-               .select(
+                .select(
                         DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(address_1214171484_city.getId()).mapping(Functions.nullOnAllNull(City::new))
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Indirect reverse table path")
     /**
      * Given that A has a field referencing C, and this field includes a single reference directive with only the table
      * parameter B, and there is no direct relation from A to C, nor from A to B or B to C, but inverse relations
@@ -229,11 +210,11 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
      * The first JOIN clause must include table B retrieved through the inverse relation from B to A, and the second
      * JOIN clause must include table C retrieved through the inverse relation from C to B.
      */
+    @Test
+    @DisplayName("Indirect reverse table path")
     void throughTableBackwards() {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
-//                ".from(city_1887334959_address",
-//                ".join(address_1356285680_customer"
                 "_city = CITY.as",
                 "city_1887334959_address = _city.address().as",
                 "address_1356285680_customer = city_1887334959_address.customer()",
@@ -245,25 +226,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_city)
                 .join(city_1887334959_address)
                 .join(address_1356285680_customer)
-                .where(DSL.row(_city.CITY_ID).in(cityResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Table path to the same table as source")
     /**
      * Given that A has a field referencing itself, and this field includes a single reference directive with only the
      * table parameter A, and there is a direct relation from A to itself, when a new resolver is generated, a JOIN
      * clause should be created. The JOIN clause must include table A retrieved through the self-relation.
      */
+    @Test
+    @DisplayName("Table path to the same table as source")
     void selfTableReference() {
         assertGeneratedContentContains(
                 "selfTableReference",
-                //                "_film.film().as(",
-                //                "film_3747728953_film.getId()",
-                //                ".from(film_3747728953_film"
                 "_film = FILM.as",
                 "film_3747728953_film = _film.film().as",
                 """
@@ -276,27 +252,23 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_film)
                 .join(film_3747728953_film)
-                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Table path on a list with split query")
     /**
      * Given that A has a field referencing a list of B, and this field includes a single reference directive with only
      * the table parameter B, and there is a direct relation from A to B, when a new resolver is generated, a JOIN
      * clause should be created. The JOIN clause must include table B retrieved through A.
      */
+    @Test
+    @DisplayName("Table path on a list with split query")
     void list() {
         assertGeneratedContentContains(
                 "list", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address)",
-//                "DSL.multiset(DSL.select(",
-//                ".fetchMap(Record2::value1, r -> r.value2().map(Record1::value1))"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
+                "orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())",
                 """
                 .select(
                         DSL.row(_customer.CUSTOMER_ID),
@@ -311,19 +283,19 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         );
     }
 
-    @Test
-    @DisplayName("Table path on a nullable list with split query")
     /**
      * Given that A has a field referencing a NULLABLE list of B, and this field includes a single reference directive
      * with only the table parameter B, and there is a direct relation from A to B, when a new resolver is generated, a
      * JOIN clause should be created. The JOIN clause must include table B retrieved through A.
      */
+    @Test
+    @DisplayName("Table path on a nullable list with split query")
     void nullableList() {
         assertGeneratedContentContains(
                 "nullableList", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address)"
                     "_customer = CUSTOMER.as",
                  "customer_2952383337_address = _customer.address().as",
+                 "orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())",
                  """
                  .select(
                         DSL.row(_customer.CUSTOMER_ID),
@@ -341,61 +313,23 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     @Test
     @DisplayName("Table reference on a multi-level type")
     void tableOnMultiLevelType() {
-        assertGeneratedContentContains(
-                "tableOnMultiLevelType",
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
-                "address_1214171484_city = customer_2952383337_address.city().as",
-                "city_2554114265_country = address_1214171484_city.country().as",
-                """
-                .select(
-                        DSL.row(_customer.CUSTOMER_ID),
-                        DSL.row(
-                                customer_2952383337_address.getId(),
-                                customer_2952383337_address.ADDRESS,
-                                DSL.field(
-                                        DSL.select(
-                                                DSL.row(
-                                                        address_1214171484_city.getId(),
-                                                        address_1214171484_city.CITY,
-                                                        DSL.field(
-                                                                DSL.select(
-                                                                        DSL.row(
-                                                                                city_2554114265_country.getId(),
-                                                                                city_2554114265_country.COUNTRY
-                                                                        ).mapping(Functions.nullOnAllNull(Country::new))
-                                                                )
-                                                                .from(city_2554114265_country)
-                                                        )
-                                                ).mapping(Functions.nullOnAllNull(City::new))
-                                        )
-                                        .from(address_1214171484_city)
-                                )
-                        ).mapping(Functions.nullOnAllNull(Address::new))
-                )
-                .from(_customer)
-                .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
-                """
-        );
+        assertGeneratedContentMatches("tableOnMultiLevelType");
     }
 
 
     // ===== Reference directive with only keys =====
 
-    @Test
-    @DisplayName("Key path with only one possible path between the tables")
     /**
      * Given that A has a field referencing B, and this field has a reference directive containing a key defined from
      * same A to B, while a relation already exists from A to B, when a new resolver is generated, we expect that an
      * explicit JOIN between these two tables using the key, is created.
      */
+    @Test
+    @DisplayName("Key path with only one possible path between the tables")
     // TODO: Alias name is not using name based on key. Is this correct? What is the rule here?
     void keyWithSinglePath() {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 """
@@ -405,23 +339,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Key path with multiple possible paths between the tables")
     /**
      * Given that A has a field referencing B, and this field includes a reference directive containing a key, and
      * multiple relations exist from A to B, when a new resolver is generated, we expect that the specified key will
      * be used to create an explicit JOIN between these two tables.
      */
+    @Test
+    @DisplayName("Key path with multiple possible paths between the tables")
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-//                ".from(film_3747728953_filmoriginallanguageidfkey"
                 "_film = FILM.as",
                 "film_3747728953_filmoriginallanguageidfkey = _film.filmOriginalLanguageIdFkey().as",
                 """
@@ -431,24 +362,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_film)
                 .join(film_3747728953_filmoriginallanguageidfkey)
-                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Reverse key path")
     /**
      * Given that A has a field that refers to B and that field has a reference directive containing a key defined from
      * the inverse B to A, and no relation exist from A to B, when a new resolver is generated, then an implicit JOIN
      * between these two tables using the key should be generated for the new resolver.
      */
-    // TODO: Alias name is not using name based on key. Is this correct? What is the rule here?
+    @Test
+    @DisplayName("Reverse key path")
     void keyBackwards() {
         assertGeneratedContentContains(
                 "keyBackwards", Set.of(CUSTOMER_TABLE),
-//                ".from(address_2030472956_customer"
                "_address = ADDRESS.as",
                 "address_2030472956_customer = _address.customer().as",
                 """
@@ -458,25 +385,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Indirect key path")
     /**
      * Given that A has a field referencing C, and this field has a reference directive containing a key defined from
      * A to B, and there is no direct relation from A to C, but there are a relation from A to B and from B to C, when
      * a new resolver is generated, we expect that implicit JOIN path is crated. The first JOIN clause must include
      * table B retrieved through A, and the second JOIN clause must include C retrieved thhrough B.
      */
+    @Test
+    @DisplayName("Indirect key path")
     void throughKey() {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".from(customer_2952383337_address",
-//                ".join(address_1214171484_city"
                 "_customer = CUSTOMER.as",
                 "customer_2952383337_address = _customer.address().as",
                 "address_1214171484_city = customer_2952383337_address.city().as",
@@ -488,25 +411,20 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_customer)
                 .join(customer_2952383337_address)
                 .join(address_1214171484_city)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Key path to the same table as source")
     /**
      * Given that A has a field referencing itselt, and this field includes a reference directive containing a key that
      * is defined from A to A, and therefore creates a direct relation from A to itself, when a new resolver is
      * generated, we expect that an implicit JOIN path is created. The JOIN clause must include A retrieved through A.
      */
+    @Test
+    @DisplayName("Key path to the same table as source")
     void selfKeyReference() {
         assertGeneratedContentContains(
                 "selfKeyReference",
-//                "_film.film().as(",
-//                "film_3747728953_film.getId()",
-//                ".from(film_3747728953_film"
                "_film = FILM.as",
                "film_3747728953_film = _film.film().as",
                 """
@@ -519,8 +437,6 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_film)
                 .join(film_3747728953_film)
-                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
@@ -528,23 +444,17 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     // ===== Reference directive with only conditions =====
 
-    @Test
-    @DisplayName("Condition path")
     /**
      * Given that A has a field referencing B, and this field includes a single reference directive with only a
      * condition, and there exists a relation from A to B, when a new resolver is generated, we expect that JOIN and ON
      * clauses are created. The JOIN clause should contain table B, and the ON clause should use the condition method
      * with tables A and B as arguments.
      */
-    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
-    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
-    // test, as this test no longer generates a subquery. Does this look correct?
+    @Test
+    @DisplayName("Condition path")
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_NOT_GENERATED),
-               /* "join(customer_address_addresscustomer_address).on(",
-                ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
-                ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"*/
                 "_customer = CUSTOMER.as",
                 "customer_address = ADDRESS.as",
                 """
@@ -555,28 +465,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_customer)
                 .join(customer_address)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Indirect condition path")
     /**
      * Given that A has a field referencing C, and this field includes a single reference directive containing only a
      * condition, and there is no direct relation from A to C, when a new resolver is generated we expect that a JOIN
      * and ON cluase is created. The JOIN clause must include table C and the ON clause must include the condition
      * method with tables A and C as arguments.
      */
-    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
-    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
-    // test, as this test no longer generates a subquery. Does this look correct?
+    @Test
+    @DisplayName("Indirect condition path")
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-//                ".join(customer_city_citycustomer_city).on(",
-//                ".cityCustomer(customer_city, customer_city_citycustomer_city)"
                 "_customer = CUSTOMER.as",
                 "customer_city = CITY.as",
                 """
@@ -587,30 +490,21 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_customer)
                 .join(customer_city)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.cityCustomer(_customer, customer_city))
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
 
-    @Test
-    @DisplayName("Condition path to the same table as source")
     /**
      * Given that A has a field referencing itself, and this field includes a reference directive containing a
      * condition, and there is a direct relation from A to itself, when a new resolver is generated, we expect that a
      * JOIN clause and an ON clause is created. The JOIN clause must include table A and the ON clause must include the
      * condition method with tables A and itself as arguments.
      */
-    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
-    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
-    // test, as this test no longer generates a subquery. Does this look correct?
+    @Test
+    @DisplayName("Condition path to the same table as source")
     void selfConditionReference() {
         assertGeneratedContentContains(
                 "selfConditionReference",
-//                "FILM.as(",
-//                "film_sequel_sequel_film.getId()",
-//                ".join(film_sequel_sequel_film).on(",
-//                ".sequel(film_sequel, film_sequel_sequel_film"
                 "_film = FILM.as",
                 "film_sequel = FILM.as",
                 """
@@ -624,8 +518,6 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_film)
                 .join(film_sequel)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceFilmCondition.sequel(_film, film_sequel))
-                .where(DSL.row(_film.FILM_ID).in(filmResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
@@ -633,20 +525,17 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     // ===== Reference directive with table and condition =====
 
+    /**
+     * Given that A has field referencing B, and this field includes a single reference directive containing both a
+     * table B and a condition, and there is a direct relation from A to B, when a new resolver is generated, a JOIN
+     * clause and an ON clause should be created. The JOIN clause must include table B, and the ON clause must use the
+     * condition method with tables A and B as arguments.
+     */
     @Test
     @DisplayName("Both a table and a condition set on the same path element")
-    /**
-     *
-     */
-    // TODO: Previously, the generated code had 3 aliases, but the new generated code only uses 2. The previous code
-    // also created a WHERE clause connecting the subquery with the outer query, but this is no longer necessary in this
-    // test, as this test no longer generates a subquery. Does this look correct?
     void tableAndCondition() {
         assertGeneratedContentContains(
                 "tableAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
-               /* "customer_address_addresscustomer_address = ADDRESS.as(", // Note, no implicit join anymore.
-                ".join(customer_address_addresscustomer_address).on(",
-                ".addressCustomer(customer_address, customer_address_addresscustomer_address)" // Note, condition overrides as it uses "on".*/
                 "_customer = CUSTOMER.as",
                 "customer_address = ADDRESS.as",
                 """
@@ -657,8 +546,6 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .from(_customer)
                 .join(customer_address)
                 .on(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_address))
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
@@ -666,20 +553,22 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     // ===== Reference directive with key and condition =====
 
+    /**
+     * Given that A has a field referencing B, and this field includes a single reference directive containing both a
+     * key to table B and a condition, and there is a direct relation from A to B, when a new resolver is generated, a
+     * JOIN clause and a WHERE clause should be created. The JOIN clause must include table B retrieved through A, and
+     * the WHERE clause must use the condition method with table A, as well as table B retrieved through A, as
+     * arguments.
+     */
     @Test
     @DisplayName("Both a key and a condition set on the same path element")
     void keyAndCondition() {
         assertGeneratedContentContains(
                 "keyAndCondition", Set.of(CUSTOMER_NOT_GENERATED),
                 "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as(",// Note, implicit join is present when we use a key, but not table.
-                /*".from(customer_2952383337_address).where(",
-                ".addressCustomer(_customer, customer_2952383337_address)", // Note, no condition override unlike table case.
-                ".where(_customer.hasIds(customerIds"*/
-                "_customer = CUSTOMER.as",
-                "customer_2952383337_address = _customer.address().as",
+                "customer_2952383337_address = _customer.address().as(",
                 """
-               .select(
+                .select(
                         DSL.row(_customer.CUSTOMER_ID),
                         DSL.row(customer_2952383337_address.getId()).mapping(Functions.nullOnAllNull(Address::new))
                 )
@@ -687,7 +576,6 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 .join(customer_2952383337_address)
                 .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
                 .and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }
@@ -695,14 +583,16 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     // ===== Other combinations of directives =====
 
+    /**
+     * Given that A has a field B, defined by the interface that A implements, and this field includes no reference
+     * directive, and there is a direct relation from A to B, when a new resolver is generated, a JOIN clause should be
+     * created. The JOIN clause must include table B retrieved through A.
+     */
     @Test
     @DisplayName("Reference from multi table interface")
     void fromMultitableInterface() {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
-//                "_payment.getId(), DSL.field(",
-//                "CustomerTable::new))).from(payment_425747824_customer)",
-//                ".from(_payment).where(_payment.hasIds(paymentIds))"
                "_payment = PAYMENT.as",
                "payment_425747824_customer = _payment.customer().as",
                 """
@@ -712,8 +602,6 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_payment)
                 .join(payment_425747824_customer)
-                .where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
                 """
         );
     }

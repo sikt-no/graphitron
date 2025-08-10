@@ -24,7 +24,6 @@ import no.sikt.graphql.directives.GenerationDirectiveParam;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
@@ -46,7 +45,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective, hasNodeID, hasSplitQueryDirective;
+    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective, hasNodeID;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
@@ -81,7 +80,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         }
 
         hasFieldDirective = field.hasDirective(FIELD.getName());
-        hasSplitQueryDirective = field.hasDirective(SPLIT_QUERY.getName());
         isExternalField = field.hasDirective(EXTERNAL_FIELD.getName());
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
@@ -130,16 +128,15 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return isResolver;
     }
 
+    /**
+     * A field is considered an external field if it has the `@externalField` directive applied.
+     */
     public boolean isExternalField() {
         return isExternalField;
     }
 
     public boolean hasFieldDirective() {
         return hasFieldDirective;
-    }
-
-    public boolean hasSplitQueryDirective() {
-        return hasSplitQueryDirective;
     }
 
     @Override
@@ -177,7 +174,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasCondition() && condition.isOverride();
     }
 
-
     /**
      * A field is considered generated unless the `@notGenerated` directive is applied.
      */
@@ -206,7 +202,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return null;
     }
 
-
     /**
      * A field is considered generated with a resolver if it is generated and satisfies one of the following
      * conditions: it is a resolver, it is a field in the root type `Query`, or it is a field in the `Mutation` type.
@@ -233,15 +228,5 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
      */
     public String getNodeIdTypeName() {
         return nodeIdTypeName;
-    }
-
-    @Override
-    public boolean hasFieldReferencesWithAllConditions() {
-        var tableConditions = fieldReferences
-                .stream()
-                .filter(fieldRef -> fieldRef.hasTableCondition() && !fieldRef.hasKey())
-                .toList();
-
-        return fieldReferences.size() == tableConditions.size();
     }
 }

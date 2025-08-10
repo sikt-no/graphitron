@@ -963,7 +963,14 @@ public class FormatCodeBlocks {
      * @return Select code for the columns in the resolver key
      */
     public static CodeBlock getSelectKeyColumnRow(FetchContext context) {
-        return getSelectKeyColumnRow(context.getResolverKey(), context.getTargetTableName(), context.getTargetAlias());
+        var table = hasIterableWrappedResolverWithPagination(context)
+                    ? context.getTargetTableName()
+                    : context.getSourceTableName();
+        var alias = hasIterableWrappedResolverWithPagination(context)
+                    ? context.getTargetAlias()
+                    : context.getSourceAlias();
+
+        return getSelectKeyColumnRow(context.getResolverKey(), table, alias);
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {
@@ -1045,5 +1052,11 @@ public class FormatCodeBlocks {
 
     private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(CodeBlock target) {
         return CodeBlock.of("$L.getPrimaryKey().getFieldsArray()", target);
+    }
+
+    private static boolean hasIterableWrappedResolverWithPagination(FetchContext context) {
+        return context.getReferenceObjectField().isResolver() &&
+               context.getReferenceObjectField().isIterableWrapped() &&
+               ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
     }
 }

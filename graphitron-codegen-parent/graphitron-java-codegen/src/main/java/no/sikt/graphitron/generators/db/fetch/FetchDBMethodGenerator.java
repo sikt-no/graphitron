@@ -83,7 +83,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
-
     /**
      * @param aliasSet  Set of aliases to be defined.
      * @return Code block which declares all the aliases that will be used in a select query.
@@ -125,43 +124,23 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false, true);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), true);
         var joins = createSelectJoins(context.getJoinSet());
 
-        CodeBlock.Builder contents = null;
-
-        // TODO: This is just temporary.
-        if (field.isResolver()) {
-            contents = select; // CodeBlock.of(select);
-//                    .builder()
-//                    .add(!isMultiset
-//                         ? select.build()
-//                         : CodeBlock.of("$T.select($L)", DSL.className, indentIfMultiline(select.build())))
-//                    .add(!isMultiset
-//                         ? empty()
-//                         : CodeBlock.of("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName()))
-//                    .add(shouldBeOrdered
-//                         ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get())
-//                         : empty());
-//                    .add(!isMultiset ? select.build() : CodeBlock.of("$T.select($)", DSL.className, indentIfMultiline(select.build()))));
-        } else {
-            contents = CodeBlock.builder()
-                .add("$T.select($L)", DSL.className, indentIfMultiline(select.build()))
-                .add("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
-                .add(joins)
-                .add(where)
-                .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
-                .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : empty())
-                .add(isConnection ? createSeekAndLimitBlock() : empty());
-        }
+        var contents = CodeBlock.builder()
+            .add("$T.select($L)", DSL.className, indentIfMultiline(select.build()))
+            .add("\n.from($L)", context.getCurrentJoinSequence().getFirst().getMappingName())
+            .add(joins)
+            .add(where)
+            .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))
+            .add(shouldBeOrdered ? CodeBlock.of("\n.orderBy($L)", maybeOrderByFields.get()) : empty())
+            .add(isConnection ? createSeekAndLimitBlock() : empty());
 
         return isMultiset
                ? field.isResolver()
-                 ? contents.build()//wrapInMultiset(contents.build())
+                 ? wrapInMultiset(contents.build())
                  : wrapInMultisetWithMapping(contents.build(), shouldHaveOrderByToken)
-               : field.hasSplitQueryDirective()
-                 ? contents.build()
-                 : wrapInField(contents.build());
+               : wrapInField(contents.build());
     }
 
     private CodeBlock wrapInMultisetWithMapping(CodeBlock contents, boolean hasOrderByToken) {
@@ -525,7 +504,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Generate a single argument in the row method call.
      */
     protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
-        var renderedSource = context.renderQuerySource(getLocalTable());
+        var renderedSource = context.renderQuerySource(
+                hasIterableWrappedResolverWithPagination(context)
+                ? getLocalTable() // Implies being called from the FetchDBMethodGenerator.generateCorrelatedSubquery-method
+                : context.getCurrentJoinSequence().size() > 1
+                  ? context.getCurrentJoinSequence().getLast()
+                  : !context.getCurrentJoinSequence().isEmpty()
+                    ? context.getCurrentJoinSequence().getFirst()
+                    : null);
 
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
@@ -552,18 +538,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.join(code, ",\n");
     }
 
-    /**
-     * @param startWithWhere Whether the contents should start with a "WHERE" clause or and "AND" clause. The default
-     *                       is true, but it can be set to false for possible subsequent method calls.
-     *
-     * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
-     */
     protected CodeBlock formatWhereContents(
             FetchContext context,
             String resolverKeyParamName,
             boolean isRoot,
-            boolean isResolverRoot,
-            boolean startWithWhere
+            boolean addInputConditionsForReferenceField
     ) {
         var conditionList = new ArrayList<CodeBlock>();
 
@@ -586,15 +565,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (!isRoot && !resolverKeyParamName.isEmpty()) {
-            conditionList.add(inResolverKeysBlock(resolverKeyParamName, context)
-            );
+            conditionList.add(inResolverKeysBlock(resolverKeyParamName, context));
         }
-        if (!isResolverRoot) {
+
+        if (addInputConditionsForReferenceField) {
             conditionList.addAll(getInputConditions(context));
         }
 
         var code = CodeBlock.builder();
-        var hasWhere = !startWithWhere;
+        var hasWhere = false;
         for(var condition : conditionList) {
             if (condition.isEmpty()) continue;
             code.add(".$L($L)\n", hasWhere ? "and" : "where", indentIfMultiline(condition));
@@ -1009,5 +988,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
         }
+    }
+
+    private boolean hasIterableWrappedResolverWithPagination(FetchContext context) {
+        return context.getReferenceObjectField().isResolver() &&
+               context.getReferenceObjectField().isIterableWrapped() &&
+               ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
     }
 }

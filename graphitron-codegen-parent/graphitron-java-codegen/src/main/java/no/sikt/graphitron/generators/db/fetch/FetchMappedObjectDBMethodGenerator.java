@@ -1,8 +1,8 @@
 package no.sikt.graphitron.generators.db.fetch;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -43,19 +43,22 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     public MethodSpec generate(ObjectField targetField) {
         var targetOwner = getLocalObject();
         var context = new FetchContext(processedSchema, targetField, targetOwner, false);
-        var resolverContext = context.nextContext(targetField);
 
         // Note that this must happen before alias declaration.
-        // TODO: Previously, when a field was a resolver, the method "generateCorrelatedSubquery" was called. Have
-        //  changed this to use the "generateSelectRow" method instead, because we don't necessarily create a
-        //  correlated subquery here at the root query. Is this a wrong assumption?
-        var selectRowBlock = targetField.isResolver()
-                             ? generateSelectRow(resolverContext)
+        var selectRowBlock = isIterableWrappedResolverWithPagination(targetField)
+                             ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
                              : generateSelectRow(context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, targetField.isResolver(), true);
-        var querySource = context.renderQuerySource(getLocalTable());
-
-        var refContext = targetField.isResolver() ? resolverContext : context;
+        var querySource = context.renderQuerySource(getSourceTable(context));
+        var whereBlock = formatWhereContents(
+                context,
+                resolverKeyParamName,
+                isRoot,
+                !isIterableWrappedResolverWithPagination(targetField)
+        );
+        processedSchema.isConnectionObject(targetField);
+        var refContext = isIterableWrappedResolverWithPagination(targetField)
+                         ? context.nextContext(targetField)
+                         : context;
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
 
@@ -77,19 +80,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".select(")
                 .add(createSelectBlock(targetField, context, actualRefTable, selectRowBlock))
                 .add(")\n.from($L)\n", querySource)
-                .add(createSelectJoins(targetField.isResolver() ? resolverContext.getJoinSet() : context.getJoinSet()))
+                .add(createSelectJoins(context.getJoinSet()))
                 .add(whereBlock)
-                .add(targetField.isResolver()
-                     ? formatWhereContents(resolverContext, "", isRoot, false, whereBlock.isEmpty())
-                     : empty())
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(targetField.isResolver()
-                     ? createSelectConditions(resolverContext.getConditionList(), !whereBlock.isEmpty())
-                     : empty())
-                .add(targetField.isResolver() && !targetField.isIterableWrapped() ? empty() : maybeOrderFields
-                        .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
-                        .orElse(empty()))
-                .add(targetField.hasForwardPagination() && !targetField.isResolver()
+                .add(targetField.isResolver() && !targetField.isIterableWrapped() &&
+                     !targetField.hasForwardPagination()
+                     ? empty()
+                     : maybeOrderFields
+                             .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
+                             .orElse(empty()))
+                .add(targetField.hasForwardPagination() && !targetField.isIterableWrapped()
                         ? createSeekAndLimitBlock()
                         : empty())
                .add(setFetch(targetField))
@@ -102,16 +102,30 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
-    private CodeBlock createSelectBlock(ObjectField target, FetchContext context, String actualRefTable, CodeBlock selectRowBlock) {
+    private CodeBlock createSelectBlock(
+            ObjectField target,
+            FetchContext context,
+            String actualRefTable,
+            CodeBlock selectRowBlock
+    ) {
         return indentIfMultiline(
                 Stream.of(
                         getInitialKey(context),
-                        target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : empty(),
+                        target.hasForwardPagination()
+                        ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME)
+                        : empty(),
                         selectRowBlock
                 ).collect(CodeBlock.joining(""))
         );
     }
 
+    /**
+     * Return the initial key for the fetch operation. For a context containing a reference to a field that is a
+     * resolver, this will be taken from the first element in it's {@link FetchContext#getCurrentJoinSequence()}.
+     *
+     * @param context The {@link FetchContext} containing the current state of the fetch operation.
+     * @return A CodeBlock with the table key wrapped in row value expression
+     */
     private CodeBlock getInitialKey(FetchContext context) {
         var code = CodeBlock.builder();
 
@@ -137,7 +151,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         if (referenceField.hasForwardPagination()) {
-            return getPaginationFetchBlock();
+            return referenceField.isResolver() ? getPaginationFetchBlockWhenResolver() : getPaginationFetchBlock();
         }
 
         var code = CodeBlock.builder();
@@ -183,6 +197,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return code.build();
     }
 
+    private CodeBlock getPaginationFetchBlockWhenResolver() {
+        return CodeBlock
+                .builder()
+                .add(".fetchGroups(")
+                .add("$T::value1)\n", RECORD3.className)
+                .add(".entrySet()\n.stream()\n")
+                .add(".collect($T.toMap(\n", COLLECTORS.className)
+                .indent()
+                .add("$T.Entry::getKey,\n", MAP.className)
+                .add("list -> list.getValue().stream()\n")
+                .indent()
+                .add(".map(e -> new $T<>(e.value2(), e.value3()))\n", IMMUTABLE_PAIR.className)
+                .add(".collect($T.toList())\n", COLLECTORS.className)
+                .unindent()
+                .add(")\n")
+                .unindent()
+                .addStatement(")")
+                .build();
+    }
+
     @Override
     public List<MethodSpec> generateAll() {
         return getLocalObject()
@@ -196,5 +230,19 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
+    }
+
+    private boolean isIterableWrappedResolverWithPagination(ObjectField field) {
+        return field.isResolver() &&
+               field.isIterableWrapped() &&
+               field.hasForwardPagination();
+    }
+
+    private JOOQMapping getSourceTable(FetchContext context) {
+       if (context.getReferenceObjectField().isResolver()) {
+           return context.getCurrentJoinSequence().getFirst().getTable();
+       }
+
+       return getLocalTable();
     }
 }
