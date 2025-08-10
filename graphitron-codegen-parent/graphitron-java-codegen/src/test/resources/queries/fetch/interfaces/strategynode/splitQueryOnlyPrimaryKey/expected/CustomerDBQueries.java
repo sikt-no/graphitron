@@ -24,13 +24,11 @@ public class CustomerDBQueries {
         return ctx
                 .select(
                         DSL.row(_customer.CUSTOMER_ID),
-                        DSL.field(
-                                DSL.select(DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
-                                        .from(customer_2952383337_address)
-                        )
+                        DSL.row(nodeIdStrategy.createId("ADDRESS", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new))
                 )
                 .from(_customer)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
-                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
+                .join(customer_2952383337_address)
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .fetchMap(Record2::value1, Record2::value2);
     }
 }
