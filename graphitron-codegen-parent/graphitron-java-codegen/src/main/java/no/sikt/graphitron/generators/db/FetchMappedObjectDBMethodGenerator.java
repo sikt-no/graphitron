@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -43,12 +44,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(targetField, context);
-        var querySource = context.renderQuerySource(getLocalTable());
+        var querySource = context.renderQuerySource(getSourceTable(context));
         var whereBlock = formatWhereContents(
                 context,
                 resolverKeyParamName,
                 isRoot,
-                targetField.isResolver());
+                !isIterableWrappedResolverWithPagination(targetField)
+        );
 
         for (var alias: context.getAliasSet()) {
             if (alias.hasTableMethod()){
@@ -100,11 +102,20 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 : generateSelectRow(context);
     }
 
-    private CodeBlock createSelectBlock(ObjectField target, FetchContext context, String actualRefTable, CodeBlock selectRowBlock) {
+    private CodeBlock createSelectBlock(
+            ObjectField target,
+            FetchContext context,
+            String actualRefTable,
+            CodeBlock selectRowBlock
+    ) {
         return indentIfMultiline(
                 Stream.of(
                         getInitialKey(context),
-                        CodeBlock.ofIf(target.hasForwardPagination() && !target.isResolver(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME),
+                        CodeBlock.ofIf(
+                                target.hasForwardPagination() && !target.isResolver(),
+                                "$T.getOrderByToken($L, $L),\n",
+                                QUERY_HELPER.className,
+                                actualRefTable, ORDER_FIELDS_NAME),
                         selectRowBlock
                 ).collect(CodeBlock.joining())
         );
@@ -117,7 +128,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         if (referenceField.hasForwardPagination()) {
-            return getPaginationFetchBlock();
+            return referenceField.isResolver() ? getPaginationFetchBlockWhenResolver() : getPaginationFetchBlock();
         }
 
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
@@ -167,6 +178,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return code.build();
     }
 
+    private CodeBlock getPaginationFetchBlockWhenResolver() {
+        return CodeBlock
+                .builder()
+                .add(".fetchGroups(")
+                .add("$T::value1)\n", RECORD3.className)
+                .add(".entrySet()\n.stream()\n")
+                .add(".collect($T.toMap(\n", COLLECTORS.className)
+                .indent()
+                .add("$T.Entry::getKey,\n", MAP.className)
+                .add("list -> list.getValue().stream()\n")
+                .indent()
+                .add(".map(e -> new $T<>(e.value2(), e.value3()))\n", IMMUTABLE_PAIR.className)
+                .add(".collect($T.toList())\n", COLLECTORS.className)
+                .unindent()
+                .add(")\n")
+                .unindent()
+                .addStatement(")")
+                .build();
+    }
+
     @Override
     public List<MethodSpec> generateAll() {
         return getLocalObject()
@@ -186,5 +217,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return field.isResolver() &&
                field.isIterableWrapped() &&
                field.hasForwardPagination();
+    }
+
+    private JOOQMapping getSourceTable(FetchContext context) {
+       if (context.getReferenceObjectField().isResolver()) {
+           return context.getCurrentJoinSequence().getFirst().getTable();
+       }
+
+       return getLocalTable();
     }
 }
