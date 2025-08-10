@@ -172,7 +172,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false, true);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), true);
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -574,6 +574,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
+
+//        var renderedSource = context.renderQuerySource(
+//                hasIterableWrappedResolverWithPagination(context)
+//                ? getLocalTable() // Implies being called from the FetchDBMethodGenerator.generateCorrelatedSubquery-method
+//                : context.getCurrentJoinSequence().size() > 1
+//                  ? context.getCurrentJoinSequence().getLast()
+//                  : !context.getCurrentJoinSequence().isEmpty()
+//                    ? context.getCurrentJoinSequence().getFirst()
+//                    : null);
+
         if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
                     renderedSource,
@@ -635,18 +645,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.join(code, ",\n");
     }
 
-    /**
-     * @param startWithWhere Whether the contents should start with a "WHERE" clause or and "AND" clause. The default
-     *                       is true, but it can be set to false for possible subsequent method calls.
-     *
-     * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
-     */
     protected CodeBlock formatWhereContents(
             FetchContext context,
             String resolverKeyParamName,
             boolean isRoot,
-            boolean isResolverRoot,
-            boolean startWithWhere
+            boolean isResolverRoot
     ) {
         var conditionList = new ArrayList<CodeBlock>();
 
@@ -684,6 +687,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     conditionList.addAll(getInputConditions(context, (ObjectField) otherConditionsField));
                 }
             }
+        }
+
+        if (isResolverRoot) {
+            conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
         }
 
         var code = CodeBlock.builder();
@@ -1174,5 +1181,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }
+    }
+
+    private boolean hasIterableWrappedResolverWithPagination(FetchContext context) {
+        return context.getReferenceObjectField().isResolver() &&
+               context.getReferenceObjectField().isIterableWrapped() &&
+               ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
     }
 }

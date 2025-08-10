@@ -169,6 +169,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return !isResolver && (hasFieldReferences() || (hasNodeID() && !getNodeIdTypeName().equals(getContainerTypeName())) || isIterableWrapped());
     }
 
+    /**
+     * A field is considered an external field if it has the `@externalField` directive applied.
+     */
     public boolean isExternalField() {
         return isExternalField;
     }
@@ -220,7 +223,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return hasCondition() && condition.isOverride();
     }
 
-
     /**
      * A field is considered generated unless the `@notGenerated` directive is applied.
      */
@@ -251,7 +253,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     public MutationType getMutationType() {
         return null;
     }
-
 
     /**
      * A field is considered generated with a resolver if it is generated and satisfies one of the following

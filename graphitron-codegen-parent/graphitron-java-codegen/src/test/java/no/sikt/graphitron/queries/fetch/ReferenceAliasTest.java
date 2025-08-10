@@ -58,6 +58,10 @@ public class ReferenceAliasTest extends ReferenceTest {
 
     @Test
     @DisplayName("Condition path")
+    /**
+     * TODO: This does not represent a valid schema because there is no two tables to join. Remove or modify test,
+     *  perhaps?
+     */
     void aliasCondition() {
         assertGeneratedContentContains(
                 "field/condition", Set.of(CUSTOMER_QUERY),
@@ -171,8 +175,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "splitQuery/throughCondition", Set.of(CUSTOMER_NOT_GENERATED),
-                "customer_city = CUSTOMER.as(\"",
-                "customer_city_citycustomer_city = CITY.as("
+                "_customer = CUSTOMER.as(\"customer_",
+                "customer_city = CITY.as(\"city_"
         );
     }
 
@@ -207,6 +211,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "CITY.as(",
                 "customer_2168032777_address_cityaddress_city.CITY",
                 ".cityAddress(_a_customer_2168032777_address, _a_customer_2168032777_address_cityaddress_city)"
+//                "_customer.address().as(\"address_",
+//                "CITY.as(\"city_",
+//                "customer_2952383337_address_cityaddress_city.CITY",
+//                ".cityAddress(customer_2952383337_address, customer_2952383337_address_cityaddress_city)"
         );
     }
 
@@ -314,11 +322,13 @@ public class ReferenceAliasTest extends ReferenceTest {
 
     @Test
     @DisplayName("Path from a condition to another condition")
-    void conditionToCondition() {
+    void ConditionToCondition() {
         assertGeneratedContentContains(
                 "alias/conditionToCondition", Set.of(CUSTOMER_QUERY),
-                "ADDRESS.as(",
-                "CITY.as(",
+                "CUSTOMER.as(\"customer_29",
+                "CUSTOMER.as(\"customer_20",
+                "ADDRESS.as(\"address_",
+                "CITY.as(\"city_",
                 "customer_city_addresscustomer_address_cityaddress_city.CITY",
                 ".addressCustomer(_a_customer_city, _a_customer_city_addresscustomer_address)",
                 ".cityAddress(_a_customer_city_addresscustomer_address, _a_customer_city_addresscustomer_address_cityaddress_city)"
@@ -334,6 +344,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer_city_addresscustomer_address.city().as(",
                 "address_4217265996_city.CITY",
                 ".addressCustomer(_a_customer_city, _a_customer_city_addresscustomer_address)"
+//                "ADDRESS.as(\"address_",
+//                "customer_city_addresscustomer_address.city().as(\"city_",
+//                "address_1981026222_city.CITY",
+//                ".addressCustomer(customer_city, customer_city_addresscustomer_address)"
         );
     }
 
@@ -346,6 +360,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "customer_city_addresscustomer_address.city().as(",
                 "address_4217265996_city.CITY",
                 ".addressCustomer(_a_customer_city, _a_customer_city_addresscustomer_address)"
+//                "ADDRESS.as(\"address_",
+//                "customer_city_addresscustomer_address.city().as(\"city_",
+//                "address_1981026222_city.CITY",
+//                ".addressCustomer(customer_city, customer_city_addresscustomer_address)"
         );
     }
 
@@ -354,8 +372,8 @@ public class ReferenceAliasTest extends ReferenceTest {
     void conditionToConditionReverse() {
         assertGeneratedContentContains(
                 "alias/conditionToConditionReverse", Set.of(CITY_QUERY),
-                "ADDRESS.as(",
-                "CUSTOMER.as(",
+                "ADDRESS.as(\"address_",
+                "CUSTOMER.as(\"customer_",
                 "city_email_addresscity_address_email_customer.EMAIL",
                 ".addressCity(_a_city_email, _a_city_email_addresscity_address)",
                 ".email(_a_city_email_addresscity_address, _a_city_email_addresscity_address_email_customer)"
@@ -371,6 +389,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "city_email_addresscity_address.customer().as(",
                 "address_3704850880_customer.EMAIL",
                 ".addressCity(_a_city_email, _a_city_email_addresscity_address)"
+//                "ADDRESS.as(\"address_",
+//                "city_email_addresscity_address.customer().as(\"customer_",
+//                "address_3210818138_customer.EMAIL",
+//                ".addressCity(city_email, city_email_addresscity_address)"
         );
     }
 
@@ -383,6 +405,10 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "city_email_addresscity_address.customer().as(",
                 "address_3704850880_customer.EMAIL",
                 ".addressCity(_a_city_email, _a_city_email_addresscity_address)"
+//                "ADDRESS.as(\"address_",
+//                "city_email_addresscity_address.customer().as(\"customer_",
+//                "address_3210818138_customer.EMAIL",
+//                ".addressCity(city_email, city_email_addresscity_address)"
         );
     }
 }

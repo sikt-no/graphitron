@@ -83,7 +83,8 @@ public class FieldReference {
             JoinListSequence joinSequence,
             JOOQMapping tableNameBackup,
             SQLJoinField joinField,
-            boolean isNullable
+            boolean isNullable,
+            JOOQMapping aliasShortNameTable
     ) {
         var targetTable = hasTable() ? getTable() : tableNameBackup;
         var secondLast = joinSequence.getSecondLast();
@@ -95,7 +96,7 @@ public class FieldReference {
         return new SQLJoinStatement(
                 joinSequence,
                 targetTable,
-                new Alias(adjustedReference, targetTable, isNullable).toAliasWrapper(),
+                new Alias(adjustedReference, targetTable, isNullable, aliasShortNameTable).toAliasWrapper(),
                 List.of(joinField),
                 isNullable
         );
@@ -104,13 +105,14 @@ public class FieldReference {
     /**
      * @return A join statement based on a condition.
      */
-    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
+    public SQLJoinStatement createConditionJoinFor(JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable, JOOQMapping aliasShortNameTable) {
         return createJoinFor(
                 tableCondition.getReference().getMethodName().toLowerCase(),
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnCondition(tableCondition),
-                isNullable
+                isNullable,
+                aliasShortNameTable
         );
     }
 
@@ -133,7 +135,8 @@ public class FieldReference {
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnKey(key),
-                isNullable
+                isNullable,
+                null
         );
     }
 
@@ -146,7 +149,8 @@ public class FieldReference {
                 joinSequence,
                 tableNameBackup,
                 new SQLJoinOnKey(keyOverride),
-                isNullable
+                isNullable,
+                null
         );
     }
 
