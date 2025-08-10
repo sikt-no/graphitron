@@ -153,11 +153,13 @@ public class InputTest extends GeneratorTest {
    void multiLevelInput() {
         assertGeneratedContentContains(
                 "multiLevelInput", Set.of(STAFF, NAME_INPUT),
-                ".where(_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
-                ".and(_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
-                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
-                ".and(_staff.ACTIVE.eq(staff.getActive()))" +
-                ".orderBy"
+                """
+                .where(_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))
+                .and(_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))
+                .and(staff.getInfo().getJobEmail().getEmail() != null ? _staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())
+                .and(_staff.ACTIVE.eq(staff.getActive()))
+                .orderBy(orderFields)
+                """
         );
    }
 

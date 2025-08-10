@@ -46,11 +46,11 @@ public class OutputTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
-                "Map<Row1<Long>, CustomerTable> queryForWrapper",
-                "Set<Row1<Long>> wrapperResolverKeys",
-                ".select(DSL.row(_address.ADDRESS_ID),DSL.field(",
-                ".where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys))",
-                ".fetchMap(r -> r.value1().valuesRow(), Record2::value2"
+                "Map<Record1<Long>, CustomerTable> queryForWrapper",
+                "Set<Record1<Long>> wrapperResolverKeys",
+                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(",
+                ".where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys.stream().map(Record1::valuesRow).toList()))",
+                ".fetchMap(Record2::value1, Record2::value2"
         );
     }
 
@@ -59,9 +59,9 @@ public class OutputTest extends GeneratorTest {
     void splitQueryListed() {
         assertGeneratedContentContains(
                 "splitQueryListed", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
-                "Map<Row1<Long>, List<CustomerTable>> queryForWrapper",
-                ".select(DSL.row(_address.ADDRESS_ID),DSL.multiset(DSL.select",
-                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1))"
+                "Map<Record1<Long>, List<CustomerTable>> queryForWrapper",
+                ".select(DSL.row(_address.ADDRESS_ID),DSL.row(address_2030472956_customer.getId()).mapping",
+                ".fetchGroups(Record2::value1, Record2::value2)"
         );
     }
 
@@ -364,7 +364,7 @@ public class OutputTest extends GeneratorTest {
     void innerTableSelfReference() {
         assertGeneratedContentContains(
                 "innerTableSelfReference",
-                ".row(_film.FILM_ID),DSL.field(",
+                ".row(_film.FILM_ID),DSL.row(DSL.row(",
                 ".mapping(Functions.nullOnAllNull(Film::new");
     }
 
