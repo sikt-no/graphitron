@@ -1,0 +1,7 @@
+type Query {
+  query(customerId: [ID!]! @nodeId(typeName: "Customer") @lookupKey): [Customer]
+}
+
+type Customer implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @table {
+  id: ID!
+}
