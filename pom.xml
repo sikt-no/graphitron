@@ -35,7 +35,7 @@
         <version.jakarta>8.0.0</version.jakarta>
         <version.jakarta.validation>3.1.1</version.jakarta.validation>
         <version.org.jooq>3.19.18</version.org.jooq>
-        <version.org.junit>5.13.2</version.org.junit>
+        <version.org.junit>5.13.4</version.org.junit>
         <version.ch.qos.logback>1.5.18</version.ch.qos.logback>
 
         <version.postgresql>42.7.7</version.postgresql>
@@ -135,7 +135,7 @@
             <dependency>
                 <groupId>org.assertj</groupId>
                 <artifactId>assertj-core</artifactId>
-                <version>3.27.3</version>
+                <version>3.27.4</version>
             </dependency>
 
             <dependency>
@@ -166,7 +166,7 @@
             <dependency>
                 <groupId>com.approvaltests</groupId>
                 <artifactId>approvaltests</artifactId>
-                <version>24.22.0</version>
+                <version>25.0.23</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
