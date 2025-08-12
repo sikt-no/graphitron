@@ -1,9 +1,10 @@
 package no.sikt.graphitron.generators.codebuilding;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.InputDefinition;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,6 +15,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.createNodeIdBlock;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asIterable;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -123,17 +125,15 @@ public class LookupHelpers {
     public static CodeBlock getLookUpKeysAsColumnList(ObjectField ref, CodeBlock table, ProcessedSchema schema) {
         var keyBlocks = getLookupKeys(ref, schema)
                 .stream()
-                .map(it -> buildKey(it, ref, schema))
-                .filter(it -> !it.isEmpty())
-                .map(it -> CodeBlock.of("$L.$L", table, it))
-                .collect(Collectors.toList());
+                .map(it -> buildKey(it, ref, schema, table))
+                .toList();
 
         List<CodeBlock> keysWithInline;
         if (keyBlocks.size() > 1) {
             keysWithInline = keyBlocks
                     .stream()
                     .map(it -> CodeBlock.of("$T.inlined($L)", DSL.className, it))
-                    .collect(Collectors.toList());
+                    .toList();
         } else {
             keysWithInline = keyBlocks;
         }
@@ -149,18 +149,24 @@ public class LookupHelpers {
     }
 
     @NotNull
-    private static CodeBlock buildKey(String key, ObjectField ref, ProcessedSchema schema) {
+    private static CodeBlock buildKey(String key, ObjectField ref, ProcessedSchema schema, CodeBlock table) {
         var components = key.split(",");
         if (components.length < 2) {
             return components.length < 1 ? CodeBlock.empty() : Optional
                     .ofNullable(ref.getArgumentByName(components[0]))
-                    .map(it -> it.isID() ? it.getMappingFromFieldOverride().asGetCall().toString().substring(1) : it.getUpperCaseName())
-                    .map(CodeBlock::of)
+                    .map(it -> getKeyFieldBlock(schema, table, it))
                     .orElse(CodeBlock.empty());
         }
+        return getKeyFieldBlock(schema, table, lastInput(components, schema, ref));
+    }
 
-        var lastInput = lastInput(components, schema, ref);
-        return CodeBlock.of(lastInput.isID() ? lastInput.getMappingFromFieldOverride().asGetCall().toString().substring(1) : lastInput.getUpperCaseName());
+    private static @NotNull CodeBlock getKeyFieldBlock(ProcessedSchema schema, CodeBlock table, InputField it) {
+        if (it.isID()) {
+            return GeneratorConfig.shouldMakeNodeStrategy()
+                    ? createNodeIdBlock(schema.getObject(it.getNodeIdTypeName()), table.toString())
+                    : CodeBlock.of("$L$L", table, it.getMappingFromFieldOverride().asGetCall());
+        }
+        return CodeBlock.of("$L.$L", table, it.getUpperCaseName());
     }
 
     public static CodeBlock getLookupKeysAsList(ObjectField referenceField, ProcessedSchema processedSchema) {

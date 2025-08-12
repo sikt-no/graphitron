@@ -77,8 +77,8 @@ public class NodeIdStrategy {
         return hasIds(typeId, records.stream().map(it -> createId(it, typeId, keyColumnFields)).collect(Collectors.toSet()), keyColumnFields);
     }
 
-    public Condition hasIds(String typeId, Set<String> base64Ids, Field<?>... keyColumnFields) {
-        var rows = getRows(typeId, keyColumnFields, base64Ids);
+    public Condition hasIds(String typeId, Collection<String> base64Ids, Field<?>... keyColumnFields) {
+        var rows = getRows(typeId, keyColumnFields, new HashSet<>(base64Ids));
         return row(keyColumnFields).in(rows);
     }
 

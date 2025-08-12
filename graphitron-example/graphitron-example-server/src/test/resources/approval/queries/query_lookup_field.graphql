@@ -1,0 +1,5 @@
+query FilmLookup($filmId: [String!]!) {
+    filmLookup(filmId: $filmId) {
+        id
+    }
+}

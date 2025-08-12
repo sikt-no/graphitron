@@ -31,6 +31,15 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     }
 
     @Test
+    @DisplayName("As lookup key")
+    void lookupKey() {
+        assertGeneratedContentContains("lookupKey",
+                "nodeIdStrategy.createId(\"C\", _customer.CUSTOMER_ID), DSL.row(",
+                ".where(customerId.size() > 0 ? nodeIdStrategy.hasIds"
+        );
+    }
+
+    @Test
     @DisplayName("With reference")
     void reference() {
         assertGeneratedContentContains("reference",
