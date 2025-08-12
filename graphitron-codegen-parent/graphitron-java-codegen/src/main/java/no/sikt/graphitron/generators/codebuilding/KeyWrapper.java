@@ -166,12 +166,12 @@ public record KeyWrapper(Key<?> key) {
     }
 
     /**
-     * Get the Record TypeName for the key used for a resolver field
+     * Get the Row TypeName for the key used for a resolver field
      *
      * @param field The resolver field
      * @return TypeName of the key variable
      */
-    public static TypeName getKeyRecordTypeName(GenerationField field, ProcessedSchema schema) {
+    public static TypeName getKeyRowTypeName(GenerationField field, ProcessedSchema schema) {
         return findKeyForResolverField(field, schema).getRowTypeName();
     }
 }
