@@ -1,10 +1,10 @@
 package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.InputDefinition;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -154,25 +154,19 @@ public class LookupHelpers {
         if (components.length < 2) {
             return components.length < 1 ? CodeBlock.empty() : Optional
                     .ofNullable(ref.getArgumentByName(components[0]))
-                    .map(it -> {
-                                if (it.isID()) {
-                                    return GeneratorConfig.shouldMakeNodeStrategy()
-                                            ? createNodeIdBlock(schema.getObject(it.getNodeIdTypeName()), table.toString())
-                                            : CodeBlock.of("$L.$L", table, it.getMappingFromFieldOverride().asGetCall().toString().substring(1));
-                                }
-                                return CodeBlock.of("$L.$L", table, it.getUpperCaseName());
-                            }
-                    )
+                    .map(it -> getKeyFieldBlock(schema, table, it))
                     .orElse(CodeBlock.empty());
         }
+        return getKeyFieldBlock(schema, table, lastInput(components, schema, ref));
+    }
 
-        var lastInput = lastInput(components, schema, ref);
-        if (lastInput.isID()) {
+    private static @NotNull CodeBlock getKeyFieldBlock(ProcessedSchema schema, CodeBlock table, InputField it) {
+        if (it.isID()) {
             return GeneratorConfig.shouldMakeNodeStrategy()
-                    ? createNodeIdBlock(schema.getObject(lastInput.getNodeIdTypeName()), table.toString())
-                    : CodeBlock.of("$L.$L", table, lastInput.getMappingFromFieldOverride().asGetCall().toString().substring(1));
+                    ? createNodeIdBlock(schema.getObject(it.getNodeIdTypeName()), table.toString())
+                    : CodeBlock.of("$L$L", table, it.getMappingFromFieldOverride().asGetCall());
         }
-        return CodeBlock.of("$L.$L", table, lastInput.isID() ? lastInput.getMappingFromFieldOverride().asGetCall().toString().substring(1) : lastInput.getUpperCaseName());
+        return CodeBlock.of("$L.$L", table, it.getUpperCaseName());
     }
 
     public static CodeBlock getLookupKeysAsList(ObjectField referenceField, ProcessedSchema processedSchema) {
