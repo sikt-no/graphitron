@@ -5,12 +5,16 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
+import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
 
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asContextFieldName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
@@ -28,14 +32,11 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractS
 
     @Override
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
-        var spec = super
+        return super
                 .getDefaultSpecBuilder(methodName, returnType)
                 .addModifiers(Modifier.STATIC)
-                .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME);
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            spec.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-        }
-        return spec;
+                .addParameter(DSL_CONTEXT.className, VariableNames.CONTEXT_NAME)
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
     }
 
     /**
@@ -44,5 +45,32 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractS
     @Override
     protected TypeName iterableWrapType(GenerationField field) {
         return wrapListIf(inferFieldTypeName(field, true), field.isIterableWrapped());
+    }
+
+    protected List<ParameterSpec> getContextParameters(GenerationField referenceField) {
+        return processedSchema
+                .getAllContextFields(referenceField)
+                .entrySet()
+                .stream()
+                .map((it) -> ParameterSpec.of(it.getValue(), asContextFieldName(it.getKey())))
+                .toList();
+    }
+
+    protected List<ParameterSpec> getMethodParameters(InputParser parser) {
+        return parser
+                .getMethodInputs()
+                .entrySet()
+                .stream()
+                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue()), it.getKey()))
+                .toList();
+    }
+
+    protected List<ParameterSpec> getMethodParametersWithOrderField(InputParser parser) {
+        return parser
+                .getMethodInputsWithOrderField()
+                .entrySet()
+                .stream()
+                .map((it) -> ParameterSpec.of(iterableWrapType(it.getValue()), it.getKey()))
+                .toList();
     }
 }

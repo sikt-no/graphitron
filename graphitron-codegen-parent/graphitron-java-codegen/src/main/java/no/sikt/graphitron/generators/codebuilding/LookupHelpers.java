@@ -15,10 +15,10 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.createNodeIdBlock;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asIterable;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
 
 public class LookupHelpers {
     public static boolean lookupExists(ObjectField referenceField, ProcessedSchema processedSchema) {
@@ -216,12 +216,11 @@ public class LookupHelpers {
             if (i < components.length - 1) {
                 container = schema.getInputType(field);
             }
-            if (previousField.isIterableWrapped()) {
-                var itName = asIterable(previousField.getName());
-                path.add(".stream().map($L -> $N != null ? $N", itName, itName, itName);
-                collectBlock.add(" : $N).collect($T.toList())", "null", COLLECTORS.className);
-            }
-            path.add("$L", field.getMappingFromSchemaName().asGetCall());
+            collectBlock.addIf(previousField.isIterableWrapped(), " : $N)$L", "null", collectToList());
+
+            path
+                    .addIf(previousField.isIterableWrapped(), ".stream().map($1L -> $1N != null ? $1N", asIterable(previousField.getName()))
+                    .add(field.getMappingFromSchemaName().asGetCall());
             previousField = field;
         }
 

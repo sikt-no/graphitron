@@ -72,14 +72,14 @@ public class MethodMapping {
      * @return Format this name for a .set[name]([input]) method call.
      */
     public CodeBlock asSetCall(String input) {
-        return CodeBlock.builder().addStatement("$L$N)", setCallPart, input).build();
+        return CodeBlock.statementOf("$L$N)", setCallPart, input);
     }
 
     /**
      * @return Format this name for a .set[name]([input]) method call.
      */
     public CodeBlock asSetCall(CodeBlock input) {
-        return CodeBlock.builder().addStatement("$L$L)", setCallPart, input).build();
+        return CodeBlock.statementOf("$L$L)", setCallPart, input);
     }
 
     /**

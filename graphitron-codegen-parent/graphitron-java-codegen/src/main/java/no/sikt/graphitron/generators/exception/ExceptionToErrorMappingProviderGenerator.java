@@ -63,7 +63,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
                 .collect(CodeBlock.joining());
 
         var codeBuilder = CodeBlock.builder();
-        mappingVariablesToBlocks.forEach((key, value) -> codeBuilder.add(declare(MAPPING_VARIABLE_PREFIX + key, value)));
+        mappingVariablesToBlocks.forEach((key, value) -> codeBuilder.declare(MAPPING_VARIABLE_PREFIX + key, value));
 
         codeBuilder.add(mutationErrorListsCodeblock);
         return codeBuilder.build();
@@ -149,13 +149,13 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
 
                 if (!databaseMappingVariablesBlock.isEmpty()) {
                     codeBuilder.add("\n");
-                    codeBuilder.add(declare(databaseListName, listOf(databaseMappingVariablesBlock)));
+                    codeBuilder.declare(databaseListName, listOf(databaseMappingVariablesBlock));
                     databaseMappingIsCreatedForMutation = true;
                 }
 
                 if (!genericMappingVariablesBlock.isEmpty()) {
                     codeBuilder.add("\n");
-                    codeBuilder.add(declare(genericListName, listOf(genericMappingVariablesBlock)));
+                    codeBuilder.declare(genericListName, listOf(genericMappingVariablesBlock));
                     genericMappingIsCreatedForMutation = true;
                 }
             }

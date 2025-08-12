@@ -168,6 +168,22 @@ public final class CodeBlock {
         return new Builder().declare(type, name, codeBlock).build();
     }
 
+    public static CodeBlock declareNew(String name, TypeName declareType) {
+        return new Builder().declareNew(name, declareType).build();
+    }
+
+    public static CodeBlock declareNew(String name, TypeName declareType, CodeBlock params) {
+        return new Builder().declareNew(name, declareType, params).build();
+    }
+
+    public static CodeBlock declareNew(TypeName declareType, String name) {
+        return new Builder().declareNew(declareType, name).build();
+    }
+
+    public static CodeBlock declareNew(TypeName declareType, String name, CodeBlock params) {
+        return new Builder().declareNew(declareType, name, params).build();
+    }
+
     public static CodeBlock declareIf(boolean predicate, String name, String format, Object... args) {
         if (predicate) {
             return declare(name, format, args);
@@ -211,6 +227,38 @@ public final class CodeBlock {
     public static CodeBlock declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
         if (predicate) {
             return declare(type, name, codeBlock.get());
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareNewIf(boolean predicate, String name, TypeName declareType) {
+        if (predicate) {
+            return declareNew(name, declareType);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareNewIf(boolean predicate, String name, TypeName declareType, CodeBlock params) {
+        if (predicate) {
+            return declareNew(name, declareType, params);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareNewIf(boolean predicate, TypeName declareType, String name) {
+        if (predicate) {
+            return declareNew(declareType, name);
+        }
+
+        return empty();
+    }
+
+    public static CodeBlock declareNewIf(boolean predicate, TypeName declareType, String name, CodeBlock params) {
+        if (predicate) {
+            return declareNew(declareType, name, params);
         }
 
         return empty();
@@ -490,6 +538,22 @@ public final class CodeBlock {
             return declare(of("$T", type), name, codeBlock);
         }
 
+        public Builder declareNew(String name, TypeName declareType) {
+            return declare(name, "new $T()", declareType);
+        }
+
+        public Builder declareNew(String name, TypeName declareType, CodeBlock params) {
+            return declare(name, "new $T($L)", declareType, params);
+        }
+
+        public Builder declareNew(TypeName declareType, String name) {
+            return declare(of("$T", declareType), name, of("new $T()", declareType));
+        }
+
+        public Builder declareNew(TypeName declareType, String name, CodeBlock params) {
+            return declare(of("$T", declareType), name, of("new $T($L)", declareType, params));
+        }
+
         public Builder declareIf(boolean predicate, String name, String format, Object... args) {
             if (predicate) {
                 declare(name, format, args);
@@ -533,6 +597,38 @@ public final class CodeBlock {
         public Builder declareIf(boolean predicate, TypeName type, String name, Supplier<CodeBlock> codeBlock) {
             if (predicate) {
                 declare(type, name, codeBlock.get());
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, String name, TypeName declareType) {
+            if (predicate) {
+                return declareNew(name, declareType);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, String name, TypeName declareType, CodeBlock params) {
+            if (predicate) {
+                return declareNew(name, declareType, params);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, TypeName declareType, String name) {
+            if (predicate) {
+                return declareNew(declareType, name);
+            }
+
+            return this;
+        }
+
+        public Builder declareNewIf(boolean predicate, TypeName declareType, String name, CodeBlock params) {
+            if (predicate) {
+                return declareNew(declareType, name, params);
             }
 
             return this;

@@ -1,10 +1,10 @@
 package no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.interfaces.TypeResolverTarget;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;

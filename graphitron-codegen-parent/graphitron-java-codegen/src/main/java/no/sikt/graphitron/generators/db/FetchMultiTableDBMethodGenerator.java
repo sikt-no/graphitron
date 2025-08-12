@@ -7,10 +7,7 @@ import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.helpers.query.AfterTokenWithTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
@@ -22,8 +19,10 @@ import org.jooq.SelectSeekStepN;
 import javax.lang.model.element.Modifier;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getPrimaryKeyFieldsWithTableAliasBlock;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethodGenerator.TOKEN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -74,10 +73,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
             sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));
             String mappedVariableName = "mapped" + typeName;
             mappedQueryVariables.put(typeName, mappedVariableName);
-            mappedDeclarationBlock.add(declare(mappedVariableName,
-                    CodeBlock.of("$N($L)",
-                            getMappedMethodName(target, implementation),
-                            GeneratorConfig.shouldMakeNodeStrategy() ? NODE_ID_STRATEGY_NAME : CodeBlock.empty()))
+            mappedDeclarationBlock.declare(
+                    mappedVariableName,
+                    "$N($L)",
+                    getMappedMethodName(target, implementation),
+                    CodeBlock.ofIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY_NAME)
             );
 
             joins.add("\n.leftJoin($N)\n.on($N.field($S, $T.class).eq($N.field($S, $T.class)))",
@@ -92,8 +92,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var returnsMultiple = target.isIterableWrapped() || target.hasForwardPagination();
 
         return CodeBlock.builder()
-                .add(target.hasForwardPagination() ? declare(TOKEN, getTokenVariableDeclaration(implementations)) : CodeBlock.empty())
-                .add(declare(UNION_KEYS_QUERY, unionQuery))
+                .declareIf(target.hasForwardPagination(), TOKEN, () -> getTokenVariableDeclaration(implementations))
+                .declare(UNION_KEYS_QUERY, unionQuery)
                 .add("\n")
                 .add(mappedDeclarationBlock.build())
                 .add("\n")
@@ -103,11 +103,11 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("\n.from($L)", UNION_KEYS_QUERY)
                 .add(joins.build())
                 .add("\n.orderBy($N.field($S), $N.field($S))", UNION_KEYS_QUERY, TYPE_FIELD, UNION_KEYS_QUERY, INNER_ROW_NUM)
-                .add(target.hasForwardPagination() ? CodeBlock.of(".limit($N + 1)\n", PAGE_SIZE_NAME) : CodeBlock.empty())
+                .addIf(target.hasForwardPagination(), ".limit($N + 1)\n", PAGE_SIZE_NAME)
                 .add(returnsMultiple ? "\n.fetch()\n" : "\n.fetchOne();")
-                .add(returnsMultiple ? mapping : CodeBlock.empty())
+                .addIf(returnsMultiple, mapping)
                 .unindent()
-                .add(returnsMultiple ? CodeBlock.empty() : mapping)
+                .addIf(!returnsMultiple, mapping)
                 .build();
     }
 
@@ -131,8 +131,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private static @NotNull CodeBlock getUnionQuery(List<String> subselectVariableNames, Set<String> inputNames, boolean isConnection) {
 
         var inputs = CodeBlock.builder()
-                .add(isConnection ? CodeBlock.of("$N, $N", PAGE_SIZE_NAME, TOKEN) : CodeBlock.empty())
-                .add(isConnection && !inputNames.isEmpty() ? ", " : "")
+                .addIf(isConnection, "$N, $N", PAGE_SIZE_NAME, TOKEN)
+                .addIf(isConnection && !inputNames.isEmpty(), ", ")
                 .add(CodeBlock.join(inputNames.stream().map(CodeBlock::of).collect(Collectors.toSet()), ", "))
                 .build();
 
@@ -182,7 +182,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder()
                 .indent()
                 .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
-                .add(isConnection ? CodeBlock.of("$T $N;\n", RECORD2.className, VARIABLE_RESULT) : CodeBlock.empty())
+                .addIf(isConnection, "$T $N;\n", RECORD2.className, VARIABLE_RESULT)
                 .beginControlFlow("switch ($N.get(0, $T.class))", VARIABLE_INTERNAL_ITERATION, STRING.className);
 
         if (isConnection) {
@@ -230,48 +230,50 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     public List<MethodSpec> generateWithSubselectMethods(ObjectField target) {
-        var methods = new ArrayList<MethodSpec>();
-        methods.add(generate(target));
-        var inputParser = new InputParser(target, processedSchema);
-        var unionOrInterfaceDefinition = processedSchema.isUnion(target)? processedSchema.getUnion(target): processedSchema.getInterface(target);
+        var mainMethod = generate(target);
+        var methodInputs = getMethodParameters(new InputParser(target, processedSchema));
+        var unionOrInterfaceDefinition = processedSchema.isUnion(target)
+                ? processedSchema.getUnion(target)
+                : processedSchema.getInterface(target);
 
-        processedSchema
-                .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName())
-                .forEach(implementation -> {
-                    var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
-                    var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+        return Stream.concat(
+                Stream.of(mainMethod),
+                processedSchema
+                        .getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName())
+                        .stream()
+                        .map(it -> getMethodsForImplementation(target, it, methodInputs))
+                        .flatMap(Collection::stream)
+        ).toList();
+    }
 
-                    var sortFieldsMethod = MethodSpec
-                            .methodBuilder(getSortFieldsMethodName(target, implementation))
-                            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                            .returns(getReturnTypeForKeysMethod(target.hasForwardPagination()))
-                            .addCode(getSortFieldsMethodCode(implementation, context, target));
+    private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
+        var virtualReference = new VirtualSourceField(implementation, target.getTypeName(), target.getNonReservedArguments(), target.getCondition());
+        var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+        return List.of(getSortFieldsMethod(target, implementation, context, methodInputs), getMappedMethod(target, implementation, context));
+    }
 
-                    if (target.hasForwardPagination()) {
-                        sortFieldsMethod
-                                .addParameter(Integer.class, PAGE_SIZE_NAME)
-                                .addParameter(AfterTokenWithTypeName.class, TOKEN);
-                    }
+    private MethodSpec getSortFieldsMethod(ObjectField target, ObjectDefinition implementation, FetchContext context, List<ParameterSpec> methodInputs) {
+        return MethodSpec
+                .methodBuilder(getSortFieldsMethodName(target, implementation))
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(getReturnTypeForKeysMethod(target.hasForwardPagination()))
+                .addCode(getSortFieldsMethodCode(implementation, context, target))
+                .addParameterIf(target.hasForwardPagination(), Integer.class, PAGE_SIZE_NAME)
+                .addParameterIf(target.hasForwardPagination(), AfterTokenWithTypeName.class, TOKEN)
+                .addParameters(methodInputs)
+                .build();
+    }
 
-                    inputParser.getMethodInputs()
-                            .forEach((key, value) -> sortFieldsMethod.addParameter(iterableWrapType(value), key));
-
-                    var mappedMethod = MethodSpec
-                            .methodBuilder(getMappedMethodName(target, implementation))
-                            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                            .returns(target.hasForwardPagination() ?
-                                    getReturnTypeForMappedConnectionMethod(implementation.getGraphClassName())
-                                    : getReturnTypeForMappedMethod(implementation.getGraphClassName()))
-                            .addCode(getMappedMethodCode(target, implementation, context));
-
-                    if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                        mappedMethod.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-                    }
-
-                    methods.add(sortFieldsMethod.build());
-                    methods.add(mappedMethod.build());
-                });
-        return methods;
+    private MethodSpec getMappedMethod(ObjectField target, ObjectDefinition implementation, FetchContext context) {
+        return MethodSpec
+                .methodBuilder(getMappedMethodName(target, implementation))
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(target.hasForwardPagination() ?
+                        getReturnTypeForMappedConnectionMethod(implementation.getGraphClassName())
+                        : getReturnTypeForMappedMethod(implementation.getGraphClassName()))
+                .addCode(getMappedMethodCode(target, implementation, context))
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
+                .build();
     }
 
     private CodeBlock getMappedMethodCode(ObjectField target, ObjectDefinition implementation, FetchContext context) {
@@ -286,12 +288,12 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(getPrimaryKeyFieldsArray(implementation.getName(), querySource.toString(), context.getTargetTable().getName()))
                 .add(".as($S),\n$T.field(\n", PK_FIELDS, DSL.className)
                 .indent()
-                .add(target.hasForwardPagination() ? CodeBlock.of("$T.row(\n", DSL.className) : CodeBlock.empty())
-                .add(target.hasForwardPagination() ? CodeBlock.of("$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
-                        QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName()) : CodeBlock.empty())
+                .addIf(target.hasForwardPagination(), "$T.row(\n", DSL.className)
+                .addIf(target.hasForwardPagination(), "$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
+                        QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName())
                 .add("$T.select($L)", DSL.className, indentIfMultiline(selectCode))
                 .unindent()
-                .add(target.hasForwardPagination() ? CodeBlock.of(")\n") : CodeBlock.empty())
+                .addIf(target.hasForwardPagination(), ")\n")
                 .add("\n).as($S))", DATA_FIELD)
                 .add("\n.from($L);", querySource)
                 .unindent()
@@ -310,7 +312,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         String implName = implementation.getName();
 
         code.add(createAliasDeclarations(context.getAliasSet()))
-                .add(declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsWithTableAliasBlock(alias)))
+                .declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsWithTableAliasBlock(alias))
                 .add("return $T.select(\n", DSL.className)
                 .indent()
                 .add("$T.inline($S).as($S),\n", DSL.className, implName, TYPE_FIELD)

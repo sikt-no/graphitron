@@ -1,14 +1,15 @@
 package no.sikt.graphitron.generators.mapping;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.abstractions.AbstractMapperMethodGenerator;
 import no.sikt.graphitron.generators.context.MapperContext;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.ifNotNull;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 
 public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
@@ -61,22 +62,21 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
 
             if (!innerCode.isEmpty()) {
                 var varName = innerContext.getHelperVariableName();
-                CodeBlock declareBlock;
-                if (isType) {
-                    declareBlock = declare(varName, toRecord ? innerContext.getSourceGetCallBlock() : CodeBlock.of("new $T()", innerContext.getTargetType().getGraphClassName()));
-                    if (toRecord) {
-                        fieldCode.add(declareBlock);
-                    }
-                } else {
-                    declareBlock = CodeBlock.empty();
-                }
+                var declareBlock = CodeBlock.declareIf(
+                        isType,
+                        varName,
+                        () -> toRecord
+                                ? innerContext.getSourceGetCallBlock()
+                                : CodeBlock.of("new $T()", innerContext.getTargetType().getGraphClassName())
+                );
 
                 var ifBlock = isType && toRecord ? ifNotNull(varName) : CodeBlock.of("if ($L)", selectionSetLookup(innerContext.getPath(), false, toRecord));
                 fieldCode
+                        .addIf(isType && toRecord, declareBlock)
                         .beginControlFlow("$L", ifBlock)
-                        .add(isType && !toRecord && previousHadSource ? declareBlock : CodeBlock.empty())
+                        .addIf(isType && !toRecord && previousHadSource, declareBlock)
                         .add(innerCode.build())
-                        .add(isType && !toRecord && previousHadSource ? innerContext.getSetMappingBlock(varName) : CodeBlock.empty())
+                        .addIf(isType && !toRecord && previousHadSource, () -> innerContext.getSetMappingBlock(varName))
                         .endControlFlow()
                         .add("\n");
             }

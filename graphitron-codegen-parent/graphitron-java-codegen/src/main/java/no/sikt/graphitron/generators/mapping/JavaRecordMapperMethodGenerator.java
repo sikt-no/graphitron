@@ -8,7 +8,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
 import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
@@ -61,11 +61,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
             if (!innerCode.isEmpty()) {
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
-                if (notAlreadyDefined) {
-                    fieldCode.add(declare(varName, innerContext.getSourceGetCallBlock()));
-                }
-                var nullBlock = notAlreadyDefined ? CodeBlock.of("$N != null && ", varName) : CodeBlock.empty();
+                var nullBlock = CodeBlock.ofIf(notAlreadyDefined, "$N != null && ", varName);
                 fieldCode
+                        .declareIf(notAlreadyDefined, varName, innerContext.getSourceGetCallBlock())
                         .beginControlFlow("if ($L$L)", nullBlock, selectionSetLookup(innerContext.getPath(), false, toRecord))
                         .add(innerCode.build())
                         .endControlFlow()

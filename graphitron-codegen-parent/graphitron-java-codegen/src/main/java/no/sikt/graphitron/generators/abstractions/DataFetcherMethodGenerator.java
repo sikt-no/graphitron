@@ -19,7 +19,6 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.NODE_ID_STRATEGY;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator {
     protected final List<WiringContainer> dataFetcherWiring = new ArrayList<>();
@@ -30,36 +29,30 @@ abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator
 
     @Override
     public MethodSpec.Builder getDefaultSpecBuilder(String methodName, TypeName returnType) {
-        MethodSpec.Builder builder = super
+        return super
                 .getDefaultSpecBuilder(methodName, returnType)
-                .addModifiers(Modifier.STATIC);
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            builder.addParameter(NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
-        }
-
-        return builder;
+                .addModifiers(Modifier.STATIC)
+                .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME);
     }
 
     protected CodeBlock extractParams(ObjectField target) {
-        var code = CodeBlock.builder();
-
         var localObject = getLocalObject();
-        if (!localObject.isOperationRoot()) {
-            var getSource = asCast(localObject.getGraphClassName(), asMethodCall(VARIABLE_ENV, METHOD_SOURCE_NAME));
-            code.add(declare(uncapitalize(localObject.getName()), getSource));
-        }
-
-        target.getArguments().forEach(it -> code.add(declareArgument(it)));
-        if (target.hasForwardPagination()) {
-            code.add(declarePageSize(target.getFirstDefault()));
-        }
-        return code.build();
+        return CodeBlock
+                .builder()
+                .declareIf(
+                        !localObject.isOperationRoot(),
+                        localObject.getName(),
+                        () -> asCast(localObject.getGraphClassName(), asMethodCall(VARIABLE_ENV, METHOD_SOURCE_NAME))
+                )
+                .addAll(target.getArguments().stream().map(this::declareArgument).toList())
+                .addIf(target.hasForwardPagination(), declarePageSize(target.getFirstDefault()))
+                .build();
     }
 
     private CodeBlock declareArgument(ArgumentField field) {
         var getBlock = CodeBlock.of("$N.get($S)", VARIABLE_ARGS, field.getName());
         var transformBlock = !processedSchema.isRecordType(field) ? asCast(iterableWrapType(field), getBlock) : transformDTOBlock(field, getBlock);
-        return declare(field.getName(), transformBlock);
+        return CodeBlock.declare(field.getName(), transformBlock);
     }
 
     protected CodeBlock transformDTOBlock(GenerationField field, CodeBlock source) {

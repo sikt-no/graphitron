@@ -9,7 +9,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Objects;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.METHOD_CONTEXT_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.TRANSFORMER_NAME;
 
@@ -52,7 +51,7 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return declare(getName(), CodeBlock.of("new $T($L)", getTypeName(), asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)));
+        return CodeBlock.declare(getName(), "new $T($L)", getTypeName(), asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME));
     }
 
     @Override
@@ -67,8 +66,7 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof NamedDependency)) return false;
-        NamedDependency that = (NamedDependency) o;
+        if (!(o instanceof NamedDependency that)) return false;
         return getName().equals(that.getName()) && Objects.equals(getPath(), that.getPath());
     }
 

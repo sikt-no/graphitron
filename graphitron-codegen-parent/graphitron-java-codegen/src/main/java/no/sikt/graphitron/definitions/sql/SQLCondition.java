@@ -68,7 +68,7 @@ public class SQLCondition extends CodeReferenceWrapper {
                 .builder()
                 .add("$N.$L(", declaringName, methodName)
                 .add(StringUtils.repeat("$L", ", ", methodInputs.size()), methodInputs.toArray())
-                .add(contextFields.isEmpty() ? "" : ", ")
+                .addIf(!contextFields.isEmpty(), ", ")
                 .add(StringUtils.repeat("$L", ", ", contextFields.size()), contextFields.keySet().stream().map(NameFormat::asContextFieldName).toList().toArray())
                 .add(")")
                 .build();

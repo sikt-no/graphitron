@@ -72,29 +72,26 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
             whereCondition = CodeBlock.of("$L.$L($N)", querySource, hasOrIn, argumentName);
         }
 
-        var code = CodeBlock.builder()
-                .add(createAliasDeclarations(context.getAliasSet()))
-                .add("return $N\n", VariableNames.CONTEXT_NAME)
+        return getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
+                .addParameter(getStringSetTypeName(), argumentName)
+                .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
+                .addCode(createAliasDeclarations(context.getAliasSet()))
+                .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .add(".select(")
-                .add(indentIfMultiline(id))
-                .add(")\n.from($L)\n", querySource)
-                .add(createSelectJoins(context.getJoinSet()))
-                .add(".where($L)\n", whereCondition)
-                .add(createSelectConditions(context.getConditionList(), true))
-                .addStatement(".$L($T::value1, $T::value2)",
+                .addCode(".select($L)\n", indentIfMultiline(id))
+                .addCode(".from($L)\n", querySource)
+                .addCode(createSelectJoins(context.getJoinSet()))
+                .addCode(".where($L)\n", whereCondition)
+                .addCode(createSelectConditions(context.getConditionList(), true))
+                .addStatement(
+                        ".$L($T::value1, $T::value2)",
                         (!target.isIterableWrapped() ? "fetchMap" : "fetchGroups"),
                         RECORD2.className,
                         RECORD2.className
                 )
                 .unindent()
-                .unindent();
-
-        return getDefaultSpecBuilder(asNodeQueryName(implementation.getName()), wrapStringMap(implementation.getGraphClassName()))
-                .addParameter(getStringSetTypeName(), argumentName)
-                .addParameter(SELECTION_SET.className, VARIABLE_SELECT)
-                .addCode(code.build())
+                .unindent()
                 .build();
     }
 

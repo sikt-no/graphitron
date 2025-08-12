@@ -13,10 +13,10 @@ import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -54,42 +54,29 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
-        Optional<CodeBlock> maybeOrderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
-                ? maybeCreateOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
-                : Optional.empty();
+        var orderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
+                ? createOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
+                : CodeBlock.empty();
 
-        var hasNonSubqueryFields = !processedSchema.isRecordType(target) || processedSchema.getRecordType(target)
-                .getFields()
-                .stream()
-                .anyMatch(it -> !it.invokesSubquery() || processedSchema.isRecordType(it) && processedSchema.getRecordType(it).hasTable() && !processedSchema.getRecordType(it).getTable().equals(context.getTargetTable()));
-        var code = CodeBlock
-                .builder()
-                .add(selectAliasesBlock)
-                .add(maybeOrderFields.orElse(CodeBlock.empty()))
-                .add("return $N\n", VariableNames.CONTEXT_NAME)
-                .indent()
-                .indent()
-                .add(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
-                .addIf(!querySource.isEmpty() && (hasNonSubqueryFields || context.hasApplicableTable()), ".from($L)\n", querySource)
-                .add(createSelectJoins(context.getJoinSet()))
-                .add(whereBlock)
-                .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .add(target.isResolver() ? CodeBlock.empty() : maybeOrderFields
-                        .map(it -> CodeBlock.of(".orderBy($L)\n", ORDER_FIELDS_NAME))
-                        .orElse(CodeBlock.empty()))
-                .add(target.hasForwardPagination() && !target.isResolver()
-                        ? createSeekAndLimitBlock()
-                        : CodeBlock.empty())
-                .add(setFetch(target))
-                .unindent()
-                .unindent();
-
-        var parser = new InputParser(target, processedSchema);
         var returnType = processedSchema.isRecordType(target)
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
-        return getSpecBuilder(target, returnType, parser)
-                .addCode(code.build())
+        return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
+                .addCode(selectAliasesBlock)
+                .addCode(orderFields)
+                .addCode("return $N\n", VariableNames.CONTEXT_NAME)
+                .indent()
+                .indent()
+                .addCode(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
+                .addCodeIf(!querySource.isEmpty() && (context.hasNonSubqueryFields() || context.hasApplicableTable()), ".from($L)\n", querySource)
+                .addCode(createSelectJoins(context.getJoinSet()))
+                .addCode(whereBlock)
+                .addCode(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
+                .addCodeIf(!target.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", ORDER_FIELDS_NAME)
+                .addCodeIf(target.hasForwardPagination() && !target.isResolver(), this::createSeekAndLimitBlock)
+                .addCode(setFetch(target))
+                .unindent()
+                .unindent()
                 .build();
     }
 
@@ -104,7 +91,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         return indentIfMultiline(
                 Stream.of(
                         getInitialKey(context),
-                        target.hasForwardPagination() && !target.isResolver() ? CodeBlock.of("$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME) : CodeBlock.empty(),
+                        CodeBlock.ofIf(target.hasForwardPagination() && !target.isResolver(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME),
                         selectRowBlock
                 ).collect(CodeBlock.joining())
         );
@@ -131,7 +118,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (refObject == null) {
-            return CodeBlock.builder().addStatement(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", referenceField.getTypeClass()).build();
+            return CodeBlock.statementOf(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", referenceField.getTypeClass());
         }
 
         if (referenceField.hasForwardPagination()) {
@@ -140,10 +127,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
         if (isRoot && !lookupExists) {
-            return CodeBlock
-                    .builder()
-                    .addStatement(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName())
-                    .build();
+            return CodeBlock.statementOf(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName());
         }
 
         var code = CodeBlock.builder()

@@ -66,7 +66,7 @@ public class LookupTest extends GeneratorTest {
     void mixedKeys() {
         assertGeneratedContentContains(
                 "mixedKeys", Set.of(DUMMY_INPUT),
-                "keys = List.of(id, ResolverHelpers.formatString(i), in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))",
+                "keys = List.of(id, ResolverHelpers.formatString(i), in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())",
                 "queryForQuery(ctx, id, in, i,"
         );
     }
@@ -76,7 +76,7 @@ public class LookupTest extends GeneratorTest {
     void inputKey() {
         assertGeneratedContentContains(
                 "inputKey", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
         );
     }
 
@@ -86,7 +86,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKey() {
         assertGeneratedContentContains(
                 "nestedInputKey", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).collect(Collectors.toList()))"
+                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).toList())"
         );
     }
 
@@ -96,7 +96,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputIntegerKey() {
         assertGeneratedContentContains(
                 "nestedInputIntegerKey",
-                "List.of(ResolverHelpers.formatString(in.stream().map(it -> it != null ? it.getIn().getId() : null).collect(Collectors.toList())))"
+                "List.of(ResolverHelpers.formatString(in.stream().map(it -> it != null ? it.getIn().getId() : null).toList()))"
         );
     }
 
@@ -106,7 +106,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKeyMiddle() {
         assertGeneratedContentContains(
                 "nestedInputKeyMiddle", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).collect(Collectors.toList()))"
+                "keys = List.of(in.stream().map(it -> it != null ? it.getIn().getId() : null).toList())"
         );
     }
 
@@ -116,7 +116,7 @@ public class LookupTest extends GeneratorTest {
     void nestedInputKeyWithMiddleList() {
         assertGeneratedContentContains(
                 "nestedInputKeyWithMiddleList", Set.of(DUMMY_INPUT),
-                "keys = List.of(in.getIn().stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+                "keys = List.of(in.getIn().stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
         );
     }
 
@@ -125,7 +125,7 @@ public class LookupTest extends GeneratorTest {
     void keyInListedInput() {
         assertGeneratedContentContains(
                 "keyInListedInput",
-                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
         );
     }
 
@@ -140,7 +140,7 @@ public class LookupTest extends GeneratorTest {
     void keyInInputWithDuplicateDirective() {
         assertGeneratedContentContains(
                 "keyInInputWithDuplicateDirective",
-                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).collect(Collectors.toList()))"
+                "keys = List.of(in.stream().map(itIn -> itIn != null ? itIn.getId() : null).toList())"
         );
     }
 

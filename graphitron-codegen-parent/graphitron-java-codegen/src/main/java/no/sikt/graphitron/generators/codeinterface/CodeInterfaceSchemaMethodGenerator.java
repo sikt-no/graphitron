@@ -9,7 +9,6 @@ import no.sikt.graphitron.generators.codeinterface.wiring.WiringBuilderMethodGen
 
 import javax.lang.model.element.Modifier;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.declare;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_HANDLER_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
@@ -44,8 +43,8 @@ public class CodeInterfaceSchemaMethodGenerator extends SimpleMethodGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .addModifiers(Modifier.STATIC)
                 .returns(GRAPHQL_SCHEMA.className)
-                .addCode(declare(VAR_WIRING, CodeBlock.of("$L$L", WiringBuilderMethodGenerator.METHOD_NAME, code)))
-                .addCode(declare(VAR_REGISTRY, CodeBlock.of("$L()", TypeRegistryMethodGenerator.METHOD_NAME)))
+                .declare(VAR_WIRING, "$L$L", WiringBuilderMethodGenerator.METHOD_NAME, code)
+                .declare(VAR_REGISTRY, "$L()", TypeRegistryMethodGenerator.METHOD_NAME)
                 .addCode(returnWrap(CodeBlock.of("new $T().makeExecutableSchema($N, $N.build())", SCHEMA_GENERATOR.className, VAR_REGISTRY, VAR_WIRING)))
                 .build();
     }
