@@ -17,7 +17,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRecordTypeName;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
@@ -114,7 +114,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 asCountMethodName(referenceField.getName(), getLocalObject().getName()),
                 INTEGER.className
         )
-                .addParameterIf(!isRoot, () -> wrapSet(getKeyRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(getMethodParameters(parser))
                 .addParameters(getContextParameters(referenceField));
     }

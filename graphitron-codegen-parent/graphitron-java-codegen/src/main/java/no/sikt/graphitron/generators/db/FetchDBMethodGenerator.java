@@ -39,7 +39,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRecordTypeName;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
@@ -995,7 +995,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
                 getReturnType(referenceField, refTypeName)
         )
-                .addParameterIf(!isRoot, () -> wrapSet(getKeyRecordTypeName(referenceField, processedSchema)), resolverKeyParamName)
+                .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
                 .addParameters(getMethodParametersWithOrderField(parser))
                 .addParameterIf(referenceField.hasForwardPagination(), INTEGER.className, PAGE_SIZE_NAME)
                 .addParameterIf(referenceField.hasForwardPagination(), STRING.className, GraphQLReservedName.PAGINATION_AFTER.getName())
@@ -1012,7 +1012,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (isRoot && !lookupExists) {
             return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
         } else if (!isRoot) {
-            return wrapMap(getKeyRecordTypeName(referenceField, processedSchema), wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
+            return wrapMap(getKeyRowTypeName(referenceField, processedSchema), wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }
