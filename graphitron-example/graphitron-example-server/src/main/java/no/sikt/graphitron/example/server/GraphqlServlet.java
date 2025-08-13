@@ -32,6 +32,8 @@ public class GraphqlServlet extends GraphitronServlet {
     protected GraphQL getSchema(HttpServletRequest request) {
         var registry = Graphitron.getTypeRegistry();
         var newWiring = Graphitron.getRuntimeWiringBuilder(nodeIdStrategy);
+
+
         newWiring.type(
                 TypeRuntimeWiring.newTypeWiring("Query")
                         .dataFetcher("helloWorld", QueryDataFetcher.helloWorld())

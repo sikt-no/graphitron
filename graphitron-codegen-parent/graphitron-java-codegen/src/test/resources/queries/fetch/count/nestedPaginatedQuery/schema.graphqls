@@ -1,0 +1,24 @@
+type Query {
+    cities: [City] @asConnection
+}
+
+type City implements Node @table{
+    id: ID!
+    addressesPaginated(first: Int = 100, after: String): CityAddressesPaginatedConnection @splitQuery
+}
+
+type CityAddressesPaginatedConnection {
+    edges: [CityAddressesPaginatedConnectionEdge]
+    pageInfo: PageInfo
+    nodes: [Address]
+    totalCount: Int
+}
+
+type CityAddressesPaginatedConnectionEdge {
+    cursor: String
+    node: Address
+}
+
+type Address implements Node @table {
+    id: ID!
+}

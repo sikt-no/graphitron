@@ -121,7 +121,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
             int pageSize,
             int maxNodes,
             Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
-            Function<Set<K>, Integer> countFunction,
+            Function<Set<K>, Map<K,Integer>> countFunction,
             TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform,
             Function<ConnectionImpl<V1>, C> connectionFunction
     ) {
@@ -148,7 +148,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
             int maxNodes,
             int pageSize,
             Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
-            Function<Set<K>, Integer> countFunction,
+            Function<Set<K>, Map<K,Integer>> countFunction,
             TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform,
             Function<ConnectionImpl<V1>, C> connectionFunction
     ) {
