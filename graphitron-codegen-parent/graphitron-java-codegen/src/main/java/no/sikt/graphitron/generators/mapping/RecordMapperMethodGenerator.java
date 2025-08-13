@@ -35,7 +35,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
         var type = context.getTargetType();
         var fields = (toRecord ? type.getInputsSortedByNullability().stream().filter(it -> !processedSchema.hasJOOQRecord(it)).toList() : type.getFields())
                 .stream()
-                .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
+                .filter(it -> !(it.isExplicitlyNotGenerated()))
                 .toList();
         for (var innerField : fields) {
             if (innerField.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName())) {
@@ -52,7 +52,9 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             var previousHadSource = innerContext.getPreviousContext().hasSourceName();
 
             var innerCode = CodeBlock.builder();
-            if (!isType) {
+            if (innerField.isResolver()) {
+                innerCode.add(innerContext.getResolverKeySetMappingBlock());
+            } else if (!isType) {
                 innerCode.add(innerContext.getFieldSetMappingBlock());
             } else if (!innerField.isResolver() && !innerContext.hasTable()) {
                 innerCode.add(iterateRecords(innerContext));
@@ -63,7 +65,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             if (!innerCode.isEmpty()) {
                 var varName = innerContext.getHelperVariableName();
                 var declareBlock = CodeBlock.declareIf(
-                        isType,
+                        isType && !innerField.isResolver(),
                         varName,
                         () -> toRecord
                                 ? innerContext.getSourceGetCallBlock()
@@ -76,7 +78,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                         .beginControlFlow("$L", ifBlock)
                         .addIf(isType && !toRecord && previousHadSource, declareBlock)
                         .add(innerCode.build())
-                        .addIf(isType && !toRecord && previousHadSource, () -> innerContext.getSetMappingBlock(varName))
+                        .addIf(isType && !toRecord && previousHadSource && !innerField.isResolver(), () -> innerContext.getSetMappingBlock(varName))
                         .endControlFlow()
                         .add("\n");
             }

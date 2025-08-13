@@ -75,6 +75,7 @@ type Customer implements Node @node @table {
     name: CustomerName
     email: String
     address: Address!
+    addressSplitQuery: Address @splitQuery
 }
 
 type CustomerName {

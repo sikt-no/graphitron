@@ -31,7 +31,8 @@ public class NameFormat {
             RESPONSE_TRANSFORM_JOOQ_SUFFIX = RECORD_NAME_SUFFIX + RESPONSE_TRANSFORM_SUFFIX,
             RESPONSE_TRANSFORM_JAVA_SUFFIX = RESPONSE_TRANSFORM_SUFFIX,
             VALIDATE_PREFIX = "validate",
-            TYPE_RESOLVER_SUFFIX = "TypeResolver";
+            TYPE_RESOLVER_SUFFIX = "TypeResolver",
+            RESOLVER_KEY_DTO_SUFFIX = "Key";
 
     /**
      * @return Format this name to not block schema namespace.
