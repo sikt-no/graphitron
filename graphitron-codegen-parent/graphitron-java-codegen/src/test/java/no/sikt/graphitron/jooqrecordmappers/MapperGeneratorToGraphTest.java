@@ -160,4 +160,12 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void withEnum() {
         assertGeneratedContentContains("withEnum", Set.of(SchemaComponent.DUMMY_ENUM),".setE(QueryHelper.makeEnumMap(itFilmRecord.getRating(),");
     }
+
+    @Test
+    @DisplayName("SplitQuery field")
+    void withSplitQueryReference() {
+        assertGeneratedContentContains("withSplitQueryReference",
+                " if (select.contains(pathHere + \"address\")) {customer.setAddressKey(DSL.row(itCustomerRecord.getCustomerId()));}"
+        );
+    }
 }

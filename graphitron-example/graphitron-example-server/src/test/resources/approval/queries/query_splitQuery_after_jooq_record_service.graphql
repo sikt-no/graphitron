@@ -1,0 +1,9 @@
+{
+    customerService {
+        id
+        addressSplitQuery {
+            id
+            addressLine1
+        }
+    }
+}

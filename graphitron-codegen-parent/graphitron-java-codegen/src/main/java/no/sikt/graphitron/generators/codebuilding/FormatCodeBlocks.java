@@ -284,15 +284,15 @@ public class FormatCodeBlocks {
      * @return CodeBlock that sets a value through a mapping.
      */
     @NotNull
-    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value) {
-        return CodeBlock.of("$N$L", uncapitalize(container), mapping.asSetCall(value));
+    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value, boolean isResolverKey) {
+        return CodeBlock.of("$N$L", uncapitalize(container), isResolverKey ? mapping.asSetKeyCall(value) : mapping.asSetCall(value));
     }
 
     /**
      * @return CodeBlock that sets a value through a mapping.
      */
     @NotNull
-    public static CodeBlock setValue(String container, MethodMapping mapping, String value) {
+    public static CodeBlock setValue(String container, MethodMapping mapping, CodeBlock value) {
         return CodeBlock.of("$N$L", uncapitalize(container), mapping.asSetCall(value));
     }
     /**

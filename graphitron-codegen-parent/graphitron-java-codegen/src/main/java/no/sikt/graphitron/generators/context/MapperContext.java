@@ -11,11 +11,13 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.Nullable;
+import org.jooq.Field;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.Recursion.recursionCheck;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getForeignKeyForNodeIdReference;
@@ -283,6 +285,12 @@ public class MapperContext {
             return CodeBlock.of(asRecordName(previousContext.targetName));
         } else if (!toRecord && schema.isNodeIdField(target)) {
             return createNodeIdBlockForRecord(schema.getRecordType(target.getContainerTypeName()), asIterableIf(previousContext.sourceName, previousContext.isIterable));
+        } else if (target.isResolver()) {
+            return findKeyForResolverField(target, schema).key().getFields().stream()
+                    .map(Field::getName)
+                    .map(it -> new MethodMapping(toCamelCase(it)))
+                    .map(it -> getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), it))
+                    .collect(CodeBlock.joining(", "));
         }
         return getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), getSourceMapping);
     }
@@ -375,7 +383,7 @@ public class MapperContext {
                     foreignKey.isPresent() ? referenceNodeIdColumnsBlock(schema.getRecordType(target.getContainerTypeName()), nodeType, foreignKey.get()) : nodeIdColumnsBlock(nodeType)
             );
         }
-        return setValue(previousContext.targetName, setTargetMapping, valueToSet);
+        return setValue(previousContext.targetName, setTargetMapping, valueToSet, target.isResolver());
     }
 
     public CodeBlock getSetMappingBlock(String valueToSet) {
@@ -384,6 +392,10 @@ public class MapperContext {
 
     public CodeBlock getFieldSetMappingBlock() {
         return getSetMappingBlock(applyEnumConversion(target.getTypeName(), getSourceGetCallBlock()));
+    }
+
+    public CodeBlock getResolverKeySetMappingBlock() {
+        return getSetMappingBlock(wrapRow(getSourceGetCallBlock()));
     }
 
     public CodeBlock getRecordSetMappingBlock() {

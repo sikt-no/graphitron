@@ -2,6 +2,7 @@ package no.sikt.graphitron.definitions.mapping;
 
 import no.sikt.graphitron.javapoet.CodeBlock;
 
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY_DTO_SUFFIX;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.COLLECTORS;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -10,7 +11,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
  * Stores operations related to rendering get and set method calls.
  */
 public class MethodMapping {
-    private final String name, get, camelGet, set, has, camelHas, setCallPart, hasCallPart, hasIterableCallPart, camelHasCallPart, camelHasIterableCallPart;
+    private final String name, get, camelGet, set, has, camelHas, setCallPart, setKeyCallPart, hasCallPart, hasIterableCallPart, camelHasCallPart, camelHasIterableCallPart;
     private final CodeBlock getCall;
 
     public MethodMapping(String name) {
@@ -21,6 +22,7 @@ public class MethodMapping {
 
         set = "set" + capitalize(name);
         setCallPart = "." + set + "(";
+        setKeyCallPart = "." + set + RESOLVER_KEY_DTO_SUFFIX + "(";
 
         has = "has" + capitalize(name);
         var hasIterable = has + "s";
@@ -80,6 +82,10 @@ public class MethodMapping {
      */
     public CodeBlock asSetCall(CodeBlock input) {
         return CodeBlock.statementOf("$L$L)", setCallPart, input);
+    }
+
+    public CodeBlock asSetKeyCall(CodeBlock input) {
+        return CodeBlock.builder().addStatement("$L$L)", setKeyCallPart, input).build();
     }
 
     /**

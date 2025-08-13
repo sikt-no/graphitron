@@ -9,7 +9,9 @@ public class CustomerService {
     }
 
     public CustomerRecord customer() {
-        return null;
+        var customer = new CustomerRecord();
+        customer.setCustomerId(3);
+        return customer;
     }
 
     public CustomerRecord customer(CustomerRecord input) {
