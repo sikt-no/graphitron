@@ -1,6 +1,6 @@
 # Graphitron
 This is a code generation tool that implements GraphQL schemas by tying
-schemas to underlying database models. Graphitron creates complete or partial resolver implementations from GraphQL-schemas
+schemas to underlying database models. Graphitron creates complete or partial data fetcher implementations from GraphQL-schemas
 using Java and [jOOQ](https://www.jooq.org/).
 
 ## Features
@@ -8,55 +8,21 @@ using Java and [jOOQ](https://www.jooq.org/).
   * In many cases, writing backend code can be skipped entirely!
   * Need more advanced queries? Graphitron provides options for setting custom conditions, sorting, queries and more,
   while still taking care of the GraphQL-side of things
-  * If needed, code generation can be skipped for individual resolvers
+  * If needed, code generation can be skipped for individual data fetchers
 * Supports Apollo Federation
 * Error handling
 
+## New project setup
+Coming soon.
+
 ## Usage
 See the [example project](../../graphitron-example) for a complete example of how to set up and use Graphitron.
-This project is also used for running integration tests ensuring that Graphitron generates resolvers that work as expected.
+This project is also used for running integration tests ensuring that Graphitron generates data fetchers that work as expected.
 The example project includes a [README.md](../graphitron-example/README.md) file detailing the setup and usage of the example project.
 
-## Maven Settings
-### Goals
-The _generate_ Maven goal allows Graphitron to be called as part of the build pipeline. It generates all the classes
-that are set to generate in the schema. Additionally, the _watch_ goal can be used locally to watch GraphQL files
-for changes, and regenerate code without having to re-run generation manually each time.
-This feature is still experimental and may be outdated.
-
-### Configuration
-In order to find the schema files and any custom methods, Graphitron also provides some configuration options.
-The options are the same for both goals.
-
-#### General settings
-* `outputPath` - The location where the code will be generated.
-* `outputPackage` - The package path of the generated code.
-* `schemaFiles` - Set of schema files which should be used for the generation process.
-* `userSchemaFiles` - Set of schema files to provide to the user.
-* `generatedSchemaCodePackage` - The location of the graphql-codegen generated classes.
-* `jooqGeneratedPackage` - The location of the jOOQ generated code.
-* `externalReferences` - See [Code references](#code-references).
-* `externalReferenceImports` - See [Code references](#code-references).
-* `globalRecordTransforms` - See [Code references](#code-references).
-* `extensions` -  See [Code references](#code-references).
-* `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based resolvers. And thus also the database query limit.
-* `scalars` - Extra scalars that can be used in code generation and that will be added automatically to the wiring. Reflection is used to find all the scalar definitions of the provided class(es).
-* `makeKickstart` - Flag indicating if Graphitron should generate code compatible with graphql-kickstart.
-* `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
-  * `enabled` - Flag indicating if Graphitron should generate record validation code
-  * `schemaErrorType` - Name of the schema error to be returned in case of validation violations and IllegalArgumentExceptions.
-    If null while `enabled` is true all validation violations and IllegalArgumentExceptions will instead cause
-    _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
-    Also, if the given error is not present in the schema as a returnable error for a specific mutation,
-    validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
-
-See the [pom.xml](../graphitron-example/graphitron-example-spec/pom.xml) of graphitron-example-spec for an example on how to configure these settings.
-
-#### Code interface
+### Code interface
 Graphitron provides a static generated class for accessing the generated results in a user-friendly way.
-This will be available after the first run of Graphitron codegen.
-
-Until ID handling gets another rework on our end, a [nodeIdHandler](#implement-and-configure-nodeidhandler)
+This will be available after the first run of Graphitron codegen. A [nodeIdHandler](#implement-and-configure-nodeidhandler)
 must be passed to most of these methods.
 
 Here are a few examples of how one can retrieve schema-related code for further use:
@@ -81,13 +47,47 @@ RuntimeWiring.Builder runtimeWiringBuilder = Graphitron.getRuntimeWiringBuilder(
 TypeDefinitionRegistry registry = Graphitron.getTypeRegistry();
 ```
 
+## Maven Settings
+### Goals
+The _generate_ Maven goal allows Graphitron to be called as part of the build pipeline. It generates all the classes
+that are set to generate in the schema. Additionally, the _watch_ goal can be used locally to watch GraphQL files
+for changes, and regenerate code without having to re-run generation manually each time.
+This feature is incomplete and currently has low utility.
+
+### Configuration
+In order to find the schema files and any custom methods, Graphitron also provides some configuration options.
+The options are the same for both goals.
+
+#### General settings
+* `outputPath` - The location where the code will be generated.
+* `outputPackage` - The package path of the generated code.
+* `schemaFiles` - Set of schema files which should be used for the generation process.
+* `userSchemaFiles` - Set of schema files to provide to the user.
+* `generatedSchemaCodePackage` - The location of the graphql-codegen generated classes.
+* `jooqGeneratedPackage` - The location of the jOOQ generated code.
+* `externalReferences` - See [Code references](#code-references).
+* `externalReferenceImports` - See [Code references](#code-references).
+* `globalRecordTransforms` - See [Code references](#code-references).
+* `extensions` -  See [Code references](#code-references).
+* `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based data fetchers. And thus also the database query limit.
+* `scalars` - Extra scalars that can be used in code generation and that will be added automatically to the wiring. Reflection is used to find all the scalar definitions of the provided class(es).
+* `makeKickstart` - Flag indicating if Graphitron should generate code compatible with graphql-kickstart. This is deprecated and should not be used for new projects.
+* `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
+  * `enabled` - Flag indicating if Graphitron should generate record validation code
+  * `schemaErrorType` - Name of the schema error to be returned in case of validation violations and IllegalArgumentExceptions.
+    If null while `enabled` is true all validation violations and IllegalArgumentExceptions will instead cause
+    _AbortExecutionExceptions_ to be thrown, leading to top-level GraphQL errors.
+    Also, if the given error is not present in the schema as a returnable error for a specific mutation,
+    validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
+
+See the [pom.xml](../graphitron-example/graphitron-example-spec/pom.xml) of graphitron-example-spec for an example on how to configure these settings.
+
 #### Code references
-* _externalReferences_ - List of references to classes that can be applied through certain directives. Note that this is being deprecated in favor of using the actual className in the directives.
+* _externalReferences_ - List of references to classes that can be applied through certain directives. Note that this is being deprecated in favor of using the className in the directives.
 * _externalReferenceImports_ - List of packages that should be searched for classNames used in directives.
 * _globalRecordTransforms_ - List of transforms that should be applied to all records. The _scope_ value specifies which mutations should be affected, but currently only _ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
-* _extensions_ - Graphitron classes allow for extensions, allowing plugin users to provide their own implementations to control the code generation process. 
-Currently, all extensions are instantiated via [ExtendedFunctionality](src/main/java/no/sikt/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
-We plan to enhance this: all generator classes will be made extensible for wider customization options.
+* _extensions_ - Graphitron classes allow for extensions, allowing plugin users to provide their own implementations to control the code generation process.
+  Currently, all extensions are instantiated via [ExtendedFunctionality](src/main/java/no/sikt/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
 
 Example of referencing a class through the configuration:
 ```xml
@@ -137,17 +137,17 @@ Example of extending/customizing certain classes:
 > Note that several of the code examples below use unaliased JOOQ tables for readability, while the code Graphitron generates only uses aliased tables.
 ### Common directives
 #### splitQuery directive
-Applying this to a type reference denotes a split in the generated query/resolver.
-In other words, this will require the specification of a resolver for the annotated field.
-Fields in the Query and Mutation types, as well as fields with arguments, do not require this directive, as
-they are always considered start points for resolvers.
+Applying this to a type reference denotes a split in the generated query/data fetcher.
+This means that we want a new, explicit data fetcher for the annotated field.
+Fields in the Query and Mutation types, as well as fields with arguments, do not require this directive as
+they always require explicit data fetchers.
 
-In this example, the code generation would create the classes _ATypeDBQueries_ and _ATypeGeneratedResolver_, containing
-the resolver code required to fetch _OtherType_ given _AType_.
+In this example, the code generation creates the classes _ATypeDBQueries_ and _ATypeGeneratedDataFetcher_, containing
+the data fetcher code required to fetch _OtherType_ given _AType_.
 Note that this example would not work in practice as we have not specified any tables to map to yet.
 ```graphql
 type AType {
-  otherType: OtherType @splitQuery # Build new resolver/query for this field.
+  otherType: OtherType @splitQuery # Build new data fetcher/query for this field.
 }
 
 type OtherType {
@@ -156,9 +156,9 @@ type OtherType {
 ```
 
 #### notGenerated directive
-Set this on any query or mutation type reference that should result in a new resolver in order to
+Set this on any query or mutation field that should result in a new data fetcher in order to
 cancel generation of it.
-Since graphql still requires the datafetchers, they will have to be implemented and wired manually.
+Since graphql still requires the data fetchers, they will have to be implemented and wired manually.
 If one is not specified the field will always return null.
 
 ```graphql
@@ -167,7 +167,7 @@ type Query {
 }
 
 type AType {
-  otherType: OtherType @splitQuery @notGenerated # Require new resolver for this field, but do not generate it automatically.
+  otherType: OtherType @splitQuery @notGenerated # Require new data fetcher for this field, but do not generate it automatically.
 }
 
 type OtherType {
@@ -207,7 +207,7 @@ enum SomeEnum { # @field applied on enum fields. Each of these must correspond t
 
 The _javaName_-parameter is a special case for when a table/jOOQ-record needs to interact with a Java record.
 It acts as a second override, defaulting to the value of _name_ when not set. A concrete example of where this parameter
-is required is when using records with conditions or fetch queries in general where the contents of the record must be
+is required is when using records with conditions or queries in general where the contents of the record must be
 matched to jOOQ table fields.
 
 ```graphql
@@ -274,7 +274,8 @@ key that should be used. This must match a key name from jOOQs _Keys_ class.
 in the POM XML. In the cases where there is no way to deduce the key between the tables and the _key_ parameter is not set,
 this condition will be assumed to be an _on_ condition to be used in a join operation between the tables.
 
-Note that joins only apply to the field they are set on, as it is only applied to the field's subquery. If the field is a scalar type, it can be linked to a jOOQ column in another table using this directive. If the field points to a type, all fields within this
+Note that joins only apply to the field they are set on, as it is only applied to the field's subquery. If the field is a scalar type,
+it can be linked to a jOOQ column in another table using this directive. If the field points to a type, all fields within this
 referred type will have access to the join operation.
 
 The following examples will assume that this configuration is set so that Graphitron can find the referenced classes: 
@@ -348,7 +349,7 @@ type Payment @table {
 }
 ```
 
-First, Graphitron defines a few aliases for these joins. Currently, this creates one alias per step.
+First, Graphitron defines aliases for these joins, one per step.
 
 ```java
 var payment = PAYMENT;
@@ -357,7 +358,7 @@ var payment_rental_inventory = payment_rental.inventory();
 var payment_rental_inventory_film = payment_rental_inventory.film();
 ```
 
-Then, the alias is applied where necessary. This is the generated subquery for the reference
+Then, the aliases are applied where necessary. This is the generated subquery for the reference
 
 ```java
 select(select.optional("title", payment_rental_inventory_film.TITLE))
@@ -368,17 +369,17 @@ select(select.optional("title", payment_rental_inventory_film.TITLE))
 
 ### Query conditions
 To either apply additional conditions or override some of the conditions added by default, use the **condition** directive.
-It can be applied to both input parameters and resolver fields, and the scope of the condition will match the element it is put on.
+It can be applied to both input parameters and data fetcher fields, and the scope of the condition will match the element it is put on.
 It provides the following parameter options:
 
 * _condition_ - Reference class and method name (see [code references]](#code-references))
-* _override_ - If true, disables the default checks that are added to all arguments, otherwise add the new condition in
+* _override_ - If true, disables any default checks that are added to the affected arguments, otherwise add the new condition in
 addition to the default ones.
 
-If the condition needs to be nested with list, you may want to use the **reference** and table **directive** to wrap them in records.
-This will result in a condition that takes the record as a parameter, allowing more complex conditions.
-Worth noting here is that as usual table directives can not be nested,
-and to use a record directive on a nested input all the preceding inputs must also be records.
+If the condition needs to be nested with a list, you may want to use the **reference** and **table** directives.
+This will result in a condition that takes the jOOQ record as parameter, allowing more complex conditions.
+Worth noting here is that as usual **table** directives can not be nested,
+and to use a **record** directive on a nested input all the preceding inputs must also be records.
 
 #### Example: Setup
 The following examples will assume this configuration exists:
@@ -658,7 +659,7 @@ _Resulting_code_:
 
 ### Enums
 Enums can be mapped in two ways. The **field** directive is already covered [here](#field-directive).
-An alternative method is to set up a Java enum instead, for example through a jOOQ converter. These can be referenced
+An alternative method is to set up a Java enum instead through a jOOQ converter. These can be referenced
 using the **enum** directive, by pointing to the appropriate [entry](#code-references).
 
 ```graphql
@@ -669,141 +670,15 @@ enum SomeEnum @enum(enumReference: {name: "THE_ENUM_REFERENCE"}) {
 }
 ```
 
-### Other directives for queries
-#### lookupKey directive
-Lookup is a special case of fetching data, which can be generated using the **lookupKey**-directive.
-For each element that is requested, one object will be returned or null, and they will be the same order as in the request.
-In order to determine which inputs identify such an element, keys have to be set explicitly in the schema.
-This is where the **lookupKey**-directive comes in. If at least one key is set with this directive, the query will
-automatically become a lookup. Only arguments for a Query-level field can be keys, or input types referenced from one.
-There are some constraints that must be respected when using this directive:
-
-* All keys must be 1D listed types. It does not make sense to invoke this logic for fetching single objects.
-* More than one key may be used at once, but each key must always have the same number of values.
-  In addition, each value in a key must be correlated with the values of any other keys at the same indices.
-  This can be enforced by wrapping the keys in input types.
-
-The keys can be wrapped with input types and can be set on input type references, but they must always end up being a 1-dimensional list.
-In other words, a list of input types which itself contains a list of keys will not work, and the key values themselves can never be lists.
-See examples below.
-
-```graphql
-type Query {
-  # These are OK.
-  goodQuery0(argument0: [String] @lookupKey, argument1: String): SomeType # Fields without key set will still be used in the query as usual.
-  goodQuery1(argument: [In] @lookupKey): SomeType # In these cases key is applied to all fields in input type.
-  goodQuery2(argument: [InKey]): SomeType
-  goodQuery3(argument: [InKey] @lookupKey): SomeType # Double key does not matter.
-  goodQuery4(argument: InList @lookupKey): SomeType
-  goodQuery5(argument: InKeyList): SomeType
-  goodQuery6(argument: InKeyList @lookupKey): SomeType # Double key does not matter
-
-  goodQuery7(argument0: [String] @lookupKey, argument1: [Int] @lookupKey): SomeType # Can have as many keys as you want.
-  goodQuery8(argument: [InNested] @lookupKey): SomeType # Input can be nested. Every field in there will be a key.
-  goodQuery9(argument: [InNestedKey]): SomeType
-
-  # These are not OK.
-  badQuery0(argument: [InList] @lookupKey): SomeType # Two layers of lists.
-  badQuery1(argument: [InKeyList]): SomeType # Two layers of lists.
-}
-
-input In {
-  field0: String
-  field1: Int
-  field2: ID
-}
-
-input InList {
-  field: [String]
-}
-
-input InKey {
-  field: String @lookupKey
-}
-
-input InKeyList {
-  field: [String] @lookupKey
-}
-
-input InNested {
-  field: In
-}
-
-input InNestedKey {
-  field: In @lookupKey # Every field in the input type becomes a key.
-}
-```
-
-#### orderBy directive
-Incorporating the `orderBy` functionality in your GraphQL schema allows API users to sort query results based on specific fields.
-
-##### Step 1: Define Order Input Types
-
-Firstly, define an input type for `orderBy`. This input type must include a `direction` field and a `orderByField` field:
-
-```graphql
-input FilmOrder {
-    direction: OrderDirection!
-    orderByField: FilmOrderByField!
-}
-```
-
-The `OrderDirection` enum specifies the sort order:
-
-```graphql
-enum OrderDirection {
-    ASC
-    DESC
-}
-```
-
-##### Step 2: Define Order By fields
-
-Next, define the `OrderByField` enum. This should include all the fields on which sorting should be allowed. 
-Each of these fields must be backed by a database index to optimize the query performance.
-The `@index` directive indicates the corresponding database index:
-
-```graphql
-enum FilmOrderByField {
-    LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
-    TITLE @index(name : "IDX_TITLE")
-}
-```
-
-Note: A single OrderByField can involve more than one field in the database, e.g.: `STORE_ID_FILM_ID @index(name : "idx_store_id_film_id")`
-
-To expose these indexes to Graphitron through JOOQ, ensure index code generation is enabled in JOOQ's generator config:
-
-```xml
-<database>
-    <includeIndexes>true</includeIndexes>
-    ...
-</database>
-```
-
-Graphitron will look for the indexes by their names as specified by the `@index` directive. 
-Exceptions will be thrown if no matching index is found for the corresponding database table.
-
-##### Step 3: Add orderBy argument to Query
-
-Add the `orderBy` argument to your query. Use the `@orderBy` directive to indicate that input should be handled as _orderBy_-functionality:
-
-```graphql
-type Query {
-    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection
-}
-```
-
-### Mutation generation
-While fetching data can cover many cases, mutations have more limitations when generated through Graphitron,
-as mutations can take many inputs which should be saved to multiple tables. Automatic generation of the entire resolver
-is currently only viable for simple cases where one input type representing one type of jOOQ record is handled, and
-optionally returned when the operation is complete. In addition, Graphitron unfortunately currently operates on
-assumptions related to ID-fields. The response types are thus limited to returning IDs and Node-types for the time being.
+### Differences between mutations and queries
+Mutations have some limitations when generated through Graphitron, as mutations can potentially take many inputs which may be related to multiple tables.
+Automatic generation of the entire data fetcher is currently only viable for simple cases where one input type representing one type of jOOQ record is handled.
+This limitation may be removed in the future for mutations other than delete mutations.
 
 Use the **mutationType** directive and the accompanying _typeName_ parameter to denote a mutation that should be fully
 generated. To specify which table should be affected, the **table** directive is used just like for the usual types used
-for queries. As usual, **field** may also be applied to adjust the mapping of individual fields.
+for queries, however we need to set it on input types so that Graphitron will know which records should be mutated.
+As usual, **field** may also be applied to adjust the mapping of individual fields.
 
 ```graphql
 type Mutation {
@@ -818,32 +693,31 @@ input EditInput @table(name: "CUSTOMER") { # Use @table to specify which jOOQ re
 }
 
 type EditResponse {
-    id: ID! # Note, mutations need to work with types that have 'id' fields.
+    id: ID! # Note, delete mutations need to work with types that have 'id' fields.
 }
 
 type EditResponseWithCustomer {
     id: ID!
-    customer: Customer # This points to a Node type, so that it can be resolved using an ID.
+    customer: Customer
 }
 
-type Customer implements Node @table { # Implements Node, is a Node type.
+type Customer @table {
     id: ID!
     firstName: String! @field(name: "FIRST_NAME")
 }
 ```
 
 If all required fields for an insert or upsert operation are not set in the input type, a warning will be generated.
-In the future this may change to an exception instead, as an incomplete set of required fields will result in a resolver
+In the future this may change to an exception instead, as an incomplete set of required fields will result in a data fetcher
 that compiles, but will always fail when executed.
 
-Note that mutations need either the **mutationType** or the **service** directive set, but not both, in order to be generated.
-Mutations that should not be generated should have the **notGenerated** directive set.
+Note that mutations need either the **mutationType** or the **service** directive set, but not both, in order to be generated as mutations.
+Mutations that should not be generated should set the **notGenerated** directive.
 
 ### Services
-More complex cases are supported through the **service** directive. It points to a class [entry](#code-references)
-in the POM XML. The method is either specified through the directive or assumed to be the same as the field name.
-The directive invokes the creation of code that calls the specified class, rather than generating a query automatically.
-This allows the use of multiple record types at once, more complex return types and a certain level of exception handling.
+The **service** directive allows for full customization of any database operations while still generating data fetchers.
+The directive points to a class [entry](#code-references) in the POM XML.
+The method is either specified through the directive or assumed to be the same as the field name.
 
 Note that any directives that would usually alter the database operation (such as conditions) will be ignored for services.
 
@@ -853,13 +727,12 @@ type Query {
   getCustomer: Customer! @service(service: {name: "SERVICE_CUSTOMER"})
 
   fetchCustomer(
-    id: ID! # Input types are not yet supported here.
+    id: ID!
   ): Customer! @service(service: {name: "SERVICE_CUSTOMER", method: "getCustomer"}) # Example of a case where the method name does not match the field name.
 }
 
 type Mutation {
   editCustomer1(
-    # someValue: String # It is also allowed to put an extra input here when using services.
     editInput: EditCustomerInput!
   ): Customer! @service(service: {name: "SERVICE_CUSTOMER"}) # Returning just an ID is allowed as well.
 
@@ -874,12 +747,12 @@ input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ t
 }
 ```
 
-#### Resolving @splitQuery fields after services
-Resolving `@splitQuery` fields after a service is currently only supported for services returning jOOQ records.
-To enable Graphitron to resolve a `@splitQuery` field after a service, the returned record must include all the key fields required for the next query.
-Currently, only primary keys of the previous object are used when resolving a `@splitQuery` field.
+#### Resolving splitQuery fields after services
+Resolving **splitQuery** fields after a service is currently only supported for services returning jOOQ records.
+To enable Graphitron to resolve a **splitQuery** field after a service, the returned record must include all the key fields required for the next query.
+Currently, only primary keys of the previous object are used when resolving a **splitQuery** field.
 
-**Example:**
+_**Example:**_
 
 ```graphql
 type Query {
@@ -911,7 +784,6 @@ input InputA @table {
 
 input InputB @table { ... }
 ```
-This is currently only supported for use with mutations.
 
 _Generated code_:
 ```java
@@ -964,15 +836,8 @@ public class CustomerService {
 ```
 
 #### Response mapping
-By default, Graphitron inspects the return type of the service method for mutations to decide how it should be mapped to the
+By default, Graphitron inspects the return type of the service methods to decide how it should be mapped to the
 schema response type.
-
-* If the mutation returns a node type and the method returns a jOOQ record, the ID assumed to be in the record is used
-to look up the type through the same query that is usually used by calls to the node interface.
-* Should the mutation return a scalar value, the method's return value is also treated like a scalar.
-This has only been tested for strings and IDs, but may also work for other types.
-* Custom service return types for responses work exactly as they do for input types,
-but require the Java record to have equivalent _get_ methods instead.
 
 _Schema:_
 ```graphql
@@ -997,16 +862,13 @@ public class CustomerService {
 }
 ```
 
-When working with queries, this is somewhat more rigid and there are rules that services must follow.
-* If the query is a top level query in the Query type, one or a list of records corresponding to the fetched type is
-  expected as the return type. In other words, it is what one would expect from the schema definition.
-* Queries that are not top level must return a map. The map should use the record ID as key, and the value corresponds
-  to the return type in the previous point. In other words, wrap the top level case in a map.
+There are some rules that services must follow. Services that are not on the top level must return a map.
+The map should use the record ID as key, and the value corresponds to the return type of the previous data fetcher.
 
 These rules vary slightly when using pagination.
-All paginated fields are treated as listed, but otherwise behave as the points above indicated.
-* For the top level queries, it should return a list.
-* If the query is not at the top level it should return a map with the ID as key and the value should be set to a list of records.
+All paginated fields are treated as listed.
+In other words, top level services should return a list.
+If the service is not at the top level it should return a map with the ID as key and the value should be set to a list of records.
 
 Schema pagination wrapping is handled automatically, but pagination parameters must be manually applied to any queries
 that are used in the service.
@@ -1048,7 +910,7 @@ public class CustomerService {
 ```
 
 Nesting of return types is also allowed.
-This example shows the more complex case, where two nested custom return record classes are used.
+This example shows the more complex case, where two nested Java return record classes are used.
 Such a setup can also be applied to input types.
 
 _Schema_:
@@ -1082,15 +944,14 @@ public class ReturnB {
 }
 ```
 
-#### Error handling 
-
+### Error handling
 Graphitron allows for simple error handling. In the schema a type is an error type if it implements
-the _Error_ interface and has the error **directive** set. Unions of such types are also considered error types.
+the _Error_ interface and has the **error** directive set. Unions of such types are also considered error types.
 
-The `@error` directive serves to map specific Java exceptions to GraphQL errors. This directive is applied to error types 
+The **error** directive serves to map specific Java exceptions to GraphQL errors. This directive is applied to error types 
 in the schema and accepts a list of handlers with parameters, specifying how various exceptions should be mapped.
 
-Here's an example of how the `@error` directive can be used:
+Here's an example of how the **error** directive can be used:
 
 ```graphql
 type MyError implements Error @error(handlers:
@@ -1156,7 +1017,7 @@ try {
 ```
 
 ### External field
-The `@externalField` directive indicates that the annotated field is
+The **externalField** directive indicates that the annotated field is
 retrieved using a static extension method implemented in Java.
 This is typically used when the field's value requires custom logic implemented in Java.
 
@@ -1166,11 +1027,10 @@ Requirements:
 - Method needs to return the generic type `Field`
 - Parameter type of the generic type needs to match scalar type used in your field in the GraphQL schema, i.e: `Field<TYPE_MATCHING_SCALAR_TYPE>`
 - Code reference should be added to `externalReferenceImports` in your `pom.xml`. See [code references](#code-references) for details on configuration.
-- The `type` where `externalField` is used needs to have a table associated to it
+- The `type` where **externalField** is used needs to have a table associated to it
 
 #### Example
-
-Say you have a GraphQL schema like this, where you have defined a type with a associated database table, which returns a one field:
+Say you have a GraphQL schema like this, where you have defined a type with an associated database table, which returns a one field:
 
 ```graphql
 type Film @table(name: "FILM") {
@@ -1178,7 +1038,7 @@ type Film @table(name: "FILM") {
 }
 ```
 
-You want to write custom logic for the `isEnglish`-field and therefore add the `externalField`-annotation.
+You want to write custom logic for the `isEnglish`-field and therefore add the **externalField**-directive.
 The example below show such custom logic can be implemented:
 
 ```java
@@ -1216,41 +1076,36 @@ public class QueryDBQueries {
 }
 ```
 
-## Interface queries
+Note that jOOQ records do not have space for extra fields, and any usage of external fields where such fields must be stored in a jOOQ record will fail.
 
-Graphitron currently supports generating queries for two types of interfaces.
+### Interface queries
+Graphitron supports generating queries for two types of interfaces.
 
-### Single table interfaces
+#### Single table interfaces
 Single table interfaces are interfaces where every implementation is in the same table, and its type is determined by a discriminator column. Graphitron supports generating queries for this type of interface on the Query-type.
 
-#### Schema setup
+In order to define a single table interface and its types, the **discriminate** and **discriminator** directives are used, in addition to the `table` directive , which is described in more detail [here](#table-directive).
 
-In order to define a single table interface and its types, the `discriminate` and `discriminator` directives are used, in addition to the `table` directive , which is described in more detail [here](#table-directive).
-
-For an interface to be considered a single table interface, both the `table` and `discriminate` directives must be set:
+For an interface to be considered a single table interface, both the **table** and **discriminate** directives must be set:
 ```graphql
 interface Employee @table(name: "EMPLOYEE") @discriminate(on: "EMPLOYEE_TITLE") {
   ...
 }
 ```
 
-The `discriminate` directive determines the discriminator column for the interface.
+The **discriminate** directive determines the discriminator column for the interface.
 In the example above, the column `EMPLOYEE_TITLE` in table `EMPLOYEE` is the discriminator column.
 
-Each implementation of the interface must have the `table` and `discriminator`-directives set:
+Each implementation of the interface must have the **table** and **discriminator**-directives set:
 
 ```graphql
 type TechLead implements Employee @table(name: "EMPLOYEE") @discriminator(value: "TECH_LEAD") {
   ...
 }
 ```
-The `table` directive must be the same as the interface, and the `discriminator` directive indicates which value the discriminator column has if the row is of type `TechLead`. In other words, if `EMPLOYEE.EMPLOYEE_TITLE` is `"TECH_LEAD"`, the row is of type `TechLead`.
+The **table** directive must be the same as the interface, and the **discriminator** directive indicates which value the discriminator column has if the row is of type `TechLead`. In other words, if `EMPLOYEE.EMPLOYEE_TITLE` is `"TECH_LEAD"`, the row is of type `TechLead`.
 
-
-
-#### Single table interface queries
-
-  With the example above, Graphitron can generate queries like these in the Query-type:
+With the example above, Graphitron can generate queries like these in the Query-type:
 
 ```graphql
 type Query {
@@ -1259,21 +1114,19 @@ type Query {
 }
 ```
 
-  Queries with input and [query conditions](#Query-conditions) is also supported.
+Queries with input and [query conditions](#Query-conditions) is also supported.
 
-#### Additional requirements and limitations:
 - Types implementing multiple single table interfaces is supported if it has the same discriminator value for all interfaces
 - The discriminator column must return a string type
 - Every field in the interface must have the same configuration in every implementing type
-  - For example, overriding `field` configuration from the interface is currently not supported
+  - For example, overriding **field** configuration from the interface is currently not supported
 - Other fields sharing the same name must also have the same configuration across types
 
-### Multi table interfaces
+#### Multi table interfaces
 
 Multi table interfaces are interfaces where the implementations are spread across tables, and a row's type is determined by
 its table. Graphitron supports generating queries for this type of interface on the Query-type.
 
-### Schema setup
 No special directives are required on the interface definition. Any directives on fields in the interface will be ignored, and should instead be placed on the fields in the implementing type.
 
 ```graphql
@@ -1296,8 +1149,6 @@ type Book implements Titled @table(name: "BOOK") {
 }
 ```
 
-#### Multi table interface queries
-
 With the example above, Graphitron can generate queries like these in the Query-type:
 
 ```graphql
@@ -1307,12 +1158,12 @@ type Query {
 }
 ```
 
-### Multitable Unions 
+### Multitable Unions
 
-Graphitron supports Union queries on the Query type. All of the union's sub-types needs to have the [table](#table-directive) directive set.
+Graphitron supports Union queries on the Query type. All the union's subtypes need to have the **[table](#table-directive)** directive set.
 
 **_Schema setup:_**
-```
+```graphql
 union LanguageStaffUnion = Language | Staff
 
 type Language @table {
@@ -1328,14 +1179,13 @@ type Staff @table {
 ```
 **_example:_**
 
-```
+```graphql
 type Query {
   languageOrStaff: [LanguageStaffUnion]
 }
 ```
 
-
-##### Query conditions
+#### Query conditions
 
 [Conditions](#Query-conditions) on queries returning multi table interfaces is also supported. Since the table is passed as a parameter to the condition method and each implementing type has a different table, a unique method for each implementation is necessary. These methods must all share the same method signature, except for the first table parameter.
 
@@ -1345,11 +1195,135 @@ type Query {
 }
 ```
 
-
 ```java
 class TitledCondition {
   static Condition titledMethod(Film film, String prefix) {...}
   static Condition titledMethod(Book book, String prefix) {...}
+}
+```
+
+### Other directives
+#### lookupKey directive
+Lookup is a special case of fetching data, which can be generated using the **lookupKey**-directive.
+For each element that is requested, one object will be returned or null, and they will be the same order as in the request.
+In order to determine which inputs should identify such an element, keys have to be set explicitly in the schema.
+This is where the **lookupKey**-directive comes in. If at least one key is set with this directive, the query will
+automatically become a lookup. Only arguments for a top-level field can be keys, or input types referenced from one.
+There are some constraints that must be respected when using this directive:
+
+* All keys must be 1D listed types. It does not make sense to invoke this logic for fetching single objects.
+* More than one key may be used at once, but each key must always have the same number of values.
+  In addition, each value in a key must be correlated with the values of any other keys at the same indices.
+  This can be enforced by wrapping the keys in input types.
+
+The keys can be wrapped with input types and can be set on input type references, but they must always end up being a 1-dimensional list.
+In other words, a list of input types which itself contains a list of keys will not work, and the key values themselves can never be lists.
+See examples below.
+
+```graphql
+type Query {
+  # These are OK.
+  goodQuery0(argument0: [String] @lookupKey, argument1: String): SomeType # Fields without key set will still be used in the query as usual.
+  goodQuery1(argument: [In] @lookupKey): SomeType # In these cases key is applied to all fields in input type.
+  goodQuery2(argument: [InKey]): SomeType
+  goodQuery3(argument: [InKey] @lookupKey): SomeType # Double key does not matter.
+  goodQuery4(argument: InList @lookupKey): SomeType
+  goodQuery5(argument: InKeyList): SomeType
+  goodQuery6(argument: InKeyList @lookupKey): SomeType # Double key does not matter
+
+  goodQuery7(argument0: [String] @lookupKey, argument1: [Int] @lookupKey): SomeType # Can have as many keys as you want.
+  goodQuery8(argument: [InNested] @lookupKey): SomeType # Input can be nested. Every field in there will be a key.
+  goodQuery9(argument: [InNestedKey]): SomeType
+
+  # These are not OK.
+  badQuery0(argument: [InList] @lookupKey): SomeType # Two layers of lists.
+  badQuery1(argument: [InKeyList]): SomeType # Two layers of lists.
+}
+
+input In {
+  field0: String
+  field1: Int
+  field2: ID
+}
+
+input InList {
+  field: [String]
+}
+
+input InKey {
+  field: String @lookupKey
+}
+
+input InKeyList {
+  field: [String] @lookupKey
+}
+
+input InNested {
+  field: In
+}
+
+input InNestedKey {
+  field: In @lookupKey # Every field in the input type becomes a key.
+}
+```
+
+#### orderBy directive
+Incorporating the `orderBy` functionality in your GraphQL schema allows API users to sort query results based on specific fields.
+
+_Step 1: Define Order Input Types_
+
+Firstly, define an input type for `orderBy`. This input type must include a `direction` field and a `orderByField` field:
+
+```graphql
+input FilmOrder {
+    direction: OrderDirection!
+    orderByField: FilmOrderByField!
+}
+```
+
+The `OrderDirection` enum specifies the sort order:
+
+```graphql
+enum OrderDirection {
+    ASC
+    DESC
+}
+```
+
+_Step 2: Define Order By fields_
+
+Next, define the `OrderByField` enum. This should include all the fields on which sorting should be allowed.
+Each of these fields must be backed by a database index to optimize the query performance.
+The `@index` directive indicates the corresponding database index:
+
+```graphql
+enum FilmOrderByField {
+    LANGUAGE @index(name : "IDX_FK_LANGUAGE_ID")
+    TITLE @index(name : "IDX_TITLE")
+}
+```
+
+Note: A single OrderByField can involve more than one field in the database, e.g.: `STORE_ID_FILM_ID @index(name : "idx_store_id_film_id")`
+
+To expose these indexes to Graphitron through JOOQ, ensure index code generation is enabled in JOOQ's generator config:
+
+```xml
+<database>
+    <includeIndexes>true</includeIndexes>
+    ...
+</database>
+```
+
+Graphitron will look for the indexes by their names as specified by the `@index` directive.
+Exceptions will be thrown if no matching index is found for the corresponding database table.
+
+_Step 3: Add orderBy argument to Query_
+
+Add the `orderBy` argument to your query. Use the `@orderBy` directive to indicate that input should be handled as _orderBy_-functionality:
+
+```graphql
+type Query {
+    films(orderBy: FilmOrder @orderBy, first: Int = 100, after: String): FilmConnection
 }
 ```
 
@@ -1358,7 +1332,7 @@ Currently, Graphitron reserves two interface names for special purposes, _Node_ 
 
 ### Node
 The _Node_ interface should contain a mandatory ID field. Any type that implements this interface will have a
-_Node_ resolver generated, and can be used as return types in mutations.
+_Node_ data fetcher generated.
 This is designed to be compatible with [Global Object Identification](https://graphql.org/learn/global-object-identification/).
 
 ```graphql
@@ -1439,10 +1413,10 @@ nodeIdStrategy.createId("C", CUSTOMER.CUSTOMER_ID)
 ### nodeId directive
 > **Note:** This directive is not currently supported when combined with [services](#services).
 
-The `@nodeId` directive can be placed on fields and arguments to indicate that they represent a globally unique ID, following your node ID strategy. This directive requires one parameter:
+The **nodeId** directive can be placed on fields and arguments to indicate that they represent a globally unique ID, following your node ID strategy. This directive requires one parameter:
 
 - `typeName` — The name of the globally identifiable type the ID refers to.
-  - This type must have the [`@node`](#node-directive) directive.
+  - This type must have the [**node**](#node-directive) directive.
 
 For types with the **node** directive, the _id_ field implicitly has **nodeId**, so you do not need to add it. The following schemas are equivalent:
 
