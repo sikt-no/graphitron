@@ -46,4 +46,8 @@ public class QueryCustomerCondition {
     public static Condition queryEnumList(Customer c, List<DummyJOOQEnum> e) {
         return null;
     }
+
+    public static Customer customerTableCondition(Customer c) {
+        return c;
+    }
 }

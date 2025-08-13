@@ -484,4 +484,10 @@ public class ConditionTest extends GeneratorTest {
                 "ContextCondition.email(_customer, email2, _c_ctxField)"
         );
     }
+
+    @Test
+    @DisplayName("Condition on type")
+    void onType() {
+        assertGeneratedContentContains("onType", "_customer.EMAIL.eq(email", ".query(_customer, email)");
+    }
 }

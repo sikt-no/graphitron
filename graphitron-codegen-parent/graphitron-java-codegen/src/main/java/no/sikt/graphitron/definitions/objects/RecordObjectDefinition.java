@@ -34,7 +34,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_KEY_ARGUMENT
  */
 public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U extends GenerationField> extends AbstractObjectDefinition<T, U> implements RecordObjectSpecification<U> {
     private final JOOQMapping table;
-    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective;
+    private final boolean hasTable, usesJavaRecord, isGenerated, hasResolvers, explicitlyNotGenerated, hasKeys, hasNodeDirective, hasConditionDirective;
     private final ClassReference classReference;
     private final List<U> inputsSortedByNullability;
     private final LinkedHashSet<String> requiredInputs;
@@ -66,6 +66,7 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
         keys = hasKeys ? new EntityKeySet(getRepeatableDirectiveArgumentString(objectDefinition, FEDERATION_KEY.getName(), FEDERATION_KEY_ARGUMENT.getName())) : null;
 
         hasNodeDirective = objectDefinition.hasDirective(NODE.getName());
+        hasConditionDirective = objectDefinition.hasDirective(CONDITION.getName());
         typeId = getOptionalDirectiveArgumentString(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.TYPE_ID)
                 .orElse(getTable() != null ? getName() : null);
         keyColumns = getOptionalDirectiveArgumentStringList(objectDefinition, GenerationDirective.NODE, GenerationDirectiveParam.KEY_COLUMNS)
@@ -197,5 +198,9 @@ public abstract class RecordObjectDefinition<T extends TypeDefinition<T>, U exte
 
     public List<String> getKeyColumns() {
         return keyColumns;
+    }
+
+    public boolean hasConditionDirective() {
+        return hasConditionDirective;
     }
 }

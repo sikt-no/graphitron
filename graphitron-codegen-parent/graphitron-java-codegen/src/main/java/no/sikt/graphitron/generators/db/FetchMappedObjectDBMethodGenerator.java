@@ -46,6 +46,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var selectRowBlock = getSelectRowOrField(target, context);
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
 
+        var typeHasCondition = processedSchema.getObject(target).hasConditionDirective();
         var querySource = context.renderQuerySource(getLocalTable());
 
         var refContext = target.isResolver() ? context.nextContext(target) : context;
