@@ -20,6 +20,8 @@ import no.sikt.frontgen.generate.GeneratedQueryComponent;
 public class CustomersByIDQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     private TextField idField;
 
+    private String idStoredValue;
+
     @Override
     public String getQuery() {
         return "query($id: ID!) { customersByID(id: $id, first: 100) { edges { node { name {  firstName lastName } email address {  id addressLine1 addressLine2 city {  id name countryName } zip phone } } } } }";
@@ -135,7 +137,12 @@ public class CustomersByIDQueryComponent extends GeneratedQueryComponent<Custome
     @Override
     public VerticalLayout createInputSection() {
         VerticalLayout inputLayout = new VerticalLayout();
+        if (idField != null) {
+            idStoredValue = idField.getValue();
+        }
+        // Create new fields and restore values
         idField = new TextField("id");
+        idField.setValue(idStoredValue != null ? idStoredValue : "");
         idField.setRequired(true);
         inputLayout.add(idField);
         return inputLayout;

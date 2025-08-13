@@ -1,18 +1,25 @@
 package no.sikt.frontgen.components;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import no.sikt.frontgen.generate.GeneratedQueryComponent;
 
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 public class ParameterizedQueryComponent<T, C> extends GenericQueryComponent<T, C> {
     private final GeneratedQueryComponent<T, C> parentComponent;
     private final Function<C, List<?>> edgesFunction;
     private final Function<Object, T> nodeFunction;
+    private VerticalLayout mainLayout;
+    private VerticalLayout inputSection;
+    private Button executeButton;
+    private VerticalLayout resultsSection;
 
     public ParameterizedQueryComponent(QueryBackedView queryView, GeneratedQueryComponent<T, C> parentComponent,
                                        String query, String rootField, Class<C> connectionClass,
@@ -31,14 +38,35 @@ public class ParameterizedQueryComponent<T, C> extends GenericQueryComponent<T, 
         removeAll();
         setSizeFull();
 
-        VerticalLayout inputSection = parentComponent.createInputSection();
+        mainLayout = new VerticalLayout();
+        mainLayout.setSizeFull();
+        mainLayout.setPadding(false);
+        mainLayout.setSpacing(true);
+
+        // Create permanent input section
+        inputSection = parentComponent.createInputSection();
         if (inputSection.getComponentCount() > 0) {
-            add(inputSection);
+            inputSection.getStyle().set("background-color", "var(--lumo-contrast-5pct)");
+            inputSection.getStyle().set("border-radius", "var(--lumo-border-radius-m)");
+            inputSection.getStyle().set("margin-bottom", "var(--lumo-space-m)");
+            inputSection.getStyle().set("padding", "var(--lumo-space-m)");
+            mainLayout.add(inputSection);
         }
 
-        Button executeButton = new Button(getButtonText());
+        // Create permanent execute button
+        executeButton = new Button(getButtonText());
+        executeButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         executeButton.addClickListener(e -> load());
-        add(executeButton);
+        executeButton.getStyle().set("margin-bottom", "var(--lumo-space-m)");
+        mainLayout.add(executeButton);
+
+        // Create results section (initially empty)
+        resultsSection = new VerticalLayout();
+        resultsSection.setPadding(false);
+        resultsSection.setSpacing(false);
+        mainLayout.add(resultsSection);
+
+        add(mainLayout);
     }
 
     @Override
@@ -48,12 +76,26 @@ public class ParameterizedQueryComponent<T, C> extends GenericQueryComponent<T, 
             return;
         }
 
+        // Get current values from existing fields
+        Map<String, Object> currentValues = parentComponent.getQueryVariables();
+
         queryView.fetchWithVariables(
                 query,
-                parentComponent.getQueryVariables(),
+                currentValues,
                 rootField,
                 connectionClass,
-                gridCreator::apply,
+                data -> {
+                    // Only clear and update the results section
+                    resultsSection.removeAll();
+
+                    // Do NOT recreate or replace the input section!
+                    // Just update the results
+                    Grid<T> grid = gridCreator.apply(data);
+                    grid.setSizeFull();
+                    resultsSection.add(grid);
+
+                    return grid;
+                },
                 edgesFunction,
                 nodeFunction
         );

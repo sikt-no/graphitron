@@ -17,7 +17,11 @@ import no.sikt.frontgen.generate.GeneratedQueryComponent;
 public class FilmsOrderedByQueryComponent extends GeneratedQueryComponent<Film, QueryFilmsConnection> {
     private TextField orderByOrderByFieldField;
 
+    private String orderByOrderByFieldStoredValue;
+
     private TextField orderByDirectionField;
+
+    private String orderByDirectionStoredValue;
 
     @Override
     public String getQuery() {
@@ -72,11 +76,20 @@ public class FilmsOrderedByQueryComponent extends GeneratedQueryComponent<Film, 
     @Override
     public VerticalLayout createInputSection() {
         VerticalLayout inputLayout = new VerticalLayout();
-        // Fields for orderBy;
+        if (orderByOrderByFieldField != null) {
+            orderByOrderByFieldStoredValue = orderByOrderByFieldField.getValue();
+        }
+        if (orderByDirectionField != null) {
+            orderByDirectionStoredValue = orderByDirectionField.getValue();
+        }
+        // Create new fields and restore values
+        // Fields for orderBy
         orderByOrderByFieldField = new TextField("orderBy orderByField");
+        orderByOrderByFieldField.setValue(orderByOrderByFieldStoredValue != null ? orderByOrderByFieldStoredValue : "");
         orderByOrderByFieldField.setRequired(true);
         inputLayout.add(orderByOrderByFieldField);
         orderByDirectionField = new TextField("orderBy direction");
+        orderByDirectionField.setValue(orderByDirectionStoredValue != null ? orderByDirectionStoredValue : "");
         orderByDirectionField.setRequired(true);
         inputLayout.add(orderByDirectionField);
         return inputLayout;

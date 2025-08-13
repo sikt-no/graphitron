@@ -165,11 +165,31 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                         String fieldName = param.name + capitalize(nestedField.name) + "Field";
                         Class<?> fieldType = getVaadinComponentType(nestedField.type);
                         builder.addField(fieldType, fieldName, Modifier.PRIVATE);
+
+                        // Add storage field for preserving values
+                        String storageName = param.name + capitalize(nestedField.name) + "StoredValue";
+                        if (nestedField.type.equals("Boolean")) {
+                            builder.addField(Boolean.class, storageName, Modifier.PRIVATE);
+                        } else if (nestedField.type.equals("Integer")) {
+                            builder.addField(Integer.class, storageName, Modifier.PRIVATE);
+                        } else {
+                            builder.addField(String.class, storageName, Modifier.PRIVATE);
+                        }
                     }
                 } else {
                     String fieldName = param.name + "Field";
                     Class<?> fieldType = getVaadinComponentType(param.type);
                     builder.addField(fieldType, fieldName, Modifier.PRIVATE);
+
+                    // Add storage field for preserving values
+                    String storageName = param.name + "StoredValue";
+                    if (param.type.equals("Boolean")) {
+                        builder.addField(Boolean.class, storageName, Modifier.PRIVATE);
+                    } else if (param.type.equals("Integer")) {
+                        builder.addField(Integer.class, storageName, Modifier.PRIVATE);
+                    } else {
+                        builder.addField(String.class, storageName, Modifier.PRIVATE);
+                    }
                 }
             }
         }
@@ -200,36 +220,85 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                 .returns(VerticalLayout.class)
                 .addStatement("$T inputLayout = new $T()", VerticalLayout.class, VerticalLayout.class);
 
+        // Add value storage fields if they don't exist
         for (ParameterInfo param : parameters) {
             if (param.isNested) {
-                // Create a section for nested input
-                builder.addStatement("// Fields for $L", param.name);
+                for (NestedFieldInfo nestedField : param.nestedFields) {
+                    String storageName = param.name + capitalize(nestedField.name) + "StoredValue";
+                    // Store current value if field exists
+                    builder.beginControlFlow("if ($L != null)", param.name + capitalize(nestedField.name) + "Field");
+                    if (nestedField.type.equals("Boolean")) {
+                        builder.addStatement("$L = $L.getValue()", storageName, param.name + capitalize(nestedField.name) + "Field");
+                    } else if (nestedField.type.equals("Integer")) {
+                        builder.addStatement("$L = $L.getValue()", storageName, param.name + capitalize(nestedField.name) + "Field");
+                    } else {
+                        builder.addStatement("$L = $L.getValue()", storageName, param.name + capitalize(nestedField.name) + "Field");
+                    }
+                    builder.endControlFlow();
+                }
+            } else {
+                String fieldName = param.name + "Field";
+                String storageName = param.name + "StoredValue";
+
+                builder.beginControlFlow("if ($L != null)", fieldName);
+                if (param.type.equals("Boolean")) {
+                    builder.addStatement("$L = $L.getValue()", storageName, fieldName);
+                } else if (param.type.equals("Integer")) {
+                    builder.addStatement("$L = $L.getValue()", storageName, fieldName);
+                } else {
+                    builder.addStatement("$L = $L.getValue()", storageName, fieldName);
+                }
+                builder.endControlFlow();
+            }
+        }
+
+        builder.addComment("Create new fields and restore values");
+
+        for (ParameterInfo param : parameters) {
+            if (param.isNested) {
+                builder.addComment("Fields for $L", param.name);
                 for (NestedFieldInfo nestedField : param.nestedFields) {
                     String fieldName = param.name + capitalize(nestedField.name) + "Field";
+                    String storageName = param.name + capitalize(nestedField.name) + "StoredValue";
                     String label = param.name + " " + nestedField.name;
                     Class<?> componentType = getVaadinComponentType(nestedField.type);
 
+                    builder.addStatement("$L = new $T($S)", fieldName, componentType, label);
+
                     if (componentType == Checkbox.class) {
-                        builder.addStatement("$L = new $T($S)", fieldName, componentType, label);
+                        builder.addStatement("$L.setValue($L != null ? $L : false)", fieldName, storageName, storageName);
+                    } else if (componentType == IntegerField.class) {
+                        builder.beginControlFlow("if ($L != null)", storageName)
+                                .addStatement("$L.setValue($L)", fieldName, storageName)
+                                .endControlFlow();
                     } else {
-                        builder.addStatement("$L = new $T($S)", fieldName, componentType, label);
-                        if (nestedField.required) {
-                            builder.addStatement("$L.setRequired($L)", fieldName, nestedField.required);
-                        }
+                        builder.addStatement("$L.setValue($L != null ? $L : \"\")", fieldName, storageName, storageName);
+                    }
+
+                    if (nestedField.required) {
+                        builder.addStatement("$L.setRequired($L)", fieldName, nestedField.required);
                     }
                     builder.addStatement("inputLayout.add($L)", fieldName);
                 }
             } else {
                 String fieldName = param.name + "Field";
+                String storageName = param.name + "StoredValue";
                 Class<?> componentType = getVaadinComponentType(param.type);
 
+                builder.addStatement("$L = new $T($S)", fieldName, componentType, param.name);
+
                 if (componentType == Checkbox.class) {
-                    builder.addStatement("$L = new $T($S)", fieldName, componentType, param.name);
+                    builder.addStatement("$L.setValue($L != null ? $L : false)", fieldName, storageName, storageName);
+                } else if (componentType == IntegerField.class) {
+                    builder.beginControlFlow("if ($L != null)", storageName)
+                            .addStatement("$L.setValue($L)", fieldName, storageName)
+                            .endControlFlow();
                 } else {
-                    builder.addStatement("$L = new $T($S)", fieldName, componentType, param.name);
-                    if (param.required) {
-                        builder.addStatement("$L.setRequired($L)", fieldName, param.required);
-                    }
+                    builder.addStatement("$L.setValue($L != null ? $L : \"\")", fieldName, storageName, storageName);
+                }
+
+                if (param.required) {
+                    builder.addStatement("$L.setRequired($L)", fieldName, param.required);
                 }
                 builder.addStatement("inputLayout.add($L)", fieldName);
             }

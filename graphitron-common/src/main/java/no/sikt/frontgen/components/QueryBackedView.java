@@ -114,39 +114,10 @@ public class QueryBackedView extends VerticalLayout {
         try {
             GraphQLResponse<Map<String, Object>> response = graphQLService.executeQueryWithVariables(query, variables, GraphQLResponse.class);
 
-            removeAll();
-
             if (response.hasErrors()) {
-                add(new H2("Error"));
-
-                HorizontalLayout buttonLayout = new HorizontalLayout();
-                Button backButton = new Button("Back", e -> {
-                    getUI().ifPresent(ui -> ui.getPage().setLocation("/frontgen"));
-                });
-                backButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
-                buttonLayout.add(backButton);
-                add(buttonLayout);
-
-                add(new Paragraph("GraphQL error: " + response.getErrorMessage()));
+                displayFunction.apply(List.of()); // Empty list for error case
                 return;
             }
-
-
-            // Add page header
-            String viewName = "Query Results";
-            add(new H2(viewName));
-
-            HorizontalLayout buttonLayout = new HorizontalLayout();
-            buttonLayout.setWidthFull();
-
-            Button backButton = new Button("Back", e -> {
-                getUI().ifPresent(ui -> ui.getPage().setLocation("/frontgen"));
-            });
-            backButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
-
-            buttonLayout.add(backButton);
-            buttonLayout.setJustifyContentMode(JustifyContentMode.START);
-            add(buttonLayout);
 
             if (response.getData() != null) {
                 Map<String, Object> data = response.getData();
@@ -157,26 +128,15 @@ public class QueryBackedView extends VerticalLayout {
                     List<R> items = edges.stream()
                             .map(nodeExtractor)
                             .toList();
-                    add(displayFunction.apply(items));
+                    displayFunction.apply(items);
                 } else {
-                    add(new Paragraph("No data returned"));
+                    displayFunction.apply(List.of());
                 }
             } else {
-                add(new Paragraph("No data returned"));
+                displayFunction.apply(List.of());
             }
         } catch (Exception ex) {
-            removeAll();
-            add(new H2("Error"));
-
-            HorizontalLayout buttonLayout = new HorizontalLayout();
-            Button backButton = new Button("Back", e -> {
-                getUI().ifPresent(ui -> ui.getPage().setLocation("/frontgen"));
-            });
-            backButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
-            buttonLayout.add(backButton);
-            add(buttonLayout);
-
-            add(new Paragraph("Error executing query: " + ex.getMessage()));
+            displayFunction.apply(List.of());
         }
     }
 }

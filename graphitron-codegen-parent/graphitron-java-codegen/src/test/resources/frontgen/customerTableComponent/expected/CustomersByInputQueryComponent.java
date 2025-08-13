@@ -8,6 +8,7 @@ import fake.graphql.example.model.Customer;
 import fake.graphql.example.model.CustomerConnection;
 import fake.graphql.example.model.CustomerConnectionEdge;
 import fake.graphql.example.model.CustomerName;
+import java.lang.Boolean;
 import java.lang.Class;
 import java.lang.Object;
 import java.lang.Override;
@@ -21,9 +22,15 @@ import no.sikt.frontgen.generate.GeneratedQueryComponent;
 public class CustomersByInputQueryComponent extends GeneratedQueryComponent<Customer, CustomerConnection> {
     private TextField inputIdField;
 
+    private String inputIdStoredValue;
+
     private TextField inputEmailField;
 
+    private String inputEmailStoredValue;
+
     private Checkbox inputIsActiveField;
+
+    private Boolean inputIsActiveStoredValue;
 
     @Override
     public String getQuery() {
@@ -140,14 +147,27 @@ public class CustomersByInputQueryComponent extends GeneratedQueryComponent<Cust
     @Override
     public VerticalLayout createInputSection() {
         VerticalLayout inputLayout = new VerticalLayout();
-        // Fields for input;
+        if (inputIdField != null) {
+            inputIdStoredValue = inputIdField.getValue();
+        }
+        if (inputEmailField != null) {
+            inputEmailStoredValue = inputEmailField.getValue();
+        }
+        if (inputIsActiveField != null) {
+            inputIsActiveStoredValue = inputIsActiveField.getValue();
+        }
+        // Create new fields and restore values
+        // Fields for input
         inputIdField = new TextField("input id");
+        inputIdField.setValue(inputIdStoredValue != null ? inputIdStoredValue : "");
         inputIdField.setRequired(true);
         inputLayout.add(inputIdField);
         inputEmailField = new TextField("input email");
+        inputEmailField.setValue(inputEmailStoredValue != null ? inputEmailStoredValue : "");
         inputEmailField.setRequired(true);
         inputLayout.add(inputEmailField);
         inputIsActiveField = new Checkbox("input isActive");
+        inputIsActiveField.setValue(inputIsActiveStoredValue != null ? inputIsActiveStoredValue : false);
         inputLayout.add(inputIsActiveField);
         return inputLayout;
     }

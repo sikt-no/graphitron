@@ -53,15 +53,17 @@ public class MainView extends QueryBackedView {
         card.addClassName("component-card");
 
         String displayName = component.getButtonText().replaceFirst("^List\\s+", "");
+        String formattedName = formatComponentName(displayName);
 
         VerticalLayout cardContent = new VerticalLayout();
         cardContent.setPadding(false);
         cardContent.setSpacing(false);
 
-        H3 title = new H3(displayName);
+        H3 title = new H3(formattedName);
         title.getStyle().set("margin", "1rem");
+        title.getStyle().set("word-wrap", "break-word");
+        title.getStyle().set("line-height", "1.2");
 
-        // Don't call load() immediately - navigate to the component view instead
         Button launchButton = new Button("View", e -> navigateToComponent(component));
         launchButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         launchButton.getStyle().set("margin", "1rem");
@@ -70,6 +72,10 @@ public class MainView extends QueryBackedView {
         card.add(cardContent);
 
         return card;
+    }
+
+    private String formatComponentName(String name) {
+        return name.replaceAll("([A-Z])", " $1").trim();
     }
 
     private void navigateToComponent(QueryComponent component) {
