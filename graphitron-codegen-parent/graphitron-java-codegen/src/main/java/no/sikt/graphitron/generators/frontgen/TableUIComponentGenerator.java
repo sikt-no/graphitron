@@ -275,7 +275,8 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                         builder.addStatement("$L.setValue($L != null ? $L : \"\")", fieldName, storageName, storageName);
                     }
 
-                    if (nestedField.required) {
+                    // Only set required for non-Checkbox components
+                    if (nestedField.required && componentType != Checkbox.class) {
                         builder.addStatement("$L.setRequired($L)", fieldName, nestedField.required);
                     }
                     builder.addStatement("inputLayout.add($L)", fieldName);
@@ -297,7 +298,8 @@ public class TableUIComponentGenerator extends AbstractClassGenerator {
                     builder.addStatement("$L.setValue($L != null ? $L : \"\")", fieldName, storageName, storageName);
                 }
 
-                if (param.required) {
+                // Only set required for non-Checkbox components
+                if (param.required && componentType != Checkbox.class) {
                     builder.addStatement("$L.setRequired($L)", fieldName, param.required);
                 }
                 builder.addStatement("inputLayout.add($L)", fieldName);
