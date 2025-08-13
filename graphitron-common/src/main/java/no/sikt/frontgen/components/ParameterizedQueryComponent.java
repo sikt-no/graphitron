@@ -1,6 +1,5 @@
 package no.sikt.frontgen.components;
 
-import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -60,10 +59,11 @@ public class ParameterizedQueryComponent<T, C> extends GenericQueryComponent<T, 
         executeButton.getStyle().set("margin-bottom", "var(--lumo-space-m)");
         mainLayout.add(executeButton);
 
-        // Create results section (initially empty)
         resultsSection = new VerticalLayout();
         resultsSection.setPadding(false);
         resultsSection.setSpacing(false);
+        resultsSection.setSizeFull();
+
         mainLayout.add(resultsSection);
 
         add(mainLayout);
@@ -88,11 +88,14 @@ public class ParameterizedQueryComponent<T, C> extends GenericQueryComponent<T, 
                     // Only clear and update the results section
                     resultsSection.removeAll();
 
-                    // Do NOT recreate or replace the input section!
-                    // Just update the results
+                    // Create the grid with proper sizing
                     Grid<T> grid = gridCreator.apply(data);
                     grid.setSizeFull();
+                    grid.setHeightFull();
+                    grid.setAllRowsVisible(true);
+
                     resultsSection.add(grid);
+                    resultsSection.setSizeFull();
 
                     return grid;
                 },
