@@ -14,6 +14,7 @@ type Query {
     customerWithJooqRecordInput(input: CustomerInput!): [Customer] @asConnection
     customerWithJavaRecordInput(input: CustomerJavaRecordInput!): [Customer] @asConnection
     customerLookup(customerIds: [ID!]! @lookupKey @nodeId(typeName: "Customer")): [Customer]
+    customerLookupInt(id: Int! @field(name: "CUSTOMER_ID") @lookupKey): [Customer]
 
     films(orderBy: FilmsOrderByInput @orderBy): [Film] @asConnection
     filmLookup(filmId: [String!]! @lookupKey @field(name: "FILM_ID")): [Film]

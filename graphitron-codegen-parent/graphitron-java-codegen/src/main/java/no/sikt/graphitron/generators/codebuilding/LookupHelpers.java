@@ -3,7 +3,9 @@ package no.sikt.graphitron.generators.codebuilding;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.InputDefinition;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
@@ -17,8 +19,7 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asIterable;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.RESOLVER_HELPERS;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
 public class LookupHelpers {
     public static boolean lookupExists(ObjectField referenceField, ProcessedSchema processedSchema) {
@@ -165,8 +166,17 @@ public class LookupHelpers {
             return GeneratorConfig.shouldMakeNodeStrategy()
                     ? createNodeIdBlock(schema.getObject(it.getNodeIdTypeName()), table.toString())
                     : CodeBlock.of("$L$L", table, it.getMappingFromFieldOverride().asGetCall());
+        } else if (!it.getTypeClass().equals(ClassName.get(String.class))) {
+            return CodeBlock.of("$L.$L.cast($T.class)", table, it.getUpperCaseName(), STRING.className);
         }
         return CodeBlock.of("$L.$L", table, it.getUpperCaseName());
+    }
+
+    private static CodeBlock fieldToKeyCodeBlock(GenerationField field) {
+        if (field.isID()) {
+            return CodeBlock.of(field.getMappingFromFieldOverride().asGetCall().toString().substring(1));
+        }
+        return CodeBlock.of(field.getUpperCaseName());
     }
 
     public static CodeBlock getLookupKeysAsList(ObjectField referenceField, ProcessedSchema processedSchema) {
