@@ -1,0 +1,7 @@
+type Query {
+    customer: Customer @tableService(tableService: {name: "CUSTOMER_TABLE_SERVICE", method: "customerTableService"})
+}
+
+type Customer {
+    id: String
+}

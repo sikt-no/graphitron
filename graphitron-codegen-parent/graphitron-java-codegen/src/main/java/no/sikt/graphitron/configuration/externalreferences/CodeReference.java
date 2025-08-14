@@ -2,6 +2,7 @@ package no.sikt.graphitron.configuration.externalreferences;
 
 import graphql.language.DirectivesContainer;
 import graphql.language.ObjectField;
+import graphql.language.ObjectTypeDefinition;
 import no.sikt.graphql.directives.DirectiveHelpers;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.directives.GenerationDirectiveParam;

@@ -30,13 +30,20 @@ public class ConditionRecordsTest extends GeneratorTest {
                 JAVA_RECORD_STAFF_INPUT1,
                 JAVA_RECORD_STAFF_INPUT2,
                 JAVA_RECORD_STAFF_INPUT3,
-                JAVA_RECORD_STAFF_NAME
+                JAVA_RECORD_STAFF_NAME,
+                CUSTOMER_TABLE_SERVICE
         );
     }
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new DBClassGenerator(schema));
+    }
+
+    @Test
+    @DisplayName("TableService test")
+    void testTableService() {
+        assertGeneratedContentContains("tableService", "lol");
     }
 
     @Test

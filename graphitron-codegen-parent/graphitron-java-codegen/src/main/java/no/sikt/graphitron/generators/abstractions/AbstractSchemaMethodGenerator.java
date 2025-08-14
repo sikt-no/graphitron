@@ -6,15 +6,14 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.generators.dependencies.ServiceDependency;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 
@@ -120,4 +119,26 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
      * @return The complete javapoet {@link MethodSpec} based on the provided target.
      */
     abstract public MethodSpec generate(T target);
+
+    protected ServiceDependency createServiceDependency(GenerationField target) {
+        var dependency = new ServiceDependency(target.getService().getClassName());
+        dependencyMap.computeIfAbsent(target.getName(), (s) -> new ArrayList<>()).add(dependency);
+        return dependency;
+    }
+
+    /**
+     * @return Code that declares any service dependencies set for this generator.
+     */
+    protected CodeBlock declareAllServiceClasses(String methodName) {
+        var code = CodeBlock.builder();
+        dependencyMap
+                .getOrDefault(methodName, List.of())
+                .stream()
+                .filter(dep -> dep instanceof ServiceDependency) // Inelegant solution, but it should work for now.
+                .distinct()
+                .sorted()
+                .map(dep -> (ServiceDependency) dep)
+                .forEach(dep -> code.add(dep.getDeclarationCode()));
+        return code.build();
+    }
 }

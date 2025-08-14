@@ -1,5 +1,5 @@
 type Query {
-  query: Customer
+  customer: Customer
 }
 
 type Customer @table(name: "CUSTOMER") @condition(condition: {className: "QUERY_FETCH_CONDITION", method: "customerTableCondition"}) {

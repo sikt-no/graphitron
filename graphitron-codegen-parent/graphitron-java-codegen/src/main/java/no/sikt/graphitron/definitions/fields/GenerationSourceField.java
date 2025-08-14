@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
+import no.sikt.graphitron.definitions.helpers.TableServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
@@ -53,7 +54,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         }
 
         condition = field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null ? new SQLCondition(field) : null;
-        serviceWrapper = field.hasDirective(SERVICE.getName()) ? new ServiceWrapper(field) : null;
+        serviceWrapper = field.hasDirective(SERVICE.getName()) || field.hasDirective(TABLE_SERVICE.getName()) ? new ServiceWrapper(field) : null;
         if (field.hasDirective(FIELD.getName())) {
             mappingForRecordFieldOverride = getJavaName().isEmpty() ? new MethodMapping(toCamelCase(getUpperCaseName())) : new MethodMapping(getJavaName());
         } else {
@@ -178,6 +179,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean hasServiceReference() {
+        return
         return serviceWrapper != null;
     }
 

@@ -1,8 +1,11 @@
 package no.sikt.graphitron.generators.db;
 
+import graphql.language.DirectivesContainer;
+import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -10,6 +13,7 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
+import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
@@ -46,8 +50,26 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var selectRowBlock = getSelectRowOrField(target, context);
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
 
+
+        var fieldHasTableService = target.hasServiceReference();
+
+        if (fieldHasTableService) {
+            createServiceDependency(target);
+
+        }
+
+
+
+        var querySource = fieldHasTableService ?
+                CodeBlock.of(target.getService().getReference().getSchemaClassReference()) :
+                context.renderQuerySource(getLocalTable());
+
+        var fromBlock = fieldHasTableService ?
+                CodeBlock.of(".from($L)\n", target.getService().getReference()) :
+                CodeBlock.of(".from($L)\n", querySource);
+
         var typeHasCondition = processedSchema.getObject(target).hasConditionDirective();
-        var querySource = context.renderQuerySource(getLocalTable());
+
 
         var refContext = target.isResolver() ? context.nextContext(target) : context;
         var actualRefTable = refContext.getTargetAlias();
@@ -64,6 +86,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
                 .addCode(selectAliasesBlock)
+                .addCodeIf(fieldHasTableService, declareAllServiceClasses(target.getService().getMethodName()))
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
