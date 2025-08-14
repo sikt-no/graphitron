@@ -20,6 +20,10 @@ public class ResolverHelpers {
         return l.stream().map(it -> it != null ? it.toString() : "null").collect(Collectors.toList());
     }
 
+    public static List<String> formatString(Object o) {
+        return formatString(List.of(o));
+    }
+
     public static <T> T transformDTO(Object data, Class<T> targetClass) {
         if (data == null) {
             return null;
