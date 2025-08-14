@@ -372,7 +372,7 @@ To either apply additional conditions or override some of the conditions added b
 It can be applied to both input parameters and data fetcher fields, and the scope of the condition will match the element it is put on.
 It provides the following parameter options:
 
-* _condition_ - Reference class and method name (see [code references]](#code-references))
+* _condition_ - Reference class and method name (see [code references](#code-references))
 * _override_ - If true, disables any default checks that are added to the affected arguments, otherwise add the new condition in
 addition to the default ones.
 
@@ -380,6 +380,10 @@ If the condition needs to be nested with a list, you may want to use the **refer
 This will result in a condition that takes the jOOQ record as parameter, allowing more complex conditions.
 Worth noting here is that as usual **table** directives can not be nested,
 and to use a **record** directive on a nested input all the preceding inputs must also be records.
+
+There are concrete examples of how conditions and Java records may look in our test project files,
+such as [CustomerConditions](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/conditions/CustomerConditions.java)
+and [CustomerJavaInput](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/records/CustomerJavaInput.java).
 
 #### Example: Setup
 The following examples will assume this configuration exists:
@@ -720,6 +724,9 @@ The directive points to a class [entry](#code-references) in the POM XML.
 The method is either specified through the directive or assumed to be the same as the field name.
 
 Note that any directives that would usually alter the database operation (such as conditions) will be ignored for services.
+
+There are concrete examples of how services may look in our test project files,
+such as [CustomerService](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/CustomerService.java).
 
 _Schema:_
 ```graphql
