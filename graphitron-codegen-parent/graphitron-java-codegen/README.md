@@ -16,9 +16,10 @@ using Java and [jOOQ](https://www.jooq.org/).
 Coming soon.
 
 ## Usage
-See the [example project](../../graphitron-example) for a complete example of how to set up and use Graphitron.
+See the [example project](https://github.com/sikt-no/graphitron/blob/main/graphitron-example) for a complete example of how to set up and use Graphitron.
 This project is also used for running integration tests ensuring that Graphitron generates data fetchers that work as expected.
-The example project includes a [README.md](../graphitron-example/README.md) file detailing the setup and usage of the example project.
+The example project includes a [README.md](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/README.md)
+file detailing the setup and usage of the example project.
 
 ### Code interface
 Graphitron provides a static generated class for accessing the generated results in a user-friendly way.
@@ -80,14 +81,16 @@ The options are the same for both goals.
     Also, if the given error is not present in the schema as a returnable error for a specific mutation,
     validation violations and IllegalArgumentExceptions on this mutation will cause top-level GraphQL errors.
 
-See the [pom.xml](../graphitron-example/graphitron-example-spec/pom.xml) of graphitron-example-spec for an example on how to configure these settings.
+See the [pom.xml](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-spec/pom.xml)
+of _graphitron-example-spec_ for an example on how to configure these settings.
 
 #### Code references
 * _externalReferences_ - List of references to classes that can be applied through certain directives. Note that this is being deprecated in favor of using the className in the directives.
 * _externalReferenceImports_ - List of packages that should be searched for classNames used in directives.
 * _globalRecordTransforms_ - List of transforms that should be applied to all records. The _scope_ value specifies which mutations should be affected, but currently only _ALL_MUTATIONS_ is available. Since this points to a class, a _method_ must also be specified.
 * _extensions_ - Graphitron classes allow for extensions, allowing plugin users to provide their own implementations to control the code generation process.
-  Currently, all extensions are instantiated via [ExtendedFunctionality](src/main/java/no/sikt/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
+  Currently, all extensions are instantiated via [ExtendedFunctionality](https://github.com/sikt-no/graphitron/blob/main/graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/configuration/ExtendedFunctionality.java),
+  limiting extension to specific classes.
 
 Example of referencing a class through the configuration:
 ```xml
@@ -219,7 +222,7 @@ input SomeInput @record(record: {name: "SOME_RECORD"}) {
   value: String @field(name: "ACTUAL_VALUE_NAME", javaName: "ACTUAL_JAVA_RECORD_FIELD_NAME")
 }
 
-type SomeType @table { ... }
+type SomeType @table { … }
 ```
 
 ### Tables, joins and records
@@ -789,7 +792,7 @@ input InputA @table {
   b: InputB
 }
 
-input InputB @table { ... }
+input InputB @table { … }
 ```
 
 _Generated code_:
@@ -1096,7 +1099,7 @@ In order to define a single table interface and its types, the **discriminate** 
 For an interface to be considered a single table interface, both the **table** and **discriminate** directives must be set:
 ```graphql
 interface Employee @table(name: "EMPLOYEE") @discriminate(on: "EMPLOYEE_TITLE") {
-  ...
+  …
 }
 ```
 
@@ -1107,7 +1110,7 @@ Each implementation of the interface must have the **table** and **discriminator
 
 ```graphql
 type TechLead implements Employee @table(name: "EMPLOYEE") @discriminator(value: "TECH_LEAD") {
-  ...
+  …
 }
 ```
 The **table** directive must be the same as the interface, and the **discriminator** directive indicates which value the discriminator column has if the row is of type `TechLead`. In other words, if `EMPLOYEE.EMPLOYEE_TITLE` is `"TECH_LEAD"`, the row is of type `TechLead`.
@@ -1146,13 +1149,13 @@ For every implementing type, the [table](#table-directive) directive is required
 
 ```graphql
 type Film implements Titled @table(name: "FILM") {
-  title: String @field(name: ...)
-  ...
+  title: String @field(name: …)
+  …
 }
 
 type Book implements Titled @table(name: "BOOK") {
   title: String
-  ...
+  …
 }
 ```
 
@@ -1175,12 +1178,12 @@ union LanguageStaffUnion = Language | Staff
 
 type Language @table {
   name: String
-  ...
+  …
 }
 
 type Staff @table {
   id: Int @field(name: "STAFF_ID") 
-  ...
+  …
 }
 
 ```
@@ -1204,8 +1207,8 @@ type Query {
 
 ```java
 class TitledCondition {
-  static Condition titledMethod(Film film, String prefix) {...}
-  static Condition titledMethod(Book book, String prefix) {...}
+  static Condition titledMethod(Film film, String prefix) {…}
+  static Condition titledMethod(Book book, String prefix) {…}
 }
 ```
 
@@ -1317,7 +1320,7 @@ To expose these indexes to Graphitron through JOOQ, ensure index code generation
 ```xml
 <database>
     <includeIndexes>true</includeIndexes>
-    ...
+    …
 </database>
 ```
 
@@ -1364,7 +1367,7 @@ This may be removed/changed in the near future as it may not be flexible enough.
 > **Note:** This feature is a work in progress and can be enabled with the temporary `generate.makeNodeStrategy` parameter.
 
 If your schema includes [Global Object Identification](https://graphql.org/learn/global-object-identification/),
-you need to have an instance of a class extending [NodeIdStrategy](../graphitron-common/src/main/java/no/sikt/graphql/NodeIdStrategy.java), 
+you need to have an instance of a class extending [NodeIdStrategy](https://github.com/sikt-no/graphitron/tree/main/graphitron-common/src/main/java/no/sikt/graphql/NodeIdStrategy.java), 
 optionally overriding methods for custom ID encoding/decoding, and pass it to the wiring builder in order to resolve `node` queries on your server.
 
 ```java
