@@ -230,7 +230,7 @@ type SomeType @table { … }
 
 ### Tables, joins and records
 #### table directive
-The **table** directive links the object, interface or input type to a table in the database. Any **field**-directives within
+The **table** directive links the object, interface or input type to a jOOQ table and record. Any **field**-directives within
 this type will use this table as the source for the field mapping. This targets jOOQ generated classes, so
 the _name_ parameter must match the table name in jOOQ if it differs from the database. The _name_ parameter is optional,
 and does not need to be specified if the type name already equals the table name.
@@ -326,13 +326,13 @@ the generated result would follow a pattern like the code below.
 .on(some.path.CustomerCondition.addressJoin(CUSTOMER, ADDRESS))
 ```
 
-Providing only a key will yield a similar result. Note that in this example the key and the reference directive itself
+Providing only a key will yield the same result. Note that in this example the key and the reference directive itself
 are redundant since there is only one key between the tables. Assume the _Address_ type has the **table** directive set.
 
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+  addresses: [Address!]! @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}]) 
 }
 ```
 
@@ -344,10 +344,7 @@ _Generated result_:
 Providing both a key and a condition will result in a sum of both the first and previous examples,
 meaning both a join on a key and one additional condition will be applied.
 
-Using the _references_ parameter will create additional occurrences of what the previous examples have already shown.
-Note that this parameter only works by adding additional steps before the other parameters,
-meaning they most likely have to be set as well. The same rules apply to the intermediate steps as to other join operations.
-If there is only one key between two tables, only the table reference is required.
+Using multiple _reference elements_ will create additional occurrences of what the previous examples have already shown.
 The example below is a simple illustration of this. Assume the _Film_ type has the **table** directive set.
 
 _Schema_:
@@ -367,7 +364,8 @@ var payment_rental_inventory = payment_rental.inventory();
 var payment_rental_inventory_film = payment_rental_inventory.film();
 ```
 
-Then, the aliases are applied where necessary. This is the generated subquery for the reference
+Then, the aliases are applied where necessary. This is the generated subquery for the references. 
+Assume that the Film type contains a field named "title".
 
 ```java
 select(select.optional("title", payment_rental_inventory_film.TITLE))
@@ -377,7 +375,7 @@ select(select.optional("title", payment_rental_inventory_film.TITLE))
 ```
 
 ### Query conditions
-To either apply additional conditions or override some of the conditions added by default, use the **condition** directive.
+To either apply additional conditions or override the conditions added by default, use the **condition** directive.
 It can be applied to both input parameters and data fetcher fields, and the scope of the condition will match the element it is put on.
 It provides the following parameter options:
 
@@ -385,10 +383,11 @@ It provides the following parameter options:
 * _override_ - If true, disables any default checks that are added to the affected arguments, otherwise add the new condition in
 addition to the default ones.
 
-If the condition needs to be nested with a list, you may want to use the **reference** and **table** directives.
-This will result in a condition that takes the jOOQ record as parameter, allowing more complex conditions.
-Worth noting here is that as usual **table** directives can not be nested,
-and to use a **record** directive on a nested input all the preceding inputs must also be records.
+If the condition should take a list of nested input types, they need to correspond to records. 
+This can be achieved by either using the **table** directive or the **record** directive.
+This will result in a condition that takes the record as parameter, allowing more complex conditions.
+Worth noting here is that jOOQ records can not contain other records.
+Also, to use a **record** directive on a nested input all the preceding inputs must also be Java records.
 
 There are concrete examples of how conditions and Java records may look in our test project files,
 such as [CustomerConditions](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/conditions/CustomerConditions.java)
@@ -404,7 +403,7 @@ The following examples will assume this configuration exists:
 ```
 
 #### Example: No _override_ on input parameter
-Add this condition in addition to the ones automatically applied for this parameter.
+Adds this condition in addition to the conditions automatically generated for this parameter.
 The method must have the table and the input parameter type as parameters.
 
 _Schema_:
@@ -414,12 +413,12 @@ cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "Cit
 
 _Resulting code_:
 ```java
-.and(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
+.where(cityNames != null && cityNames.size() > 0 ? CITY.CITY.in(cityNames) : noCondition())
 .and(some.path.CityCondition.cityMethod(CITY, cityNames))
 ```
 
 #### Example: No _override_ on field with input parameters
-Add this condition in addition to the ones automatically applied for the parameters.
+Adds this condition in addition to the conditions automatically generated for this parameter.
 The method must have the table and all input parameter types for this field as parameters.
 
 _Schema_:
@@ -438,11 +437,10 @@ _Resulting code_:
 ```
 
 #### Example: Both field and parameters
-Remove none of the automatically generated checks, but add both conditions as shown in the two previous examples.
-In other words the two cases do not interfere with each other.
+Removes none of the automatically generated conditions, but add conditions for both the field and parameter as shown in the two previous examples.
 
 #### Example: With _override_ on input parameter
-Replace the automatically generated checks for this parameter with this condition.
+Replaces the automatically generated conditions for the input parameter with the specified condition.
 The method must have the table and the input parameter type as parameters.
 
 _Schema_:
@@ -452,11 +450,11 @@ cityNames: [String!] @field(name: "CITY") @condition(condition: {className: "Cit
 
 _Resulting code_:
 ```java
-.and(some.path.CityCondition.cityMethod(CITY, cityNames))
+.where(some.path.CityCondition.cityMethod(CITY, cityNames))
 ```
 
 #### Example: With _override_ on field with input parameters
-Replace all the automatically generated checks for this field with this condition.
+Replaces the automatically generated conditions for the field with the specified condition.
 The method must have the table and all input parameter types for this field as parameters.
 
 _Schema_: 
@@ -492,12 +490,9 @@ _Resulting code_:
 ```
 
 #### Example: Conditions on input type fields
-Here we have no field condition but condition on parameters, where some have the _override_ value set to _true_. We can
-see that upper-level conditions on input type fields includes all the scalar values that are contained in their
-hierarchy of inputtypes. We also see that automatically generated checks are generated for some values, due to the fact
-that these values are contained within inputtypes that have declared conditions where the _override_ value has _not_
-been set. Setting the _override_ value to _true_ on condition for parameters and fields prevents generation of
-automatically generated checks.
+Here we have conditions on input type parameters, where some have the _override_ value set to _true_.
+Conditions placed on the outer levels of a nested input type, will extract all the scalar values within the type and use them as arguments.
+The default conditions will still be generated for the inner levels of a nested input type when they are not overridden by a parent condition.
 
 _Schema_:
 ```graphql
@@ -515,7 +510,6 @@ input StaffInput {
 input ContactInfoInput {
   name: NameInput! @condition(condition: {name: "STAFF_CONDITION", method: "name"}, override: true)
   jobEmail: EmailInput! @condition(condition: {name: "STAFF_CONDITION", method: "email"})
-
 }
 
 input NameInput {
