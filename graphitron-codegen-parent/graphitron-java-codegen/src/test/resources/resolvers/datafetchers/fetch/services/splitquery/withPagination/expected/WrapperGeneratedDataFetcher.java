@@ -18,9 +18,9 @@ public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<CustomerConnection>> query() {
         return env -> {
             var _args = env.getArguments();
-            Wrapper wrapper = env.getSource();
-            Integer first = env.getArgument("first");
-            String after = env.getArgument("after");
+            var wrapper = ((Wrapper) env.getSource());
+            var first = ((Integer) _args.get("first"));
+            var after = ((String) _args.get("after"));
             int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
             var transform = new RecordTransformer(env);
             var resolverFetchService = new ResolverFetchService(transform.getCtx());

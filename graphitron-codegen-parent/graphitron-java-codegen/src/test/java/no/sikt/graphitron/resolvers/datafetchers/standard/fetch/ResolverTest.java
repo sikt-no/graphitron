@@ -61,7 +61,7 @@ public class ResolverTest extends GeneratorTest {
     void wrongInputCapitalisation() {
         assertGeneratedContentContains(
                 "operation/wrongInputCapitalisation",
-                "iN =", ".getArgument(\"IN\")", ", iN,"
+                "iN =", ".get(\"IN\")", ", iN,"
         );
     }
 
@@ -71,7 +71,7 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/wrongInputTypeCapitalisation",
                 Set.of(DUMMY_INPUT),
-                "iN =", ".getArgument(\"IN\")", ", iN,"
+                "iN =", ".get(\"IN\")", ", iN,"
         );
     }
 

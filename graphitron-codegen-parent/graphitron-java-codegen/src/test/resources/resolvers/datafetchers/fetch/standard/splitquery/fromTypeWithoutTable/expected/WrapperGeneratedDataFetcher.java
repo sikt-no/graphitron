@@ -10,7 +10,7 @@ import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<CustomerTable>> customer() {
         return env -> {
-            Wrapper wrapper = env.getSource();
+            var wrapper = ((Wrapper) env.getSource());
             return new DataFetcherHelper(env).load(wrapper.getCustomerKey(), (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.customerForWrapper(ctx, resolverKeys, selectionSet));
         };
     }

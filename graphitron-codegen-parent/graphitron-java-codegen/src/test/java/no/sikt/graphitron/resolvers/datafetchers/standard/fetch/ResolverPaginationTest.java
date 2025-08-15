@@ -50,9 +50,9 @@ public class ResolverPaginationTest extends GeneratorTest {
     void withOtherInput() {
         assertGeneratedContentContains(
                 "operation/withOtherInput",
-                "Integer first = env.getArgument(\"first\")",
-                "String after = env.getArgument(\"after\")",
-                "String other = env.getArgument(\"other\")",
+                "Integer) _args.get(\"first\"",
+                "String) _args.get(\"after\"",
+                "String) _args.get(\"other\"",
                 "queryForQuery(ctx, other, pageSize, after,"
         );
     }
@@ -68,9 +68,9 @@ public class ResolverPaginationTest extends GeneratorTest {
     void splitQueryWithOtherInput() {
         assertGeneratedContentContains(
                 "splitquery/withOtherInput", Set.of(SPLIT_QUERY_WRAPPER),
-                "Integer first = env.getArgument(\"first\")",
-                "String after = env.getArgument(\"after\")",
-                "String other = env.getArgument(\"other\")",
+                "Integer) _args.get(\"first\"",
+                "String) _args.get(\"after\"",
+                "String) _args.get(\"other\"",
                 "queryForWrapper(ctx, resolverKeys, other, pageSize, after,"
         );
     }

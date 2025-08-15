@@ -43,7 +43,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/wrongCapitalisationJavaRecord",
                 Set.of(DUMMY_INPUT_RECORD),
-                "iN =", ".getArgument(\"IN\")", "iNRecord", "(iN, \"IN\")", ", iNRecord,"
+                "iN =", ".get(\"IN\")", "iNRecord", "(iN, \"IN\")", ", iNRecord,"
         );
     }
 
@@ -53,7 +53,7 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "operation/wrongCapitalisationJOOQRecord",
                 Set.of(CUSTOMER_INPUT_TABLE),
-                "iN =", ".getArgument(\"IN\")", "iNRecord", "(iN, \"IN\")", ", iNRecord,"
+                "iN =", ".get(\"IN\")", "iNRecord", "(iN, \"IN\")", ", iNRecord,"
         );
     }
 
@@ -62,7 +62,7 @@ public class RecordTest extends GeneratorTest {
     void inputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/inputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "in = ResolverHelpers.transformDTO(env.getArgument(\"in\"), DummyInputRecord.class)",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), DummyInputRecord.class)",
                 "transform = new RecordTransformer(env)",
                 "inRecord = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecord,"
@@ -74,7 +74,7 @@ public class RecordTest extends GeneratorTest {
     void listedInputJavaRecord() {
         assertGeneratedContentContains(
                 "operation/listedInputJavaRecord", Set.of(DUMMY_INPUT_RECORD),
-                "in = ResolverHelpers.transformDTOList(env.getArgument(\"in\"), DummyInputRecord.class)",
+                "in = ResolverHelpers.transformDTOList(_args.get(\"in\"), DummyInputRecord.class)",
                 "inRecordList = transform.dummyInputRecordToJavaRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecordList,"
         );
@@ -85,7 +85,7 @@ public class RecordTest extends GeneratorTest {
     void inputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/inputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in = ResolverHelpers.transformDTO(env.getArgument(\"in\"), CustomerInputTable.class)",
+                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), CustomerInputTable.class)",
                 "transform = new RecordTransformer(env)",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecord,"
@@ -97,7 +97,7 @@ public class RecordTest extends GeneratorTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "operation/listedInputJOOQRecord", Set.of(CUSTOMER_INPUT_TABLE),
-                "in = ResolverHelpers.transformDTOList(env.getArgument(\"in\"), CustomerInputTable.class)",
+                "in = ResolverHelpers.transformDTOList(_args.get(\"in\"), CustomerInputTable.class)",
                 "inRecordList = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "queryForQuery(ctx, inRecordList,"
         );
