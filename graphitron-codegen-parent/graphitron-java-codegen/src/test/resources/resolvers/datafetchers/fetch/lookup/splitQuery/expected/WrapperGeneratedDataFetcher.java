@@ -12,7 +12,6 @@ import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
         return env -> {
-            var _args = env.getArguments();
             Wrapper wrapper = env.getSource();
             List<String> id = env.getArgument("id");
             var keys = List.of(id);

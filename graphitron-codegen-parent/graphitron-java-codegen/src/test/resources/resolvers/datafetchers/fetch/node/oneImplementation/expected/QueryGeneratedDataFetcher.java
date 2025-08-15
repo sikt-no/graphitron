@@ -16,7 +16,6 @@ public class QueryGeneratedDataFetcher {
 
     public static DataFetcher<CompletableFuture<Node>> node(NodeIdHandler nodeIdHandler) {
         return env -> {
-            var _args = env.getArguments();
             String id = env.getArgument("id");
             var _targetType = TABLE_TO_TYPE.get(nodeIdHandler.getTable(id).getName());
             if (_targetType == null) {

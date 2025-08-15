@@ -15,7 +15,6 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyConnection>> query() {
         return env -> {
-            var _args = env.getArguments();
             Integer first = env.getArgument("first");
             String after = env.getArgument("after");
             int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
