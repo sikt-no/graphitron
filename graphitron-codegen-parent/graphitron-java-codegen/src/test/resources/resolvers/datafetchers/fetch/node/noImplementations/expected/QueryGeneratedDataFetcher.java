@@ -11,6 +11,7 @@ import no.sikt.graphql.helpers.resolvers.DataFetcherHelper;
 public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<Node>> node(NodeIdHandler nodeIdHandler) {
         return env -> {
+            var _args = env.getArguments();
             String id = env.getArgument("id");
             var _targetType = null;
             if (_targetType == null) {

@@ -17,6 +17,7 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
         return env -> {
+            var _args = env.getArguments();
             Wrapper wrapper = env.getSource();
             String id = env.getArgument("id");
             String str = env.getArgument("str");
@@ -36,6 +37,7 @@ public class WrapperGeneratedDataFetcher {
 
     public static DataFetcher<CompletableFuture<DummyType>> queryNonNullable() {
         return env -> {
+            var _args = env.getArguments();
             Wrapper wrapper = env.getSource();
             String id = env.getArgument("id");
             String str = env.getArgument("str");

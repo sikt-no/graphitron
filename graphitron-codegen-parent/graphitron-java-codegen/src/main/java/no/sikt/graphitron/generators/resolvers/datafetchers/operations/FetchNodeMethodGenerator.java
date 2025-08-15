@@ -72,6 +72,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
 
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(interfaceDefinition.getGraphClassName())))
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
+                .addCode(declareArgs(target))
                 .addCode(extractParams(target))
                 .declare(GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, targetBlock.build())
                 .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)

@@ -12,6 +12,7 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 public class MutationGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<String>> mutation() {
         return env -> {
+            var _args = env.getArguments();
             CustomerInputTable in = ResolverHelpers.transformDTO(env.getArgument("in"), CustomerInputTable.class);
             var transform = new RecordTransformer(env);
 
