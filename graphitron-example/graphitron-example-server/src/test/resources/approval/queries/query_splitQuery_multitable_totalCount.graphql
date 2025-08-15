@@ -1,0 +1,13 @@
+{
+    films(first: 2) {
+        nodes {
+            id
+            actorsAndCategories {
+                nodes {
+                    __typename
+                }
+                totalCount
+            }
+        }
+    }
+}

@@ -62,6 +62,12 @@ public class CountTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Multitable connection outside query")
+    void multiTableInterfaceSplitQuery() {
+        assertGeneratedContentMatches("multiTableInterfaceSplitQuery");
+    }
+
+    @Test
     @DisplayName("Connection on multitable interface with an extra field")
     void multiTableInterfaceWithOtherField() {
         assertGeneratedContentContains("multiTableInterfaceWithOtherField",

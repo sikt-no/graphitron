@@ -97,24 +97,6 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         );
     }
 
-    private CodeBlock getInitialKey(FetchContext context) {
-        var code = CodeBlock.builder();
-
-        var ref = (ObjectField) context.getReferenceObjectField();
-        var table = context.renderQuerySource(getLocalTable());
-        if (LookupHelpers.lookupExists(ref, processedSchema)) {
-            var concatBlock = LookupHelpers.getLookUpKeysAsColumnList(ref, table, processedSchema);
-            if (concatBlock.toString().contains(".inline(")) {
-                code.add("$T.concat($L),\n", DSL.className, concatBlock);
-            } else {
-                code.add(concatBlock).add(",\n");
-            }
-        } else if (!isRoot) {
-            code.add("$L,\n", getSelectKeyColumnRow(context));
-        }
-        return code.build();
-    }
-
     private CodeBlock setFetch(ObjectField referenceField) {
         var refObject = processedSchema.getObjectOrConnectionNode(referenceField);
         if (refObject == null) {
