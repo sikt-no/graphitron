@@ -129,10 +129,10 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
     /**
      * @return Code that declares any service dependencies set for this generator.
      */
-    protected CodeBlock declareAllServiceClasses(String methodName) {
+    protected CodeBlock declareAllServiceClasses(String targetName) {
         var code = CodeBlock.builder();
         dependencyMap
-                .getOrDefault(methodName, List.of())
+                .getOrDefault(targetName, List.of())
                 .stream()
                 .filter(dep -> dep instanceof ServiceDependency) // Inelegant solution, but it should work for now.
                 .distinct()

@@ -19,8 +19,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -55,21 +54,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         if (fieldHasTableService) {
             createServiceDependency(target);
-
         }
 
-
-
         var querySource = fieldHasTableService ?
-                CodeBlock.of(target.getService().getReference().getSchemaClassReference()) :
+                invokeServiceBlock(target.getService().getClassName().simpleName(), target.getService().getMethodName()) :
                 context.renderQuerySource(getLocalTable());
-
-        var fromBlock = fieldHasTableService ?
-                CodeBlock.of(".from($L)\n", target.getService().getReference()) :
-                CodeBlock.of(".from($L)\n", querySource);
-
-        var typeHasCondition = processedSchema.getObject(target).hasConditionDirective();
-
 
         var refContext = target.isResolver() ? context.nextContext(target) : context;
         var actualRefTable = refContext.getTargetAlias();
@@ -86,7 +75,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
                 .addCode(selectAliasesBlock)
-                .addCodeIf(fieldHasTableService, declareAllServiceClasses(target.getService().getMethodName()))
+                .addCodeIf(fieldHasTableService, declareAllServiceClasses(target.getName()))
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
@@ -197,7 +186,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
                 .filter(it -> !processedSchema.isFederationService(it))
                 .filter(GenerationSourceField::isGeneratedWithResolver)
-                .filter(it -> !it.hasServiceReference())
+                .filter(it -> !it.hasServiceReference() || it.hasTableServiceDirective())
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();

@@ -921,6 +921,10 @@ public class FormatCodeBlocks {
         return hasIdOrIdsBlock(id, obj, targetAlias, CodeBlock.empty(), false);
     }
 
+    public static CodeBlock invokeServiceBlock(String variableName, String methodName) {
+        return CodeBlock.of("$L.$L()", uncapitalize(variableName), methodName);
+    }
+
     public static CodeBlock hasIdsBlock(RecordObjectSpecification<?> obj, String targetAlias) {
         return hasIdOrIdsBlock(CodeBlock.of(IDS_NAME), obj, targetAlias, CodeBlock.empty(), true);
     }

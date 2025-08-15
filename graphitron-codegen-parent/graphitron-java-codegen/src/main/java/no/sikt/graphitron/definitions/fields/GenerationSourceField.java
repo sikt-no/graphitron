@@ -34,7 +34,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * This class represents the general functionality associated with GraphQLs fields that can initialise code generation.
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
-    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective, hasNodeID;
+    private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField, hasFieldDirective, hasNodeID, hasTableServiceDirective;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
@@ -66,6 +66,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
                 || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !container.equals(SCHEMA_MUTATION.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
+        hasTableServiceDirective = field.hasDirective(TABLE_SERVICE.getName());
 
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
 
@@ -179,7 +180,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
     @Override
     public boolean hasServiceReference() {
-        return
         return serviceWrapper != null;
     }
 
@@ -226,4 +226,9 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     public String getNodeIdTypeName() {
         return nodeIdTypeName;
     }
+
+    public boolean hasTableServiceDirective() {
+        return hasTableServiceDirective;
+    }
+
 }

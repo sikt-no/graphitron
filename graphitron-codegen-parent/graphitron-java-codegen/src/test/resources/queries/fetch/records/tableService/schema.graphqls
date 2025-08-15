@@ -1,5 +1,5 @@
 type Query {
-    customer: Customer @tableService(tableService: {name: "CUSTOMER_TABLE_SERVICE", method: "customerTableService"})
+    customer: Customer @tableService(service: {name: "CUSTOMER_TABLE_SERVICE", method: "customerTable"})
 }
 
 type Customer {
