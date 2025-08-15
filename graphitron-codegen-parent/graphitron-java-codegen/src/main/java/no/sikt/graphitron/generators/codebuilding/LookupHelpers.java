@@ -166,10 +166,13 @@ public class LookupHelpers {
             return GeneratorConfig.shouldMakeNodeStrategy()
                     ? createNodeIdBlock(schema.getObject(it.getNodeIdTypeName()), table.toString())
                     : CodeBlock.of("$L$L", table, it.getMappingFromFieldOverride().asGetCall());
-        } else if (!it.getTypeClass().equals(ClassName.get(String.class))) {
-            return CodeBlock.of("$L.$L.cast($T.class)", table, it.getUpperCaseName(), STRING.className);
         }
-        return CodeBlock.of("$L.$L", table, it.getUpperCaseName());
+        var fieldBlock =  CodeBlock.of("$L.$L", table, it.getUpperCaseName());
+        if (it.getTypeClass().equals(ClassName.get(String.class))) {
+            return fieldBlock;
+        }
+
+        return CodeBlock.of("$L.cast($T.class)", fieldBlock, STRING.className);
     }
 
     private static CodeBlock fieldToKeyCodeBlock(GenerationField field) {
