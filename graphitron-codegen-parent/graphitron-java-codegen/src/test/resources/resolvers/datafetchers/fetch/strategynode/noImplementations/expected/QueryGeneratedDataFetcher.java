@@ -14,7 +14,7 @@ public class QueryGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<Node>> node(NodeIdStrategy nodeIdStrategy) {
         return env -> {
             var _args = env.getArguments();
-            var id = ((String) _args.get("id"));
+            String id = env.getArgument("id");
             var _typeId = null;
             if (_typeId == null) {
                 throw new IllegalArgumentException("Could not resolve input id with value " + id + " within type " + _typeId);

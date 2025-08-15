@@ -13,7 +13,7 @@ public class MutationGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<String>> mutation() {
         return env -> {
             var _args = env.getArguments();
-            var in = ResolverHelpers.transformDTO(_args.get("in"), CustomerInputTable.class);
+            CustomerInputTable in = ResolverHelpers.transformDTO(env.getArgument("in"), CustomerInputTable.class);
             var transform = new RecordTransformer(env);
 
             var inRecord = transform.customerInputTableToJOOQRecord(in, "in");

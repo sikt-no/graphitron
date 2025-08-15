@@ -43,7 +43,9 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Single input")
     void oneInput() {
-        assertGeneratedContentContains("oneInput", "in = ((String) _args.get(\"in\"))", ".mutation(in)");
+        //assertGeneratedContentContains("oneInput", "in = ((String) _args.get(\"in\"))", ".mutation(in)");
+        assertGeneratedContentContains("oneInput", "String in = env.getArgument(\"in\")", ".mutation(in)");
+
     }
 
     @Test
@@ -55,7 +57,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Listed input")
     void listedInput() {
-        assertGeneratedContentContains("listedInput", "in = ((List<String>) _args.get(\"in\"))", ".mutation(in)");
+        assertGeneratedContentContains("listedInput", "List<String> in = env.getArgument(\"in\")", ".mutation(in)");
     }
 
     @Test

@@ -13,8 +13,8 @@ public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
         return env -> {
             var _args = env.getArguments();
-            var wrapper = ((Wrapper) env.getSource());
-            var id = ((List<String>) _args.get("id"));
+            Wrapper wrapper = env.getSource();
+            List<String> id = env.getArgument("id");
             var keys = List.of(id);
             return new DataFetcherHelper(env).loadLookup(keys, (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, id, selectionSet));
         };

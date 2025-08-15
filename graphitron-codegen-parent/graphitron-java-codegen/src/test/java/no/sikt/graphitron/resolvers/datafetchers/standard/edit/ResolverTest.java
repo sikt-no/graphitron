@@ -45,7 +45,7 @@ public class ResolverTest extends GeneratorTest {
     void withNonRecordInput() {
         assertGeneratedContentContains(
                 "withNonRecordInput",
-                "email = ((String) _args.get(\"email\"))",
+                "String email = env.getArgument(\"email\")",
                 ".mutationForMutation(transform.getCtx(), inRecord, email)"
         );
     }
