@@ -50,7 +50,7 @@ public class ProcessedSchema {
     private final boolean nodeExists;
 
     // Graphitron-provided special inputs. Should be excluded from certain operations.
-    private final Set<String> specialInputs = Set.of("ExternalCodeReference", "ReferenceElement", "ErrorHandler");
+    private final Set<String> specialInputs = Set.of("ExternalCodeReference", "ReferenceElement", "ErrorHandler", "ReferencesForType");
 
     public ProcessedSchema(TypeDefinitionRegistry typeRegistry) {
         typeNames = typeRegistry.getTypes(TypeDefinition.class).stream().map(TypeDefinition::getName).collect(Collectors.toSet());
