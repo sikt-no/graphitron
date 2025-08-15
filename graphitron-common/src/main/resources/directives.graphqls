@@ -103,6 +103,21 @@ directive @reference(
   references: [ReferenceElement!]!
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
+"""
+Similar to the reference directive, but for fields returning data from multiple tables.
+"""
+directive @multitableReference(
+    routes: [ReferencesForType!]
+) on FIELD_DEFINITION
+
+input ReferencesForType {
+    "Name of the GraphQL type the reference path should apply to. This name is case sensitive."
+    typeName: String!
+
+    "The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type specified in the typeName parameter."
+    path: [ReferenceElement!]!
+}
+
 """Adjust constraints for this field, argument or input field."""
 directive @condition(
   """Condition to be used. Available values are set in the plugin configuration."""
