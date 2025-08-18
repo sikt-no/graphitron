@@ -55,7 +55,7 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     @DisplayName("Type implementing interface")
     void implementingInterface() {
         assertGeneratedContentContains("implementingInterface", Set.of(VALIDATION_ERROR),
-                "ValidationError implements Serializable, Error"
+                "ValidationError implements Error"
         );
     }
 
@@ -63,7 +63,7 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     @DisplayName("Type is part of a union")
     void isPartOfUnion() {
         assertGeneratedContentContains("isPartOfUnion", Set.of(CUSTOMER_TABLE),
-                "CustomerTable implements Serializable, SomeUnion");
+                "CustomerTable implements SomeUnion");
     }
 
     @Test

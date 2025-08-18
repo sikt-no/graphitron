@@ -16,8 +16,12 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 
+import java.io.Serial;
+
 @WebServlet(name = "GraphqlServlet", urlPatterns = {"graphql/*"}, loadOnStartup = 1)
 public class GraphqlServlet extends GraphitronServlet {
+    @Serial
+    private static final long serialVersionUID = 1L;
     private final AgroalDataSource dataSource;
 
     @Inject

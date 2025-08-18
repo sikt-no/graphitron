@@ -6,8 +6,12 @@ package no.sikt.jooq.example;
 import org.jooq.Record2;
 import org.jooq.impl.UpdatableRecordImpl;
 
+import java.io.Serial;
+
 @SuppressWarnings({"all", "unchecked", "rawtypes"})
 public class VacationDestinationRecord extends UpdatableRecordImpl<VacationDestinationRecord> {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     public void setDestinationId(Long value) {
         set(0, value);

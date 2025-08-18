@@ -2,9 +2,12 @@ package no.sikt.graphitron.converters;
 
 import org.jooq.Converter;
 
+import java.io.Serial;
 import java.util.Optional;
 
 public class ShortToIntegerConverter implements Converter<Short, Integer> {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     @Override
     public Integer from(Short databaseObject) {

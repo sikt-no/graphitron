@@ -1,12 +1,11 @@
 package no.sikt.graphitron.example.generated.graphitron.model;
 
-import java.io.Serializable;
 import java.lang.Object;
 import java.lang.String;
 import java.util.Objects;
 import java.lang.Override;
 
-public class CustomerTable implements Serializable {
+public class CustomerTable{
     private String id;
 
     public CustomerTable() {

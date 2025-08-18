@@ -9,7 +9,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.lang.model.element.Modifier;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -33,8 +32,6 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
         var classBuilder = TypeSpec.classBuilder(targetName)
                 .addModifiers(Modifier.PUBLIC)
                 .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC).build());
-
-        classBuilder.addSuperinterface(ClassName.get(Serializable.class));
 
         var constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
 
