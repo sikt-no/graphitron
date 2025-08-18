@@ -11,7 +11,7 @@ import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<Customer>> query() {
         return env -> {
-            var wrapper = ((Wrapper) env.getSource());
+            Wrapper wrapper = env.getSource();
             var transform = new RecordTransformer(env);
             var resolverFetchService = new ResolverFetchService(transform.getCtx());
             return new ServiceDataFetcherHelper<>(transform).load(

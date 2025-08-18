@@ -17,16 +17,16 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyType>> query() {
         return env -> {
-            var _args = env.getArguments();
-            var wrapper = ((Wrapper) env.getSource());
-            var id = ((String) _args.get("id"));
-            var str = ((String) _args.get("str"));
-            var bool = ((Boolean) _args.get("bool"));
-            var i = ((Integer) _args.get("i"));
-            var e = ((DummyEnum) _args.get("e"));
-            var in = ResolverHelpers.transformDTO(_args.get("in"), DummyInput.class);
-            var idList = ((List<String>) _args.get("idList"));
-            var inList = ResolverHelpers.transformDTOList(_args.get("inList"), DummyInput.class);
+            Wrapper wrapper = env.getSource();
+            String id = env.getArgument("id");
+            String str = env.getArgument("str");
+            Boolean bool = env.getArgument("bool");
+            Integer i = env.getArgument("i");
+            DummyEnum e = env.getArgument("e");
+            DummyInput in = ResolverHelpers.transformDTO(env.getArgument("in"), DummyInput.class);
+            List<String> idList = env.getArgument("idList");
+            List<DummyInput> inList = ResolverHelpers.transformDTOList(env.getArgument("inList"), DummyInput.class);
+
             return new DataFetcherHelper(env).load(
                     wrapper.getQueryKey(),
                     (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryForWrapper(ctx, resolverKeys, id, str, bool, i, e, in, idList, inList, selectionSet)
@@ -36,16 +36,16 @@ public class WrapperGeneratedDataFetcher {
 
     public static DataFetcher<CompletableFuture<DummyType>> queryNonNullable() {
         return env -> {
-            var _args = env.getArguments();
-            var wrapper = ((Wrapper) env.getSource());
-            var id = ((String) _args.get("id"));
-            var str = ((String) _args.get("str"));
-            var bool = ((Boolean) _args.get("bool"));
-            var i = ((Integer) _args.get("i"));
-            var e = ((DummyEnum) _args.get("e"));
-            var in = ResolverHelpers.transformDTO(_args.get("in"), DummyInput.class);
-            var idList = ((List<String>) _args.get("idList"));
-            var inList = ResolverHelpers.transformDTOList(_args.get("inList"), DummyInput.class);
+            Wrapper wrapper = env.getSource();
+            String id = env.getArgument("id");
+            String str = env.getArgument("str");
+            Boolean bool = env.getArgument("bool");
+            Integer i = env.getArgument("i");
+            DummyEnum e = env.getArgument("e");
+            DummyInput in = ResolverHelpers.transformDTO(env.getArgument("in"), DummyInput.class);
+            List<String> idList = env.getArgument("idList");
+            List<DummyInput> inList = ResolverHelpers.transformDTOList(env.getArgument("inList"), DummyInput.class);
+
             return new DataFetcherHelper(env).load(
                     wrapper.getQueryNonNullableKey(),
                     (ctx, resolverKeys, selectionSet) -> WrapperDBQueries.queryNonNullableForWrapper(ctx, resolverKeys, id, str, bool, i, e, in, idList, inList, selectionSet)

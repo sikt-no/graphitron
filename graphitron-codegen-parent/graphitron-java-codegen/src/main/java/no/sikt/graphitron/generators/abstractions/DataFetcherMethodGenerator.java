@@ -41,8 +41,9 @@ abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator
                 .builder()
                 .declareIf(
                         !localObject.isOperationRoot(),
+                        localObject.getGraphClassName(),
                         localObject.getName(),
-                        () -> asCast(localObject.getGraphClassName(), asMethodCall(VARIABLE_ENV, METHOD_SOURCE_NAME))
+                        () -> asMethodCall(VARIABLE_ENV, METHOD_SOURCE_NAME)
                 )
                 .addAll(target.getArguments().stream().map(this::declareArgument).toList())
                 .addIf(target.hasForwardPagination(), declarePageSize(target.getFirstDefault()))
@@ -50,9 +51,9 @@ abstract public class DataFetcherMethodGenerator extends ResolverMethodGenerator
     }
 
     private CodeBlock declareArgument(ArgumentField field) {
-        var getBlock = CodeBlock.of("$N.get($S)", VARIABLE_ARGS, field.getName());
-        var transformBlock = !processedSchema.isRecordType(field) ? asCast(iterableWrapType(field), getBlock) : transformDTOBlock(field, getBlock);
-        return CodeBlock.declare(field.getName(), transformBlock);
+        var getBlock = CodeBlock.of("$N.getArgument($S)", VARIABLE_ENV, field.getName());
+        var transformBlock = processedSchema.isRecordType(field) ? transformDTOBlock(field, getBlock) : getBlock;
+        return CodeBlock.declare(iterableWrapType(field), field.getName(), transformBlock);
     }
 
     protected CodeBlock transformDTOBlock(GenerationField field, CodeBlock source) {

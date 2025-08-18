@@ -47,7 +47,7 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Basic root service with a parameter")
     void withInput() {
-        assertGeneratedContentContains("operation/withInput", "id = ((String) _args.get(\"id\"))", "resolverFetchService.query(id)");
+        assertGeneratedContentContains("operation/withInput", "String id = env.getArgument(\"id\")", "resolverFetchService.query(id)");
     }
 
     @Test
@@ -89,7 +89,7 @@ public class ResolverTest extends GeneratorTest {
     void withPaginationAndRecord() {
         assertGeneratedContentContains(
                 "operation/withPaginationAndRecord", Set.of(CUSTOMER_CONNECTION, CUSTOMER_INPUT_TABLE),
-                "in = ResolverHelpers.transformDTO(_args.get(\"in\"), CustomerInputTable.class)",
+                "in = ResolverHelpers.transformDTO(env.getArgument(\"in\"), CustomerInputTable.class)",
                 "inRecord = transform.customerInputTableToJOOQRecord(in, \"in\")",
                 "resolverFetchService.queryList(inRecord, pageSize, after",
                 "resolverFetchService.countQueryList(inRecord"
@@ -107,7 +107,7 @@ public class ResolverTest extends GeneratorTest {
     void splitQueryWithInput() {
         assertGeneratedContentContains(
                 "splitquery/withInput", Set.of(SPLIT_QUERY_WRAPPER),
-                "id = ((String) _args.get(\"id\"))",
+                "String id = env.getArgument(\"id\")",
                 "resolverFetchService.query(resolverKeys, id)"
         );
     }

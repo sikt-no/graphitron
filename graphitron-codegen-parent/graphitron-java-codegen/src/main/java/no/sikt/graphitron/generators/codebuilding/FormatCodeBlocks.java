@@ -827,10 +827,6 @@ public class FormatCodeBlocks {
                 : CodeBlock.of(".fetchOneMap()");
     }
 
-    public static CodeBlock declareArgs(ObjectField target) {
-        return CodeBlock.declareIf(!target.getArguments().isEmpty(), VARIABLE_ARGS, asMethodCall(VARIABLE_ENV, METHOD_ARGS_NAME));
-    }
-
     /**
      * @return CodeBlock that returns the provided name.
      */
