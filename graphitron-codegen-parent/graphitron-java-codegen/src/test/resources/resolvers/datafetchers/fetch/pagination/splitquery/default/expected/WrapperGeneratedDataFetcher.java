@@ -16,10 +16,9 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 public class WrapperGeneratedDataFetcher {
     public static DataFetcher<CompletableFuture<DummyConnection>> query() {
         return env -> {
-            var _args = env.getArguments();
-            var wrapper = ((Wrapper) env.getSource());
-            var first = ((Integer) _args.get("first"));
-            var after = ((String) _args.get("after"));
+            Wrapper wrapper = env.getSource();
+            Integer first = env.getArgument("first");
+            String after = env.getArgument("after");
             int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
             return new DataFetcherHelper(env).loadPaginated(
                     wrapper.getQueryKey(), pageSize, 1000,
