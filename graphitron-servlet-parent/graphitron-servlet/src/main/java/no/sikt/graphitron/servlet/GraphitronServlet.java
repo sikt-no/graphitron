@@ -1,12 +1,6 @@
 package no.sikt.graphitron.servlet;
 
-import graphql.ErrorClassification;
-import graphql.ErrorType;
-import graphql.ExecutionInput;
-import graphql.ExecutionResult;
-import graphql.GraphQL;
-import graphql.GraphQLError;
-import graphql.GraphQLException;
+import graphql.*;
 import jakarta.json.bind.JsonbBuilder;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,10 +14,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.Serial;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 public abstract class GraphitronServlet extends HttpServlet {
+    @Serial
+    private static final long serialVersionUID = 1L;
     Logger logger = LoggerFactory.getLogger(GraphitronServlet.class);
 
     @Override

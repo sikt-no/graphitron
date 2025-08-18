@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.context;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.javapoet.CodeBlock;
 
+import java.io.Serial;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -15,6 +16,8 @@ import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMeth
  * A list of table or key references.
  */
 public class JoinListSequence extends LinkedList<JoinElement> {
+    @Serial
+    private static final long serialVersionUID = 1L;
     /**
      * @return Render all the elements of this list to a method call sequence.
      */

@@ -1,10 +1,9 @@
-import java.io.Serializable;
 import java.lang.Object;
 import java.lang.Override;
 import java.time.OffsetTime;
 import java.util.Objects;
 
-public class Customer implements Serializable {
+public class Customer {
     private OffsetTime time;
 
     public Customer() {

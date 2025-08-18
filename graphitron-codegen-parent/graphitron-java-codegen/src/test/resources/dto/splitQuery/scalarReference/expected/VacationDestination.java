@@ -1,6 +1,5 @@
 package no.sikt.graphitron.example.generated.graphitron.model;
 
-import java.io.Serializable;
 import java.lang.Long;
 import java.lang.Object;
 import java.lang.Override;
@@ -8,8 +7,7 @@ import java.util.Objects;
 import org.jooq.Record1;
 import org.jooq.Row1;
 
-public class VacationDestination implements Serializable {
-
+public class VacationDestination {
     private Row1<Long> vacation_destination_vacation_fkey;
 
     private Row1<Long> vacationDescriptionKey;

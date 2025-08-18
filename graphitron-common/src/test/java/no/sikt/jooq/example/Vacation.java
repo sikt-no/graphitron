@@ -10,7 +10,11 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
+import java.io.Serial;
+
 public class Vacation extends TableImpl<VacationRecord> {
+    @Serial
+    private static final long serialVersionUID = 1L;
     public static final Vacation VACATION = new Vacation();
 
     public final TableField<VacationRecord, Long> VACATION_ID = createField(DSL.name("vacation_id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");

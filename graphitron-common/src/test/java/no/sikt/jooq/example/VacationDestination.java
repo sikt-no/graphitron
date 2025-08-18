@@ -10,8 +10,12 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
+import java.io.Serial;
+
 @SuppressWarnings({"all", "unchecked", "rawtypes"})
 public class VacationDestination extends TableImpl<VacationDestinationRecord> {
+    @Serial
+    private static final long serialVersionUID = 1L;
     public static final VacationDestination VACATION_DESTINATION = new VacationDestination();
 
     public final TableField<VacationDestinationRecord, Long> DESTINATION_ID = createField(DSL.name("destination_id"), SQLDataType.BIGINT.nullable(false).identity(true), this, "");
