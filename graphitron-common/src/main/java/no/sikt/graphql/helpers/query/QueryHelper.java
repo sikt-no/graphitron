@@ -35,7 +35,7 @@ public class QueryHelper {
                 .toArray(Field[]::new);
 
         if (token == null || token.isBlank()) {
-            return new Object[]{};
+            return new Field[]{noField()};
         }
 
         try {
