@@ -59,6 +59,14 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Custom node ID field to graph with node strategy (temporary test)")
+    void toGraphCustomNodeId() {
+        assertGeneratedContentContains("toGraph/toGraphCustomNodeId",
+                "customerNode.setId(nodeIdStrategy.createId(itCustomerRecord, \"C\", Customer.CUSTOMER.CUSTOMER_ID))"
+        );
+    }
+
+    @Test
     @DisplayName("To graph with node strategy (temporary test)")
     void toGraphNotNodeId() {
         assertGeneratedContentContains("toGraph/notNodeId",
