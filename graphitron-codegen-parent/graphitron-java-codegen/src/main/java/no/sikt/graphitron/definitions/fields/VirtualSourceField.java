@@ -7,6 +7,8 @@ import no.sikt.graphitron.definitions.sql.SQLCondition;
 
 import java.util.List;
 
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
+
 /**
  * Virtual field for when we want to have a virtual source for code generation.
  */
@@ -14,15 +16,25 @@ public class VirtualSourceField extends ObjectField {
     public static final String VIRTUAL_FIELD_NAME = "_";
     private final List<ArgumentField> nonReservedArguments;
     private final SQLCondition condition;
+    private final boolean isResolver;
 
-    public VirtualSourceField(RecordObjectSpecification<?> targetType, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition) {
+    public VirtualSourceField(RecordObjectSpecification<?> targetType, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver) {
         super(new FieldDefinition(VIRTUAL_FIELD_NAME, new TypeName(targetType.getName())), container);
         this.nonReservedArguments = nonReservedArguments;
         this.condition = condition;
+        this.isResolver = isResolver;
+    }
+
+    public VirtualSourceField(RecordObjectSpecification<?> targetType, ObjectField target) {
+        this(targetType, target.getContainerTypeName(), target.getNonReservedArguments(), target.getCondition(), target.isResolver());
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType, String container) {
-        this(targetType, container, List.of(), null);
+        this(targetType, container, List.of(), null, false);
+    }
+
+    public VirtualSourceField(RecordObjectSpecification<?> targetType) {
+        this(targetType, SCHEMA_QUERY.getName(), List.of(), null, false);
     }
 
     /**
@@ -54,5 +66,10 @@ public class VirtualSourceField extends ObjectField {
     @Override
     public boolean hasOverridingCondition() {
         return hasCondition() && condition.isOverride();
+    }
+
+    @Override
+    public boolean isResolver() {
+        return isResolver;
     }
 }

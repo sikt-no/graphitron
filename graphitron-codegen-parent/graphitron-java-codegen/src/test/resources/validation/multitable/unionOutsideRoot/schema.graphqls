@@ -1,0 +1,17 @@
+type Query {
+  query: Payment @notGenerated
+}
+
+type Payment @table {
+  staffAndCustomers: [PersonWithEmail] @splitQuery
+}
+
+union PersonWithEmail = Staff | Customer
+
+type Staff @table(name: "STAFF") {
+  email: String
+}
+
+type Customer @table(name: "CUSTOMER") {
+  email: String
+}

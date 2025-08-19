@@ -39,18 +39,26 @@ public class UnionTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Union with multitable query")
-    void unionTypeCase() {
-        assertGeneratedContentContains("multiTableUnionQuery",  Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
+    @DisplayName("Multitable union query")
+    void multitableUnion() {
+        assertGeneratedContentContains("multitableUnion",  Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
                 "languageSortFieldsForPaginatedUnionQuery"
         );
     }
 
     @Test
-    @DisplayName("Union with singletable query")
-    void unionSingleTypeCase() {
-        assertGeneratedContentContains("multiTableUnionOneType", Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
+    @DisplayName("Multitable union with one type")
+    void multitableUnionOneType() {
+        assertGeneratedContentContains("multitableUnionOneType", Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
                 " languageForPaginatedUnionQuery()"
+        );
+    }
+
+    @Test
+    @DisplayName("Multitable union in splitQuery field")
+    void multitableUnionSplitQuery() {
+        assertGeneratedContentContains("multitableUnionSplitQuery",  Set.of(PAGE_INFO, SOMEUNION_CONNECTION),
+                "staffAndCustomersForPayment"
         );
     }
 

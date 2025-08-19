@@ -1,0 +1,72 @@
+{
+    "data": {
+        "films": {
+            "nodes": [
+                {
+                    "id": "RmlsbTox",
+                    "actorsAndCategories": {
+                        "nodes": [
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmCategory"
+                            }
+                        ],
+                        "totalCount": 11
+                    }
+                },
+                {
+                    "id": "RmlsbToy",
+                    "actorsAndCategories": {
+                        "nodes": [
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmActor"
+                            },
+                            {
+                                "__typename": "FilmCategory"
+                            }
+                        ],
+                        "totalCount": 5
+                    }
+                }
+            ]
+        }
+    }
+}
