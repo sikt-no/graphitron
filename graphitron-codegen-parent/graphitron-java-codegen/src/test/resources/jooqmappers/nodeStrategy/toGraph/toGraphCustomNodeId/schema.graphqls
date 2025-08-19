@@ -1,0 +1,7 @@
+type Query {
+  query: CustomerNode @service(service: {name: "DUMMY_SERVICE"})
+}
+
+type CustomerNode implements Node @node(typeId: "C", keyColumns: ["CUSTOMER_ID"]) @table(name: "CUSTOMER") {
+    id: ID!
+}

@@ -933,7 +933,7 @@ public class FormatCodeBlocks {
 
     public static CodeBlock nodeIdColumnsBlock(RecordObjectSpecification<?> obj) {
         if (obj.hasCustomKeyColumns()) {
-            return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$N.$L", staticTableInstanceBlock(obj.getTable().getName()), it))
+            return obj.getKeyColumns().stream().map(it -> CodeBlock.of("$L.$L", staticTableInstanceBlock(obj.getTable().getName()), it))
                     .collect(CodeBlock.joining(", "));
         }
         return getPrimaryKeyFieldsBlock(staticTableInstanceBlock(obj.getTable().getName()));
