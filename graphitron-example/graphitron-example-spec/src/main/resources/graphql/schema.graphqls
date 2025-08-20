@@ -37,9 +37,9 @@ type Query {
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
 
-    addressTableService(input: String @field(name: "POSTAL_CODE")): Address @tableService(service: {className: "no.sikt.graphitron.example.service.AddressTableService", method: "addressTableService"} )
-    addressTableServiceConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableService(service: {className: "no.sikt.graphitron.example.service.AddressTableService", method: "addressTableService"} )
-    addressTableServiceSplitquery(input: String @field(name: "POSTAL_CODE")): Address @tableService(service: {className: "no.sikt.graphitron.example.service.AddressTableService", method: "addressTableService"} ) @splitQuery
+    addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodSplitquery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} ) @splitQuery
 }
 
 type Mutation {
