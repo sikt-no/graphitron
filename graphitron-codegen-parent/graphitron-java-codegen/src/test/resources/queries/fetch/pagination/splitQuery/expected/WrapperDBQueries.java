@@ -17,14 +17,13 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
-import org.jooq.Row1;
-import org.jooq.Record1;
 import org.jooq.Record3;
+import org.jooq.Row1;
 import org.jooq.impl.DSL;
 
 public class WrapperDBQueries {
-    public static Map<Record1<Long>, List<Pair<String, CustomerTable>>> queryForWrapper(
-            DSLContext ctx, Set<Record1<Long>> wrapperResolverKeys, Integer pageSize, String after,
+    public static Map<Row1<Long>, List<Pair<String, CustomerTable>>> queryForWrapper(
+            DSLContext ctx, Set<Row1<Long>> wrapperResolverKeys, Integer pageSize, String after,
             SelectionSet select) {
         var _address = ADDRESS.as("address_2030472956");
         var address_2030472956_customer = _address.customer().as("customer_2337142794");
@@ -37,7 +36,7 @@ public class WrapperDBQueries {
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .where(DSL.row(_address.ADDRESS_ID).in(wrapperResolverKeys))
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)
@@ -45,7 +44,7 @@ public class WrapperDBQueries {
                 .entrySet()
                 .stream()
                 .collect(Collectors.toMap(
-                        Map.Entry::getKey,
+                        r -> r.getKey().valuesRow(),
                         list -> list.getValue().stream()
                                     .map(e -> new ImmutablePair<>(e.value2(), e.value3()))
                                     .collect(Collectors.toList())

@@ -44,16 +44,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var context = new FetchContext(processedSchema, targetField, targetOwner, false);
 
         // Note that this must happen before alias declaration.
-//        var selectRowBlock = getSelectRowOrField(targetField, context);
-        var selectRowBlock = isIterableWrappedResolverWithPagination(targetField)
-                             ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
-                             : generateSelectRow(context);
+        var selectRowBlock = getSelectRowOrField(targetField, context);
         var querySource = context.renderQuerySource(getSourceTable(context));
         var whereBlock = formatWhereContents(
                 context,
                 resolverKeyParamName,
                 isRoot,
-                !isIterableWrappedResolverWithPagination(targetField)
+                isIterableWrappedResolverWithPagination(targetField)
         );
 
         var refContext = isIterableWrappedResolverWithPagination(targetField)
@@ -73,7 +70,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var hasNonSubqueryFields = !processedSchema.isRecordType(targetField) || processedSchema.getRecordType(targetField)
                 .getFields()
                 .stream()
-                .anyMatch(it -> !it.invokesSubquery() || processedSchema.isRecordType(it) && processedSchema.getRecordType(it).hasTable() && !processedSchema.getRecordType(it).getTable().equals(context.getTargetTable()));
+                .anyMatch(it -> !it.invokesSubquery() ||
+                                processedSchema.isRecordType(it) &&
+                                processedSchema.getRecordType(it).hasTable() &&
+                                !processedSchema.getRecordType(it).getTable().equals(context.getTargetTable()));
         var code = CodeBlock
                 .builder()
                 .add(selectAliasesBlock)
@@ -108,11 +108,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
-    private CodeBlock getSelectRowOrField(ObjectField target, FetchContext context) {
-        if (!processedSchema.isRecordType(target)) {
-            return generateForScalarField(target, context);
+    private CodeBlock getSelectRowOrField(ObjectField targetField, FetchContext context) {
+        if (!processedSchema.isRecordType(targetField)) {
+            return generateForScalarField(targetField, context);
         }
-        return target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context);
+
+        return isIterableWrappedResolverWithPagination(targetField)
+               ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
+               : generateSelectRow(context);
     }
 
     private CodeBlock createSelectBlock(
@@ -179,7 +182,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             return CodeBlock
                     .builder()
                     .add(".fetchGroups")
-                    .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className)
+                    .addStatement("(r -> r.value1().valuesRow(), $T::value2)", RECORD2.className)
                     .build();
         }
 
@@ -225,7 +228,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".entrySet()\n.stream()\n")
                 .add(".collect($T.toMap(\n", COLLECTORS.className)
                 .indent()
-                .add("$T.Entry::getKey,\n", MAP.className)
+                .add("r -> r.getKey().valuesRow(),\n")
                 .add("list -> list.getValue().stream()\n")
                 .indent()
                 .add(".map(e -> new $T<>(e.value2(), e.value3()))\n", IMMUTABLE_PAIR.className)
