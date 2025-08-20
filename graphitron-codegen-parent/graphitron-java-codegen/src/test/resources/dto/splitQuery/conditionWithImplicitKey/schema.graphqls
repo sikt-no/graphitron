@@ -3,5 +3,5 @@ type Vacation @table(name: "VACATION") {
 }
 
 type VacationDestination @table(name: "VACATION_DESTINATION") {
-    vacations: Vacation @splitQuery @reference(references: [{condition: {name: "DUMMY_CONDITION"}, table: "VACATION"}])
+    vacations: Vacation @splitQuery @reference(path: [{condition: {name: "DUMMY_CONDITION"}, table: "VACATION"}])
 }

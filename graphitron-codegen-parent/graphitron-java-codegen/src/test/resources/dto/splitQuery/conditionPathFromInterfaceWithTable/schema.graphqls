@@ -1,4 +1,4 @@
 interface SomeInterface @table(name: "VACATION_DESTINATION") @discriminate(on: "COUNTRY_NAME"){
     id: ID
-    someString: String @splitQuery @reference(references: [{condition: {name: "DUMMY_CONDITION"}}])
+    someString: String @splitQuery @reference(path: [{condition: {name: "DUMMY_CONDITION"}}])
 }

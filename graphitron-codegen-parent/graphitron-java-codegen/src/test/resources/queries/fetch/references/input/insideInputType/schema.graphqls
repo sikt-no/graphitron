@@ -3,5 +3,5 @@ type Query {
 }
 
 input Input {
-  district: String! @reference(references: [{table: "ADDRESS"}])
+  district: String! @reference(path: [{table: "ADDRESS"}])
 }

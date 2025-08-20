@@ -3,7 +3,7 @@ type Query {
 }
 
 input AddressInput {
-  city: String! @field(name: "CITY_") @reference(references: [{table: "CITY"}])
+  city: String! @field(name: "CITY_") @reference(path: [{table: "CITY"}])
 }
 
 interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){

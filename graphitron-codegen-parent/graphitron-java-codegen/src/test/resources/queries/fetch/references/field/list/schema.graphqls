@@ -1,3 +1,3 @@
 type Customer @table {
-  address: [String]! @field(name: "ADDRESS_ID") @reference(references: [{table: "ADDRESS"}])
+  address: [String]! @field(name: "ADDRESS_ID") @reference(path: [{table: "ADDRESS"}])
 }

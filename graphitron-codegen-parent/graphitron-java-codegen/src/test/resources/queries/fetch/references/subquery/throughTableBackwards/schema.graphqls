@@ -3,5 +3,5 @@ type Query {
 }
 
 type City @table {
-  customer: CustomerTable @reference(references: [{table: "ADDRESS"}])
+  customer: CustomerTable @reference(path: [{table: "ADDRESS"}])
 }

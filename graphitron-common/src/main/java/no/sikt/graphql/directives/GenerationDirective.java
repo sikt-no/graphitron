@@ -18,7 +18,7 @@ public enum GenerationDirective {
     ERROR("error", EnumSet.of(GenerationDirectiveParam.HANDLERS)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),
     LOOKUP_KEY("lookupKey"),
-    REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.REFERENCES)),
+    REFERENCE("reference", EnumSet.of(GenerationDirectiveParam.PATH)),
     ENUM("enum", EnumSet.of(GenerationDirectiveParam.ENUM)),
     CONDITION("condition", EnumSet.of(GenerationDirectiveParam.CONDITION, GenerationDirectiveParam.OVERRIDE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
     ORDER_BY("orderBy"),

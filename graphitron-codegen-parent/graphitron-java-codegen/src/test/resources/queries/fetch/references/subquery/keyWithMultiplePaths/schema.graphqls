@@ -3,7 +3,7 @@ type Query {
 }
 
 type Film @table {
-  language: Language! @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+  language: Language! @reference(path: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
 }
 
 type Language @table {

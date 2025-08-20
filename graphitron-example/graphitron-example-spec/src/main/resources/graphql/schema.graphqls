@@ -28,7 +28,7 @@ type Query {
     languages: [Language] @asConnection
 
     payments(dateTime: LocalDateTime @field(name: "PAYMENT_DATE"), amount: BigDecimal): [Payment] @asConnection
-    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(references: [{table: "RENTAL"}])): [Payment] @asConnection
+    paymentsFilteredByInventory(inventoryId: Int @field(name: "inventory_id") @reference(path: [{table: "RENTAL"}])): [Payment] @asConnection
 
     staff(input: StaffInput!): [Staff] @asConnection
 
@@ -97,11 +97,11 @@ type Address implements Node @node @table @key(fields: "id", resolvable: false) 
 type City implements Node @table @node(typeId: "CityType"){
     id: ID!
     name: String! @field(name: "CITY_")
-    countryName: String! @field(name: "COUNTRY_") @reference(references: [{table: "COUNTRY"}])
+    countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}])
     addressExample: Address @splitQuery @notGenerated
     addresses: [Address] @splitQuery
     addressesPaginated: [Address] @splitQuery @asConnection
-    payments: [Payment] @reference(references: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+    payments: [Payment] @reference(path: [{table: "ADDRESS"}, {key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
 }
 
 type CityWithoutID @table(name: "CITY") {
@@ -129,14 +129,14 @@ enum FilmCategoryEnum { # Note that this enum is not complete, and other values 
 type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
     id: ID!
     name: String
-    films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
+    films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
 }
 
 type Film implements Node @node @table {
     id: ID!
     title: String
     description: String
-    language: Language @reference(references: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
 }
 
 input FilmLookupInput {
@@ -165,7 +165,7 @@ input FilmDescriptionInput @table(name: "FILM") {
 }
 
 input FilmCreateInput @table(name: "FILM") {
-    languageId: ID! @nodeId(typeName: "Language") @reference(references: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    languageId: ID! @nodeId(typeName: "Language") @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
     title: String!
 }
 
@@ -188,8 +188,8 @@ type Payment @table {
 input StaffInput {
     username: String
     isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
-    addressId: Int @field(name: "ADDRESS_ID") @reference(references: [{table: "ADDRESS"}])
-    withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(references: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
+    addressId: Int @field(name: "ADDRESS_ID") @reference(path: [{table: "ADDRESS"}])
+    withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(path: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
 }
 
 type Staff implements Node @node @table(name: "STAFF") {
@@ -202,7 +202,7 @@ union LanguageStaffUnion = Language | Staff
 
 input CustomerJavaRecordInput @record(record: {className: "no.sikt.graphitron.example.service.records.CustomerJavaInput"}) {
     id: ID! @nodeId(typeName: "Customer")
-    addressId: ID @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+    addressId: ID @nodeId(typeName: "Address") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
 }
 

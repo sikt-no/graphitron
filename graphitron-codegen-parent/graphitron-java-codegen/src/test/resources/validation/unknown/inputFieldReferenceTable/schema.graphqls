@@ -1,3 +1,3 @@
 input Dummy {
-  id: ID @reference(references: {table: "UNKNOWN_TABLE"})
+  id: ID @reference(path: {table: "UNKNOWN_TABLE"})
 }

@@ -4,5 +4,5 @@ type Query {
 
 type Film @table {
   id: ID!
-  sequel: Film @splitQuery @reference(references: [{condition: {name: "REFERENCE_FILM_CONDITION"}}])
+  sequel: Film @splitQuery @reference(path: [{condition: {name: "REFERENCE_FILM_CONDITION"}}])
 }

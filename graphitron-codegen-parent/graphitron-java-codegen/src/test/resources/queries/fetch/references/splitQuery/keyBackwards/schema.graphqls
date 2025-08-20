@@ -3,5 +3,5 @@ type Query {
 }
 
 type Address @table {
-  customer: CustomerTable @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+  customer: CustomerTable @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }

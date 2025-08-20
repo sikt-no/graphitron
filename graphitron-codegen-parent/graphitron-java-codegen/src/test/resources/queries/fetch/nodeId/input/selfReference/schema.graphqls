@@ -1,5 +1,5 @@
 type Query {
-  query(sequelId: ID! @nodeId(typeName: "Film") @reference(references: [{table: "FILM"}])): Film
+  query(sequelId: ID! @nodeId(typeName: "Film") @reference(path: [{table: "FILM"}])): Film
 }
 
 type Film implements Node @node @table {
