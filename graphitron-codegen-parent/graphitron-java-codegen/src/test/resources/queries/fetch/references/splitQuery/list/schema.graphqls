@@ -1,5 +1,5 @@
 type Customer @table {
-  address: [Address]! @splitQuery @reference(references: [{table: "ADDRESS"}])
+  address: [Address]! @splitQuery @reference(path: [{table: "ADDRESS"}])
 }
 
 type Address @table {

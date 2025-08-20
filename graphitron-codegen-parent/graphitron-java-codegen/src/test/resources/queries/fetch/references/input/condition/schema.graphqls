@@ -1,3 +1,3 @@
 type Query {
-  query(district: String! @reference(references: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION"}}])): CustomerTable
+  query(district: String! @reference(path: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION"}}])): CustomerTable
 }

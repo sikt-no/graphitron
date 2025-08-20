@@ -25,5 +25,5 @@ type Film implements Node @table {
   title19: String! @field(name: "TITLE")
   title20: String! @field(name: "TITLE")
   title21: String! @field(name: "TITLE")
-  name: String! @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+  name: String! @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
 }

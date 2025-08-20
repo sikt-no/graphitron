@@ -4,5 +4,5 @@ type Query {
 
 type Film @table {
   id: ID!
-  sequel: Film @splitQuery @reference(references: [{key: "FILM__SEQUEL_FKEY"}])
+  sequel: Film @splitQuery @reference(path: [{key: "FILM__SEQUEL_FKEY"}])
 }

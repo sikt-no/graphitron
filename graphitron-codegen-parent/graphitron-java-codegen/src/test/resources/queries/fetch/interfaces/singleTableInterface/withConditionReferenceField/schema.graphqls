@@ -3,13 +3,13 @@ type Query {
 }
 
 interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
-    customer: CustomerTable @reference(references: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
+    customer: CustomerTable @reference(path: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
 }
 
 type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
-    customer: CustomerTable @reference(references: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
+    customer: CustomerTable @reference(path: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
 }
 
 type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {
-    customer: CustomerTable @reference(references: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
+    customer: CustomerTable @reference(path: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
 }

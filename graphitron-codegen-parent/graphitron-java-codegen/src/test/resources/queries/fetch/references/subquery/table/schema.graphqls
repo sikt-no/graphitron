@@ -1,5 +1,5 @@
 type Customer @table {
-  address: Address! @reference(references: [{table: "ADDRESS"}])
+  address: Address! @reference(path: [{table: "ADDRESS"}])
 }
 
 type Address @table {
