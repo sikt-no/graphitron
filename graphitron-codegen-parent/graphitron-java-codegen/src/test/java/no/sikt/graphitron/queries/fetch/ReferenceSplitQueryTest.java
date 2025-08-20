@@ -141,8 +141,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
-                .fetchMap(Record2::value1, Record2::value2);
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
+                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
                 """
         );
     }
@@ -293,9 +293,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
                 .orderBy(orderFields)
-                .fetchGroups(Record2::value1, Record2::value2);
+                .fetchGroups(r -> r.value1().valuesRow(), Record2::value2);
                 """
         );
     }
@@ -320,9 +320,9 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
                 .orderBy(orderFields)
-                .fetchGroups(Record2::value1, Record2::value2);
+                .fetchGroups(r -> r.value1().valuesRow(), Record2::value2);
                 """
         );
     }
@@ -591,7 +591,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 )
                 .from(_customer)
                 .join(customer_2952383337_address)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
                 .and(no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition.addressCustomer(_customer, customer_2952383337_address))
                 """
         );

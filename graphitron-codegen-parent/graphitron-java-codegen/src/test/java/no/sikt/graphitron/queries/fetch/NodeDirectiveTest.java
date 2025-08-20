@@ -97,7 +97,7 @@ public class NodeDirectiveTest extends GeneratorTest {
                 "splitQuery/default",
                 """
                 DSL.row(_address.ADDRESS_ID),
-                DSL.row(nodeIdStrategy.createId("CUSTOMER", address_2030472956
+                DSL.row(nodeIdStrategy.createId("Customer", address_2030472956
                 """
         );
     }
@@ -121,7 +121,7 @@ public class NodeDirectiveTest extends GeneratorTest {
                 "splitQuery/customKeyColumns",
                 """
                 DSL.row(_customer.CUSTOMER_ID),
-                DSL.row(nodeIdStrategy.createId("ADDRESS", customer_2952383337_address.ADDRESS_ID)).mapping
+                DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.ADDRESS_ID)).mapping
                 """
         );
     }
