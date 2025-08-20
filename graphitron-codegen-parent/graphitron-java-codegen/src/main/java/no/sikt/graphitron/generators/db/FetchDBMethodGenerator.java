@@ -172,7 +172,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), true);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -573,16 +573,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
-
-//        var renderedSource = context.renderQuerySource(
-//                hasIterableWrappedResolverWithPagination(context)
-//                ? getLocalTable() // Implies being called from the FetchDBMethodGenerator.generateCorrelatedSubquery-method
-//                : context.getCurrentJoinSequence().size() > 1
-//                  ? context.getCurrentJoinSequence().getLast()
-//                  : !context.getCurrentJoinSequence().isEmpty()
-//                    ? context.getCurrentJoinSequence().getFirst()
-//                    : null);
+        var renderedSource = field.isInput()
+                ? context.iterateJoinSequenceFor(field).render()
+                : context.renderQuerySource(
+                        hasIterableWrappedResolverWithPagination(context)
+                        ? getLocalTable() // Implies being called from the FetchDBMethodGenerator.generateCorrelatedSubquery-method
+                        : context.getCurrentJoinSequence().size() > 1
+                          ? context.getCurrentJoinSequence().getLast()
+                          : !context.getCurrentJoinSequence().isEmpty()
+                            ? context.getCurrentJoinSequence().getFirst()
+                            : null);
 
         if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(

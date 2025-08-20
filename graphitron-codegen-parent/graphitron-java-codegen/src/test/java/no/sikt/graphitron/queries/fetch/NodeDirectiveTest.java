@@ -98,7 +98,7 @@ public class NodeDirectiveTest extends GeneratorTest {
                 "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Customer\", _a_address_2"
 //                """
 //                DSL.row(_address.ADDRESS_ID),
-//                DSL.row(nodeIdStrategy.createId("CUSTOMER", address_2030472956
+//                DSL.row(nodeIdStrategy.createId("Customer", address_2030472956
 //                """
         );
     }
@@ -124,7 +124,7 @@ public class NodeDirectiveTest extends GeneratorTest {
                 "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
 //                """
 //                DSL.row(_customer.CUSTOMER_ID),
-//                DSL.row(nodeIdStrategy.createId("ADDRESS", customer_2952383337_address.ADDRESS_ID)).mapping
+//                DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.ADDRESS_ID)).mapping
 //                """
         );
     }

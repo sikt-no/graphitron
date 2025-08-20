@@ -49,7 +49,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 context,
                 resolverKeyParamName,
                 isRoot,
-                !isIterableWrappedResolverWithPagination(targetField)
+                isIterableWrappedResolverWithPagination(targetField)
         );
 
         for (var alias: context.getAliasSet()) {
@@ -93,13 +93,17 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .build();
     }
 
-    private CodeBlock getSelectRowOrField(ObjectField target, FetchContext context) {
-        if (!processedSchema.isRecordType(target)) {
-            return generateForField(target, context);
+    private CodeBlock getSelectRowOrField(ObjectField targetField, FetchContext context) {
+        if (!processedSchema.isRecordType(targetField)) {
+            return generateForField(targetField, context);
         }
-        return target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName())
-                ? generateCorrelatedSubquery(target, context.nextContext(target))
+        return targetField.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(targetField.getContainerTypeName())
+                ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
                 : generateSelectRow(context);
+
+//        return isIterableWrappedResolverWithPagination(targetField)
+//               ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
+//               : generateSelectRow(context);
     }
 
     private CodeBlock createSelectBlock(
@@ -153,7 +157,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             return CodeBlock
                     .builder()
                     .add(".fetchGroups")
-                    .addStatement("($T::value1, $T::value2)", RECORD2.className, RECORD2.className)
+                    .addStatement("(r -> r.value1().valuesRow(), $T::value2)", RECORD2.className)
                     .build();
         }
 
@@ -205,7 +209,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(".entrySet()\n.stream()\n")
                 .add(".collect($T.toMap(\n", COLLECTORS.className)
                 .indent()
-                .add("$T.Entry::getKey,\n", MAP.className)
+                .add("r -> r.getKey().valuesRow(),\n")
                 .add("list -> list.getValue().stream()\n")
                 .indent()
                 .add(".map(e -> new $T<>(e.value2(), e.value3()))\n", IMMUTABLE_PAIR.className)

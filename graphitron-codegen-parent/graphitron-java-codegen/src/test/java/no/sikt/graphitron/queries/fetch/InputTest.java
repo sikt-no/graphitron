@@ -187,9 +187,9 @@ public class InputTest extends GeneratorTest {
                 )
                 .from(_address)
                 .join(address_2030472956_customer)
-                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys.stream().map(Record1::valuesRow).toList()))
+                .where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys))
                 .and(address_2030472956_customer.EMAIL.eq(email))
-                .fetchMap(Record2::value1, Record2::value2);
+                .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
                 """
         );
     }
