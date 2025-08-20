@@ -1,6 +1,5 @@
 package no.sikt.graphql.exception;
 
-import java.io.Serializable;
 import java.util.List;
 
 public class GenericExceptionContentToErrorMapping implements ExceptionContentToErrorMapping {
@@ -17,7 +16,7 @@ public class GenericExceptionContentToErrorMapping implements ExceptionContentTo
     }
 
     @Override
-    public Serializable handleError(List<String> path, String defaultMessage) {
+    public Object handleError(List<String> path, String defaultMessage) {
         return errorHandler.handleError(path, defaultMessage);
     }
 
