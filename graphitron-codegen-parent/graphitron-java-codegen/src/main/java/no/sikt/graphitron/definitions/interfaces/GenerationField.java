@@ -77,5 +77,5 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
 
     boolean hasFieldDirective();
 
-    boolean hasTableServiceDirective();
+    boolean hasTableMethodDirective();
 }

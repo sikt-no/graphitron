@@ -1,9 +1,8 @@
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
-
 import fake.graphql.example.model.Customer;
 import java.lang.String;
-import no.sikt.graphitron.codereferences.services.CustomerTableService;
+import no.sikt.graphitron.codereferences.services.CustomerTableMethod;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
@@ -13,8 +12,8 @@ public class QueryDBQueries {
     public static Customer customerForQuery(DSLContext ctx, String first_name,
                                             SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
-        var customerTableService = new CustomerTableService();
-        _customer = customerTableService.customerTable(_customer, first_name);
+        var customerTableMethod = new CustomerTableMethod();
+        _customer = customerTableMethod.customerTable(_customer, first_name);
         return ctx
                 .select(
                         DSL.field(

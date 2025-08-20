@@ -34,7 +34,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
     private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField,
-            hasFieldDirective, hasNodeID, hasTableServiceDirective, hasServiceDirective;
+            hasFieldDirective, hasNodeID, hasTableMethodDirective, hasServiceDirective;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
@@ -54,7 +54,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         }
 
         condition = field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null ? new SQLCondition(field) : null;
-        serviceWrapper = field.hasDirective(SERVICE.getName()) || field.hasDirective(TABLE_SERVICE.getName()) ? new ServiceWrapper(field) : null;
+        serviceWrapper = field.hasDirective(SERVICE.getName()) || field.hasDirective(TABLE_METHOD.getName()) ? new ServiceWrapper(field) : null;
         if (field.hasDirective(FIELD.getName())) {
             mappingForRecordFieldOverride = getJavaName().isEmpty() ? new MethodMapping(toCamelCase(getUpperCaseName())) : new MethodMapping(getJavaName());
         } else {
@@ -66,7 +66,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
                 || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !container.equals(SCHEMA_MUTATION.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
-        hasTableServiceDirective = field.hasDirective(TABLE_SERVICE.getName());
+        hasTableMethodDirective = field.hasDirective(TABLE_METHOD.getName());
         hasServiceDirective = field.hasDirective(SERVICE.getName());
 
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
@@ -228,8 +228,8 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         return nodeIdTypeName;
     }
 
-    public boolean hasTableServiceDirective() {
-        return hasTableServiceDirective;
+    public boolean hasTableMethodDirective() {
+        return hasTableMethodDirective;
     }
 
 }
