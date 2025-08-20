@@ -2,7 +2,6 @@ package no.sikt.graphql.exception;
 
 import org.jooq.exception.DataAccessException;
 
-import java.io.Serializable;
 import java.util.List;
 
 public class DataAccessExceptionContentToErrorMapping implements ExceptionContentToErrorMapping {
@@ -19,7 +18,7 @@ public class DataAccessExceptionContentToErrorMapping implements ExceptionConten
     }
 
     @Override
-    public Serializable handleError(List<String> path, String defaultMessage) {
+    public Object handleError(List<String> path, String defaultMessage) {
         return errorHandler.handleError(path, defaultMessage);
     }
 }

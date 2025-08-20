@@ -1,13 +1,12 @@
 package no.sikt.graphql.exception;
 
-import java.io.Serializable;
 import java.util.List;
 
 public interface ExceptionContentToErrorMapping {
-    Serializable handleError(List<String> path, String defaultMessage);
+    Object handleError(List<String> path, String defaultMessage);
 
     @FunctionalInterface
     interface ErrorHandler {
-        Serializable handleError(List<String> path, String defaultMessage);
+        Object handleError(List<String> path, String defaultMessage);
     }
 }
