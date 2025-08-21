@@ -285,12 +285,6 @@ public class MapperContext {
             return CodeBlock.of(asRecordName(previousContext.targetName));
         } else if (!toRecord && schema.isNodeIdField(target)) {
             return createNodeIdBlockForRecord(schema.getRecordType(target.getContainerTypeName()), asIterableIf(previousContext.sourceName, previousContext.isIterable));
-        } else if (target.isResolver()) {
-            return findKeyForResolverField(target, schema).key().getFields().stream()
-                    .map(Field::getName)
-                    .map(it -> new MethodMapping(toCamelCase(it)))
-                    .map(it -> getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), it))
-                    .collect(CodeBlock.joining(", "));
         }
         return getValue(asIterableIf(previousContext.sourceName, previousContext.isIterable), getSourceMapping);
     }
@@ -394,8 +388,20 @@ public class MapperContext {
         return getSetMappingBlock(applyEnumConversion(target.getTypeName(), getSourceGetCallBlock()));
     }
 
-    public CodeBlock getResolverKeySetMappingBlock() {
-        return getSetMappingBlock(wrapRow(getSourceGetCallBlock()));
+    public CodeBlock getResolverKeySetMappingBlockForJooqRecord() {
+        return getResolverKeySetMappingBlock(asIterableIf(previousContext.sourceName, previousContext.isIterable));
+    }
+
+    public CodeBlock getResolverKeySetMappingBlockForJavaRecord(String varName) {
+        return getResolverKeySetMappingBlock(varName);
+    }
+
+    private CodeBlock getResolverKeySetMappingBlock(String varName) {
+        return getSetMappingBlock(wrapRow(findKeyForResolverField(target, schema).key().getFields().stream()
+                .map(Field::getName)
+                .map(it -> new MethodMapping(toCamelCase(it)))
+                .map(it -> getValue(varName, it))
+                .collect(CodeBlock.joining(", "))));
     }
 
     public CodeBlock getRecordSetMappingBlock() {

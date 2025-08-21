@@ -2,6 +2,7 @@ extend type Query {
     helloWorldAgain(name: String!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldAgainWithJooqRecordInput(input: CustomerInput!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
     helloWorldAgainWithJavaRecordInput(input: HelloWorldInputObject!): HelloWorldObject @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
+    helloWorldWithSplitQueryField(addressIds: [String]!): [HelloWorldObject] @service(service: {className: "no.sikt.graphitron.example.service.HelloWorldService"})
 
     customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
@@ -10,6 +11,12 @@ extend type Query {
 
 type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
     greeting: String
+    film: Film @splitQuery
+    wrapper: CustomerWrapper
+}
+
+type CustomerWrapper {
+    customer: Customer @splitQuery
 }
 
 input HelloWorldInputObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldInput"}){

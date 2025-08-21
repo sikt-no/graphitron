@@ -97,6 +97,7 @@ public class ProcessedDefinitionsValidator {
         validateUnionAndInterfaceSubTypes();
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
+        validateSplitQueryFieldsInJavaRecords();
 
         if (!warningMessages.isEmpty()) {
             LOGGER.warn("Problems have been found that MAY prevent code generation:\n{}", String.join("\n", warningMessages));
@@ -1282,5 +1283,33 @@ public class ProcessedDefinitionsValidator {
                             }
                         })
                 );
+    }
+
+    private void validateSplitQueryFieldsInJavaRecords() {
+        allFields.stream()
+                .filter(schema::hasJavaRecord)
+                .map(schema::getObject)
+                .map(AbstractObjectDefinition::getFields)
+                .flatMap(Collection::stream)
+                .filter(GenerationSourceField::isResolver)
+                .forEach(field -> {
+                    var errorMessageStart = String.format("'%s.%s' in a java record has %s directive, but",
+                            field.getContainerTypeName(),
+                            field.getName(),
+                            SPLIT_QUERY.getName()
+                    );
+
+                    if (!schema.isObject(field) || !schema.getObject(field.getTypeName()).hasTable()) {
+                        errorMessages.add(errorMessageStart + " does not return a type with table. This is not supported.");
+                    }
+
+                    if (field.isIterableWrapped()) {
+                        errorMessages.add(errorMessageStart + " is listed. This is not currently supported.");
+                    }
+
+                    if (field.hasForwardPagination()) {
+                        errorMessages.add(errorMessageStart + " is paginated. This is not supported.");
+                    }
+                });
     }
 }

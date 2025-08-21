@@ -112,30 +112,36 @@ public record KeyWrapper(Key<?> key) {
 
         var container = processedSchema.getRecordType(field.getContainerTypeName());
 
-        var containerTypeTable = container.hasTable() ?
+        var previousTable = container.hasTable() ?
                 container.getTable()
                 : Optional.ofNullable(processedSchema.getPreviousTableObjectForObject(container)).map(RecordObjectSpecification::getTable).orElse(null);
-        if (containerTypeTable == null) {
-            return null;
+
+        if (previousTable == null) {
+            var targetTable = processedSchema.getRecordType(field).getTable().getName();
+
+            return getPrimaryKeyForTable(targetTable)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to be referenced from a service.",
+                                    field.getContainerTypeName(), field.getName(), targetTable)));
         }
 
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
 
         String foreignKeyName;
-        var primaryKeyOptional = getPrimaryKeyForTable(containerTypeTable.getName());
+        var primaryKeyOptional = getPrimaryKeyForTable(previousTable.getName());
 
         if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries() || processedSchema.isMultiTableField(field)) {
             return primaryKeyOptional
                     .orElseThrow(() -> new IllegalArgumentException(
                             String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",
-                                    field.getContainerTypeName(), field.getName(), containerTypeTable.getName(), SPLIT_QUERY.getName())));
+                                    field.getContainerTypeName(), field.getName(), previousTable.getName(), SPLIT_QUERY.getName())));
         }
 
         if (processedSchema.isScalar(field.getTypeName()) && !field.hasFieldReferences()) {
             throw new RuntimeException("Cannot resolve reference for scalar field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'.");
         } else if (field.hasFieldReferences()) {
             var firstRef = field.getFieldReferences().stream().findFirst().get();
-            Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(containerTypeTable.getName(), firstRef.getTable().getName()) : Optional.empty();
+            Optional<String> implicitKey = firstRef.hasTable() ? findImplicitKey(previousTable.getName(), firstRef.getTable().getName()) : Optional.empty();
 
             if (firstRef.hasKey()) {
                 foreignKeyName = firstRef.getKey().getName();
@@ -143,24 +149,24 @@ public record KeyWrapper(Key<?> key) {
                 return primaryKeyOptional
                         .orElseThrow(() -> new IllegalArgumentException(
                                 String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
-                                        field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
+                                        field.getContainerTypeName(), field.getName(), previousTable.getName())));
             } else {
                 foreignKeyName = implicitKey.stream().findFirst()
                         .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
             }
         } else {
-            foreignKeyName = findImplicitKey(containerTypeTable.getName(), (tableFromFieldType != null ? tableFromFieldType : containerTypeTable).getName())
+            foreignKeyName = findImplicitKey(previousTable.getName(), (tableFromFieldType != null ? tableFromFieldType : previousTable).getName())
                     .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
         }
 
         var foreignKey = getForeignKey(foreignKeyName)
                 .orElseThrow(() -> new RuntimeException("Cannot find key with name " + foreignKeyName));
 
-        if (!foreignKey.getTable().getName().equalsIgnoreCase(containerTypeTable.getName())) { // Reverse reference
+        if (!foreignKey.getTable().getName().equalsIgnoreCase(previousTable.getName())) { // Reverse reference
             return primaryKeyOptional
                     .orElseThrow(() -> new IllegalArgumentException(
                             String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in a listed field.",
-                                    field.getContainerTypeName(), field.getName(), containerTypeTable.getName())));
+                                    field.getContainerTypeName(), field.getName(), previousTable.getName())));
         }
         return foreignKey;
     }

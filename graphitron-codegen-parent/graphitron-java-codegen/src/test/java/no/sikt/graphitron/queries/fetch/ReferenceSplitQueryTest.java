@@ -7,8 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_CUSTOMER_CONDITION;
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.REFERENCE_FILM_CONDITION;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch queries - Fetching through referenced tables with splitQuery-directive")
@@ -27,7 +26,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(REFERENCE_CUSTOMER_CONDITION, REFERENCE_FILM_CONDITION);
+        return makeReferences(REFERENCE_CUSTOMER_CONDITION, REFERENCE_FILM_CONDITION, JAVA_RECORD_CUSTOMER);
     }
 
     @Test
@@ -316,5 +315,27 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
                 "customer_2337142794_store_left.hasStaffId(staffId)"
         );
 
+    }
+
+    @Test
+    @DisplayName("splitQuery field after service returning java record")
+    void afterJavaService() {
+        assertGeneratedContentContains(
+                "afterJavaService", Set.of(CUSTOMER_TABLE),
+                "Set<Row1<Long>> customerResolverKeys", // TODO: improve resolver keys variable name
+                ".select(DSL.row(_address.ADDRESS_ID), DSL.row(_address",
+                ".from(_address)" +
+                        ".where(DSL.row(_address.ADDRESS_ID).in(customerResolverKeys))" +
+                        ".fetchMap(r -> r.value1().valuesRow(), Record2::value2)"
+        );
+    }
+
+    @Test
+    @DisplayName("Nested splitQuery field after service returning java record")
+    void afterJavaServiceNested() {
+        assertGeneratedContentContains(
+                "afterJavaServiceNested", Set.of(CUSTOMER_TABLE),
+                ".select(DSL.row(_address.ADDRESS_ID), DSL.row(_address"
+        );
     }
 }
