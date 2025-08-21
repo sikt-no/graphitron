@@ -8,7 +8,10 @@ import no.sikt.graphitron.generate.Generator;
 
 import java.io.File;
 import java.net.URL;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +49,8 @@ public class GeneratorConfig {
     private static ExtendedFunctionality extendedFunctionality;
 
     private static RecordValidation recordValidation;
+
+    private static CodeGenerationThresholds codeGenerationThresholds;
 
     /**
      * Set the generator properties from code. Intended for tests.
@@ -109,6 +114,7 @@ public class GeneratorConfig {
         makeKickstart = mojo.makeKickstart();
         makeNodeStrategy = mojo.makeNodeStrategy();
         alwaysUsePrimaryKeyInSplitQueries = true;
+        codeGenerationThresholds = mojo.getCodeGenerationThresholds();
     }
 
     /**
@@ -229,5 +235,9 @@ public class GeneratorConfig {
 
     public static boolean useOptionalSelects() {
         return USE_OPTIONAL_SELECTS;
+    }
+
+    public static CodeGenerationThresholds getCodeGenerationThresholds() {
+        return codeGenerationThresholds;
     }
 }

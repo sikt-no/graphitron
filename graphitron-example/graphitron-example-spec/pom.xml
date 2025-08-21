@@ -131,6 +131,10 @@
                                     <fullyQualifiedClassName>no.sikt.graphitron.example.service.ConsumerProvidedScalars</fullyQualifiedClassName>
                                 </class>
                             </scalars>
+                            <codeGenerationThresholds>
+                                    <upperBoundCodeSize>100</upperBoundCodeSize>
+                                    <upperBoundNestingDepth>10</upperBoundNestingDepth>
+                            </codeGenerationThresholds>
                         </configuration>
                     </execution>
                 </executions>
