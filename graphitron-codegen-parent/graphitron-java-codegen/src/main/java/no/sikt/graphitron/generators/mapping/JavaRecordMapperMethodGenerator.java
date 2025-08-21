@@ -35,7 +35,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 .getTargetType()
                 .getFields()
                 .stream()
-                .filter(it -> !(it.isExplicitlyNotGenerated() || it.isResolver()))
+                .filter(it -> !(it.isExplicitlyNotGenerated() || (it.isResolver() && toRecord)))
                 .toList();
         for (var innerField : fields) {
             var innerContext = context.iterateContext(innerField);
@@ -57,13 +57,16 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                  else {
                     innerCode.add(iterateRecords(innerContext));
                 }
+            } else {
+                innerCode.add(innerContext.getResolverKeySetMappingBlockForJavaRecord(varName));
             }
 
             if (!innerCode.isEmpty()) {
                 var notAlreadyDefined = innerContext.variableNotAlreadyDeclared();
-                var nullBlock = CodeBlock.ofIf(notAlreadyDefined, "$N != null && ", varName);
+                var shouldDeclareVariable = notAlreadyDefined || innerContext.getTarget().isResolver();
+                var nullBlock = CodeBlock.ofIf(shouldDeclareVariable, "$N != null && ", varName);
                 fieldCode
-                        .declareIf(notAlreadyDefined, varName, innerContext.getSourceGetCallBlock())
+                        .declareIf(shouldDeclareVariable, varName, innerContext.getSourceGetCallBlock())
                         .beginControlFlow("if ($L$L)", nullBlock, selectionSetLookup(innerContext.getPath(), false, toRecord))
                         .add(innerCode.build())
                         .endControlFlow()

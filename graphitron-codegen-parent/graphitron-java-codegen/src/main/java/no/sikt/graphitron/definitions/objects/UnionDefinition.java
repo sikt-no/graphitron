@@ -18,7 +18,7 @@ import static no.sikt.graphql.directives.GenerationDirective.NOT_GENERATED;
 /**
  * Represents a GraphQL union type.
  */
-public class UnionDefinition extends AbstractObjectDefinition<UnionTypeDefinition, ObjectField> implements TypeResolverTarget, RecordObjectSpecification<ObjectField> {
+public class UnionDefinition extends RecordObjectDefinition<UnionTypeDefinition, ObjectField> implements TypeResolverTarget, RecordObjectSpecification<ObjectField> {
     private final List<String> fieldTypeNames;
     private final boolean isGenerated;
 

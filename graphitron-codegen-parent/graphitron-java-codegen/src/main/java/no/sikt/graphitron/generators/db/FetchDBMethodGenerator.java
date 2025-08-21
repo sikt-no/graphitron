@@ -55,7 +55,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Abstract generator for various database fetching methods.
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + "ResolverKeys";
+    protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
     protected final boolean isRoot = getLocalObject().isOperationRoot();
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
 
