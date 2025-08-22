@@ -37,50 +37,76 @@ public class CodeGenerationThresholds {
         return crashPointMessages;
     }
 
-    private String getUpperBoundNestingDepthMessage(String methodName, long depth) {
-        return String.format("Query nesting depth in %s has exceeded its upper bound %d/%d", methodName, depth, upperBoundNestingDepth);
+    private String getNestingDepthMessage(String methodName, long depth, ThresholdType type) {
+        return String.format(
+                "Query nesting depth in %s has exceeded its %s %d/%d",
+                methodName,
+                type.name(),
+                depth,
+                crashPointNestingDepth
+        );
     }
 
-    private String getCrashPointNestingDepthMessage(String methodName, long depth) {
-        return String.format("Query nesting depth in %s has exceeded its crash point %d/%d", methodName, depth, crashPointNestingDepth);
-    }
-
-    private String getUpperBoundCodeSizeMessage(String methodName, int codeSize) {
-        return String.format("Code size in %s has exceeded its upper bound %d/%d", methodName, codeSize, upperBoundNestingDepth);
-    }
-
-    private String getCrashPointCodeSizeMessage(String methodName, int codeSize) {
-        return String.format("Code size in %s has exceeded its crash point %d/%d", methodName, codeSize, crashPointNestingDepth);
+    private String getCodeSizeMessage(String methodName, int codeSize, ThresholdType type) {
+        return String.format(
+                "Code size in %s has exceeded its %s %d/%d",
+                methodName,
+                type.name(),
+                codeSize,
+                upperBoundNestingDepth
+        );
     }
 
     public void addMessageIfMethodExceedsNestingDepthBounds(MethodSpec method) {
-        if (upperBoundNestingDepth == null || upperBoundNestingDepth <= 0) {
-            return;
-        }
-
         Pattern selectPattern = Pattern.compile("\\.select\\(");
         var depth = selectPattern.matcher(method.toString()).results().count();
 
-        if (depth > upperBoundNestingDepth) {
-            this.upperBoundMessages.add(getUpperBoundNestingDepthMessage(method.name(), depth));
+        if (crashPointNestingDepth != null && depth > crashPointNestingDepth) {
+            this.crashPointMessages.add(
+                    getNestingDepthMessage(
+                            method.name(),
+                            depth,
+                            ThresholdType.CRASH_POINT
+                    )
+            );
+            return;
         }
-        if (depth > crashPointNestingDepth) {
-            this.crashPointMessages.add(getCrashPointNestingDepthMessage(method.name(), depth));
+        if (upperBoundNestingDepth != null && depth > upperBoundNestingDepth) {
+            this.upperBoundMessages.add(
+                    getNestingDepthMessage(
+                            method.name(),
+                            depth,
+                            ThresholdType.UPPER_BOUND
+                    )
+            );
         }
     }
 
     public void addMessageIfMethodExceedsCodeSizeBounds(MethodSpec method) {
-        if (upperBoundCodeSize == null || upperBoundCodeSize <= 0) {
-            return;
-        }
-
         var codeSize = method.toString().length();
 
-        if (codeSize > upperBoundCodeSize) {
-            this.upperBoundMessages.add(getUpperBoundCodeSizeMessage(method.name(), codeSize));
+        if (crashPointCodeSize != null && codeSize > crashPointCodeSize) {
+            this.crashPointMessages.add(
+                    getCodeSizeMessage(method.name(),
+                            codeSize,
+                            ThresholdType.CRASH_POINT
+                    )
+            );
+            return;
         }
-        if (codeSize > crashPointCodeSize) {
-            this.crashPointMessages.add(getCrashPointCodeSizeMessage(method.name(), codeSize));
+        if (upperBoundCodeSize != null && codeSize > upperBoundCodeSize) {
+            this.upperBoundMessages.add(
+                    getCodeSizeMessage(
+                            method.name(),
+                            codeSize,
+                            ThresholdType.UPPER_BOUND
+                    )
+            );
         }
+    }
+
+    enum ThresholdType {
+        UPPER_BOUND,
+        CRASH_POINT
     }
 }
