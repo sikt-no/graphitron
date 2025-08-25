@@ -36,6 +36,10 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
+
+    addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodSplitquery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} ) @splitQuery
 }
 
 type Mutation {

@@ -76,4 +76,6 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     MethodMapping getMappingForRecordFieldOverride();
 
     boolean hasFieldDirective();
+
+    boolean hasTableMethodDirective();
 }
