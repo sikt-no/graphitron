@@ -1,5 +1,5 @@
 type Query {
-  query(addressId: ID! @nodeId(typeName: "Address") @reference(references: [{table: "ADDRESS"}])): Customer
+  query(addressId: ID! @nodeId(typeName: "Address") @reference(path: [{table: "ADDRESS"}])): Customer
 }
 
 type Customer implements Node @node @table {

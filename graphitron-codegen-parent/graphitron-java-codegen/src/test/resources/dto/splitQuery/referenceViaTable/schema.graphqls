@@ -1,5 +1,5 @@
 type Inventory @table {
-    staffForInventory: Staff @splitQuery @reference(references: [{key: "INVENTORY__INVENTORY_STORE_ID_FKEY"}, {table: "STAFF"}])
+    staffForInventory: Staff @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_STORE_ID_FKEY"}, {table: "STAFF"}])
 }
 
 type Staff @table {

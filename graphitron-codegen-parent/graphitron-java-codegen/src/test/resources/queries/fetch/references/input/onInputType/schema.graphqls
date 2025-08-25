@@ -1,5 +1,5 @@
 type Query {
-  query(in: Input! @reference(references: [{table: "ADDRESS"}])): CustomerTable
+  query(in: Input! @reference(path: [{table: "ADDRESS"}])): CustomerTable
 }
 
 input Input {

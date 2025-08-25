@@ -25,7 +25,7 @@ import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentSt
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.REFERENCES;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.PATH;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
@@ -47,7 +47,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         if (field.hasDirective(REFERENCE.getName())) {
             var referenceDirective = field.getDirectives(REFERENCE.getName()).get(0);
 
-            Optional.ofNullable(referenceDirective.getArgument(REFERENCES.getName()))
+            Optional.ofNullable(referenceDirective.getArgument(PATH.getName()))
                     .map(Argument::getValue)
                     .ifPresent(this::addFieldReferences);
         }
@@ -74,7 +74,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     /**
-     * Construct references from the {@link GenerationDirectiveParam#REFERENCES references} parameter.
+     * Construct references from the {@link GenerationDirectiveParam#PATH references} parameter.
      */
     private void addFieldReferences(Value<?> referencesValue) {
         var values = referencesValue instanceof ArrayValue ? ((ArrayValue) referencesValue).getValues() : List.of(((ObjectValue) referencesValue));
