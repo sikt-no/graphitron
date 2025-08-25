@@ -108,7 +108,7 @@ public class ProcessedDefinitionsValidator {
     }
 
     /*
-    * This is a temporary validation until GGG-104 has been fixed.
+     * This is a temporary validation until GGG-104 has been fixed.
      */
     private void validateUnionAndInterfaceSubTypes() {
         schema.getObjects()
@@ -153,7 +153,7 @@ public class ProcessedDefinitionsValidator {
                                             objectDefinition.getTable().getName()));
                         }
                     }
-                    if (!objectDefinition.implementsInterface(NODE_TYPE.getName())){
+                    if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
                         errorMessages.add(String.format("Type %s has the %s directive, but does not implement the %s interface.",
                                 objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName()));
                     }
@@ -299,17 +299,41 @@ public class ProcessedDefinitionsValidator {
                                         ));
                                     }
 
-                                    getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
-                                            .map(Key::getFields)
-                                            .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
-                                            .stream().findFirst()
-                                            .map(a -> errorMessages.add(String.format(
-                                                    "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported.",
-                                                    field.getName(),
-                                                    field.getContainerTypeName()
-                                            )));
+                                    if (!isUsedOnlyByInsertMutations(jooqRecordInput)) {
+                                        getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
+                                                .map(Key::getFields)
+                                                .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
+                                                .stream().findFirst()
+                                                .map(a -> errorMessages.add(String.format(
+                                                        "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported, unless for insert mutations.",
+                                                        field.getName(),
+                                                        field.getContainerTypeName()
+                                                )));
+                                    }
                                 })
                 );
+    }
+
+    private boolean isUsedOnlyByInsertMutations(RecordObjectSpecification<?> jooqRecordInput) {
+        var mutation = schema.getMutationType();
+        if (mutation == null) {
+            return false;
+        }
+
+        var usages = mutation.getFields().stream()
+                .filter(ObjectField::hasMutationType)
+                .flatMap(objectField -> {
+                    var inputs = new InputParser(objectField, schema).getJOOQRecords().values();
+                    return inputs.stream()
+                            .map(schema::getInputType)
+                            .filter(it -> it != null && it.getName().equals(jooqRecordInput.getName()))
+                            .map(it -> objectField.getMutationType());
+                }).collect(Collectors.toSet());
+
+        if (usages.isEmpty()) {
+            return false;
+        }
+        return usages.stream().allMatch(mt -> mt == MutationType.INSERT);
     }
 
     private void validateTablesAndKeys() {
@@ -366,9 +390,11 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {
-        if (sourceTable.equals(targetTable) && !field.isResolver() && !field.hasFieldReferences() && !field.hasNodeID()) { return; }
-        for(FieldReference fieldReference : field.getFieldReferences()) {
-            if (fieldReference.hasTableCondition() && !fieldReference.hasKey()){
+        if (sourceTable.equals(targetTable) && !field.isResolver() && !field.hasFieldReferences() && !field.hasNodeID()) {
+            return;
+        }
+        for (FieldReference fieldReference : field.getFieldReferences()) {
+            if (fieldReference.hasTableCondition() && !fieldReference.hasKey()) {
                 return;
             } else if (fieldReference.hasKey()) {
                 String nextTable;
@@ -384,8 +410,7 @@ public class ProcessedDefinitionsValidator {
                 } else {
                     sourceTable = nextTable;
                 }
-            }
-            else if (fieldReference.hasTable()) {
+            } else if (fieldReference.hasTable()) {
                 String nextTable = fieldReference.getTable().getName();
                 if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) > 1) {
                     errorMessages.add(String.format(
@@ -606,7 +631,9 @@ public class ProcessedDefinitionsValidator {
     private void validateUnionFieldsTable() {
         if (schema.getObjects().containsKey("Query")) {
             for (ObjectField field : schema.getObject("Query").getFields()) {
-                if (field.getName().equals(GraphQLReservedName.FEDERATION_ENTITIES_FIELD.getName())) { continue; }
+                if (field.getName().equals(GraphQLReservedName.FEDERATION_ENTITIES_FIELD.getName())) {
+                    continue;
+                }
 
                 if (schema.isUnion(field)) {
                     for (ObjectDefinition subType : schema.getUnionSubTypes(field.getTypeName())) {
@@ -851,9 +878,9 @@ public class ProcessedDefinitionsValidator {
 
     private void validateTypesUsingNodeInterface() {
         if (!schema.nodeExists() ||
-            schema.getQueryType() == null ||
-            schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
-            schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())).isExplicitlyNotGenerated()) {
+                schema.getQueryType() == null ||
+                schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
+                schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())).isExplicitlyNotGenerated()) {
             return;
         }
 
@@ -1249,7 +1276,7 @@ public class ProcessedDefinitionsValidator {
                             if (type instanceof ParameterizedType paramType) {
                                 Type actualType = paramType.getActualTypeArguments()[0];
 
-                                if(!actualType.getTypeName().equals(field.getTypeClass().toString())) {
+                                if (!actualType.getTypeName().equals(field.getTypeClass().toString())) {
                                     errorMessages.add("Type parameter of generic type Field in method needs to match scalar type of field " + field.getName() + "in type " + typeName);
                                 }
                             }

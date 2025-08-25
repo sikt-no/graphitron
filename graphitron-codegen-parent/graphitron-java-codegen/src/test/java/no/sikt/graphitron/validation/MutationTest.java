@@ -162,4 +162,19 @@ public class MutationTest extends ValidationTest { // TODO: Some of these tests 
     void noHandlingSet() {
         assertErrorsContain("noHandlingSet", "Mutation 'mutation' is set to generate, but has neither a service nor mutation type set.");
     }
+
+    @Test
+    @DisplayName("Insert when foreign key overlaps with the primary key of the jOOQ record table should be allowed")
+    void insertForeignKeyOverlapsPrimaryKey() {
+        getProcessedSchema("insertWhenOverlapWithFkey");
+    }
+
+    @Test
+    @DisplayName("Update when the foreign key overlaps with the primary key of the jOOQ record table should not be allowed")
+    void updateForeignKeyOverlapsPrimaryKey() {
+        assertErrorsContain(
+                () -> getProcessedSchema("updateWhenOverlapWithFkey"),
+                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorInput' overlaps with the primary key of the jOOQ record table. This is not supported, unless for insert mutations."
+        );
+    }
 }

@@ -109,7 +109,7 @@ public class NodeIdInputTest extends ValidationTest {
     void foreignKeyOverlapsPrimaryKey() {
         assertErrorsContain(
                 () -> getProcessedSchema("foreignKeyOverlapsPrimaryKey"),
-                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorFilter' overlaps with the primary key of the jOOQ record table. This is not supported."
+                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorFilter' overlaps with the primary key of the jOOQ record table. This is not supported, unless for insert mutations."
         );
     }
 
