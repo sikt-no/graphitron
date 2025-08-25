@@ -1,0 +1,11 @@
+type Mutation {
+    mutation(in: FilmActorInput): ID @mutation(typeName: UPDATE)
+}
+
+input FilmActorInput @table(name: "FILM_ACTOR") {
+    filmId: ID! @nodeId(typeName: "Film")
+}
+
+type Film implements Node @node @table {
+    id: ID!
+}

@@ -105,11 +105,23 @@ public class NodeIdInputTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Foreign key overlaps with the primary key of the jOOQ record table")
-    void foreignKeyOverlapsPrimaryKey() {
+    @DisplayName("Non-mutation input when foreign key overlaps with the primary key of the jOOQ record table should be allowed")
+    void foreignKeyOverlapsPrimaryKeyNonMutation() {
+        getProcessedSchema("fkOverlapsPk/nonMutation");
+    }
+
+    @Test
+    @DisplayName("Insert when foreign key overlaps with the primary key of the jOOQ record table should be allowed")
+    void foreignKeyOverlapsPrimaryKeyInsertMutation() {
+        getProcessedSchema("fkOverlapsPk/insertMutation");
+    }
+
+    @Test
+    @DisplayName("Update when the foreign key overlaps with the primary key of the jOOQ record table should not be allowed")
+    void foreignKeyOverlapsPrimaryKeyUpdateMutation() {
         assertErrorsContain(
-                () -> getProcessedSchema("foreignKeyOverlapsPrimaryKey"),
-                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorFilter' overlaps with the primary key of the jOOQ record table. This is not supported."
+                () -> getProcessedSchema("fkOverlapsPk/updateMutation"),
+                "Foreign key used for node ID field 'filmId' in jOOQ record input 'FilmActorInput' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations ."
         );
     }
 
