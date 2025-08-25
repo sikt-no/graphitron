@@ -19,13 +19,13 @@ description = "Make jOOQ generate code from the sakila database schema"
 run = "mvn clean install -Pjooq-codegen -pl :graphitron-example-db"
 
 [tasks.start]
+alias = "s"
 description = "Start graphitron-example-server (quarkus:dev)"
 run = "mvn quarkus:dev -pl :graphitron-example-server"
 
 [tasks.rebuild]
 description = "Rebuilds from given module and dependent modules. Meant to be used while running quarkus. Takes module name as argument, for example 'mise r rebuild graphitron-example-spec'."
 run = [
-	"mvn --also-make-dependents --projects :{{arg(index=0)}},-:graphitron-example-server install",
-	"touch $(git rev-parse --show-toplevel)/graphitron-example/graphitron-example-server/src/main/resources/META-INF/resources/index.html"
+  "mvn --also-make-dependents --projects :{{arg(index=0)}},-:graphitron-example-server install",
+  "touch $(git rev-parse --show-toplevel)/graphitron-example/graphitron-example-server/src/main/resources/META-INF/resources/index.html",
 ]
-
