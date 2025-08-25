@@ -117,11 +117,24 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Skips fields with splitQuery set")
-    void skipsSplitQuery() {
+    @DisplayName("Sets resolver key for field with splitQuery")
+    void splitQuery() {
         assertGeneratedContentContains(
-                "skipsSplitQuery",
-                "customerList = new ArrayList<Customer>();return customerList"
+                "splitQuery",
+                "var address = itCustomerJavaRecord.getAddress();" +
+                        "if (address != null && select.contains(pathHere + \"address\")) {" +
+                        "customer.setAddressKey(DSL.row(address.getAddressId()));"
+        );
+    }
+
+    @Test
+    @DisplayName("Sets resolver key for nested field with splitQuery")
+    void splitQueryNested() {
+        assertGeneratedContentContains(
+                "splitQueryNested",
+                "var address = itCustomerJavaRecord.getAddress();" +
+                        "if (address != null && select.contains(pathHere + \"wrapper/address\")) {" +
+                        "wrapper.setAddressKey(DSL.row(address.getAddressId()));"
         );
     }
 

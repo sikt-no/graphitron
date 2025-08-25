@@ -1,0 +1,34 @@
+{
+    "data": {
+        "helloWorldWithSplitQueryField": [
+            {
+                "film": {
+                    "id": "RmlsbToyMg"
+                },
+                "wrapper": {
+                    "customer": {
+                        "id": "Q3VzdG9tZXI6MQ"
+                    }
+                }
+            },
+            {
+                "film": {
+                    "id": "RmlsbTox"
+                },
+                "wrapper": {
+                    "customer": {
+                        "id": "Q3VzdG9tZXI6MQ"
+                    }
+                }
+            },
+            {
+                "film": null,
+                "wrapper": {
+                    "customer": {
+                        "id": "Q3VzdG9tZXI6MQ"
+                    }
+                }
+            }
+        ]
+    }
+}

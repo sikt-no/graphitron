@@ -1,0 +1,7 @@
+type Query {
+    queryJavaRecord: DummyTypeRecord @service(service: {className: "ResolverFetchService", method: "queryJavaRecord"})
+}
+
+type DummyTypeRecord @record(record: {className: "CustomerJavaRecord"}){
+    customer: [CustomerTable] @splitQuery
+}
