@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generate;
 
+import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
@@ -34,4 +35,6 @@ public interface Generator {
     boolean makeKickstart();
 
     boolean makeNodeStrategy();
+
+    CodeGenerationThresholds getCodeGenerationThresholds();
 }

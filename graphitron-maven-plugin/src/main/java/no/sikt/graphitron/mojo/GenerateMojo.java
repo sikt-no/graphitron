@@ -4,6 +4,7 @@ import com.kobylynskyi.graphql.codegen.java.JavaGraphQLCodegen;
 import com.kobylynskyi.graphql.codegen.model.MappingConfig;
 import com.kobylynskyi.graphql.codegen.model.RelayConfig;
 import graphql.parser.ParserOptions;
+import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.RecordValidation;
@@ -118,6 +119,10 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Parameter(property = "generate.makeNodeStrategy", defaultValue = "false")
     @SuppressWarnings("unused")
     private boolean makeNodeStrategy;
+
+    @Parameter(property = "generate.codeGenerationThresholds")
+    @SuppressWarnings("unused")
+    private CodeGenerationThresholds codeGenerationThresholds;
 
     @Override
     public void execute() throws MojoExecutionException {
@@ -271,6 +276,11 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public boolean makeNodeStrategy() {
         return makeNodeStrategy;
+    }
+
+    @Override
+    public CodeGenerationThresholds getCodeGenerationThresholds() {
+        return codeGenerationThresholds;
     }
 
     public void setJooqGeneratedPackage(String jooqGeneratedPackage) {
