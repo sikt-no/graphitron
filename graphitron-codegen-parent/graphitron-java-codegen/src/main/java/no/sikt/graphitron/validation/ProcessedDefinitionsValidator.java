@@ -299,13 +299,13 @@ public class ProcessedDefinitionsValidator {
                                         ));
                                     }
 
-                                    if (!isUsedOnlyByInsertMutations(jooqRecordInput)) {
+                                    if (isUsedInUpdateMutation(jooqRecordInput)) {
                                         getPrimaryKeyForTable(jooqRecordInput.getTable().getName())
                                                 .map(Key::getFields)
                                                 .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
                                                 .stream().findFirst()
                                                 .map(a -> errorMessages.add(String.format(
-                                                        "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported, unless for insert mutations.",
+                                                        "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations .",
                                                         field.getName(),
                                                         field.getContainerTypeName()
                                                 )));
@@ -314,7 +314,7 @@ public class ProcessedDefinitionsValidator {
                 );
     }
 
-    private boolean isUsedOnlyByInsertMutations(RecordObjectSpecification<?> jooqRecordInput) {
+    private boolean isUsedInUpdateMutation(RecordObjectSpecification<?> jooqRecordInput) {
         var mutation = schema.getMutationType();
         if (mutation == null) {
             return false;
@@ -333,7 +333,7 @@ public class ProcessedDefinitionsValidator {
         if (usages.isEmpty()) {
             return false;
         }
-        return usages.stream().allMatch(mt -> mt == MutationType.INSERT);
+        return usages.stream().anyMatch(mt -> mt == MutationType.UPDATE || mt == MutationType.UPSERT);
     }
 
     private void validateTablesAndKeys() {
