@@ -1,0 +1,154 @@
+package no.sikt.graphitron.validation;
+
+import no.sikt.graphitron.configuration.CodeGenerationThresholds;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.stream.IntStream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DisplayName("Code generation thresholds - Checks generated code up against code generation thresholds")
+public class CodeGenerationThresholdsTest {
+
+    @Test
+    @DisplayName("Should not inform of any methods without thresholds set")
+    void noThresholdsSet() {
+        var method = MethodSpec.methodBuilder("method").build();
+
+        var codeGenerationThresholds = new CodeGenerationThresholds(
+                null,
+                null,
+                null,
+                null,
+                List.of(method));
+
+        assertThat(codeGenerationThresholds.getUpperBoundMessages()).isEmpty();
+        assertThat(codeGenerationThresholds.getCrashPointMessages()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should inform of code sizes that exceeds thresholds")
+    void codeSizeExceedsThresholds() {
+        var CRASH_POINT = 50;
+        var UPPER_BOUND = 25;
+
+        var methodBeyondCrashPoint = getCodeSizeMethod(
+                "methodBeyondCrashPoint",
+                CRASH_POINT+1
+        );
+        var methodBetweenUpperBoundAndCrashPoint = getCodeSizeMethod(
+                "methodBetweenUpperBoundAndCrashPoint",
+                UPPER_BOUND+1
+        );
+        var methodBelowUpperBound = getCodeSizeMethod(
+                "methodBelowUpperBound",
+                UPPER_BOUND-1
+        );
+
+        var codeGenerationThresholds = new CodeGenerationThresholds(
+                UPPER_BOUND,
+                CRASH_POINT,
+                null,
+                null,
+                List.of(methodBeyondCrashPoint,
+                        methodBetweenUpperBoundAndCrashPoint,
+                        methodBelowUpperBound
+                )
+        );
+
+        assertThat(codeGenerationThresholds.getUpperBoundMessages()).isEqualTo(
+                List.of(
+                        String.format(
+                                "Code size in %s has exceeded its UPPER_BOUND %d/%d",
+                                methodBetweenUpperBoundAndCrashPoint.name(),
+                                UPPER_BOUND + 1,
+                                UPPER_BOUND
+                        )
+                ));
+        assertThat(codeGenerationThresholds.getCrashPointMessages()).isEqualTo(
+                List.of(
+                        String.format(
+                                "Code size in %s has exceeded its CRASH_POINT %d/%d",
+                                methodBeyondCrashPoint.name(),
+                                CRASH_POINT + 1,
+                                CRASH_POINT
+                        )
+                )
+        );
+    }
+
+    @Test
+    @DisplayName("Should inform of nested queries that exceeds thresholds")
+    void nestedDepthExceedsThresholds() {
+        var CRASH_POINT = 8;
+        var UPPER_BOUND = 4;
+
+        var methodBeyondCrashPoint = getNestedDepthMethod(
+                "methodBeyondCrashPoint",
+                CRASH_POINT+1
+        );
+        var methodBetweenUpperBoundAndCrashPoint = getNestedDepthMethod(
+                "methodBetweenUpperBoundAndCrashPoint",
+                UPPER_BOUND+1
+        );
+        var methodBelowUpperBound = getNestedDepthMethod(
+                "methodBelowUpperBound",
+                UPPER_BOUND-1
+        );
+
+        var codeGenerationThresholds = new CodeGenerationThresholds(
+                null,
+                null,
+                UPPER_BOUND,
+                CRASH_POINT,
+                List.of(methodBeyondCrashPoint,
+                        methodBetweenUpperBoundAndCrashPoint,
+                        methodBelowUpperBound
+                )
+        );
+
+        assertThat(codeGenerationThresholds.getUpperBoundMessages()).isEqualTo(
+                List.of(
+                        String.format(
+                                "Query nesting depth in %s has exceeded its UPPER_BOUND %d/%d",
+                                methodBetweenUpperBoundAndCrashPoint.name(),
+                                UPPER_BOUND + 1,
+                                UPPER_BOUND
+                        )
+                ));
+        assertThat(codeGenerationThresholds.getCrashPointMessages()).isEqualTo(
+                List.of(
+                        String.format(
+                                "Query nesting depth in %s has exceeded its CRASH_POINT %d/%d",
+                                methodBeyondCrashPoint.name(),
+                                CRASH_POINT + 1,
+                                CRASH_POINT
+                        )
+                )
+        );
+    }
+
+    private static MethodSpec getCodeSizeMethod(String methodName, int linesOfCode) {
+        var method = MethodSpec.methodBuilder(methodName);
+        IntStream.range(0, linesOfCode).forEach(i -> {
+            method.addCode("someLine\n");
+        });
+        return method.build();
+    }
+
+    private static MethodSpec getNestedDepthMethod(String methodName, int nestedDepth) {
+        var method = MethodSpec.methodBuilder(methodName);
+        method.addCode("return\nctx\n");
+        IntStream.range(0, nestedDepth).forEach(i -> {
+            method.addCode(".select(\n");
+            method.addCode(String.format("column%d\n", i));
+            method.addCode(")\n");
+            method.addCode(String.format(".from(table%d)\n", i));
+        });
+        method.addStatement("from(table)");
+        return method.build();
+    }
+}

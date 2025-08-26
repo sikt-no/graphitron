@@ -17,24 +17,23 @@ public class CodeGenerationThresholds {
     public CodeGenerationThresholds() {
     }
 
-    public CodeGenerationThresholds(Integer upperBoundCodeSize, Integer upperBoundNestingDepth) {
-        this.upperBoundCodeSize = upperBoundCodeSize;
-        this.upperBoundNestingDepth = upperBoundNestingDepth;
+    public CodeGenerationThresholds(List<MethodSpec> methods) {
+        addMessageIfMethodExceedsThresholds(methods);
     }
 
-    public CodeGenerationThresholds(List<MethodSpec> methods) {
+    public CodeGenerationThresholds(Integer upperBoundCodeSize, Integer crashPointCodeSize, Integer upperBoundNestingDepth, Integer crashPointNestingDepth, List<MethodSpec> methods) {
+        this.upperBoundCodeSize = upperBoundCodeSize;
+        this.upperBoundNestingDepth = upperBoundNestingDepth;
+        this.crashPointCodeSize = crashPointCodeSize;
+        this.crashPointNestingDepth = crashPointNestingDepth;
+        addMessageIfMethodExceedsThresholds(methods);
+    }
+
+    private void addMessageIfMethodExceedsThresholds(List<MethodSpec> methods) {
         methods.forEach(method -> {
             addMessageIfMethodExceedsNestingDepthBounds(method);
             addMessageIfMethodExceedsCodeSizeBounds(method);
         });
-    }
-
-    public List<String> getUpperBoundMessages() {
-        return upperBoundMessages;
-    }
-
-    public List<String> getCrashPointMessages() {
-        return crashPointMessages;
     }
 
     private String getNestingDepthMessage(String methodName, long depth, ThresholdType type) {
@@ -43,7 +42,7 @@ public class CodeGenerationThresholds {
                 methodName,
                 type.name(),
                 depth,
-                crashPointNestingDepth
+                type == ThresholdType.UPPER_BOUND ? upperBoundNestingDepth : crashPointNestingDepth
         );
     }
 
@@ -53,7 +52,7 @@ public class CodeGenerationThresholds {
                 methodName,
                 type.name(),
                 codeSize,
-                upperBoundNestingDepth
+                type == ThresholdType.UPPER_BOUND ? upperBoundCodeSize : crashPointCodeSize
         );
     }
 
@@ -83,7 +82,7 @@ public class CodeGenerationThresholds {
     }
 
     public void addMessageIfMethodExceedsCodeSizeBounds(MethodSpec method) {
-        var codeSize = method.toString().length();
+        var codeSize = method.code().toString().split("\\R").length;
 
         if (crashPointCodeSize != null && codeSize > crashPointCodeSize) {
             this.crashPointMessages.add(
@@ -108,5 +107,13 @@ public class CodeGenerationThresholds {
     enum ThresholdType {
         UPPER_BOUND,
         CRASH_POINT
+    }
+
+    public List<String> getUpperBoundMessages() {
+        return upperBoundMessages;
+    }
+
+    public List<String> getCrashPointMessages() {
+        return crashPointMessages;
     }
 }
