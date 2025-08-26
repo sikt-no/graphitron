@@ -31,19 +31,19 @@ public class CodeGenerationThresholdsTest {
 
     @Test
     @DisplayName("Should inform of code sizes that exceeds thresholds")
-    void codeSizeExceedsThresholds() {
+    void linesOfCodeExceedsThresholds() {
         var CRASH_POINT = 50;
         var UPPER_BOUND = 25;
 
-        var methodBeyondCrashPoint = getCodeSizeMethod(
+        var methodBeyondCrashPoint = getLinesOfCodeMethod(
                 "methodBeyondCrashPoint",
                 CRASH_POINT+1
         );
-        var methodBetweenUpperBoundAndCrashPoint = getCodeSizeMethod(
+        var methodBetweenUpperBoundAndCrashPoint = getLinesOfCodeMethod(
                 "methodBetweenUpperBoundAndCrashPoint",
                 UPPER_BOUND+1
         );
-        var methodBelowUpperBound = getCodeSizeMethod(
+        var methodBelowUpperBound = getLinesOfCodeMethod(
                 "methodBelowUpperBound",
                 UPPER_BOUND-1
         );
@@ -131,7 +131,7 @@ public class CodeGenerationThresholdsTest {
         );
     }
 
-    private static MethodSpec getCodeSizeMethod(String methodName, int linesOfCode) {
+    private static MethodSpec getLinesOfCodeMethod(String methodName, int linesOfCode) {
         var method = MethodSpec.methodBuilder(methodName);
         IntStream.range(0, linesOfCode).forEach(i -> {
             method.addCode("someLine\n");

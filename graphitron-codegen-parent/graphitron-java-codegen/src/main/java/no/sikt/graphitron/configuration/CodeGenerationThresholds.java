@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 public class CodeGenerationThresholds {
-    Integer upperBoundCodeSize;
+    Integer upperBoundLinesOfCode;
     Integer upperBoundNestingDepth;
-    Integer crashPointCodeSize;
+    Integer crashPointLinesOfCode;
     Integer crashPointNestingDepth;
     List<String> upperBoundMessages = new ArrayList<>();
     List<String> crashPointMessages = new ArrayList<>();
@@ -21,10 +21,10 @@ public class CodeGenerationThresholds {
         addMessageIfMethodExceedsThresholds(methods);
     }
 
-    public CodeGenerationThresholds(Integer upperBoundCodeSize, Integer crashPointCodeSize, Integer upperBoundNestingDepth, Integer crashPointNestingDepth, List<MethodSpec> methods) {
-        this.upperBoundCodeSize = upperBoundCodeSize;
+    public CodeGenerationThresholds(Integer upperBoundLinesOfCode, Integer crashPointLinesOfCode, Integer upperBoundNestingDepth, Integer crashPointNestingDepth, List<MethodSpec> methods) {
+        this.upperBoundLinesOfCode = upperBoundLinesOfCode;
         this.upperBoundNestingDepth = upperBoundNestingDepth;
-        this.crashPointCodeSize = crashPointCodeSize;
+        this.crashPointLinesOfCode = crashPointLinesOfCode;
         this.crashPointNestingDepth = crashPointNestingDepth;
         addMessageIfMethodExceedsThresholds(methods);
     }
@@ -32,7 +32,7 @@ public class CodeGenerationThresholds {
     private void addMessageIfMethodExceedsThresholds(List<MethodSpec> methods) {
         methods.forEach(method -> {
             addMessageIfMethodExceedsNestingDepthBounds(method);
-            addMessageIfMethodExceedsCodeSizeBounds(method);
+            addMessageIfMethodExceedsLinesOfCodeBounds(method);
         });
     }
 
@@ -46,13 +46,13 @@ public class CodeGenerationThresholds {
         );
     }
 
-    private String getCodeSizeMessage(String methodName, int codeSize, ThresholdType type) {
+    private String getLinesOfCodeMessage(String methodName, int linesOfCode, ThresholdType type) {
         return String.format(
                 "Code size in %s has exceeded its %s %d/%d",
                 methodName,
                 type.name(),
-                codeSize,
-                type == ThresholdType.UPPER_BOUND ? upperBoundCodeSize : crashPointCodeSize
+                linesOfCode,
+                type == ThresholdType.UPPER_BOUND ? upperBoundLinesOfCode : crashPointLinesOfCode
         );
     }
 
@@ -81,23 +81,23 @@ public class CodeGenerationThresholds {
         }
     }
 
-    public void addMessageIfMethodExceedsCodeSizeBounds(MethodSpec method) {
-        var codeSize = method.code().toString().split("\\R").length;
+    public void addMessageIfMethodExceedsLinesOfCodeBounds(MethodSpec method) {
+        var linesOfCode = method.code().toString().split("\\R").length;
 
-        if (crashPointCodeSize != null && codeSize > crashPointCodeSize) {
+        if (crashPointLinesOfCode != null && linesOfCode > crashPointLinesOfCode) {
             this.crashPointMessages.add(
-                    getCodeSizeMessage(method.name(),
-                            codeSize,
+                    getLinesOfCodeMessage(method.name(),
+                            linesOfCode,
                             ThresholdType.CRASH_POINT
                     )
             );
             return;
         }
-        if (upperBoundCodeSize != null && codeSize > upperBoundCodeSize) {
+        if (upperBoundLinesOfCode != null && linesOfCode > upperBoundLinesOfCode) {
             this.upperBoundMessages.add(
-                    getCodeSizeMessage(
+                    getLinesOfCodeMessage(
                             method.name(),
-                            codeSize,
+                            linesOfCode,
                             ThresholdType.UPPER_BOUND
                     )
             );

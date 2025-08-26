@@ -132,7 +132,7 @@
                                 </class>
                             </scalars>
                             <codeGenerationThresholds>
-                                    <upperBoundCodeSize>100</upperBoundCodeSize>
+                                    <upperBoundLinesOfCode>100</upperBoundLinesOfCode>
                                     <upperBoundNestingDepth>10</upperBoundNestingDepth>
                             </codeGenerationThresholds>
                         </configuration>
