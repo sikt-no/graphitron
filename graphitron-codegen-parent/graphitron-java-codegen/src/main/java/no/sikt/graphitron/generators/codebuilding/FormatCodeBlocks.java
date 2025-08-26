@@ -396,13 +396,14 @@ public class FormatCodeBlocks {
             inputs.add(SELECTION_SET_NAME);
             params.add(SELECTION_SET_NAME);
         }
-
-        return CodeBlock.of(
-                isService ? "($L) -> $N.$L($L)" : "($L) -> $T.$L($L)",
+        var source = isService ? CodeBlock.of("$N", uncapitalize(queryLocation)) : CodeBlock.of("$T", getQueryClassName(queryLocation));
+        return CodeBlock.of("($L) -> $L",
                 String.join(", ", inputs),
-                isService ? uncapitalize(queryLocation) : getQueryClassName(queryLocation),
-                queryMethodName,
-                String.join(", ", params));
+                invokeExternalMethod(source, queryMethodName, String.join(", ", params)));
+    }
+
+    public static CodeBlock invokeExternalMethod(CodeBlock source, String methodName, String parameters) {
+        return CodeBlock.of("$L.$L($L)",source, methodName, String.join(", ", parameters));
     }
 
     /**
@@ -917,8 +918,16 @@ public class FormatCodeBlocks {
         return hasIdOrIdsBlock(id, obj, targetAlias, CodeBlock.empty(), false);
     }
 
-    public static CodeBlock invokeServiceBlock(String variableName, String methodName, String targetAlias, CodeBlock args) {
-        return CodeBlock.of("$L = $L.$L($L$L)", targetAlias, uncapitalize(variableName), methodName, targetAlias, args);
+    public static CodeBlock reassignFromServiceBlock(String variableName, String methodName, String targetAlias, String args) {
+        return CodeBlock.of(
+                "$N = $L",
+                targetAlias,
+                invokeExternalMethod(
+                        CodeBlock.of("$N", uncapitalize(variableName)),
+                        methodName,
+                        args)
+        );
+        //return CodeBlock.of("$N = $N.$L($L$L)", targetAlias, uncapitalize(variableName), methodName, targetAlias, args);
     }
 
     public static CodeBlock hasIdsBlock(RecordObjectSpecification<?> obj, String targetAlias) {
