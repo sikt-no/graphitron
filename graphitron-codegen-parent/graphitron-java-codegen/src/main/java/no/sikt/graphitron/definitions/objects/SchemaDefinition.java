@@ -1,5 +1,6 @@
 package no.sikt.graphitron.definitions.objects;
 
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.OperationField;
@@ -19,7 +20,7 @@ import static org.apache.commons.lang3.StringUtils.capitalize;
 /**
  * Represents the top schema object in GraphQL.
  */
-public class SchemaDefinition implements ObjectSpecification<OperationField> {
+public class SchemaDefinition implements ObjectSpecification<OperationField>, GenerationTarget {
     private final static String name = SCHEMA.getName();
     private final LinkedHashMap<String, OperationField> fieldsByName;
     private final ClassReference graphClass;
@@ -78,5 +79,20 @@ public class SchemaDefinition implements ObjectSpecification<OperationField> {
 
     public OperationField getMutation() {
         return mutation;
+    }
+
+    @Override
+    public boolean isGenerated() {
+        return true;
+    }
+
+    @Override
+    public boolean isGeneratedWithResolver() {
+        return false;
+    }
+
+    @Override
+    public boolean isExplicitlyNotGenerated() {
+        return false;
     }
 }

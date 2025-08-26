@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.exception;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.definitions.objects.SchemaDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -10,6 +10,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.ErrorHandlerType.DATABASE;
 import static no.sikt.graphitron.configuration.GeneratorConfig.getRecordValidation;
@@ -20,55 +21,56 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.asGetMethodN
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 
-public class MutationExceptionStrategyConfigurationGenerator extends AbstractSchemaClassGenerator<ObjectDefinition> {
+public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClassGenerator<SchemaDefinition> {
     private static final String
             PAYLOAD_NAME = "payload",
-            ERRORS_NAME = "errors",
-            PAYLOAD_FOR_MUTATION_FIELD_NAME = PAYLOAD_NAME + "ForMutation",
-            MUTATIONS_FOR_EXCEPTION_FIELD = "mutationsForException";
-    private static final ParameterizedTypeName MUTATIONS_FOR_EXCEPTIONS_TYPE =
+            PAYLOAD_FOR_FIELD_NAME = PAYLOAD_NAME + "ForField",
+            EXCEPTION_FIELD = "fieldsForException";
+    private static final ParameterizedTypeName FIELDS_FOR_EXCEPTIONS_TYPE =
             ParameterizedTypeName.get(MAP.className, ParameterizedTypeName.get(CLASS.className,
                     WildcardTypeName.subtypeOf(THROWABLE.className)), wrapSet(STRING.className));
-    private static final TypeName PAYLOAD_FOR_MUTATIONS_TYPE = wrapStringMap(PAYLOAD_CREATOR.className);
-    private final Map<ClassName, Set<String>> seenMutationsForException;
+    private static final TypeName PAYLOAD_FOR_FIELDS_TYPE = wrapStringMap(PAYLOAD_CREATOR.className);
+    private final Map<ClassName, Set<String>> seenFieldsForException;
 
-    public MutationExceptionStrategyConfigurationGenerator(ProcessedSchema processedSchema) {
+    public ExceptionStrategyConfigurationGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
-        seenMutationsForException = new HashMap<>();
+        seenFieldsForException = new HashMap<>();
     }
 
     @Override
-    public TypeSpec generate(ObjectDefinition target) {
-        return getSpec("GeneratedMutationExceptionStrategyConfiguration", List.of())
+    public TypeSpec generate(SchemaDefinition schemaDefinition) {
+        return getSpec("GeneratedExceptionStrategyConfiguration", List.of())
                 .addAnnotation(SINGLETON.className)
-                .addMethod(createConstructor(target))
+                .addMethod(createConstructor(schemaDefinition))
                 .build();
     }
 
-    private MethodSpec createConstructor(ObjectDefinition target) {
+    private MethodSpec createConstructor(SchemaDefinition schemaDefinition) {
         return MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addCode(CodeBlock.builder()
-                        .addStatement("$N = new $T<>()", MUTATIONS_FOR_EXCEPTION_FIELD, HASH_MAP.className)
-                        .addStatement("$N = new $T<>()", PAYLOAD_FOR_MUTATION_FIELD_NAME, HASH_MAP.className)
-                        .add(createConstructorContentForMutations(target))
-                        .build())
+                .addStatement("$N = new $T<>()", EXCEPTION_FIELD, HASH_MAP.className)
+                .addStatement("$N = new $T<>()", PAYLOAD_FOR_FIELD_NAME, HASH_MAP.className)
+                .addCode(createConstructorContentForFields(schemaDefinition))
                 .build();
     }
 
-    private CodeBlock createConstructorContentForMutations(ObjectDefinition mutationTypeDefinition) {
-        var codeBuilder = CodeBlock.builder();
+    private CodeBlock createConstructorContentForFields(SchemaDefinition schemaDefinition) {
+        var queryType = schemaDefinition.getQuery() != null ? processedSchema.getObject(schemaDefinition.getQuery()) : null;
+        var mutationType = schemaDefinition.getMutation() != null ? processedSchema.getObject(schemaDefinition.getMutation()) : null;
 
-        mutationTypeDefinition.getFields().stream()
+        return Stream
+                .concat(queryType != null ? queryType.getFields().stream() : Stream.of(), mutationType != null ? mutationType.getFields().stream() : Stream.of())
                 .sorted(Comparator.comparing(ObjectField::getName))
-                .forEach(mutation -> {
-                    var ctx = new InputParser(mutation, processedSchema);
+                .map(field -> {
+                    var ctx = new InputParser(field, processedSchema);
                     var payloadBlockBuilder = CodeBlock.builder();
 
                     if (ctx.getValidationErrorException().isPresent()) {
-                        payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation, VALIDATION_VIOLATION_EXCEPTION.className));
-                        payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation, ILLEGAL_ARGUMENT_EXCEPTION.className));
+                        payloadBlockBuilder
+                                .add(createFieldsForExceptionBlock(field, VALIDATION_VIOLATION_EXCEPTION.className))
+                                .add(createFieldsForExceptionBlock(field, ILLEGAL_ARGUMENT_EXCEPTION.className));
                     }
 
                     for (var errorField : ctx.getAllErrors()) {
@@ -76,46 +78,49 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractSch
 
                             exc.getExceptionToErrorMappings().forEach(mapping -> {
                                 try {
-                                    payloadBlockBuilder.add(createMutationsForExceptionBlock(mutation,
+                                    payloadBlockBuilder.add(createFieldsForExceptionBlock(field,
                                             mapping.getHandler() == DATABASE
                                                     ? DATA_ACCESS_EXCEPTION.className
                                                     : ClassName.get(Class.forName(mapping.getExceptionClassName()))));
                                 } catch (ClassNotFoundException e) {
                                     throw new IllegalArgumentException("Unable to find exception className: " + mapping.getExceptionClassName() +
-                                            ", declared for mutation: " + mutation.getName(), e);
+                                            ", declared for operation: " + field.getName(), e);
                                 }
                             });
                         }
                     }
 
-                    if (!payloadBlockBuilder.isEmpty()) {
-                        payloadBlockBuilder.add(createPayloadForMutationBlock(mutation, ctx));
-                        payloadBlockBuilder.add("\n");
-                        codeBuilder.add(payloadBlockBuilder.build());
+                    if (payloadBlockBuilder.isEmpty()) {
+                        return CodeBlock.empty();
                     }
-                });
-        return codeBuilder.build();
+
+                    return payloadBlockBuilder
+                            .add(createPayloadForFieldBlock(field, ctx))
+                            .add("\n")
+                            .build();
+                })
+                .collect(CodeBlock.joining());
     }
 
-    private CodeBlock createMutationsForExceptionBlock(ObjectField mutation, ClassName exceptionClassName) {
+    private CodeBlock createFieldsForExceptionBlock(ObjectField field, ClassName exceptionClassName) {
         CodeBlock.Builder codeBlock = CodeBlock.builder();
 
-        if (seenMutationsForException.containsKey(exceptionClassName)) {
-            if (!seenMutationsForException.get(exceptionClassName).contains(mutation.getName())) {
-                seenMutationsForException.get(exceptionClassName).add(mutation.getName());
-                codeBlock.addStatement("$N.get($T.class).add($S)", MUTATIONS_FOR_EXCEPTION_FIELD, exceptionClassName, mutation.getName());
+        if (seenFieldsForException.containsKey(exceptionClassName)) {
+            if (!seenFieldsForException.get(exceptionClassName).contains(field.getName())) {
+                seenFieldsForException.get(exceptionClassName).add(field.getName());
+                codeBlock.addStatement("$N.get($T.class).add($S)", EXCEPTION_FIELD, exceptionClassName, field.getName());
             }
         } else {
-            HashSet<String> seenMutations = new HashSet<>();
-            seenMutations.add(mutation.getName());
-            seenMutationsForException.put(exceptionClassName, seenMutations);
-            codeBlock.addStatement("$N.computeIfAbsent($T.class, k -> new $T<>()).add($S)", MUTATIONS_FOR_EXCEPTION_FIELD, exceptionClassName, HashSet.class, mutation.getName());
+            HashSet<String> seenFields = new HashSet<>();
+            seenFields.add(field.getName());
+            seenFieldsForException.put(exceptionClassName, seenFields);
+            codeBlock.addStatement("$N.computeIfAbsent($T.class, k -> new $T<>()).add($S)", EXCEPTION_FIELD, exceptionClassName, HashSet.class, field.getName());
         }
 
         return codeBlock.build();
     }
 
-    private CodeBlock createPayloadForMutationBlock(ObjectField mutation, InputParser ctx) {
+    private CodeBlock createPayloadForFieldBlock(ObjectField field, InputParser ctx) {
         var errorBlocks = ctx
                 .getAllErrors()
                 .stream()
@@ -126,16 +131,16 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractSch
                                 CodeBlock.of(
                                         "($T) $N",
                                         ParameterizedTypeName.get(LIST.className, processedSchema.getErrorTypeDefinition(errorField.getTypeName()).getGraphClassName()),
-                                        ERRORS_NAME
+                                        ERROR_FIELD.getName()
                                 )
                         )
                 )
                 .toList();
         return CodeBlock
                 .builder()
-                .add("$N.put($S, ", PAYLOAD_FOR_MUTATION_FIELD_NAME, mutation.getName())
-                .beginControlFlow("$L ->", ERRORS_NAME)
-                .declareNew(PAYLOAD_NAME, processedSchema.getObject(mutation.getTypeName()).getGraphClassName())
+                .add("$N.put($S, ", PAYLOAD_FOR_FIELD_NAME, field.getName())
+                .beginControlFlow("$L ->", ERROR_FIELD.getName())
+                .declareNew(PAYLOAD_NAME, processedSchema.getObject(field.getTypeName()).getGraphClassName())
                 .addAll(errorBlocks)
                 .add(returnWrap(PAYLOAD_NAME))
                 .endControlFlow(")")
@@ -146,7 +151,7 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractSch
     public List<TypeSpec> generateAll() {
         if (recordValidationEnabled() && getRecordValidation().getSchemaErrorType().isPresent() || schemaContainsExceptionToErrorMappings()) {
             var generated = Optional
-                    .ofNullable(processedSchema.getMutationType())
+                    .ofNullable(processedSchema.getSchemaType())
                     .map(this::generate)
                     .filter(it -> !it.methodSpecs().isEmpty());
             if (generated.isPresent()) {
@@ -173,31 +178,31 @@ public class MutationExceptionStrategyConfigurationGenerator extends AbstractSch
     @Override
     public TypeSpec.Builder getSpec(String className, List<? extends MethodGenerator> generators) {
         return TypeSpec.classBuilder(className)
-                .addSuperinterface(MUTATION_EXCEPTION_STRATEGY_CONFIGURATION.className)
+                .addSuperinterface(EXCEPTION_STRATEGY_CONFIGURATION.className)
                 .addModifiers(Modifier.PUBLIC)
-                .addField(FieldSpec.builder(MUTATIONS_FOR_EXCEPTIONS_TYPE, MUTATIONS_FOR_EXCEPTION_FIELD, Modifier.PRIVATE, Modifier.FINAL).build())
-                .addField(FieldSpec.builder(PAYLOAD_FOR_MUTATIONS_TYPE, PAYLOAD_FOR_MUTATION_FIELD_NAME, Modifier.PRIVATE, Modifier.FINAL).build())
-                .addMethod(createGetMutationsForExceptionsMethod())
-                .addMethod(createGetPayloadForMutationsMethod());
+                .addField(FieldSpec.builder(FIELDS_FOR_EXCEPTIONS_TYPE, EXCEPTION_FIELD, Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(PAYLOAD_FOR_FIELDS_TYPE, PAYLOAD_FOR_FIELD_NAME, Modifier.PRIVATE, Modifier.FINAL).build())
+                .addMethod(createGetFieldsForExceptionsMethod())
+                .addMethod(createGetPayloadForFieldsMethod());
     }
 
-    private static MethodSpec createGetMutationsForExceptionsMethod() {
+    private static MethodSpec createGetFieldsForExceptionsMethod() {
         return MethodSpec
-                .methodBuilder(asGetMethodName(MUTATIONS_FOR_EXCEPTION_FIELD))
-                .returns(MUTATIONS_FOR_EXCEPTIONS_TYPE)
+                .methodBuilder(asGetMethodName(EXCEPTION_FIELD))
+                .returns(FIELDS_FOR_EXCEPTIONS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addCode(returnWrap(MUTATIONS_FOR_EXCEPTION_FIELD))
+                .addCode(returnWrap(EXCEPTION_FIELD))
                 .build();
     }
 
-    private static MethodSpec createGetPayloadForMutationsMethod() {
+    private static MethodSpec createGetPayloadForFieldsMethod() {
         return MethodSpec
-                .methodBuilder(asGetMethodName(PAYLOAD_FOR_MUTATION_FIELD_NAME))
-                .returns(PAYLOAD_FOR_MUTATIONS_TYPE)
+                .methodBuilder(asGetMethodName(PAYLOAD_FOR_FIELD_NAME))
+                .returns(PAYLOAD_FOR_FIELDS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addCode(returnWrap(PAYLOAD_FOR_MUTATION_FIELD_NAME))
+                .addCode(returnWrap(PAYLOAD_FOR_FIELD_NAME))
                 .build();
     }
 }

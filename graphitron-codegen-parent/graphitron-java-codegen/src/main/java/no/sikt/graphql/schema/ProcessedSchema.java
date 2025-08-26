@@ -44,7 +44,7 @@ public class ProcessedSchema {
     private final Set<String> tableTypesWithTable, scalarTypes, typeNames, validFieldTypes;
     private final ObjectDefinition queryType, mutationType;
     private final Map<String, RecordObjectSpecification<?>> objectWithPreviousTable;
-    private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootObject;
+    private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootSchemaObject;
     private final List<GenerationField> transformableFields;
     private final List<ObjectDefinition> unreferencedObjects;
     private final boolean nodeExists;
@@ -99,11 +99,11 @@ public class ProcessedSchema {
                 .stream()
                 .collect(Collectors.toMap(ExceptionDefinition::getName, Function.identity()));
 
-        rootObject = isObject(SCHEMA_QUERY.getName()) || isObject(SCHEMA_MUTATION.getName())
+        rootSchemaObject = isObject(SCHEMA_QUERY.getName()) || isObject(SCHEMA_MUTATION.getName())
                 ? new no.sikt.graphitron.definitions.objects.SchemaDefinition(createSchemaDefinition())
                 : null;
-        queryType = rootObject != null && rootObject.getQuery() != null ? getObject(rootObject.getQuery()) : null;
-        mutationType = rootObject != null && rootObject.getMutation() != null ? getObject(rootObject.getMutation()) : null;
+        queryType = rootSchemaObject != null && rootSchemaObject.getQuery() != null ? getObject(rootSchemaObject.getQuery()) : null;
+        mutationType = rootSchemaObject != null && rootSchemaObject.getMutation() != null ? getObject(rootSchemaObject.getMutation()) : null;
 
         inputs = InputDefinition.processInputDefinitions(typeRegistry.getTypes(InputObjectTypeDefinition.class))
                 .stream()
@@ -710,6 +710,13 @@ public class ProcessedSchema {
      */
     public ObjectDefinition getMutationType() {
         return mutationType;
+    }
+
+    /**
+     * @return The root schema type, if it exists.
+     */
+    public no.sikt.graphitron.definitions.objects.SchemaDefinition getSchemaType() {
+        return rootSchemaObject;
     }
 
     /**

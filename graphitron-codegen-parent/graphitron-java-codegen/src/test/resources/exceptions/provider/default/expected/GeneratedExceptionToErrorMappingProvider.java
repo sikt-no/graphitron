@@ -14,28 +14,28 @@ import no.sikt.graphql.exception.GenericExceptionMappingContent;
 
 @Singleton
 public class GeneratedExceptionToErrorMappingProvider implements ExceptionToErrorMappingProvider {
-    private final Map<String, List<DataAccessExceptionContentToErrorMapping>> dataAccessMappingsForMutation;
+    private final Map<String, List<DataAccessExceptionContentToErrorMapping>> dataAccessMappingsForOperation;
 
-    private final Map<String, List<GenericExceptionContentToErrorMapping>> genericMappingsForMutation;
+    private final Map<String, List<GenericExceptionContentToErrorMapping>> genericMappingsForOperation;
 
     public GeneratedExceptionToErrorMappingProvider() {
-        dataAccessMappingsForMutation = new HashMap<>();
-        genericMappingsForMutation = new HashMap<>();
+        dataAccessMappingsForOperation = new HashMap<>();
+        genericMappingsForOperation = new HashMap<>();
         var m1 = new GenericExceptionContentToErrorMapping(
                 new GenericExceptionMappingContent("java.lang.IllegalArgumentException", null),
                 (path, msg) -> new SomeError(path, msg));
 
         var mutationGenericList = List.of(m1);
-        genericMappingsForMutation.put("mutation", mutationGenericList);
+        genericMappingsForOperation.put("mutation", mutationGenericList);
     }
 
     @Override
-    public Map<String, List<DataAccessExceptionContentToErrorMapping>> getDataAccessMappingsForMutation() {
-        return dataAccessMappingsForMutation;
+    public Map<String, List<DataAccessExceptionContentToErrorMapping>> getDataAccessMappingsForOperation() {
+        return dataAccessMappingsForOperation;
     }
 
     @Override
-    public Map<String, List<GenericExceptionContentToErrorMapping>> getGenericMappingsForMutation() {
-        return genericMappingsForMutation;
+    public Map<String, List<GenericExceptionContentToErrorMapping>> getGenericMappingsForOperation() {
+        return genericMappingsForOperation;
     }
 }

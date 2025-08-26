@@ -6,7 +6,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
+import no.sikt.graphitron.generators.exception.ExceptionStrategyConfigurationGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +39,7 @@ public class ConfigurationTest extends GeneratorTest {
 
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
-        return List.of(new MutationExceptionStrategyConfigurationGenerator(schema));
+        return List.of(new ExceptionStrategyConfigurationGenerator(schema));
     }
 
     @BeforeEach
@@ -53,6 +53,17 @@ public class ConfigurationTest extends GeneratorTest {
         assertGeneratedContentMatches("default", MUTATION_RESPONSE);
     }
 
+    @Test
+    @DisplayName("One query with one set of errors")
+    void query() {
+        assertGeneratedContentContains(
+                "query",
+                "ValidationViolationGraphQLException.class, k -> new HashSet<>()).add(\"query\"",
+                "IllegalArgumentException.class, k -> new HashSet<>()).add(\"query\"",
+                "payloadForField.put(\"query\", errors -> {var payload = new Response();payload.setErrors((List<ValidationError>"
+        );
+    }
+
     @Test  // These are the same for mutations with and without services, so added just this one test for services.
     @DisplayName("One mutation using service directive")
     void service() {
@@ -60,7 +71,7 @@ public class ConfigurationTest extends GeneratorTest {
                 "service",
                 ".computeIfAbsent(ValidationViolationGraphQLException.class, k -> new HashSet<>()).add(\"mutation\")",
                 ".computeIfAbsent(IllegalArgumentException.class, k -> new HashSet<>()).add(\"mutation\")",
-                "payloadForMutation.put(\"mutation\", errors -> {var payload = new Response();payload.setErrors((List<ValidationError>) errors);return payload;"
+                "payloadForField.put(\"mutation\", errors -> {var payload = new Response();payload.setErrors((List<ValidationError>) errors);return payload;"
         );
     }
 
@@ -76,7 +87,7 @@ public class ConfigurationTest extends GeneratorTest {
     void noErrors() {
         assertGeneratedContentContains(
                 "noErrors",
-                "{mutationsForException = new HashMap<>();payloadForMutation = new HashMap<>();}"  // Empty class
+                "{fieldsForException = new HashMap<>();payloadForField = new HashMap<>();}"  // Empty class
         );
     }
 
@@ -86,8 +97,8 @@ public class ConfigurationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoMutations",
                 "\"mutation0\", errors -> {",
-                "mutationsForException.get(ValidationViolationGraphQLException.class).add(\"mutation1\")",
-                "mutationsForException.get(IllegalArgumentException.class).add(\"mutation1\")",
+                "fieldsForException.get(ValidationViolationGraphQLException.class).add(\"mutation1\")",
+                "fieldsForException.get(IllegalArgumentException.class).add(\"mutation1\")",
                 "\"mutation1\", errors -> {"
         );
     }
@@ -115,7 +126,7 @@ public class ConfigurationTest extends GeneratorTest {
     void unrelatedError() {
         assertGeneratedContentContains(
                 "unrelatedError", Set.of(MUTATION_RESPONSE),
-                "{mutationsForException = new HashMap<>();payloadForMutation = new HashMap<>();}"
+                "{fieldsForException = new HashMap<>();payloadForField = new HashMap<>();}"
         );
     }
 
@@ -124,7 +135,7 @@ public class ConfigurationTest extends GeneratorTest {
     void invalidClassName() {
         assertThatThrownBy(() -> generateFiles("invalidClassName", Set.of(MUTATION_RESPONSE)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Unable to find exception className: INVALID, declared for mutation: mutation");
+                .hasMessage("Unable to find exception className: INVALID, declared for operation: mutation");
     }
 
     @Test
