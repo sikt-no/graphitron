@@ -62,4 +62,10 @@ public class TableMethodTest extends GeneratorTest {
                 ,"var address_1214171484_staff = customer_2952383337_address.staff().as(\"staff_2623539941\")"
                 ,"address_1214171484_staff = staffTableMethod.staffTable(address_1214171484_staff)");
     }
+
+    @Test
+    @DisplayName("With jOOQ record")
+    void testTableMethodWithJooqRecord() {
+
+    }
 }
