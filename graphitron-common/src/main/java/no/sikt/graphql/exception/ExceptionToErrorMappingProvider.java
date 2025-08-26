@@ -4,19 +4,17 @@ import java.util.List;
 import java.util.Map;
 
 public interface ExceptionToErrorMappingProvider {
+    /**
+     * Returns DataAccessException mappings for operations.
+     *
+     * @return Map with operation field names as keys and corresponding exception-to-error mappings as values.
+     */
+    Map<String, List<DataAccessExceptionContentToErrorMapping>> getDataAccessMappingsForOperation();
 
     /**
-     * Returns DataAccessException mappings for mutations.
+     * Returns generic exception mappings for operations.
      *
-     * @return Map with mutation names as keys and corresponding exception-to-error mappings as values.
+     * @return Map with operation field names as keys and corresponding exception-to-error mappings as values.
      */
-    Map<String, List<DataAccessExceptionContentToErrorMapping>> getDataAccessMappingsForMutation();
-
-    /**
-     * Returns generic exception mappings for mutations.
-     *
-     * @return Map with mutation names as keys and corresponding exception-to-error mappings as values.
-     */
-    Map<String, List<GenericExceptionContentToErrorMapping>> getGenericMappingsForMutation();
-
+    Map<String, List<GenericExceptionContentToErrorMapping>> getGenericMappingsForOperation();
 }

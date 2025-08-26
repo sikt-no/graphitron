@@ -1,0 +1,11 @@
+type Query {
+    query: Response
+}
+
+type Response {
+    errors: [SomeError]
+}
+
+type SomeError implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+    message: String!
+}
