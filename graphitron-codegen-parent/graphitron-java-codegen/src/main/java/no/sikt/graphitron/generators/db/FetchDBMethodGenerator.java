@@ -114,9 +114,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var alias = aliasWrapper.getAlias();
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
             if (aliasWrapper.hasTableMethod()) {
-                var args = !aliasWrapper.getInputNames().isEmpty() ? CodeBlock.of(", $L", String.join(", ", aliasWrapper.getInputNames())) : CodeBlock.empty();
+                var args = alias.getMappingName();
+                if (!aliasWrapper.getInputNames().isEmpty())
+                    args += ", " + String.join(", ", aliasWrapper.getInputNames());
                 codeBuilder.addStatement(
-                        invokeServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
+                        reassignFromServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
             }
         }
         return codeBuilder.build();
