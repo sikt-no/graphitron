@@ -10,6 +10,7 @@ import org.json.JSONObject;
 import java.lang.constant.Constable;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.jooq.impl.DSL.*;
@@ -28,7 +29,7 @@ public class QueryHelper {
                 .toArray(SortField<?>[]::new);
     }
 
-    public static Object[] getOrderByValues(DSLContext ctx, OrderField<?>[] orderByFields, String token) {
+    public static Field<?>[] getOrderByValues(DSLContext ctx, OrderField<?>[] orderByFields, String token) {
 
         var fields = Stream.of(orderByFields)
                 .map(it -> it instanceof Field ? (Field<?>) it : ((SortField<?>) it).$field())
@@ -46,7 +47,9 @@ public class QueryHelper {
             record.fromArray(array);
             List<Object> list = record.intoList();
 
-            return list.toArray();
+            return IntStream.range(0, fields.length)
+                    .mapToObj(i -> DSL.val(list.get(i), fields[i].getDataType()))
+                    .toArray(Field[]::new);
         } catch (Exception e) {
             throw new IllegalArgumentException("Ugyldig verdi/format på token brukt til paginering (after): '" + token + "'", e);
         }
