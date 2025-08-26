@@ -134,11 +134,17 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
         var crashPointMessages = thresholds.getCrashPointMessages();
 
         if (!upperBoundMessages.isEmpty()) {
-            LOGGER.warn("Code generation upper bound has exceeded for the following methods, this may cause performance issues:\n{}", String.join("\n", upperBoundMessages));
+            LOGGER.warn(
+                    "Code generation upper bound has exceeded for the following methods, this may cause performance issues:\n{}",
+                    String.join("\n", upperBoundMessages)
+            );
         }
 
         if (!crashPointMessages.isEmpty()) {
-            throw new IllegalArgumentException("Code generation crash point has exceeded for the following methods:\n" + String.join("\n", crashPointMessages));
+            throw new IllegalArgumentException(
+                    "Code generation crash point has exceeded for the following methods:\n"
+                            + String.join("\n", crashPointMessages)
+            );
         }
     }
 }
