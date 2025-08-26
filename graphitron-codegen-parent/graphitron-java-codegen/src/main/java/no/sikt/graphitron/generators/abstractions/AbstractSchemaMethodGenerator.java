@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.abstractions;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.dependencies.Dependency;
@@ -121,7 +122,7 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
     abstract public MethodSpec generate(T target);
 
     protected ServiceDependency createServiceDependency(GenerationField target) {
-        var dependency = new ServiceDependency(target.getService().getClassName());
+        var dependency = new ServiceDependency(target.getExternalMethod().getClassName());
         dependencyMap.computeIfAbsent(target.getName(), (s) -> new ArrayList<>()).add(dependency);
         return dependency;
     }
@@ -143,6 +144,27 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
                 .sorted()
                 .map(dep -> (ServiceDependency) dep)
                 .forEach(dep -> code.add(dep.getDeclarationCode(excludeCtx)));
+        return code.build();
+    }
+
+    protected CodeBlock declareAllServiceClassesInAliasSet(Set<AliasWrapper> aliasSet, boolean excludeCtx) {
+        for (var alias: aliasSet) {
+            if (alias.hasTableMethod()){
+                createServiceDependency(alias.getReferenceObjectField());
+            }
+        }
+
+        var code = CodeBlock.builder();
+        aliasSet.stream()
+                .map(AliasWrapper::getReferenceObjectField)
+                .filter(Objects::nonNull)
+                .filter(field -> dependencyMap.containsKey(field.getName()))
+                .flatMap(field -> dependencyMap.get(field.getName()).stream())
+                .filter(dep -> dep instanceof ServiceDependency)
+                .distinct()
+                .map(dep -> (ServiceDependency) dep)
+                .forEach(dep -> code.add(dep.getDeclarationCode(excludeCtx)));
+
         return code.build();
     }
 }

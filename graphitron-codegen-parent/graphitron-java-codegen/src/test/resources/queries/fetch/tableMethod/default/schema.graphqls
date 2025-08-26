@@ -3,5 +3,5 @@ type Query {
 }
 
 type Customer @table {
-    id: String
+    id: ID
 }

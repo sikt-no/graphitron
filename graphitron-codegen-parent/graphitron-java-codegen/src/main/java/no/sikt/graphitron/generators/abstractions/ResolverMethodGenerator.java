@@ -14,12 +14,10 @@ import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.NameFormat;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
-import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -68,7 +66,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
 
         var objectToCall = isService ? uncapitalize(createServiceDependency(target).getName()) : asQueryClass(localObject.getName());
-        var methodName = isService ? target.getService().getMethodName() : asQueryMethodName(target.getName(), localObject.getName());
+        var methodName = isService ? target.getExternalMethod().getMethodName() : asQueryMethodName(target.getName(), localObject.getName());
         var isRoot = localObject.isOperationRoot();
         var queryFunction = queryFunction(objectToCall, methodName, parser.getInputParamString(), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
 
@@ -105,7 +103,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 getQueryClassName(objectToCall),
                 methodName,
                 asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                CodeBlock.ofIf(GeneratorConfig.shouldMakeNodeStrategy(), ", $L", NODE_ID_STRATEGY_NAME),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), ", $L", NODE_ID_STRATEGY_NAME),
                 parser.getInputParamString()
         );
     }

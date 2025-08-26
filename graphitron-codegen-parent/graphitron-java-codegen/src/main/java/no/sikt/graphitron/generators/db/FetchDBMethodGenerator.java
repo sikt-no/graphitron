@@ -8,6 +8,7 @@ import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
@@ -107,16 +108,22 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * @param aliasSet  Set of aliases to be defined.
      * @return Code block which declares all the aliases that will be used in a select query.
      */
-    protected static CodeBlock createAliasDeclarations(Set<Alias> aliasSet) {
+    protected static CodeBlock createAliasDeclarations(Set<AliasWrapper> aliasSet) {
         var codeBuilder = CodeBlock.builder();
-        for (var alias : aliasSet) {
+        for (var aliasWrapper : aliasSet) {
+            var alias = aliasWrapper.getAlias();
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
+            if (aliasWrapper.hasTableMethod()) {
+                var args = !aliasWrapper.getInputNames().isEmpty() ? CodeBlock.of(", $L", String.join(", ", aliasWrapper.getInputNames())) : CodeBlock.empty();
+                codeBuilder.addStatement(
+                        invokeServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
+            }
         }
         return codeBuilder.build();
     }
 
     protected static CodeBlock createAliasDeclarations(Alias alias) {
-        return createAliasDeclarations(Set.of(alias));
+        return createAliasDeclarations(Set.of(alias.toAliasWrapper()));
     }
 
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
