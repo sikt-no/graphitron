@@ -1,5 +1,5 @@
 type Query {
-    customer(first_name:String): Customer @tableMethod(service: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"}) @splitQuery
+    customer(first_name:String): Customer @tableMethod(service: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
 }
 
 type Customer @table {

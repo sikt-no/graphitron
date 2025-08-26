@@ -24,7 +24,7 @@ public class ServiceUpdateResolverMethodGenerator extends UpdateResolverMethodGe
 
     @Override
     protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
-        return CodeBlock.declare(target.getName(), "$N.$L($L)", uncapitalize(createServiceDependency(target).getName()), target.getService().getMethodName(), parser.getInputParamString());
+        return CodeBlock.declare(target.getName(), "$N.$L($L)", uncapitalize(createServiceDependency(target).getName()), target.getExternalMethod().getMethodName(), parser.getInputParamString());
     }
 
     /**

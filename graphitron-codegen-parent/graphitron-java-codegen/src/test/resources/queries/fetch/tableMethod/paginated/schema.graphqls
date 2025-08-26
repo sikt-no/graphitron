@@ -5,12 +5,4 @@ type Query {
 type Customer @table {
     id: String
 }
-type CustomerConnection {
-    edges: [CustomerConnectionEdge]
-    nodes: [Customer!]!
-}
 
-type CustomerConnectionEdge {
-    cursor: String
-    node: Customer
-}

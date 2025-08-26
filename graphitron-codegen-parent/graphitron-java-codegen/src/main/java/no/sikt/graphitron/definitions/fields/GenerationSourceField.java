@@ -34,7 +34,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  */
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
     private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField,
-            hasFieldDirective, hasNodeID, hasTableMethodDirective, hasServiceDirective;
+            hasFieldDirective, hasNodeID, hasTableMethod, hasService;
     private final List<FieldReference> fieldReferences;
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
@@ -66,8 +66,8 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
         isGenerated = !field.hasDirective(NOT_GENERATED.getName());
         isResolver = field.hasDirective(SPLIT_QUERY.getName())
                 || (field instanceof FieldDefinition && !container.equals(SCHEMA_QUERY.getName()) && !container.equals(SCHEMA_MUTATION.getName()) && !((FieldDefinition) field).getInputValueDefinitions().isEmpty());
-        hasTableMethodDirective = field.hasDirective(TABLE_METHOD.getName());
-        hasServiceDirective = field.hasDirective(SERVICE.getName());
+        hasTableMethod = field.hasDirective(TABLE_METHOD.getName());
+        hasService = field.hasDirective(SERVICE.getName());
 
         isGeneratedAsResolver = (isResolver || container.equals(SCHEMA_QUERY.getName()) || container.equals(SCHEMA_MUTATION.getName())) && isGenerated;
 
@@ -180,12 +180,10 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     @Override
-    public boolean hasServiceReference() {
-        return hasServiceDirective;
-    }
+    public boolean hasServiceReference() { return hasService; }
 
     @Override
-    public ServiceWrapper getService() {
+    public ServiceWrapper getExternalMethod() {
         return serviceWrapper;
     }
 
@@ -229,7 +227,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     }
 
     public boolean hasTableMethodDirective() {
-        return hasTableMethodDirective;
+        return hasTableMethod;
     }
 
 }
