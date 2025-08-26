@@ -15,7 +15,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -84,7 +83,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         if (!processedSchema.isRecordType(target)) {
             return generateForScalarField(target, context);
         }
-        return target.isResolver() ? generateCorrelatedSubquery(target, context.nextContext(target)) : generateSelectRow(context);
+        return target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName())
+                ? generateCorrelatedSubquery(target, context.nextContext(target))
+                : generateSelectRow(context);
     }
 
     private CodeBlock createSelectBlock(ObjectField target, FetchContext context, String actualRefTable, CodeBlock selectRowBlock) {
@@ -117,7 +118,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addIf(lookupExists, "$T::value1, ", RECORD2.className)
                 .addIf(!lookupExists, "r -> r.value1().valuesRow(), ");
 
-        if (referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
+        if (processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(referenceField.getContainerTypeName()) && referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
             if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
                 return code.addStatement("r -> r.value2().map($T::value2))", RECORD2.className).build();
             }

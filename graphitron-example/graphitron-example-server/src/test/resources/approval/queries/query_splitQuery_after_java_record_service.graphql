@@ -1,0 +1,12 @@
+{
+    helloWorldWithSplitQueryField(addressIds: ["22", "1", null]) {
+        film {
+            id
+        }
+        wrapper {
+            customer {
+                id
+            }
+        }
+    }
+}

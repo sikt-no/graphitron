@@ -1,0 +1,11 @@
+type Query {
+    queryJavaRecord: DummyTypeRecord @service(service: {className: "ResolverFetchService", method: "queryJavaRecord"})
+}
+
+type DummyTypeRecord @record(record: {className: "CustomerJavaRecord"}){
+    wrapper: Wrapper @splitQuery
+}
+
+type Wrapper {
+    id: ID
+}

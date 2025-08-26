@@ -752,8 +752,10 @@ input EditCustomerInput @table(name: "CUSTOMER") { # @table specifies the jOOQ t
 ```
 
 #### Resolving splitQuery fields after services
-Resolving **splitQuery** fields after a service is currently only supported for services returning jOOQ records.
-To enable Graphitron to resolve a **splitQuery** field after a service, the returned record must include all the key fields required for the next query.
+For **splitQuery** fields to resolve correctly after services, the service must return records with the necessary key fields populated.
+
+##### Services returning jOOQ records
+To enable Graphitron to resolve a **splitQuery** field after a jOOQ record service, the returned record must include all the key fields required for the next query.
 Currently, only primary keys of the previous object are used when resolving a **splitQuery** field.
 
 _Schema:_
@@ -766,8 +768,27 @@ type Customer @table {
   address: Address @splitQuery
 }
 ```
-For Graphitron to be able to resolve the `address` field in the `Customer` type in this example, 
+For Graphitron to be able to resolve the `address` field in the `Customer` type in this example,
 the jOOQ record returned from the service must contain the primary key of the `CUSTOMER` table, in this case `CUSTOMER_ID`.
+
+##### Services returning Java records
+The Java record returned must have a table record type corresponding to the target type's table.
+Graphitron will then extract the primary key from the table record, and use it to look up the next object.
+
+_Schema:_
+```graphql
+type Query {
+  service: JavaRecordResult @service(...)
+}
+
+type JavaRecordResult @record(...) {
+  customer: Customer @splitQuery
+}
+
+type Customer @table {...}
+```
+
+The Java record is then expected to have `customer` of type `CustomerRecord`, and it's primary key fields to be given the correct value(s) in the service.
 
 #### Nested input structures
 Multiple layers of jOOQ input types are also supported, but comes with its own limitations.

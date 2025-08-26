@@ -1,0 +1,15 @@
+type Query {
+    query: Customer
+}
+
+type Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+    wrapper: Wrapper
+}
+
+type Wrapper {
+    address: Address @splitQuery
+}
+
+type Address @table {
+    id: ID
+}
