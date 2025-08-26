@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -11,14 +10,12 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.directives.GenerationDirective;
-import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -47,9 +44,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(target, context);
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-        var fieldHasTableMethod = target.hasTableMethodDirective();
-        if (fieldHasTableMethod) {
-            createServiceDependency(target);
+        for (var alias: context.getAliasSet()) {
+            if (alias.hasTableMethod()){
+                createServiceDependency(alias.getReferenceObjectField());
+            }
         }
         var querySource = context.renderQuerySource(getLocalTable());
         var refContext = target.isResolver() ? context.nextContext(target) : context;
@@ -60,33 +58,12 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 ? createOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
                 : CodeBlock.empty();
 
-        var reservedNames = Stream.of(GraphQLReservedName.PAGINATION_BEFORE,
-                GraphQLReservedName.PAGINATION_AFTER,
-                GraphQLReservedName.PAGINATION_LAST,
-                GraphQLReservedName.PAGINATION_FIRST).map(GraphQLReservedName::getName).toList();
-
-        var tableMethodArgs = fieldHasTableMethod ? target.getArguments()
-                .stream()
-                .map(AbstractField::getName).
-                filter(name -> !reservedNames.contains(name))
-                .collect(Collectors.collectingAndThen(Collectors.joining(", "),
-                        args -> args.isEmpty() ? CodeBlock.empty() : CodeBlock.of(", $L", args)))
-                : null;
-
-        var tableMethodBlock = fieldHasTableMethod ? invokeServiceBlock(
-                target.getService().getClassName().simpleName(),
-                target.getService().getMethodName(),
-                context.getTargetAlias(),
-                tableMethodArgs)
-                : null;
-
         var returnType = processedSchema.isRecordType(target)
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
+                .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet(), true))
                 .addCode(selectAliasesBlock)
-                .addCodeIf(fieldHasTableMethod, declareAllServiceClasses(target.getName(), true))
-                .addStatementIf(fieldHasTableMethod, tableMethodBlock)
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()

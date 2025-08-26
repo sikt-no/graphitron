@@ -1,6 +1,6 @@
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
-import fake.graphql.example.model.Customer;
+import fake.graphql.example.model.CustomerTable;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
@@ -14,7 +14,7 @@ import org.jooq.Functions;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
-    public static List<Pair<String, Customer>> customerForQuery(DSLContext ctx, String first_name,
+    public static List<Pair<String, CustomerTable>> customerForQuery(DSLContext ctx, String first_name,
                                                                 Integer pageSize, String after, SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
         var customerTableMethod = new CustomerTableMethod();
@@ -23,7 +23,7 @@ public class QueryDBQueries {
         return ctx
                 .select(
                         QueryHelper.getOrderByToken(_customer, orderFields),
-                        DSL.row(_customer.ID).mapping(Functions.nullOnAllNull(Customer::new))
+                        DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
                 .from(_customer)
                 .where(first_name != null ? _customer.FIRST_NAME.eq(first_name) : DSL.noCondition())

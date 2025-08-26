@@ -7,14 +7,14 @@ import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.dependencies.Dependency;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.addStringIfNotEmpty;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.asMethodCall;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.recordTransformMethod;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
@@ -55,7 +55,7 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         var fillCode = iterateRecords(context); // Note, do before declaring dependencies.
         var type = processedSchema.getRecordType(target);
         var currentSource = type.asSourceClassName(toRecord);
-        var source = wrapListIf(currentSource != null ? currentSource : target.getService().getGenericReturnType(), context.hasSourceName());
+        var source = wrapListIf(currentSource != null ? currentSource : target.getExternalMethod().getGenericReturnType(), context.hasSourceName());
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
         var hasIterable = context.hasSourceName() || noRecordIterability;
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))
