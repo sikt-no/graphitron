@@ -1,5 +1,6 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.configuration.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import org.junit.jupiter.api.DisplayName;
@@ -18,15 +19,15 @@ public class CodeGenerationThresholdsTest {
     void noThresholdsSet() {
         var method = MethodSpec.methodBuilder("method").build();
 
-        var codeGenerationThresholds = new CodeGenerationThresholds(
+        var thresholds = new CodeGenerationThresholds(
                 null,
                 null,
                 null,
-                null,
-                List.of(method));
+                null);
+        var evaluator = new CodeGenerationThresholdEvaluator(thresholds, List.of(method));
 
-        assertThat(codeGenerationThresholds.getUpperBoundMessages()).isEmpty();
-        assertThat(codeGenerationThresholds.getCrashPointMessages()).isEmpty();
+        assertThat(evaluator.getUpperBoundMessages()).isEmpty();
+        assertThat(evaluator.getCrashPointMessages()).isEmpty();
     }
 
     @Test
@@ -48,18 +49,20 @@ public class CodeGenerationThresholdsTest {
                 UPPER_BOUND-1
         );
 
-        var codeGenerationThresholds = new CodeGenerationThresholds(
+        var thresholds = new CodeGenerationThresholds(
                 UPPER_BOUND,
                 CRASH_POINT,
                 null,
-                null,
-                List.of(methodBeyondCrashPoint,
-                        methodBetweenUpperBoundAndCrashPoint,
-                        methodBelowUpperBound
-                )
+                null
         );
+        var evaluator = new CodeGenerationThresholdEvaluator(
+                thresholds, List.of(
+                methodBeyondCrashPoint,
+                methodBetweenUpperBoundAndCrashPoint,
+                methodBelowUpperBound
+        ));
 
-        assertThat(codeGenerationThresholds.getUpperBoundMessages()).isEqualTo(
+        assertThat(evaluator.getUpperBoundMessages()).isEqualTo(
                 List.of(
                         String.format(
                                 "Code size in %s has exceeded its UPPER_BOUND %d/%d",
@@ -68,7 +71,7 @@ public class CodeGenerationThresholdsTest {
                                 UPPER_BOUND
                         )
                 ));
-        assertThat(codeGenerationThresholds.getCrashPointMessages()).isEqualTo(
+        assertThat(evaluator.getCrashPointMessages()).isEqualTo(
                 List.of(
                         String.format(
                                 "Code size in %s has exceeded its CRASH_POINT %d/%d",
@@ -99,18 +102,20 @@ public class CodeGenerationThresholdsTest {
                 UPPER_BOUND-1
         );
 
-        var codeGenerationThresholds = new CodeGenerationThresholds(
+        var thresholds = new CodeGenerationThresholds(
                 null,
                 null,
                 UPPER_BOUND,
-                CRASH_POINT,
-                List.of(methodBeyondCrashPoint,
-                        methodBetweenUpperBoundAndCrashPoint,
-                        methodBelowUpperBound
-                )
+                CRASH_POINT
         );
+        var evaluator = new CodeGenerationThresholdEvaluator(
+                thresholds, List.of(
+                methodBeyondCrashPoint,
+                methodBetweenUpperBoundAndCrashPoint,
+                methodBelowUpperBound
+        ));
 
-        assertThat(codeGenerationThresholds.getUpperBoundMessages()).isEqualTo(
+        assertThat(evaluator.getUpperBoundMessages()).isEqualTo(
                 List.of(
                         String.format(
                                 "Query nesting depth in %s has exceeded its UPPER_BOUND %d/%d",
@@ -119,7 +124,7 @@ public class CodeGenerationThresholdsTest {
                                 UPPER_BOUND
                         )
                 ));
-        assertThat(codeGenerationThresholds.getCrashPointMessages()).isEqualTo(
+        assertThat(evaluator.getCrashPointMessages()).isEqualTo(
                 List.of(
                         String.format(
                                 "Query nesting depth in %s has exceeded its CRASH_POINT %d/%d",
