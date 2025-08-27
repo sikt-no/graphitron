@@ -1,0 +1,3 @@
+type Query {
+    customer: Customer @tableMethod(service: {name: "CONTEXT_SERVICE"}, contextArguments: "ctxField")
+}

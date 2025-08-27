@@ -1,15 +1,18 @@
 package no.sikt.graphitron.queries.fetch;
 
 import no.sikt.graphitron.common.GeneratorTest;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
 
 import java.util.List;
 import java.util.Set;
+
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_SERVICE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
 
 @DisplayName("TableMethod for queries")
 public class TableMethodTest extends GeneratorTest {
@@ -21,6 +24,11 @@ public class TableMethodTest extends GeneratorTest {
     @Override
     protected List<ClassGenerator> makeGenerators(ProcessedSchema schema) {
         return List.of(new DBClassGenerator(schema));
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(CONTEXT_SERVICE);
     }
 
     @Test
@@ -64,8 +72,11 @@ public class TableMethodTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("With jOOQ record")
-    void testTableMethodWithJooqRecord() {
+    @DisplayName("With ContextArgument")
+    void testTableMethodWithContextArgument() {
+        assertGeneratedContentContains("withContextArgument",
+                "_customer = customerTableMethod.customerTable(_customer, _c_ctxField);",
+                "public static Customer customerForQuery(DSLContext ctx, String _c_ctxField");
 
     }
 }
