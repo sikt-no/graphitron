@@ -58,7 +58,8 @@ public class TableMethodTest extends GeneratorTest {
     @Test
     @DisplayName("On splitQuery")
     void testSplitQueryTableMethod() {
-        assertGeneratedContentMatches("splitQuery" , CUSTOMER_CONNECTION);
+        assertGeneratedContentContains("splitQuery" , Set.of(CUSTOMER_CONNECTION),
+                "_customer = customerTableMethod.customerTable(_customer);");
     }
 
     @Test
