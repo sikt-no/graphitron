@@ -11,8 +11,8 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("Code generation thresholds - Checks generated code up against code generation thresholds")
-public class CodeGenerationThresholdsTest {
+@DisplayName("Code generation threshold evaluator - Checks generated code up against code generation thresholds")
+public class CodeGenerationThresholdEvaluatorTest {
 
     @Test
     @DisplayName("Should not inform of any methods without thresholds set")
