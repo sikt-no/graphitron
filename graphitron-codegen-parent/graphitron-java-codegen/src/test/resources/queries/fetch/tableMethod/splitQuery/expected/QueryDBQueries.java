@@ -14,7 +14,7 @@ public class QueryDBQueries {
         var _customer = CUSTOMER.as("customer_2952383337");
         _customer = customerTableMethod.customerTable(_customer);
         return ctx
-                .select(DSL.row(_customer.ID).mapping(Functions.nullOnAllNull(Customer::new)))
+                .select(DSL.row(DSL.row(_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new)))
                 .from(_customer)
                 .fetchOne(it -> it.into(Customer.class));
     }
