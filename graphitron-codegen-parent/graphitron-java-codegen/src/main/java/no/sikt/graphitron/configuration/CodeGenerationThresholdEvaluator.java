@@ -14,6 +14,7 @@ public class CodeGenerationThresholdEvaluator {
     Integer crashPointNestingDepth;
     List<String> upperBoundMessages = new ArrayList<>();
     List<String> crashPointMessages = new ArrayList<>();
+    private final static Pattern SELECT_PATTERN = Pattern.compile("\\.select\\(");
 
     public CodeGenerationThresholdEvaluator(CodeGenerationThresholds thresholds, TypeSpec typeSpec) {
         this.upperBoundLinesOfCode = thresholds.getUpperBoundLinesOfCode();
@@ -50,8 +51,7 @@ public class CodeGenerationThresholdEvaluator {
     }
 
     public void addMessageIfMethodExceedsNestingDepthBounds(MethodSpec method, String className) {
-        Pattern selectPattern = Pattern.compile("\\.select\\(");
-        var depth = selectPattern.matcher(method.toString()).results().count();
+        var depth = SELECT_PATTERN.matcher(method.toString()).results().count();
 
         if (crashPointNestingDepth != null && depth > crashPointNestingDepth) {
             this.crashPointMessages.add(
