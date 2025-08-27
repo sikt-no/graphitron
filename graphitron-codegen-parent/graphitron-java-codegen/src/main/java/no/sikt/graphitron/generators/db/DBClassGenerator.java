@@ -8,7 +8,6 @@ import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.javapoet.JavaFile;
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -77,7 +76,7 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
                         new EntityDBFetcherMethodGenerator(target, processedSchema)
                 )
         ).build();
-        warnOrCrashIfMethodsExceedsBounds(typeSpec.methodSpecs());
+        warnOrCrashIfMethodsExceedsBounds(typeSpec);
         return typeSpec;
     }
 
@@ -125,14 +124,10 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
         return FILE_NAME_SUFFIX;
     }
 
-    protected void warnOrCrashIfMethodsExceedsBounds(List<MethodSpec> methods) {
-        if (methods.isEmpty()) {
-            return;
-        }
-
+    protected void warnOrCrashIfMethodsExceedsBounds(TypeSpec typeSpec) {
         var codeGenerationThresholdEvaluator = new CodeGenerationThresholdEvaluator(
                 CODE_GENERATION_THRESHOLDS,
-                methods
+                typeSpec
         );
         var upperBoundMessages = codeGenerationThresholdEvaluator.getUpperBoundMessages();
         var crashPointMessages = codeGenerationThresholdEvaluator.getCrashPointMessages();

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.configuration;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,21 +15,22 @@ public class CodeGenerationThresholdEvaluator {
     List<String> upperBoundMessages = new ArrayList<>();
     List<String> crashPointMessages = new ArrayList<>();
 
-    public CodeGenerationThresholdEvaluator(CodeGenerationThresholds thresholds, List<MethodSpec> methods) {
+    public CodeGenerationThresholdEvaluator(CodeGenerationThresholds thresholds, TypeSpec typeSpec) {
         this.upperBoundLinesOfCode = thresholds.getUpperBoundLinesOfCode();
         this.upperBoundNestingDepth = thresholds.getUpperBoundNestingDepth();
         this.crashPointLinesOfCode = thresholds.getCrashPointLinesOfCode();
         this.crashPointNestingDepth = thresholds.getCrashPointNestingDepth();
 
-        methods.forEach(method -> {
-            addMessageIfMethodExceedsNestingDepthBounds(method);
-            addMessageIfMethodExceedsLinesOfCodeBounds(method);
+        typeSpec.methodSpecs().forEach(method -> {
+            addMessageIfMethodExceedsNestingDepthBounds(method, typeSpec.name());
+            addMessageIfMethodExceedsLinesOfCodeBounds(method, typeSpec.name());
         });
     }
 
-    private String getNestingDepthMessage(String methodName, long depth, ThresholdType type) {
+    private String getNestingDepthMessage(String className, String methodName, long depth, ThresholdType type) {
         return String.format(
-                "Query nesting depth in %s has exceeded its %s %d/%d",
+                "Query nesting depth in %s.%s has exceeded its %s %d/%d",
+                className,
                 methodName,
                 type.name(),
                 depth,
@@ -36,9 +38,10 @@ public class CodeGenerationThresholdEvaluator {
         );
     }
 
-    private String getLinesOfCodeMessage(String methodName, int linesOfCode, ThresholdType type) {
+    private String getLinesOfCodeMessage(String className, String methodName, int linesOfCode, ThresholdType type) {
         return String.format(
-                "Code size in %s has exceeded its %s %d/%d",
+                "Code size in %s.%s has exceeded its %s %d/%d",
+                className,
                 methodName,
                 type.name(),
                 linesOfCode,
@@ -46,13 +49,14 @@ public class CodeGenerationThresholdEvaluator {
         );
     }
 
-    public void addMessageIfMethodExceedsNestingDepthBounds(MethodSpec method) {
+    public void addMessageIfMethodExceedsNestingDepthBounds(MethodSpec method, String className) {
         Pattern selectPattern = Pattern.compile("\\.select\\(");
         var depth = selectPattern.matcher(method.toString()).results().count();
 
         if (crashPointNestingDepth != null && depth > crashPointNestingDepth) {
             this.crashPointMessages.add(
                     getNestingDepthMessage(
+                            className,
                             method.name(),
                             depth,
                             ThresholdType.CRASH_POINT
@@ -63,6 +67,7 @@ public class CodeGenerationThresholdEvaluator {
         if (upperBoundNestingDepth != null && depth > upperBoundNestingDepth) {
             this.upperBoundMessages.add(
                     getNestingDepthMessage(
+                            className,
                             method.name(),
                             depth,
                             ThresholdType.UPPER_BOUND
@@ -71,12 +76,14 @@ public class CodeGenerationThresholdEvaluator {
         }
     }
 
-    public void addMessageIfMethodExceedsLinesOfCodeBounds(MethodSpec method) {
+    public void addMessageIfMethodExceedsLinesOfCodeBounds(MethodSpec method, String className) {
         var linesOfCode = method.code().toString().split("\\R").length;
 
         if (crashPointLinesOfCode != null && linesOfCode > crashPointLinesOfCode) {
             this.crashPointMessages.add(
-                    getLinesOfCodeMessage(method.name(),
+                    getLinesOfCodeMessage(
+                            className,
+                            method.name(),
                             linesOfCode,
                             ThresholdType.CRASH_POINT
                     )
@@ -86,6 +93,7 @@ public class CodeGenerationThresholdEvaluator {
         if (upperBoundLinesOfCode != null && linesOfCode > upperBoundLinesOfCode) {
             this.upperBoundMessages.add(
                     getLinesOfCodeMessage(
+                            className,
                             method.name(),
                             linesOfCode,
                             ThresholdType.UPPER_BOUND
