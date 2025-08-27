@@ -42,7 +42,7 @@ type Query {
 
     addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
     addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
-    addressTableMethodSplitquery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} ) @splitQuery
+    addressTableMethodSplitquery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
 }
 
 type Mutation {
@@ -96,7 +96,7 @@ type Address implements Node @node @table @key(fields: "id", resolvable: false) 
     id: ID!
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")
-    city: City!
+    city: City! @splitQuery
     zip: String @field(name: "POSTAL_CODE")
     phone: String!
 }

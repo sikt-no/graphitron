@@ -3,5 +3,9 @@ type Query {
 }
 
 type Customer @table {
-    id: String
+    address: Address @splitQuery
+}
+
+type Address @table {
+    id: ID
 }
