@@ -36,7 +36,7 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param <T> Type that the resolver fetches.
      */
     public <T> CompletableFuture<T> load(DBQueryRoot<T> dbFunction) {
-        return CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, select));
+        return CompletableFuture.supplyAsync(() -> dbFunction.callDBMethod(dslContext, select));
     }
 
     /**
@@ -56,7 +56,7 @@ public class DataFetcherHelper extends AbstractFetcher {
             DBCount<String> countFunction,
             Function<ConnectionImpl<T>, U> connectionFunction
     ) {
-        return CompletableFuture.completedFuture(
+        return CompletableFuture.supplyAsync(() ->
                 getPaginatedConnection(
                         dbFunction.callDBMethod(dslContext, connectionSelect),
                         pageSize,
@@ -128,10 +128,10 @@ public class DataFetcherHelper extends AbstractFetcher {
         }
 
         var mergedKeys = mergeKeys(keys, env);
-
-        var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(mergedKeys), select);
-        var orderedResult = mergedKeys.stream().map(dbResult::get).collect(Collectors.toList());
-        return CompletableFuture.completedFuture(orderedResult);
+        return CompletableFuture.supplyAsync(() -> {
+            var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(mergedKeys), select);
+            return mergedKeys.stream().map(dbResult::get).collect(Collectors.toList());
+        });
     }
 
     public static <K> List<String> mergeKeys(List<List<K>> keys, DataFetchingEnvironment env) {
@@ -178,7 +178,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                 .getDataLoaderRegistry()
                 .<K, V1>computeIfAbsent(loaderName, name ->
                         DataLoaderFactory.newMappedDataLoader((MappedBatchLoaderWithContext<K, V0>) (keys, loaderEnvironment) ->
-                                CompletableFuture.completedFuture(dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment))))
+                                CompletableFuture.supplyAsync(() -> dbFunction.callDBMethod(dslContext, keys, new SelectionSet(getSelectionSetsFromEnvironment(loaderEnvironment))))
                         )
                 )
                 .load(key, env);
@@ -192,7 +192,7 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param <T> Type that the resolver fetches.
      */
     public <T, U> CompletableFuture<U> loadDelete(DBQueryRoot<T> dbFunction, Function<T, U> idFilteringFunction) {
-        return CompletableFuture.completedFuture(idFilteringFunction.apply(dbFunction.callDBMethod(dslContext, select)));
+        return CompletableFuture.supplyAsync(() -> idFilteringFunction.apply(dbFunction.callDBMethod(dslContext, select)));
     }
 
     private <K, V, C> CompletableFuture<Map<KeyWithPath<K>, C>> getMappedDataLoader(
@@ -209,7 +209,7 @@ public class DataFetcherHelper extends AbstractFetcher {
         }
 
         var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
-        return CompletableFuture.completedFuture(
+        return CompletableFuture.supplyAsync(() ->
                 getPaginatedConnection(
                         resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
@@ -226,6 +226,6 @@ public class DataFetcherHelper extends AbstractFetcher {
         }
 
         var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
-        return CompletableFuture.completedFuture(resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)));
+        return CompletableFuture.supplyAsync(() -> resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)));
     }
 }
