@@ -3,6 +3,7 @@ package no.sikt.graphitron.validation;
 import no.sikt.graphitron.configuration.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,14 +18,14 @@ public class CodeGenerationThresholdEvaluatorTest {
     @Test
     @DisplayName("Should not inform of any methods without thresholds set")
     void noThresholdsSet() {
-        var method = MethodSpec.methodBuilder("method").build();
+        var typeSpec = TypeSpec.classBuilder("SomeClass").build();
 
         var thresholds = new CodeGenerationThresholds(
                 null,
                 null,
                 null,
                 null);
-        var evaluator = new CodeGenerationThresholdEvaluator(thresholds, List.of(method));
+        var evaluator = new CodeGenerationThresholdEvaluator(thresholds, typeSpec);
 
         assertThat(evaluator.getUpperBoundMessages()).isEmpty();
         assertThat(evaluator.getCrashPointMessages()).isEmpty();
@@ -48,6 +49,11 @@ public class CodeGenerationThresholdEvaluatorTest {
                 "methodBelowUpperBound",
                 UPPER_BOUND-1
         );
+        var typeSpec = getTypeSpecWithMethods(List.of(
+                methodBeyondCrashPoint,
+                methodBetweenUpperBoundAndCrashPoint,
+                methodBelowUpperBound
+        ));
 
         var thresholds = new CodeGenerationThresholds(
                 UPPER_BOUND,
@@ -55,17 +61,13 @@ public class CodeGenerationThresholdEvaluatorTest {
                 null,
                 null
         );
-        var evaluator = new CodeGenerationThresholdEvaluator(
-                thresholds, List.of(
-                methodBeyondCrashPoint,
-                methodBetweenUpperBoundAndCrashPoint,
-                methodBelowUpperBound
-        ));
+        var evaluator = new CodeGenerationThresholdEvaluator(thresholds, typeSpec);
 
         assertThat(evaluator.getUpperBoundMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Code size in %s has exceeded its UPPER_BOUND %d/%d",
+                                "Code size in %s.%s has exceeded its UPPER_BOUND %d/%d",
+                                typeSpec.name(),
                                 methodBetweenUpperBoundAndCrashPoint.name(),
                                 UPPER_BOUND + 1,
                                 UPPER_BOUND
@@ -74,7 +76,8 @@ public class CodeGenerationThresholdEvaluatorTest {
         assertThat(evaluator.getCrashPointMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Code size in %s has exceeded its CRASH_POINT %d/%d",
+                                "Code size in %s.%s has exceeded its CRASH_POINT %d/%d",
+                                typeSpec.name(),
                                 methodBeyondCrashPoint.name(),
                                 CRASH_POINT + 1,
                                 CRASH_POINT
@@ -89,6 +92,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         var CRASH_POINT = 8;
         var UPPER_BOUND = 4;
 
+
         var methodBeyondCrashPoint = getNestedDepthMethod(
                 "methodBeyondCrashPoint",
                 CRASH_POINT+1
@@ -101,6 +105,11 @@ public class CodeGenerationThresholdEvaluatorTest {
                 "methodBelowUpperBound",
                 UPPER_BOUND-1
         );
+        var typeSpec = getTypeSpecWithMethods(List.of(
+                methodBeyondCrashPoint,
+                methodBetweenUpperBoundAndCrashPoint,
+                methodBelowUpperBound
+        ));
 
         var thresholds = new CodeGenerationThresholds(
                 null,
@@ -108,17 +117,13 @@ public class CodeGenerationThresholdEvaluatorTest {
                 UPPER_BOUND,
                 CRASH_POINT
         );
-        var evaluator = new CodeGenerationThresholdEvaluator(
-                thresholds, List.of(
-                methodBeyondCrashPoint,
-                methodBetweenUpperBoundAndCrashPoint,
-                methodBelowUpperBound
-        ));
+        var evaluator = new CodeGenerationThresholdEvaluator(thresholds, typeSpec);
 
         assertThat(evaluator.getUpperBoundMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Query nesting depth in %s has exceeded its UPPER_BOUND %d/%d",
+                                "Query nesting depth in %s.%s has exceeded its UPPER_BOUND %d/%d",
+                                typeSpec.name(),
                                 methodBetweenUpperBoundAndCrashPoint.name(),
                                 UPPER_BOUND + 1,
                                 UPPER_BOUND
@@ -127,7 +132,8 @@ public class CodeGenerationThresholdEvaluatorTest {
         assertThat(evaluator.getCrashPointMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Query nesting depth in %s has exceeded its CRASH_POINT %d/%d",
+                                "Query nesting depth in %s.%s has exceeded its CRASH_POINT %d/%d",
+                                typeSpec.name(),
                                 methodBeyondCrashPoint.name(),
                                 CRASH_POINT + 1,
                                 CRASH_POINT
@@ -155,5 +161,11 @@ public class CodeGenerationThresholdEvaluatorTest {
         });
         method.addStatement("from(table)");
         return method.build();
+    }
+
+    private static TypeSpec getTypeSpecWithMethods(List<MethodSpec> methods) {
+        return TypeSpec.classBuilder("SomeClass")
+                .addMethods(methods)
+                .build();
     }
 }
