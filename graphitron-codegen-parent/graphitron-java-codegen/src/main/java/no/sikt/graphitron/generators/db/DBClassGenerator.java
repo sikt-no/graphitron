@@ -129,9 +129,9 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
             return;
         }
 
-        var thresholds = new CodeGenerationThresholds(methods);
-        var upperBoundMessages = thresholds.getUpperBoundMessages();
-        var crashPointMessages = thresholds.getCrashPointMessages();
+        CODE_GENERATION_THRESHOLDS.addMessageIfMethodExceedsThresholds(methods);
+        var upperBoundMessages = CODE_GENERATION_THRESHOLDS.getUpperBoundMessages();
+        var crashPointMessages = CODE_GENERATION_THRESHOLDS.getCrashPointMessages();
 
         if (!upperBoundMessages.isEmpty()) {
             LOGGER.warn(
