@@ -147,7 +147,7 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
         return code.build();
     }
 
-    protected CodeBlock declareAllServiceClassesInAliasSet(Set<AliasWrapper> aliasSet, boolean excludeCtx) {
+    protected CodeBlock declareAllServiceClassesInAliasSet(Set<AliasWrapper> aliasSet) {
         for (var alias: aliasSet) {
             if (alias.hasTableMethod()){
                 createServiceDependency(alias.getReferenceObjectField());
@@ -163,7 +163,7 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
                 .filter(dep -> dep instanceof ServiceDependency)
                 .distinct()
                 .map(dep -> (ServiceDependency) dep)
-                .forEach(dep -> code.add(dep.getDeclarationCode(excludeCtx)));
+                .forEach(dep -> code.add(dep.getDeclarationCode(true)));
 
         return code.build();
     }

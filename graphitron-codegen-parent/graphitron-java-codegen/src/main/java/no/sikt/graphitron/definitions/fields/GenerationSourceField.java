@@ -108,7 +108,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
      * @return Gather all the context fields that are reachable from this object alone.
      */
     private Map<String, TypeName> findContextFields() {
-        var serviceFields = hasServiceReference() ? serviceWrapper.getContextFields() : Map.<String, TypeName>of();
+        var serviceFields = hasServiceReference() || hasTableMethod ? serviceWrapper.getContextFields() : Map.<String, TypeName>of();
         var conditionFields = hasCondition() ? condition.getContextFields() : Map.<String, TypeName>of();
         var referenceConditionFields = fieldReferences
                 .stream()

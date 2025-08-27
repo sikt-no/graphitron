@@ -61,8 +61,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var returnType = processedSchema.isRecordType(target)
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
+
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
-                .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet(), true))
+                .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet()))
                 .addCode(selectAliasesBlock)
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)

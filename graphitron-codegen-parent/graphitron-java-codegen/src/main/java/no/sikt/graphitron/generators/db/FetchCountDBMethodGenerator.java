@@ -58,7 +58,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
 
         return getSpecBuilder(target, parser)
-                .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet(), true))
+                .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet()))
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
                 .addCode("return $N\n", CONTEXT_NAME)
                 .indent()
