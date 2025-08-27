@@ -17,10 +17,6 @@ public class CodeGenerationThresholds {
     public CodeGenerationThresholds() {
     }
 
-    public CodeGenerationThresholds(List<MethodSpec> methods) {
-        addMessageIfMethodExceedsThresholds(methods);
-    }
-
     public CodeGenerationThresholds(Integer upperBoundLinesOfCode, Integer crashPointLinesOfCode, Integer upperBoundNestingDepth, Integer crashPointNestingDepth, List<MethodSpec> methods) {
         this.upperBoundLinesOfCode = upperBoundLinesOfCode;
         this.upperBoundNestingDepth = upperBoundNestingDepth;
@@ -29,7 +25,7 @@ public class CodeGenerationThresholds {
         addMessageIfMethodExceedsThresholds(methods);
     }
 
-    private void addMessageIfMethodExceedsThresholds(List<MethodSpec> methods) {
+    public void addMessageIfMethodExceedsThresholds(List<MethodSpec> methods) {
         methods.forEach(method -> {
             addMessageIfMethodExceedsNestingDepthBounds(method);
             addMessageIfMethodExceedsLinesOfCodeBounds(method);

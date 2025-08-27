@@ -80,6 +80,7 @@ public class GeneratorConfig {
 
         GeneratorConfig.globalTransforms = globalTransforms;
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
+        codeGenerationThresholds = new CodeGenerationThresholds();
     }
 
     /**
