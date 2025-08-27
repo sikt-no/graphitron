@@ -29,7 +29,7 @@ public class CodeGenerationThresholdEvaluator {
 
     private String getNestingDepthMessage(String className, String methodName, long depth, ThresholdType type) {
         return String.format(
-                "Query nesting depth in %s.%s has exceeded its %s %d/%d",
+                "Query nesting depth in %s.%s has exceeded its %s (current/limit) %d/%d",
                 className,
                 methodName,
                 type.name(),
@@ -40,7 +40,7 @@ public class CodeGenerationThresholdEvaluator {
 
     private String getLinesOfCodeMessage(String className, String methodName, int linesOfCode, ThresholdType type) {
         return String.format(
-                "Code size in %s.%s has exceeded its %s %d/%d",
+                "Code size in %s.%s has exceeded its %s (current/limit) %d/%d",
                 className,
                 methodName,
                 type.name(),

@@ -66,7 +66,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         assertThat(evaluator.getUpperBoundMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Code size in %s.%s has exceeded its UPPER_BOUND %d/%d",
+                                "Code size in %s.%s has exceeded its UPPER_BOUND (current/limit) %d/%d",
                                 typeSpec.name(),
                                 methodBetweenUpperBoundAndCrashPoint.name(),
                                 UPPER_BOUND + 1,
@@ -76,7 +76,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         assertThat(evaluator.getCrashPointMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Code size in %s.%s has exceeded its CRASH_POINT %d/%d",
+                                "Code size in %s.%s has exceeded its CRASH_POINT (current/limit) %d/%d",
                                 typeSpec.name(),
                                 methodBeyondCrashPoint.name(),
                                 CRASH_POINT + 1,
@@ -122,7 +122,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         assertThat(evaluator.getUpperBoundMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Query nesting depth in %s.%s has exceeded its UPPER_BOUND %d/%d",
+                                "Query nesting depth in %s.%s has exceeded its UPPER_BOUND (current/limit) %d/%d",
                                 typeSpec.name(),
                                 methodBetweenUpperBoundAndCrashPoint.name(),
                                 UPPER_BOUND + 1,
@@ -132,7 +132,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         assertThat(evaluator.getCrashPointMessages()).isEqualTo(
                 List.of(
                         String.format(
-                                "Query nesting depth in %s.%s has exceeded its CRASH_POINT %d/%d",
+                                "Query nesting depth in %s.%s has exceeded its CRASH_POINT (current/limit) %d/%d",
                                 typeSpec.name(),
                                 methodBeyondCrashPoint.name(),
                                 CRASH_POINT + 1,
