@@ -37,19 +37,19 @@ public class CodeGenerationThresholdEvaluatorTest {
         var CRASH_POINT = 50;
         var UPPER_BOUND = 25;
 
-        var methodBeyondCrashPoint = getLinesOfCodeMethod(
+        var methodBeyondCrashPoint = createLinesOfCodeMethod(
                 "methodBeyondCrashPoint",
                 CRASH_POINT+1
         );
-        var methodBetweenUpperBoundAndCrashPoint = getLinesOfCodeMethod(
+        var methodBetweenUpperBoundAndCrashPoint = createLinesOfCodeMethod(
                 "methodBetweenUpperBoundAndCrashPoint",
                 UPPER_BOUND+1
         );
-        var methodBelowUpperBound = getLinesOfCodeMethod(
+        var methodBelowUpperBound = createLinesOfCodeMethod(
                 "methodBelowUpperBound",
                 UPPER_BOUND-1
         );
-        var typeSpec = getTypeSpecWithMethods(List.of(
+        var typeSpec = createTypeSpecWithMethods(List.of(
                 methodBeyondCrashPoint,
                 methodBetweenUpperBoundAndCrashPoint,
                 methodBelowUpperBound
@@ -93,19 +93,19 @@ public class CodeGenerationThresholdEvaluatorTest {
         var UPPER_BOUND = 4;
 
 
-        var methodBeyondCrashPoint = getNestedDepthMethod(
+        var methodBeyondCrashPoint = createNestedDepthMethod(
                 "methodBeyondCrashPoint",
                 CRASH_POINT+1
         );
-        var methodBetweenUpperBoundAndCrashPoint = getNestedDepthMethod(
+        var methodBetweenUpperBoundAndCrashPoint = createNestedDepthMethod(
                 "methodBetweenUpperBoundAndCrashPoint",
                 UPPER_BOUND+1
         );
-        var methodBelowUpperBound = getNestedDepthMethod(
+        var methodBelowUpperBound = createNestedDepthMethod(
                 "methodBelowUpperBound",
                 UPPER_BOUND-1
         );
-        var typeSpec = getTypeSpecWithMethods(List.of(
+        var typeSpec = createTypeSpecWithMethods(List.of(
                 methodBeyondCrashPoint,
                 methodBetweenUpperBoundAndCrashPoint,
                 methodBelowUpperBound
@@ -142,7 +142,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         );
     }
 
-    private static MethodSpec getLinesOfCodeMethod(String methodName, int linesOfCode) {
+    private static MethodSpec createLinesOfCodeMethod(String methodName, int linesOfCode) {
         var method = MethodSpec.methodBuilder(methodName);
         IntStream.range(0, linesOfCode).forEach(i -> {
             method.addCode("someLine\n");
@@ -150,7 +150,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         return method.build();
     }
 
-    private static MethodSpec getNestedDepthMethod(String methodName, int nestedDepth) {
+    private static MethodSpec createNestedDepthMethod(String methodName, int nestedDepth) {
         var method = MethodSpec.methodBuilder(methodName);
         method.addCode("return\nctx\n");
         IntStream.range(0, nestedDepth).forEach(i -> {
@@ -163,7 +163,7 @@ public class CodeGenerationThresholdEvaluatorTest {
         return method.build();
     }
 
-    private static TypeSpec getTypeSpecWithMethods(List<MethodSpec> methods) {
+    private static TypeSpec createTypeSpecWithMethods(List<MethodSpec> methods) {
         return TypeSpec.classBuilder("SomeClass")
                 .addMethods(methods)
                 .build();
