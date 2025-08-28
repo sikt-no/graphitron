@@ -96,7 +96,7 @@ type Address implements Node @node @table @key(fields: "id", resolvable: false) 
     id: ID!
     addressLine1: String! @field(name: "ADDRESS_")
     addressLine2: String @field(name: "ADDRESS2")
-    city: City! @splitQuery
+    city: City!
     zip: String @field(name: "POSTAL_CODE")
     phone: String!
 }
