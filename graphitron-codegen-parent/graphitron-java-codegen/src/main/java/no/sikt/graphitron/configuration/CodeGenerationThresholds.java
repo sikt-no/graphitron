@@ -1,10 +1,10 @@
 package no.sikt.graphitron.configuration;
 
 public class CodeGenerationThresholds {
-    Integer upperBoundLinesOfCode;
-    Integer crashPointLinesOfCode;
-    Integer upperBoundNestingDepth;
-    Integer crashPointNestingDepth;
+    private Integer upperBoundLinesOfCode;
+    private Integer crashPointLinesOfCode;
+    private Integer upperBoundNestingDepth;
+    private Integer crashPointNestingDepth;
 
     public CodeGenerationThresholds() {
     }

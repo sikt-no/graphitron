@@ -8,12 +8,12 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 public class CodeGenerationThresholdEvaluator {
-    Integer upperBoundLinesOfCode;
-    Integer upperBoundNestingDepth;
-    Integer crashPointLinesOfCode;
-    Integer crashPointNestingDepth;
-    List<String> upperBoundMessages = new ArrayList<>();
-    List<String> crashPointMessages = new ArrayList<>();
+    private final Integer upperBoundLinesOfCode;
+    private final Integer upperBoundNestingDepth;
+    private final Integer crashPointLinesOfCode;
+    private final Integer crashPointNestingDepth;
+    private final List<String> upperBoundMessages = new ArrayList<>();
+    private final List<String> crashPointMessages = new ArrayList<>();
     private final static Pattern SELECT_PATTERN = Pattern.compile("\\.select\\(");
 
     public CodeGenerationThresholdEvaluator(CodeGenerationThresholds thresholds, TypeSpec typeSpec) {
