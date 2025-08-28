@@ -451,6 +451,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 } else {
                     innerMappingCode.add(CodeBlock.of("($T) r[$L]", processedSchema.getObject(field).getGraphClassName(), i));
                 }
+            } else if (field.isExternalField()) {
+                JOOQMapping table = processedSchema.getObject(field.getContainerTypeName()).getTable();
+
+                if (table == null) {
+                    throw new IllegalArgumentException("No table found for field " + field.getName());
+                }
+
+                innerMappingCode.add(CodeBlock.of("$L.$L($L).getDataType().convert(r[$L])",
+                        getImportReferenceOfValidExtensionMethod(field, table.getName()),
+                        field.getName(),
+                        context.getTargetAlias(), i));
             } else if (field.isID()) {
                 innerMappingCode.add(CodeBlock.of("($T) r[$L]", STRING.className, i));
             } else if (processedSchema.isEnum(field)) {

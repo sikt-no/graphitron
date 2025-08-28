@@ -107,6 +107,15 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Field annotated with @externalField should map types correctly even when over 22 fields")
+    void externalFieldOver22() {
+        assertGeneratedContentContains("externalFieldOver22",
+                ".select(DSL.row(no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_customer),",
+                "no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod.name(_customer).getDataType().convert(r[0]),"
+        );
+    }
+
+    @Test
     @DisplayName("Returning string without type wrapping")
     void noWrapping() {
         assertGeneratedContentContains(
