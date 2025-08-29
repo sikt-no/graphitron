@@ -1,6 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.configuration.CodeGenerationThresholdEvaluator;
+import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
