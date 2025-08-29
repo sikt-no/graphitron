@@ -1,6 +1,5 @@
 package no.sikt.graphitron.validation;
 
-import no.sikt.graphitron.configuration.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
