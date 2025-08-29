@@ -1,5 +1,5 @@
 type Customer implements Node @node @table {
-  id: ID @nodeId(typeName: "City") @reference(references: [{table: "ADDRESS"}])
+  id: ID @nodeId(typeName: "City") @reference(path: [{table: "ADDRESS"}])
 }
 
 type City implements Node @node @table {

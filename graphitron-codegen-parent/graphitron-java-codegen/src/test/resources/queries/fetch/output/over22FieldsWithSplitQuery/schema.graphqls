@@ -26,7 +26,7 @@ type Film @table {
   title20: String! @field(name: "TITLE")
   title21: String! @field(name: "TITLE")
 
-  language: Language @splitQuery @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+  language: Language @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
 }
 
 type Language @table {

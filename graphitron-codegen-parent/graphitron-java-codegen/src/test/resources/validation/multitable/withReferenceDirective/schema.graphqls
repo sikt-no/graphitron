@@ -3,7 +3,7 @@ type Query {
 }
 
 type Payment @table {
-  staffAndCustomers: [PersonWithEmail] @splitQuery @reference(references: [{table: "CUSTOMER"}])
+  staffAndCustomers: [PersonWithEmail] @splitQuery @reference(path: [{table: "CUSTOMER"}])
 }
 
 interface PersonWithEmail {

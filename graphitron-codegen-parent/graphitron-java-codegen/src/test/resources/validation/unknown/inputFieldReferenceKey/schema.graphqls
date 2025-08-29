@@ -1,3 +1,3 @@
 input Dummy {
-  id: ID @reference(references: {key: "UNKNOWN_KEY"})
+  id: ID @reference(path: {key: "UNKNOWN_KEY"})
 }

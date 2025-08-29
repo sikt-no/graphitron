@@ -8,10 +8,10 @@ interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
 
 type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
     postalCode: String @field(name: "POSTAL_CODE")
-    customer: CustomerTable @reference(references: [{condition: {name: "DUMMY_CONDITION"}}])
+    customer: CustomerTable @reference(path: [{condition: {name: "DUMMY_CONDITION"}}])
 }
 
 type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {
     postalCode: String @field(name: "POSTAL_CODE")
-    customer: CustomerTable @reference(references: [{condition: {name: "DUMMY_CONDITION", method: "WRONG"}}])
+    customer: CustomerTable @reference(path: [{condition: {name: "DUMMY_CONDITION", method: "WRONG"}}])
 }

@@ -1,3 +1,3 @@
 type Dummy {
-  id(id: ID @reference(references: {table: "UNKNOWN_TABLE"})): ID
+  id(id: ID @reference(path: {table: "UNKNOWN_TABLE"})): ID
 }
