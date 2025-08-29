@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
-import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -30,7 +29,6 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinition> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "queries", FILE_NAME_SUFFIX = "DBQueries";
     protected final Set<ObjectField> objectFieldsReturningNode;
-    private static final CodeGenerationThresholds CODE_GENERATION_THRESHOLDS = GeneratorConfig.getCodeGenerationThresholds();
     static final Logger LOGGER = LoggerFactory.getLogger(DBClassGenerator.class);
 
     public DBClassGenerator(ProcessedSchema processedSchema) {
@@ -126,7 +124,7 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
 
     protected void warnOrCrashIfMethodsExceedsBounds(TypeSpec typeSpec) {
         var codeGenerationThresholdEvaluator = new CodeGenerationThresholdEvaluator(
-                CODE_GENERATION_THRESHOLDS,
+                GeneratorConfig.getCodeGenerationThresholds(),
                 typeSpec
         );
         var upperBoundMessages = codeGenerationThresholdEvaluator.getUpperBoundMessages();
