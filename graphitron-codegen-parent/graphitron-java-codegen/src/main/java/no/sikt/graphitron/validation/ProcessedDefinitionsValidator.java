@@ -601,7 +601,7 @@ public class ProcessedDefinitionsValidator {
                 .stream()
                 .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasServiceReference)
-                .map(ObjectField::getService)
+                .map(ObjectField::getExternalMethod)
                 .map(ServiceWrapper::getReference)
                 .filter(e -> !referenceSet.contains(e))
                 .forEach(e -> errorMessages.add(String.format("No service with name '%s' found.", e.getSchemaClassReference())));
@@ -622,7 +622,7 @@ public class ProcessedDefinitionsValidator {
                 .stream()
                 .filter(ObjectField::isGenerated)
                 .filter(ObjectField::hasServiceReference)
-                .map(GenerationSourceField::getService)
+                .map(GenerationSourceField::getExternalMethod)
                 .map(ServiceWrapper::getReference)
                 .filter(referenceSet::contains)
                 .filter(it -> referenceSet.getMethodsFrom(it).stream().findFirst().isEmpty())
