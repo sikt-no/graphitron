@@ -82,7 +82,7 @@ public class ProcessedDefinitionsValidator {
         validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
         validateMultitableFieldsOutsideRoot();
-        validateTypesUsingNodeInterface();
+        validateTypesUsingNodeInterfaceWithoutNodeDirective();
         validateInputFields();
         validateExternalMappingReferences();
         validateServiceMethods();
@@ -748,13 +748,6 @@ public class ProcessedDefinitionsValidator {
                                                 "a single table interface is not currently supported, and must be identical " +
                                                 "with interface. Type '%s' has a configuration mismatch on field '%s' from the interface '%s'.";
 
-                                        if (!fieldInInterface.getUpperCaseName().equals(it.getUpperCaseName())) {
-                                            errorMessages.add(String.format(
-                                                    sharedErrorMessage,
-                                                    FIELD.getName(), impl.getName(), it.getName(), name
-                                            ));
-                                        }
-
                                         if (it.hasCondition() != fieldInInterface.hasCondition()
                                                 || (it.hasCondition() && !it.getCondition().equals(fieldInInterface.getCondition()))) {
                                             errorMessages.add(String.format(
@@ -877,7 +870,7 @@ public class ProcessedDefinitionsValidator {
                 );
     }
 
-    private void validateTypesUsingNodeInterface() {
+    private void validateTypesUsingNodeInterfaceWithoutNodeDirective() {
         if (!schema.nodeExists() ||
                 schema.getQueryType() == null ||
                 schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
@@ -889,7 +882,7 @@ public class ProcessedDefinitionsValidator {
                 .getObjects()
                 .values()
                 .stream()
-                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable())
+                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable() && !it.hasNodeDirective())
                 .collect(groupingBy(
                         it -> it.getTable().getName(), Collectors.mapping(ObjectDefinition::getName, Collectors.toSet())));
 

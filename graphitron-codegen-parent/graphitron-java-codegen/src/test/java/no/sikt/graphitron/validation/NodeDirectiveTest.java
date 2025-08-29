@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.NODE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Node directive validation - Checks run when building the schema for types with node directive")
 public class NodeDirectiveTest extends ValidationTest {
@@ -65,5 +64,11 @@ public class NodeDirectiveTest extends ValidationTest {
         assertErrorsContain("keyColumnsNotMatchingKey",
                 "Key columns in node ID for type 'Language' does not match a PK/UK for table 'LANGUAGE'"
         );
+    }
+
+    @Test
+    @DisplayName("Multiple types with the same table is allowed with node directive")
+    void multipleTypesWithSameTable() {
+        getProcessedSchema("multipleTypesWithSameTable", NODE_QUERY);
     }
 }

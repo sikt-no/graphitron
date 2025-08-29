@@ -91,4 +91,17 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
                 ".fetchOne(it -> it.into(String.class));"
         );
     }
+
+    @Test
+    @DisplayName("Node IDs in single table interface queries")
+    void inSingleTableInterfaceQuery() {
+        assertGeneratedContentContains("singleTableInterface",
+                "nodeIdStrategy.createId(\"A1\", _address.ADDRESS_ID).as(\"ONE_id\")",
+                "nodeIdStrategy.createId(\"A2\", _address.fields(_address.getPrimaryKey().getFieldsArray())).as(\"TWO_id\")",
+                "var _data = internal_it_.into(AddressInDistrictOne.class);" +
+                        "_data.setId(internal_it_.get(\"ONE_id\", String.class));" +
+                        "return _data;",
+                "into(AddressInDistrictTwo.class); _data.setId(internal_it_.get(\"TWO_id\", String.class));"
+        );
+    }
 }

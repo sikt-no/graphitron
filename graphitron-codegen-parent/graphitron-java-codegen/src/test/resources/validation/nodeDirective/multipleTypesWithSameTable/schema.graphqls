@@ -1,0 +1,7 @@
+type FilmA implements Node @node @table(name: "FILM") {
+    id: ID!
+}
+
+type FilmB implements Node @node @table(name: "FILM") {
+    id: ID!
+}
