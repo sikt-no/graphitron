@@ -1108,9 +1108,8 @@ Queries with input and [query conditions](#Query-conditions) are also supported.
 
 - Types implementing multiple single table interfaces are supported if they have the same discriminator value for all interfaces
 - The discriminator column must return a string type
-- Every field in the interface must have the same configuration in every implementing type
-  - For example, overriding **field** configuration from the interface is currently not supported
-- Other fields sharing the same name must also have the same configuration across the implementing types
+- Every reference field in the interface must have the same configuration in every implementing type
+- Other reference fields sharing the same name must also have the same configuration across the implementing types
 
 #### Multi table interfaces
 Multi table interfaces are interfaces where the implementations are spread across tables, and a row's type is determined by

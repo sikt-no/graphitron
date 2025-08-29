@@ -80,14 +80,9 @@ public class SingleTableInterfaceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Mismatch in field directive on field in single table interface")
-    void fieldConflict() {
-        assertErrorsContain("fieldConflict",
-                "Overriding 'field' configuration in types implementing a single table interface is not " +
-                        "currently supported, and must be identical with interface. Type 'AddressInDistrictOne' has a configuration mismatch on field " +
-                        "'postalCode' from the interface 'Address'.",
-                "Type 'AddressInDistrictTwo' has a configuration mismatch"
-        );
+    @DisplayName("Overriding field directive on field in single table interface should not throw error")
+    void fieldOverride() {
+        getProcessedSchema("fieldOverride");
     }
 
     @Test

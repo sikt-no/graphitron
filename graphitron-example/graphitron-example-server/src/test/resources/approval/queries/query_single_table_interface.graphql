@@ -1,0 +1,14 @@
+{
+    addressesByPostalCode(first: 2) {
+        nodes {
+            __typename
+            ... on AddressInAnotherArea {
+                id
+            }
+            ... on AddressInOneArea {
+                id
+            }
+            mostSignificantAddressLine
+        }
+    }
+}

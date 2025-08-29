@@ -94,4 +94,35 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     void typeImplementsMultipleSingleTableInterfaces() {
         assertDoesNotThrow(() -> generateFiles("typeImplementsMultipleSingleTableInterfaces"));
     }
+
+    @Test
+    @DisplayName("Overridden field")
+    void overriddenField() {
+        assertGeneratedContentContains("overriddenField",
+                "_discriminator\"), _address.POSTAL_CODE.as(\"postalCode\"), _address.ADDRESS_.as(\"ONE_postalCode\"))",
+                "_data.setPostalCode(internal_it_.get(\"ONE_postalCode\", _address.ADDRESS_.getConverter()));",
+                "{return internal_it_.into(AddressInDistrictTwo.class);}"
+
+        );
+    }
+
+    @Test
+    @DisplayName("Default field should not be selected when overridden by all types")
+    void interfaceFieldOverriddenByAll() {
+        assertGeneratedContentContains("interfaceFieldOverriddenByAll",
+                "_discriminator\"), _address.ADDRESS_.as(\"ONE_postalCode\"), _address.ADDRESS2.as(\"TWO_postalCode\"))"
+
+        );
+    }
+
+    @Test
+    @DisplayName("Overridden non-interface field")
+    void overriddenNonInterfaceField() {
+        assertGeneratedContentContains("overriddenNonInterfaceField",
+                "_address.ADDRESS_.as(\"ONE_extraField\"), _address.POSTAL_CODE.as(\"TWO_extraField\")",
+                ".into(AddressInDistrictOne.class); _data.setExtraField(internal_it_.get(\"ONE_extraField\", _address.ADDRESS_.getConverter",
+                ".into(AddressInDistrictTwo.class); _data.setExtraField(internal_it_.get(\"TWO_extraField\", _address.POSTAL_CODE.getConverter"
+
+        );
+    }
 }
