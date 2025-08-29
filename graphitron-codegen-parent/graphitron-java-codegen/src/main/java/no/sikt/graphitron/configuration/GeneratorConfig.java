@@ -80,7 +80,6 @@ public class GeneratorConfig {
 
         GeneratorConfig.globalTransforms = globalTransforms;
         extendedFunctionality = new ExtendedFunctionality(extendedClasses);
-        codeGenerationThresholds = new CodeGenerationThresholds();
     }
 
     /**
@@ -133,6 +132,7 @@ public class GeneratorConfig {
         externalReferenceImports = Set.of();
         globalTransforms = List.of();
         recordValidation = new RecordValidation();
+        codeGenerationThresholds = new CodeGenerationThresholds();
     }
 
     public static Set<String> generatorSchemaFiles() {
@@ -240,5 +240,9 @@ public class GeneratorConfig {
 
     public static CodeGenerationThresholds getCodeGenerationThresholds() {
         return codeGenerationThresholds;
+    }
+
+    public static void setCodeGenerationThresholds(CodeGenerationThresholds thresholds) {
+        codeGenerationThresholds = thresholds;
     }
 }
