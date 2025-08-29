@@ -73,11 +73,11 @@ public enum JavaPoetClassName {
     MAP(java.util.Map.class),
     OBJECT(java.lang.Object.class),
     SIMPLE_ENTRY(java.util.AbstractMap.SimpleEntry.class),
-    MUTATION_EXCEPTION_STRATEGY_CONFIGURATION(MutationExceptionStrategyConfiguration.class),
+    EXCEPTION_STRATEGY_CONFIGURATION(ExceptionStrategyConfiguration.class),
     OBJECTS(java.util.Objects.class),
     OVERRIDE(java.lang.Override.class),
     PAIR(Pair.class),  // Note that this enforces a dependency on org.apache.commons on users.
-    PAYLOAD_CREATOR(MutationExceptionStrategyConfiguration.PayloadCreator.class),
+    PAYLOAD_CREATOR(ExceptionStrategyConfiguration.PayloadCreator.class),
     QUERY_HELPER(QueryHelper.class),
     RECORD1(org.jooq.Record1.class),
     RECORD2(org.jooq.Record2.class),

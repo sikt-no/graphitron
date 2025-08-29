@@ -1,30 +1,32 @@
 package no.sikt.graphitron.generators.exception;
 
-import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphitron.configuration.ErrorHandlerType;
 import no.sikt.graphitron.configuration.ExceptionToErrorMapping;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ExceptionDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.definitions.objects.SchemaDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.ErrorHandlerType.DATABASE;
 import static no.sikt.graphitron.configuration.ErrorHandlerType.GENERIC;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.listOf;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asGetMethodName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
-public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClassGenerator<ObjectDefinition> {
-    private static final String DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME = "dataAccessMappingsForMutation";
-    private static final String GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME = "genericMappingsForMutation";
+public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClassGenerator<SchemaDefinition> {
+    private static final String DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME = "dataAccessMappingsForOperation";
+    private static final String GENERIC_MAPPINGS_FOR_FIELD_NAME = "genericMappingsForOperation";
 
     private static final TypeName DATA_ACCESS_ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
     private static final TypeName GENERIC_ERROR_MAPPINGS_TYPE = ParameterizedTypeName.get(MAP.className, STRING.className, wrapList(GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING.className));
@@ -35,37 +37,40 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
     }
 
     @Override
-    public TypeSpec generate(ObjectDefinition target) {
+    public TypeSpec generate(SchemaDefinition schemaDefinition) {
         return getSpec("GeneratedExceptionToErrorMappingProvider", List.of())
                 .addAnnotation(SINGLETON.className)
-                .addMethod(createConstructor(target))
+                .addMethod(createConstructor(schemaDefinition))
                 .build();
     }
 
-    private MethodSpec createConstructor(ObjectDefinition target) {
+    private MethodSpec createConstructor(SchemaDefinition schemaDefinition) {
         return MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addCode(CodeBlock.builder()
-                        .addStatement("$N = new $T<>()", DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME, HASH_MAP.className)
-                        .addStatement("$N = new $T<>()", GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME, HASH_MAP.className)
-                        .add(createConstructorContentForMutations(target))
+                        .addStatement("$N = new $T<>()", DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME, HASH_MAP.className)
+                        .addStatement("$N = new $T<>()", GENERIC_MAPPINGS_FOR_FIELD_NAME, HASH_MAP.className)
+                        .add(createConstructorContentForFields(schemaDefinition))
                         .build())
                 .build();
     }
 
-    private CodeBlock createConstructorContentForMutations(ObjectDefinition mutationTypeDefinition) {
+    private CodeBlock createConstructorContentForFields(SchemaDefinition schemaDefinition) {
         Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables = new HashMap<>();
         Map<Integer, CodeBlock> mappingVariablesToBlocks = new HashMap<>();
 
-        var mutationErrorListsCodeblock = mutationTypeDefinition.getFields().stream()
+        var queryType = schemaDefinition.getQuery() != null ? processedSchema.getObject(schemaDefinition.getQuery()) : null;
+        var mutationType = schemaDefinition.getMutation() != null ? processedSchema.getObject(schemaDefinition.getMutation()) : null;
+        var errorListsCodeblock = Stream
+                .concat(queryType != null ? queryType.getFields().stream() : Stream.of(), mutationType != null ? mutationType.getFields().stream() : Stream.of())
                 .sorted(Comparator.comparing(ObjectField::getName))
-                .map(mutation -> new MutationProcessor(mutation).process(exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
+                .map(it -> new OperationProcessor(it).process(exceptionMappingsToErrorMappingVariables, mappingVariablesToBlocks))
                 .collect(CodeBlock.joining());
 
         var codeBuilder = CodeBlock.builder();
         mappingVariablesToBlocks.forEach((key, value) -> codeBuilder.declare(MAPPING_VARIABLE_PREFIX + key, value));
 
-        codeBuilder.add(mutationErrorListsCodeblock);
+        codeBuilder.add(errorListsCodeblock);
         return codeBuilder.build();
     }
 
@@ -73,7 +78,7 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
     public List<TypeSpec> generateAll() {
         if (processedSchema.getExceptions().entrySet().stream().anyMatch(it -> !it.getValue().getExceptionToErrorMappings().isEmpty())) {
             var generated = Optional
-                    .ofNullable(processedSchema.getMutationType())
+                    .ofNullable(processedSchema.getSchemaType())
                     .map(this::generate)
                     .filter(it -> !it.methodSpecs().isEmpty());
             if (generated.isPresent()) {
@@ -98,48 +103,48 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
         return TypeSpec.classBuilder(className)
                 .addSuperinterface(EXCEPTION_TO_ERROR_MAPPING_PROVIDER.className)
                 .addModifiers(Modifier.PUBLIC)
-                .addField(FieldSpec.builder(DATA_ACCESS_ERROR_MAPPINGS_TYPE, DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME, Modifier.PRIVATE, Modifier.FINAL).build())
-                .addField(FieldSpec.builder(GENERIC_ERROR_MAPPINGS_TYPE, GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME, Modifier.PRIVATE, Modifier.FINAL).build())
-                .addMethod(createGetDataAccessMappingsForMutationMethod())
-                .addMethod(createGetGenericMappingsForMutationMethod());
+                .addField(FieldSpec.builder(DATA_ACCESS_ERROR_MAPPINGS_TYPE, DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME, Modifier.PRIVATE, Modifier.FINAL).build())
+                .addField(FieldSpec.builder(GENERIC_ERROR_MAPPINGS_TYPE, GENERIC_MAPPINGS_FOR_FIELD_NAME, Modifier.PRIVATE, Modifier.FINAL).build())
+                .addMethod(createGetDataAccessMappingsForMethod())
+                .addMethod(createGetGenericMappingsForMethod());
     }
 
-    private static MethodSpec createGetDataAccessMappingsForMutationMethod() {
+    private static MethodSpec createGetDataAccessMappingsForMethod() {
         return MethodSpec
-                .methodBuilder(asGetMethodName(DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME))
+                .methodBuilder(asGetMethodName(DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME))
                 .returns(DATA_ACCESS_ERROR_MAPPINGS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addCode(returnWrap(DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME))
+                .addCode(returnWrap(DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME))
                 .build();
     }
 
-    private static MethodSpec createGetGenericMappingsForMutationMethod() {
+    private static MethodSpec createGetGenericMappingsForMethod() {
         return MethodSpec
-                .methodBuilder(asGetMethodName(GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME))
+                .methodBuilder(asGetMethodName(GENERIC_MAPPINGS_FOR_FIELD_NAME))
                 .returns(GENERIC_ERROR_MAPPINGS_TYPE)
                 .addModifiers(Modifier.PUBLIC)
                 .addAnnotation(OVERRIDE.className)
-                .addCode(returnWrap(GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME))
+                .addCode(returnWrap(GENERIC_MAPPINGS_FOR_FIELD_NAME))
                 .build();
     }
 
-    private class MutationProcessor {
+    private class OperationProcessor {
         private static final String MSG_VARIABLE_NAME = "msg";
         private final List<ObjectField> errors;
-        private final String mutationName;
-        private boolean databaseMappingIsCreatedForMutation = false;
-        private boolean genericMappingIsCreatedForMutation = false;
+        private final String operationName;
+        private boolean databaseMappingIsCreatedForField = false;
+        private boolean genericMappingIsCreatedForField = false;
 
-        MutationProcessor(ObjectField mutation) {
-            this.errors = new InputParser(mutation, processedSchema).getAllErrors();
-            this.mutationName = mutation.getName();
+        OperationProcessor(ObjectField field) {
+            this.errors = new InputParser(field, processedSchema).getAllErrors();
+            this.operationName = field.getName();
         }
 
         public CodeBlock process(Map<ExceptionToErrorMapping, Integer> exceptionMappingsToErrorMappingVariables, Map<Integer, CodeBlock> mappingVariablesToBlocks) {
             var codeBuilder = CodeBlock.builder();
-            var databaseListName = asListedName(mutationName + DATABASE.toCamelCaseString());
-            var genericListName = asListedName(mutationName + GENERIC.toCamelCaseString());
+            var databaseListName = asListedName(operationName + DATABASE.toCamelCaseString());
+            var genericListName = asListedName(operationName + GENERIC.toCamelCaseString());
 
             for (var errorField : errors) {
                 List<ExceptionDefinition> exceptionDefinitions = processedSchema.getExceptionDefinitions(errorField.getTypeName());
@@ -150,22 +155,22 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
                 if (!databaseMappingVariablesBlock.isEmpty()) {
                     codeBuilder.add("\n");
                     codeBuilder.declare(databaseListName, listOf(databaseMappingVariablesBlock));
-                    databaseMappingIsCreatedForMutation = true;
+                    databaseMappingIsCreatedForField = true;
                 }
 
                 if (!genericMappingVariablesBlock.isEmpty()) {
                     codeBuilder.add("\n");
                     codeBuilder.declare(genericListName, listOf(genericMappingVariablesBlock));
-                    genericMappingIsCreatedForMutation = true;
+                    genericMappingIsCreatedForField = true;
                 }
             }
 
-            if (databaseMappingIsCreatedForMutation) {
-                codeBuilder.addStatement("$N.put($S, $N)", DATA_ACCESS_MAPPINGS_FOR_MUTATION_FIELD_NAME, mutationName, databaseListName);
+            if (databaseMappingIsCreatedForField) {
+                codeBuilder.addStatement("$N.put($S, $N)", DATA_ACCESS_MAPPINGS_FOR_FIELD_NAME, operationName, databaseListName);
             }
 
-            if (genericMappingIsCreatedForMutation) {
-                codeBuilder.addStatement("$N.put($S, $N)", GENERIC_MAPPINGS_FOR_MUTATION_FIELD_NAME, mutationName, genericListName);
+            if (genericMappingIsCreatedForField) {
+                codeBuilder.addStatement("$N.put($S, $N)", GENERIC_MAPPINGS_FOR_FIELD_NAME, operationName, genericListName);
             }
 
             return codeBuilder.build();
