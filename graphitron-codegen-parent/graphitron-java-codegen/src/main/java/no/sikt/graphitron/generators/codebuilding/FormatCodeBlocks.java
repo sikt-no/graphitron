@@ -52,6 +52,7 @@ public class FormatCodeBlocks {
             NEW_SERVICE_DATA_FETCHER_TRANSFORM = CodeBlock.of("new $T<>($N)", DATA_SERVICE_FETCHER.className, TRANSFORMER_NAME),
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),
+            TRUE_CONDITION = CodeBlock.of("$T.trueCondition()", DSL.className),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
@@ -640,6 +641,13 @@ public class FormatCodeBlocks {
                 listOf(CodeBlock.join(fromBlocks, ", ")),
                 listOf(CodeBlock.join(toBlocks, ", "))
         );
+    }
+
+    /**
+     * @return Code block of a true jOOQ condition.
+     */
+    public static CodeBlock trueCondition() {
+        return TRUE_CONDITION;
     }
 
     /**

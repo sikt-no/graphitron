@@ -23,6 +23,7 @@ type Query {
 
     filmLists(category: String): [FilmList]
     filmListsWithEnumRecord(input: FilmListEnumInput!): FilmList
+    filmsWithDescriptionInput(input: [FilmDescriptionInput]): [Film]
 
     languages: [Language] @asConnection
 
@@ -134,6 +135,7 @@ type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
 type Film implements Node @node @table {
     id: ID!
     title: String
+    description: String
     language: Language @reference(references: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
 }
 
@@ -155,6 +157,11 @@ input FilmInput @table(name: "FILM") {
 input FilmNameInput @table(name: "FILM") {
     filmId: ID! @nodeId(typeName: "Film")
     title: String
+}
+
+input FilmDescriptionInput @table(name: "FILM") {
+    filmId: ID! @nodeId(typeName: "Film")
+    description: String
 }
 
 input FilmCreateInput @table(name: "FILM") {
