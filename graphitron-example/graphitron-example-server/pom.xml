@@ -10,7 +10,7 @@
     <artifactId>graphitron-example-server</artifactId>
 
     <properties>
-        <quarkus.platform.version>3.25.2</quarkus.platform.version>
+        <quarkus.platform.version>3.26.1</quarkus.platform.version>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus</quarkus.platform.group-id>
     </properties>
