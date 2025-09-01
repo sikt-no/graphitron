@@ -26,9 +26,9 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 
@@ -1017,7 +1017,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .stream()
                 .collect(Collectors.toMap(AbstractField::getName, enumField -> enumField.getIndexName().orElseThrow()));
 
-        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
+        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> ValidationHandler.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
                 "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
 
         var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()

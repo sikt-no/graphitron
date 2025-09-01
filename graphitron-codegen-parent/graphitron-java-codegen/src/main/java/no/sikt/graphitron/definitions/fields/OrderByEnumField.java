@@ -3,6 +3,7 @@ package no.sikt.graphitron.definitions.fields;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValueDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
+import no.sikt.graphitron.validation.ValidationHandler;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,9 +22,14 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
 
     public OrderByEnumField(EnumValueDefinition field, String container) {
         super(field, container);
-        indexName = getOptionalDirectiveArgumentString(field, INDEX, NAME)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        String.format("Expected enum field '%s' of '%s' to have an '@%s(%s: ...)' directive, but no such directive was set", field.getName(), container, INDEX.getName(), NAME.getName())));
+        var DirectiveArg = getOptionalDirectiveArgumentString(field, INDEX, NAME);
+        if (DirectiveArg.isPresent()){
+            indexName = DirectiveArg.get();
+        } else {
+            indexName = null;
+            ValidationHandler.addErrorMessage(String.format("Expected enum field '%s' of '%s' to have an '@%s(%s: ...)' directive, but no such directive was set", field.getName(), container, INDEX.getName(), NAME.getName()));
+            ValidationHandler.throwIfErrors();
+        }
     }
 
     /**
