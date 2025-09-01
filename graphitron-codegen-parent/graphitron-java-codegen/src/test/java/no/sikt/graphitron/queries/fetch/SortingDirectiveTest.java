@@ -8,6 +8,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import javax.validation.ValidationException;
 import java.util.List;
 import java.util.Set;
 
@@ -80,7 +81,7 @@ public class SortingDirectiveTest extends GeneratorTest {
     @DisplayName("Sorting on a parameter that has an invalid index")
     void wrongIndex() {
         assertThatThrownBy(() -> generateFiles("wrongIndex", Set.of(CUSTOMER_TABLE)))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(ValidationException.class)
                 .hasMessage("Table 'CUSTOMER' has no index 'WRONG_INDEX' necessary for sorting by 'EMAIL'");
     }
 
@@ -88,7 +89,7 @@ public class SortingDirectiveTest extends GeneratorTest {
     @DisplayName("Sorting parameter without index set")
     void missingDirective() {
         assertThatThrownBy(() -> generateFiles("missingDirective", Set.of(CUSTOMER_TABLE)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Expected enum field 'NAME' of 'OrderByField' to have an '@%s(%s: ...)' directive, but no such directive was set", INDEX.getName(), NAME.getName());
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Expected enum field 'NAME' of 'OrderByField' to have an '@%s(%s: ...)' directive, but no such directive was set", INDEX.getName(), NAME.getName());
     }
 }

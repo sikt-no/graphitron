@@ -49,7 +49,7 @@ public class NodeInterfaceTest extends ValidationTest {
     @DisplayName("Multiple types implementing Node interface and referring to the same table will throw an exception")
     void allTypesUsingNodeInterface() {
         assertErrorsContain("allTypesUsingNodeInterface",
-                "Problems have been found that prevent code generation:\n" +
+                "Problems have been found that prevent code generation:",
                         "Multiple types (FilmB, FilmA) implement the Node interface and refer to the same table FILM. This is not supported."
         );
     }
