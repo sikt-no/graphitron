@@ -10,7 +10,6 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Key;
 import org.jooq.Typed;
-import org.jooq.UniqueKey;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -18,14 +17,18 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.dto.DTOGenerator.PRIMARY_KEY;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public record KeyWrapper(Key<?> key) {
     public String getDTOVariableName() {
-        return key instanceof UniqueKey ? PRIMARY_KEY : uncapitalize(key.getName());
+        return uncapitalize(key.getName());
+    }
+
+    public String getDTOGetterName() {
+        return "get" + capitalize(key.getName());
     }
 
     /**

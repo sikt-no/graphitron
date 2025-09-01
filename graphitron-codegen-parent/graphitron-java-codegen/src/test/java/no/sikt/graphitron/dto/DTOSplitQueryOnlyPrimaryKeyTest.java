@@ -35,8 +35,8 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Scalar field with splitQuery referencing another table should store primary key fields")
     void scalarReference() {
         assertGeneratedContentContains("scalarReference",
-                "VacationDestination(Record2<Long, String> primaryKey)",
-                "this.vacationDescriptionKey = primaryKey"
+                "VacationDestination(Record2<Long, String> vacation_destination_pkey)",
+                "this.vacationDescriptionKey = vacation_destination_pkey"
                 );
     }
 
@@ -44,9 +44,9 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Field with splitQuery referencing another table should store primary key fields")
     void reference() {
         assertGeneratedContentContains("reference",
-                "Row2<Long, String> primaryKey",
-                "VacationDestination(Record2<Long, String> primaryKey)",
-                "this.vacationKey = primaryKey"
+                "Row2<Long, String> vacation_destination_pkey",
+                "VacationDestination(Record2<Long, String> vacation_destination_pkey)",
+                "this.vacationKey = vacation_destination_pkey"
         );
     }
 
@@ -55,8 +55,8 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     void listedReference() {
         assertGeneratedContentContains("listedReference",
                 "Row1<Long> destinationKey",
-                "Vacation(Record1<Long> primaryKey)",
-                "this.destinationKey = primaryKey"
+                "Vacation(Record1<Long> vacation_pkey)",
+                "this.destinationKey = vacation_pkey"
         );
     }
 
@@ -65,8 +65,8 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     void reverseReference() {
         assertGeneratedContentContains("reverseReference",
                 "Row1<Long> destinationKey",
-                "Vacation(Record1<Long> primaryKey)",
-                "this.destinationKey = primaryKey"
+                "Vacation(Record1<Long> vacation_pkey)",
+                "this.destinationKey = vacation_pkey"
         );
     }
 
@@ -74,8 +74,8 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Connection field with splitQuery referencing another table should store primary key fields")
     void connectionReference() {
         assertGeneratedContentContains("connectionReference", Set.of(CUSTOMER_TABLE, CUSTOMER_CONNECTION),
-                "Store(Record1<Long> primaryKey)",
-                "this.customersKey = primaryKey"
+                "Store(Record1<Long> store_pkey)",
+                "this.customersKey = store_pkey"
         );
     }
 
@@ -83,8 +83,8 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("SplitQuery field  referencing another table with condition should store primary key fields")
     void conditionPath() {
         assertGeneratedContentContains("conditionPath",
-                "VacationDestination(Record2<Long, String> primaryKey) " +
-                        "{ this.primaryKey = primaryKey.valuesRow(); this.someStringsKey = primaryKey.valuesRow(); }",
+                "VacationDestination(Record2<Long, String> vacation_destination_pkey) " +
+                        "{ this.vacation_destination_pkey = vacation_destination_pkey.valuesRow(); this.someStringsKey = vacation_destination_pkey.valuesRow(); }",
                 "private Row2<Long, String> someStringsKey"
         );
     }
@@ -93,7 +93,7 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Field reference with both condition and implicit key should store primary key fields")
     void conditionWithImplicitKey() {
         assertGeneratedContentContains("conditionWithImplicitKey",
-                "this.vacationsKey = primaryKey"
+                "this.vacationsKey = vacation_destination_pkey"
         );
     }
 
@@ -101,7 +101,7 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Field reference with both condition and no implicit key should store primary key fields")
     void conditionWithoutImplicitKey() {
         assertGeneratedContentContains("conditionWithoutImplicitKey", Set.of(CUSTOMER_TABLE),
-                "this.customersKey = primaryKey"
+                "this.customersKey = vacation_destination_pkey"
         );
     }
 
@@ -109,8 +109,8 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Reference via tables should keep fields for first key")
     void referenceViaTable() {
         assertGeneratedContentContains("referenceViaTable",
-                "Inventory(Record1<Long> primaryKey)",
-                "this.staffForInventoryKey = primaryKey"
+                "Inventory(Record1<Long> inventory_pkey)",
+                "this.staffForInventoryKey = inventory_pkey"
         );
     }
 
@@ -118,9 +118,9 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Key fields should be reused when multiple splitQuery fields use the same key")
     void multipleFieldsWithSameKey() {
         assertGeneratedContentContains("multipleFieldsWithSameKey",
-                "Inventory(Record1<Long> primaryKey)",
-                "this.store1Key = primaryKey",
-                "this.store2Key = primaryKey"
+                "Inventory(Record1<Long> inventory_pkey)",
+                "this.store1Key = inventory_pkey",
+                "this.store2Key = inventory_pkey"
         );
     }
 
@@ -128,7 +128,7 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Subtype with splitQuery reference should store primary key fields")
     void referenceInSubtype() {
         assertGeneratedContentContains("referenceInSubtype",
-                "SomeType(Record1<Long> primaryKey)"
+                "SomeType(Record1<Long> customer_pkey)"
         );
     }
 
@@ -137,7 +137,7 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     void selfReference() {
         assertGeneratedContentContains("selfReference",
                 "Row1<Long> sequelKey",
-                "this.sequelKey = primaryKey"
+                "this.sequelKey = film_pkey"
         );
     }
 
@@ -153,7 +153,7 @@ public class DTOSplitQueryOnlyPrimaryKeyTest extends DTOGeneratorTest {
     @DisplayName("Single table interface with splitQuery field")
     void conditionPathFromInterfaceWithTable() {
         assertGeneratedContentContains("conditionPathFromInterfaceWithTable",
-                "Row2<Long, String> getPrimaryKey()",
+                "Row2<Long, String> getVacation_destination_pkey()",
                 "Row2<Long, String> getSomeStringKey()"
         );
     }
