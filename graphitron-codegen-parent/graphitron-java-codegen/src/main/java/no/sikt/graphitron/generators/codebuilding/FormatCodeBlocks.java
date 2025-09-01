@@ -935,7 +935,6 @@ public class FormatCodeBlocks {
                         methodName,
                         args)
         );
-        //return CodeBlock.of("$N = $N.$L($L$L)", targetAlias, uncapitalize(variableName), methodName, targetAlias, args);
     }
 
     public static CodeBlock hasIdsBlock(RecordObjectSpecification<?> obj, String targetAlias) {
