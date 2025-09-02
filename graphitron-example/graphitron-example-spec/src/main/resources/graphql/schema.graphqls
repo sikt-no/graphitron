@@ -21,7 +21,7 @@ type Query {
     filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
 
-    filmLists(category: String): [FilmList]
+    filmLists(category: String, categoryAsId: ID @field(name: "CATEGORY")): [FilmList]
     filmListsWithEnumRecord(input: FilmListEnumInput!): FilmList
     filmsWithDescriptionInput(input: [FilmDescriptionInput]): [Film]
 
@@ -76,6 +76,7 @@ type Customer implements Node @node @table {
     id: ID!
     name: CustomerName
     email: String
+    emailAsId: ID @field(name: "EMAIL")
     address: Address!
     addressSplitQuery: Address @splitQuery
 }
