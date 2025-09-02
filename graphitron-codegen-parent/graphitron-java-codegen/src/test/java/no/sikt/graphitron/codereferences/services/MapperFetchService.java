@@ -1,5 +1,6 @@
 package no.sikt.graphitron.codereferences.services;
 
+import no.sikt.graphitron.codereferences.records.CustomerJavaRecord;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
 import org.jooq.DSLContext;
 
@@ -14,4 +15,9 @@ public class MapperFetchService {
     public List<CustomerRecord> customerQuery() {
         return null;
     }
+
+    public List<CustomerJavaRecord> customerJavaQuery() {
+        return null;
+    }
+
 }

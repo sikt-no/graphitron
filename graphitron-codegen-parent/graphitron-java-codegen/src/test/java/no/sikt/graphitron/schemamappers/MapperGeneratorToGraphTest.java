@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.ReferencedEntry.MAPPER_ID_SERVICE;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.*;
 
 @DisplayName("Schema Mappers - Mapper content for mapping fields to graph types")
 public class MapperGeneratorToGraphTest extends GeneratorTest {
@@ -22,7 +22,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(MAPPER_ID_SERVICE);
+        return makeReferences(MAPPER_ID_SERVICE, JAVA_RECORD_CUSTOMER, MAPPER_FETCH_SERVICE);
     }
 
     @Override
@@ -43,6 +43,16 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
                 "listedFields",
                 "Response0 recordToGraphType(List<String> response0Record,",
                 "Response1 recordToGraphType(List<String> response1Record,"
+        );
+    }
+
+    @Test
+    @DisplayName("Wrapper field containing listed Java record with splitQuery field")
+    void listedFieldWithJavaRecord() {
+        assertGeneratedContentContains(
+                "splitQueryInNestedJavaRecord",
+                " if (select.contains(pathHere + \"customerJavaRecords\")) {" +
+                        "payload.setCustomerJavaRecords(transform.customerJavaRecordToGraphType(payloadRecord, pathHere + \"customerJavaRecords\"));}"
         );
     }
 }
