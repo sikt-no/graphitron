@@ -134,7 +134,7 @@ public class MutationTest extends ValidationTest { // TODO: Some of these tests 
     @DisplayName("Input that has no records")
     void noRecordInput() {
         assertErrorsContain("noRecordInput",
-                "Problems have been found that prevent code generation:\n" +
+                "Problems have been found that prevent code generation:",
                         "Mutations must have at least one table attached when generating resolvers with queries. Mutation 'mutation' has no tables attached."
         );
     }
@@ -143,7 +143,7 @@ public class MutationTest extends ValidationTest { // TODO: Some of these tests 
     @DisplayName("Input with non-record wrapper containing a record")
     void wrappedInput() {
         assertErrorsContain("wrappedInput", Set.of(CUSTOMER_INPUT_TABLE),
-                "Problems have been found that prevent code generation:\n" +
+                "Problems have been found that prevent code generation:",
                         "Mutations must have at least one table attached when generating resolvers with queries. Mutation 'mutation' has no tables attached."
         );
     }
