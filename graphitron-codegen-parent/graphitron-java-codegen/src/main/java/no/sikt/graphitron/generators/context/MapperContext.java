@@ -442,11 +442,12 @@ public class MapperContext {
      */
     private CodeBlock transformRecord() {
         return CodeBlock.of(
-                "$L$N + $S$L)",
+                "$L$L$N + $S$L)",
                 recordTransformPart(
                         previousContext.hasSourceName() ? getHelperVariableName() : asRecordName(previousContext.getTargetName()),
                         uncapitalize(targetType.getName())
                 ),
+                CodeBlock.ofIf(shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
                 PATH_HERE_NAME,
                 path,
                 CodeBlock.ofIf(recordValidationEnabled() && !hasJavaRecordReference && toRecord, ", $N + $S", PATH_HERE_NAME, path) // This one may need more work. Does not actually include indices here, but not sure if needed.
