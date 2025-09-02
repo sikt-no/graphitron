@@ -94,8 +94,8 @@ public class ProcessedDefinitionsValidator {
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
 
-        throwIfErrors();
         logWarnings();
+        throwIfErrors();
     }
 
     /*
