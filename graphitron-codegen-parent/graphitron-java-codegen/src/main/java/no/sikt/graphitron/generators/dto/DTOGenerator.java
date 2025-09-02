@@ -20,7 +20,7 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public abstract class DTOGenerator extends AbstractClassGenerator {
-    public static final String HASH_CODE = "hashCode", OBJ = "obj", EQUALS = "equals", PRIMARY_KEY = "primaryKey";
+    public static final String HASH_CODE = "hashCode", OBJ = "obj", EQUALS = "equals";
     protected final ProcessedSchema processedSchema;
 
     public DTOGenerator(ProcessedSchema processedSchema) {
