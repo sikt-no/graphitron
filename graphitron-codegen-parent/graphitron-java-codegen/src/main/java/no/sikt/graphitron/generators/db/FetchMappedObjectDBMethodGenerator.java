@@ -81,7 +81,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getSelectRowOrField(ObjectField target, FetchContext context) {
         if (!processedSchema.isRecordType(target)) {
-            return generateForScalarField(target, context);
+            return generateForField(target, context);
         }
         return target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName())
                 ? generateCorrelatedSubquery(target, context.nextContext(target))

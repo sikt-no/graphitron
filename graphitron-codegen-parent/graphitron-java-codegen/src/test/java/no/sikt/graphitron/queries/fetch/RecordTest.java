@@ -90,6 +90,12 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains("listedNestedInputJOOQRecord", ".inline(internal_it_.getFirstName())");
     }
 
+    @Test
+    @DisplayName("Listed input jOOQ records with a CLOB field")
+    void listedInputJOOQRecordWithCLOB() {
+        assertGeneratedContentContains("listedInputJOOQRecordWithCLOB", "_film.DESCRIPTION.cast(String.class)");
+    }
+
     @Test // Not sure if this is allowed.
     @DisplayName("Input type with an ID field annotated with @field without @nodeId")
     void fieldOverrideID() {
