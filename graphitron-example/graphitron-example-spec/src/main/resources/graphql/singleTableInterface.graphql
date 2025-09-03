@@ -3,17 +3,19 @@ extend type Query {
 }
 
 interface AddressByPostalCode @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {
-    addressLine1: String! @field(name: "ADDRESS_")
+    mostSignificantAddressLine: String @field(name: "ADDRESS_")
     spokenLanguage: Language @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
 }
 
-type AddressInOneArea implements AddressByPostalCode @table(name: "ADDRESS") @discriminator(value: "22474") {
-    addressLine1: String! @field(name: "ADDRESS_")
+type AddressInOneArea implements AddressByPostalCode & Node @node(typeId: "A_1", keyColumns: "ADDRESS_ID") @table(name: "ADDRESS") @discriminator(value: "22474") {
+    id: ID!
+    mostSignificantAddressLine: String @field(name: "ADDRESS_")
     spokenLanguage: Language @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
 }
 
-type AddressInAnotherArea implements AddressByPostalCode @table(name: "ADDRESS") @discriminator(value: "9668") {
+type AddressInAnotherArea implements AddressByPostalCode & Node @node(typeId: "A_2") @table(name: "ADDRESS") @discriminator(value: "9668") {
+    id: ID!
     spokenLanguage: Language @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
-    addressLine1: String! @field(name: "ADDRESS_")
+    mostSignificantAddressLine: String @field(name: "ADDRESS2")
     postalCode: String @field(name: "POSTAL_CODE")
 }

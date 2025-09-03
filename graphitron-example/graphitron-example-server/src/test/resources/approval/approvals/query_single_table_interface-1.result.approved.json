@@ -1,0 +1,18 @@
+{
+    "data": {
+        "addressesByPostalCode": {
+            "nodes": [
+                {
+                    "__typename": "AddressInOneArea",
+                    "id": "QV8xOjIyMQ",
+                    "mostSignificantAddressLine": "866 Shivapuri Manor"
+                },
+                {
+                    "__typename": "AddressInAnotherArea",
+                    "id": "QV8yOjMxMw",
+                    "mostSignificantAddressLine": null
+                }
+            ]
+        }
+    }
+}

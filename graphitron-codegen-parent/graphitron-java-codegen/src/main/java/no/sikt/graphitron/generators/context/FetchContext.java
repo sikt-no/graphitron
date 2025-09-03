@@ -1,6 +1,7 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -321,6 +322,22 @@ public class FetchContext {
                 aliasSet,
                 new ArrayList<>(conditionList),
                 previousGraphPath,
+                recCounter + 1,
+                this,
+                shouldUseOptional,
+                addAllJoinsToJoinSet);
+    }
+
+    public FetchContext forVirtualField(VirtualSourceField field) {
+        return new FetchContext(
+                processedSchema,
+                field,
+                getCurrentJoinSequence(),
+                referenceObject,
+                new LinkedHashSet<>(),
+                aliasSet,
+                new ArrayList<>(conditionList),
+                graphPath,
                 recCounter + 1,
                 this,
                 shouldUseOptional,

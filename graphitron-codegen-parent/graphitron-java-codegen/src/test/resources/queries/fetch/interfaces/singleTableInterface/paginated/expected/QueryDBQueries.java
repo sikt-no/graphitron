@@ -33,14 +33,16 @@ public class QueryDBQueries {
                 .fetch(
                         internal_it_ -> {
                             var _discriminatorValue = internal_it_.get("_discriminator", _address.DISTRICT.getConverter());
-                            switch (_discriminatorValue) {
-                                case "ONE":
-                                    return Pair.of(internal_it_.get("_token", String.class), internal_it_.into(AddressInDistrictOne.class));
-                                case "TWO":
-                                    return Pair.of(internal_it_.get("_token", String.class), internal_it_.into(AddressInDistrictTwo.class));
-                                default:
-                                    throw new RuntimeException(String.format("Querying interface '%s' returned row with unexpected discriminator value '%s'", "Address", _discriminatorValue));
+                            var _token = internal_it_.get("_token", String.class);
+                            Address _data;
+                            if (_discriminatorValue.equals("ONE")) {
+                                _data = internal_it_.into(AddressInDistrictOne.class);
+                            } else if (_discriminatorValue.equals("TWO")) {
+                                _data = internal_it_.into(AddressInDistrictTwo.class);
+                            } else {
+                                throw new RuntimeException(String.format("Querying interface '%s' returned row with unexpected discriminator value '%s'", "Address", _discriminatorValue));
                             }
+                            return Pair.of(_token, _data);
                         }
                 );
     }

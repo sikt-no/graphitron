@@ -1,8 +1,10 @@
 package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -10,10 +12,9 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
@@ -21,12 +22,12 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIE
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGenerator {
-
     public static final String DISCRIMINATOR = "_discriminator";
     public static final String DISCRIMINATOR_VALUE = "_discriminatorValue";
-    public static final String TOKEN = "_token";
+    public static final String TOKEN = "_token", DATA = "_data", INNER_DATA = "_innerData";
 
     public FetchSingleTableInterfaceDBMethodGenerator(
             ObjectDefinition localObject,
@@ -49,10 +50,11 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
     private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations) {
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
-        var selectCode = generateSelectRow(context, target, implementations);
+        var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
+        var selectCode = generateSelectRow(context, target, implementations, overriddenFields);
         var querySource = context.getTargetAlias();
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-        var fetchAndMap = fetchAndMap(target, implementations, querySource);
+        var fetchAndMap = fetchAndMap(target, implementations, querySource, overriddenFields, context);
         var orderFields = createOrderFieldsDeclarationBlock(target, context.getTargetAlias(), context.getTargetTableName());
 
         return CodeBlock.builder()
@@ -69,40 +71,98 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .build();
     }
 
-    protected CodeBlock generateSelectRow(FetchContext context, ObjectField target, Set<ObjectDefinition> implementations) {
-        List<GenerationField> allFields = context
-                .getReferenceObject()
+    private @NotNull HashMap<String, Set<String>> getFieldsOverriddenByType(InterfaceDefinition targetInterface, Set<ObjectDefinition> implementations) {
+        HashMap<String, Set<String>> overriddenFields = new HashMap<>();
+
+        // Find overridden interface fields
+        implementations.forEach(implementation -> {
+                    Set<String> overriddenFieldNames = new HashSet<>();
+
+                    for (var implField : implementation.getFields()) {
+                        Optional.ofNullable(targetInterface.getFieldByName(implField.getName()))
+                                .filter(interfaceField -> hasDifferentFieldConfiguration(implField, interfaceField))
+                                .ifPresent(interfaceField -> overriddenFieldNames.add(implField.getName()));
+                    }
+                    overriddenFields.put(implementation.getName(), overriddenFieldNames);
+                }
+        );
+
+        // Find overridden non-interface fields
+        var implementationList = new ArrayList<>(implementations);
+        for (int i = 0; i < implementationList.size(); i++) {
+            for (int j = i + 1; j < implementationList.size(); j++) {
+                compareNonInterfaceFields(implementationList.get(i), implementationList.get(j), targetInterface, overriddenFields);
+            }
+        }
+        return overriddenFields;
+    }
+
+    private void compareNonInterfaceFields(ObjectDefinition implA, ObjectDefinition implB, InterfaceDefinition targetInterface, HashMap<String, Set<String>> overriddenFields) {
+        implA.getFields()
+                .stream()
+                .filter(it -> !targetInterface.hasField(it.getName()) && implB.hasField(it.getName()))
+                .forEach(field -> {
+                            if (hasDifferentFieldConfiguration(field, implB.getFieldByName(field.getName()))) {
+                                overriddenFields.computeIfAbsent(implA.getName(), k -> new HashSet<>()).add(field.getName());
+                                overriddenFields.computeIfAbsent(implB.getName(), k -> new HashSet<>()).add(field.getName());
+                            }
+                        }
+                );
+    }
+
+    private boolean hasDifferentFieldConfiguration(ObjectField fieldA, ObjectField fieldB) {
+        var fieldDirectiveDiffers = !fieldA.getUpperCaseName().equals(fieldB.getUpperCaseName());
+        var isNodeIdField = processedSchema.isNodeIdField(fieldA) || processedSchema.isNodeIdField(fieldB);
+        return fieldDirectiveDiffers || isNodeIdField;
+    }
+
+    protected CodeBlock generateSelectRow(FetchContext context, ObjectField target, Set<ObjectDefinition> implementations, HashMap<String, Set<String>> overriddenFields) {
+        List<GenerationField> allFields = new LinkedList<>();
+
+        context.getReferenceObject()
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isExceptionOrExceptionUnion(it))
                 .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
-                .collect(Collectors.toList());
+                .filter(it -> !implementations.stream().allMatch(impl -> isOverriddenField(overriddenFields, impl.getName(), it)))
+                .forEach(allFields::add);
 
         implementations.forEach(impl ->
-                impl.getFields().stream()
-                        .filter(f -> allFields.stream().map(FieldSpecification::getName).noneMatch(it -> it.equals(f.getName())))
+                impl.getFields()
+                        .stream()
                         .filter(f -> !(f.isResolver() && processedSchema.isObject(f)))
+                        .filter(f ->
+                                isOverriddenField(overriddenFields, impl.getName(), f)
+                                || allFields.stream().map(FieldSpecification::getName).noneMatch(it -> it.equals(f.getName())))
                         .forEach(allFields::add));
 
         var rowElements = new ArrayList<CodeBlock>();
-        rowElements.add(CodeBlock.builder()
-                .add(CodeBlock.of("$L.$N", context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatorFieldName()))
-                .add(".as($S)", DISCRIMINATOR).build());
+        rowElements.add(CodeBlock.of("$L.$N.as($S)",
+                context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatorFieldName(), DISCRIMINATOR));
 
         if (target.hasForwardPagination()) {
             rowElements.add(CodeBlock.of("$T.getOrderByToken($L, $L).as($S)",
                     QUERY_HELPER.className, context.getTargetAlias(), ORDER_FIELDS_NAME, TOKEN));
         }
 
-        for (var field : allFields) {
-            rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, context).getLeft(), field.getName()));
-        }
+        allFields.forEach(field -> {
+            var isOverriddenField = isOverriddenField(overriddenFields, field.getContainerTypeName(), field);
+            var fieldAlias = field.getName();
+            var fieldContext = context;
+            if (isOverriddenField) {
+                fieldAlias = getOverriddenFieldAlias(processedSchema.getObject(field.getContainerTypeName()), fieldAlias);
+                var virtualField = new VirtualSourceField(field.getContainerTypeName(), (ObjectField) field);
+                fieldContext = context.forVirtualField(virtualField);
+            }
+            rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, fieldContext).getLeft(), fieldAlias));
+        });
         return CodeBlock.join(rowElements, ",\n");
     }
 
-    private CodeBlock fetchAndMap(ObjectField target, Set<ObjectDefinition> implementations, String querySource) {
+    private CodeBlock fetchAndMap(ObjectField target, Set<ObjectDefinition> implementations, String querySource, HashMap<String, Set<String>> overriddenFields, FetchContext context) {
         var interfaceDefinition = processedSchema.getInterface(target);
 
+        var returnInsideIfBlock = !target.hasForwardPagination();
         var mapping = CodeBlock.builder()
                 .indent()
                 .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
@@ -111,32 +171,68 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                         "$N.get($S, $L.$L.getConverter())",
                         VARIABLE_INTERNAL_ITERATION, DISCRIMINATOR, querySource, interfaceDefinition.getDiscriminatorFieldName()
                 )
-                .beginControlFlow("switch ($N)", DISCRIMINATOR_VALUE);
+                .declareIf(!returnInsideIfBlock, TOKEN, CodeBlock.of("$N.get($S, $T.class)", VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className))
+                .addStatementIf(!returnInsideIfBlock, "$T $N", interfaceDefinition.getGraphClassName(), DATA);
+
+        boolean isFirst = true;
+        var innerVariableName = returnInsideIfBlock ? DATA : INNER_DATA;
 
         for (var implementation : implementations) {
-            mapping.add("case $S:\n", implementation.getDiscriminator())
-                    .indent()
-                    .add("return ")
-                    .addIf(target.hasForwardPagination(), "$T.of($N.get($S, $T.class), ", PAIR.className, VARIABLE_INTERNAL_ITERATION, TOKEN, STRING.className)
-                    .add("$N.into($T.class)$L;\n", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName(), target.hasForwardPagination() ? ")" : "")
-                    .unindent();
+            var overriddenFieldsForImpl = getOverriddenFieldsForImplementation(overriddenFields, implementation.getName());
+            var hasOverriddenFields = !overriddenFieldsForImpl.isEmpty();
+            var needInnerDataVariable = !returnInsideIfBlock && hasOverriddenFields;
+
+            var intoBlock = CodeBlock.of("$N.into($T.class)", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName());
+
+            mapping.addIf(!isFirst, "else ")
+                    .beginControlFlow("if ($N.equals($S))", DISCRIMINATOR_VALUE, implementation.getDiscriminator())
+                    .addStatementIf(!hasOverriddenFields && returnInsideIfBlock, "return $L", intoBlock)
+                    .addStatementIf(!hasOverriddenFields && !returnInsideIfBlock, "$N = $L", DATA, intoBlock)
+                    .declareIf(hasOverriddenFields, innerVariableName, intoBlock);
+
+            overriddenFieldsForImpl.forEach(
+                    it -> {
+                        var field = implementation.getFieldByName(it);
+                        var converterBlock = processedSchema.isNodeIdField(field)
+                                ? CodeBlock.of("$T.class", STRING.className)
+                                : CodeBlock.of("$N.$L.getConverter()", context.getTargetAlias(), field.getUpperCaseName());
+
+                        mapping.addStatement("$N.set$L($N.get($S, $L))", innerVariableName, capitalize(it), VARIABLE_INTERNAL_ITERATION, getOverriddenFieldAlias(implementation, it), converterBlock);
+                    }
+            );
+
+            mapping.addStatementIf(needInnerDataVariable, "$N = $N", DATA, INNER_DATA)
+                    .addStatementIf(returnInsideIfBlock && hasOverriddenFields, "return $N", innerVariableName)
+                    .endControlFlow();
+            isFirst = false;
         }
-        mapping.add("default:\n")
-                .indent()
+        mapping.beginControlFlow("else")
                 .add("throw new $T($T.format($S, \"$T\", $N));\n",
                         RuntimeException.class,
                         String.class,
                         "Querying interface '%s' returned row with unexpected discriminator value '%s'",
                         interfaceDefinition.getGraphClassName(),
                         DISCRIMINATOR_VALUE)
-                .unindent()
                 .endControlFlow()
+                .addStatementIf(target.hasForwardPagination(), "return $T.of($N, $N)", PAIR.className, TOKEN, DATA)
                 .endControlFlow()
                 .unindent();
 
         return CodeBlock.of("\n.$L(\n$L\n);",
                 target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
                 mapping.build());
+    }
+
+    private static @NotNull String getOverriddenFieldAlias(ObjectDefinition implementation, String it) {
+        return implementation.getDiscriminator() + "_" + it;
+    }
+
+    private static boolean isOverriddenField(HashMap<String, Set<String>> overriddenFieldMap, String typeName, GenerationField field) {
+        return getOverriddenFieldsForImplementation(overriddenFieldMap, typeName).contains(field.getName());
+    }
+
+    private static Set<String> getOverriddenFieldsForImplementation(HashMap<String, Set<String>> overriddenFieldMap, String typeName) {
+        return overriddenFieldMap.getOrDefault(typeName, Set.of());
     }
 
     @Override

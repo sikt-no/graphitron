@@ -27,13 +27,12 @@ public class QueryDBQueries {
                 .fetchOne(
                         internal_it_ -> {
                             var _discriminatorValue = internal_it_.get("_discriminator", _address.DISTRICT.getConverter());
-                            switch (_discriminatorValue) {
-                                case "ONE":
-                                    return internal_it_.into(AddressInDistrictOne.class);
-                                case "TWO":
-                                    return internal_it_.into(AddressInDistrictTwo.class);
-                                default:
-                                    throw new RuntimeException(String.format("Querying interface '%s' returned row with unexpected discriminator value '%s'", "Address", _discriminatorValue));
+                            if (_discriminatorValue.equals("ONE")) {
+                                return internal_it_.into(AddressInDistrictOne.class);
+                            } else if (_discriminatorValue.equals("TWO")) {
+                                return internal_it_.into(AddressInDistrictTwo.class);
+                            } else {
+                                throw new RuntimeException(String.format("Querying interface '%s' returned row with unexpected discriminator value '%s'", "Address", _discriminatorValue));
                             }
                         }
                 );

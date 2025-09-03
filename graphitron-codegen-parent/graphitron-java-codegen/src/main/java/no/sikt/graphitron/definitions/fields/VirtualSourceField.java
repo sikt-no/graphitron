@@ -18,23 +18,27 @@ public class VirtualSourceField extends ObjectField {
     private final SQLCondition condition;
     private final boolean isResolver;
 
-    public VirtualSourceField(RecordObjectSpecification<?> targetType, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver) {
-        super(new FieldDefinition(VIRTUAL_FIELD_NAME, new TypeName(targetType.getName())), container);
+    public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver) {
+        super(new FieldDefinition(VIRTUAL_FIELD_NAME, new TypeName(targetTypeName)), container);
         this.nonReservedArguments = nonReservedArguments;
         this.condition = condition;
         this.isResolver = isResolver;
     }
 
+    public VirtualSourceField(String targetTypeName, ObjectField target) {
+        this(targetTypeName, target.getContainerTypeName(), target.getNonReservedArguments(), target.getCondition(), target.isResolver());
+    }
+
     public VirtualSourceField(RecordObjectSpecification<?> targetType, ObjectField target) {
-        this(targetType, target.getContainerTypeName(), target.getNonReservedArguments(), target.getCondition(), target.isResolver());
+        this(targetType.getName(), target);
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType, String container) {
-        this(targetType, container, List.of(), null, false);
+        this(targetType.getName(), container, List.of(), null, false);
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType) {
-        this(targetType, SCHEMA_QUERY.getName(), List.of(), null, false);
+        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), null, false);
     }
 
     /**
