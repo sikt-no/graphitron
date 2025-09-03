@@ -1296,10 +1296,6 @@ public class ProcessedDefinitionsValidator {
                         errorMessages.add(errorMessageStart + " does not return a type with table. This is not supported.");
                     }
 
-                    if (field.isIterableWrapped()) {
-                        errorMessages.add(errorMessageStart + " is listed. This is not currently supported.");
-                    }
-
                     if (field.hasForwardPagination()) {
                         errorMessages.add(errorMessageStart + " is paginated. This is not supported.");
                     }

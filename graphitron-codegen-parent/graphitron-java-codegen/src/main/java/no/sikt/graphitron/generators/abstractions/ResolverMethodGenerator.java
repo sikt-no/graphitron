@@ -86,6 +86,17 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                     .build();
         }
 
+        if (processedSchema.isOrderedMultiKeyQuery(target)) {
+            return CodeBlock.statementOf(
+                    "return $L.$L($N.$L(), $L)",
+                    newDataFetcher(),
+                    "loadByResolverKeys",
+                    uncapitalize(localObject.getName()),
+                    getDTOGetterMethodNameForField(target),
+                    queryFunction
+            );
+        }
+
         // If this method is the mutating method of a mutation. In other words, it is not the query that returns the final result.
         if (!isMutatingMethod) {
             return callQueryBlock(target, objectToCall, methodName, parser, queryFunction);

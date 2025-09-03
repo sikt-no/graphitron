@@ -389,19 +389,25 @@ public class MapperContext {
     }
 
     public CodeBlock getResolverKeySetMappingBlockForJooqRecord() {
-        return getResolverKeySetMappingBlock(asIterableIf(previousContext.sourceName, previousContext.isIterable));
+        return getResolverKeySetMappingBlock(asIterableIf(previousContext.sourceName, previousContext.isIterable), false);
     }
 
     public CodeBlock getResolverKeySetMappingBlockForJavaRecord(String varName) {
-        return getResolverKeySetMappingBlock(varName);
+        return getResolverKeySetMappingBlock(varName, target.isIterableWrapped());
     }
 
-    private CodeBlock getResolverKeySetMappingBlock(String varName) {
-        return getSetMappingBlock(wrapRow(findKeyForResolverField(target, schema).key().getFields().stream()
-                .map(Field::getName)
-                .map(it -> new MethodMapping(toCamelCase(it)))
-                .map(it -> getValue(varName, it))
-                .collect(CodeBlock.joining(", "))));
+    private CodeBlock getResolverKeySetMappingBlock(String varName, boolean isKeyList) {
+        return getSetMappingBlock(
+                CodeBlock.builder()
+                        .addIf(isKeyList, "$N.stream().map($N -> ", varName, VARIABLE_INTERNAL_ITERATION)
+                        .add(wrapRow(findKeyForResolverField(target, schema).key().getFields().stream()
+                                .map(Field::getName)
+                                .map(it -> new MethodMapping(toCamelCase(it)))
+                                .map(it -> getValue(isKeyList ? VARIABLE_INTERNAL_ITERATION : varName, it))
+                                .collect(CodeBlock.joining(", "))))
+                        .addIf(isKeyList, ")$L", collectToList())
+                        .build()
+        );
     }
 
     public CodeBlock getRecordSetMappingBlock() {

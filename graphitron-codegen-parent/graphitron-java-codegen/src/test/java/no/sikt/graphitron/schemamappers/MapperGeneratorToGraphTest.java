@@ -48,11 +48,20 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
 
     @Test
     @DisplayName("Wrapper field containing listed Java record with splitQuery field")
-    void listedFieldWithJavaRecord() {
+    void splitQueryInNestedJavaRecord() {
         assertGeneratedContentContains(
                 "splitQueryInNestedJavaRecord",
                 " if (select.contains(pathHere + \"customerJavaRecords\")) {" +
                         "payload.setCustomerJavaRecords(transform.customerJavaRecordToGraphType(payloadRecord, pathHere + \"customerJavaRecords\"));}"
+        );
+    }
+
+    @Test
+    @DisplayName("Wrapper field containing listed jOOQ record with listed splitQuery field")
+    void listedSplitQueryInNestedJavaRecord() {
+        assertGeneratedContentContains(
+                "listedSplitQueryInNestedJooqRecord",
+                "customer.setAddressesKey(DSL.row(itCustomerRecord.getCustomerId()));"
         );
     }
 }

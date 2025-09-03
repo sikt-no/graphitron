@@ -3,9 +3,13 @@ package no.sikt.graphitron.example.service.records;
 import no.sikt.graphitron.example.generated.jooq.tables.records.AddressRecord;
 import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 
+import java.util.List;
+
 public class MockUpdateAddressAndCustomerResultRecord {
     private AddressRecord myAddress;
     private AddressRecord address;
+    private List<CustomerRecord> customers;
+
 
     public AddressRecord getAddress() {
         return address;
@@ -15,15 +19,13 @@ public class MockUpdateAddressAndCustomerResultRecord {
         this.address = address;
     }
 
-    private CustomerRecord customer;
 
-
-    public CustomerRecord getCustomer() {
-        return customer;
+    public List<CustomerRecord> getCustomers() {
+        return customers;
     }
 
-    public void setCustomer(CustomerRecord customer) {
-        this.customer = customer;
+    public void setCustomers(List<CustomerRecord> customers) {
+        this.customers = customers;
     }
 
     public AddressRecord getMyAddress() {

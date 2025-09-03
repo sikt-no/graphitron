@@ -112,9 +112,6 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     @Test
     @DisplayName("Type for java record")
     void javaRecord() {
-        assertGeneratedContentContains(
-                "javaRecord",
-                "MyJavaRecord(Record1<Long> address_pkey, Record1<Long> city_pkey)"
-        );
+        assertGeneratedContentMatches("javaRecord");
     }
 }
