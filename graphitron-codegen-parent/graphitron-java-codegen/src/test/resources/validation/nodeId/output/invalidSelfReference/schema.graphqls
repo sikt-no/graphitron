@@ -1,4 +1,4 @@
 type Customer implements Node @table @node {
   id: ID!
-  parent: ID @nodeId(typeName: "Customer") @reference(references: [{table: "CUSTOMER"}])
+  parent: ID @nodeId(typeName: "Customer") @reference(path: [{table: "CUSTOMER"}])
 }

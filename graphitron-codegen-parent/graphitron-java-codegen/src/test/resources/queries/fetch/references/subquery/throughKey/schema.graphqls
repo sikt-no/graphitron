@@ -1,5 +1,5 @@
 type Customer @table {
-  city: City @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+  city: City @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 
 type City @table {

@@ -5,6 +5,6 @@ type Query {
 type Address @table {
   id: ID!
   customers(
-    staffId: ID! @reference(references: [{table: "STORE"}])
+    staffId: ID! @reference(path: [{table: "STORE"}])
   ): [CustomerTable] @splitQuery
 }

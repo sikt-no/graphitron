@@ -3,7 +3,7 @@ type Customer @table {
 }
 
 type Wrapper {
-  city: City! @splitQuery @reference(references: [{table: "ADDRESS"}])
+  city: City! @splitQuery @reference(path: [{table: "ADDRESS"}])
 }
 
 type City @table {

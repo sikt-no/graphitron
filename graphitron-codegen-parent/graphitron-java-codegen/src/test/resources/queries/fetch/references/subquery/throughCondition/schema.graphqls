@@ -1,5 +1,5 @@
 type Customer @table {
-  city: City @reference(references: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "cityCustomer"}}])
+  city: City @reference(path: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "cityCustomer"}}])
 }
 
 type City @table {

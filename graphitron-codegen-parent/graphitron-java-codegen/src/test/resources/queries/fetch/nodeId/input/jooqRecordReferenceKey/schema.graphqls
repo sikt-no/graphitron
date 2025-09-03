@@ -3,7 +3,7 @@ type Query {
 }
 
 input FilmInput @table(name: "FILM") {
-    originalLanguageId: ID! @nodeId(typeName: "Language") @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+    originalLanguageId: ID! @nodeId(typeName: "Language") @reference(path: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
 }
 
 type Film @table {

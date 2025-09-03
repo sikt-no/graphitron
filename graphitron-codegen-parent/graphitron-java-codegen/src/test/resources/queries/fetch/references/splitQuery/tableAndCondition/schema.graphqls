@@ -1,5 +1,5 @@
 type Customer @table {
-  address: Address! @splitQuery @reference(references: [{table: "ADDRESS", condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
+  address: Address! @splitQuery @reference(path: [{table: "ADDRESS", condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCustomer"}}])
 }
 
 type Address @table {

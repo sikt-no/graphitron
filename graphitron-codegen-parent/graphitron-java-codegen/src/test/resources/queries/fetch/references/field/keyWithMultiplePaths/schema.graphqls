@@ -3,5 +3,5 @@ type Query {
 }
 
 type Film @table {
-  name: String! @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+  name: String! @reference(path: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
 }

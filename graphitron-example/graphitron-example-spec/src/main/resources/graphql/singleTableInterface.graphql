@@ -4,18 +4,18 @@ extend type Query {
 
 interface AddressByPostalCode @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {
     mostSignificantAddressLine: String @field(name: "ADDRESS_")
-    spokenLanguage: Language @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
+    spokenLanguage: Language @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
 }
 
 type AddressInOneArea implements AddressByPostalCode & Node @node(typeId: "A_1", keyColumns: "ADDRESS_ID") @table(name: "ADDRESS") @discriminator(value: "22474") {
     id: ID!
     mostSignificantAddressLine: String @field(name: "ADDRESS_")
-    spokenLanguage: Language @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
+    spokenLanguage: Language @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
 }
 
 type AddressInAnotherArea implements AddressByPostalCode & Node @node(typeId: "A_2") @table(name: "ADDRESS") @discriminator(value: "9668") {
     id: ID!
-    spokenLanguage: Language @reference(references: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
+    spokenLanguage: Language @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
     mostSignificantAddressLine: String @field(name: "ADDRESS2")
     postalCode: String @field(name: "POSTAL_CODE")
 }

@@ -1,5 +1,5 @@
 type Customer implements Node @node @table {
-  addressId: ID @nodeId(typeName: "Address") @reference(references: [{condition: {className: "no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition"}}])
+  addressId: ID @nodeId(typeName: "Address") @reference(path: [{condition: {className: "no.sikt.graphitron.codereferences.conditions.ReferenceCustomerCondition"}}])
 }
 
 type Address implements Node @node @table {

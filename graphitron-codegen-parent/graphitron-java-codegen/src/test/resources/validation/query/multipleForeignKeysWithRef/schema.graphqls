@@ -8,5 +8,5 @@ type Language @table{
 
 type Film @table {
     film_id: Int
-    language: Language @reference(references: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+    language: Language @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
 }

@@ -3,7 +3,7 @@ type Query {
 }
 
 type Film @table {
-  language: Language! @splitQuery @reference(references: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
+  language: Language! @splitQuery @reference(path: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])
 }
 
 type Language @table {

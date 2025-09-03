@@ -306,7 +306,7 @@ The method returns a jOOQ condition, which will be added to the where conditions
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(references: [{condition : {className: "CustomerCondition", method: "addressJoin"}}])
+  addresses: [Address!]! @splitQuery @reference(path: [{condition : {className: "CustomerCondition", method: "addressJoin"}}])
 }
 ```
 
@@ -332,7 +332,7 @@ are redundant since there is only one key between the tables. Assume the _Addres
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}]) 
+  addresses: [Address!]! @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}]) 
 }
 ```
 
@@ -351,7 +351,7 @@ _Schema_:
 ```graphql
 type Payment @table {
   # The path here is PAYMENT -> RENTAL -> INVENTORY -> FILM
-  film: Film! @splitQuery @reference(references: [{table: "RENTAL"}, {table: "INVENTORY"}])
+  film: Film! @splitQuery @reference(path: [{table: "RENTAL"}, {table: "INVENTORY"}])
 }
 ```
 

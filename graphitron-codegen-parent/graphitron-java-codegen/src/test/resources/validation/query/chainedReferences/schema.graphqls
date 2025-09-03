@@ -4,7 +4,7 @@ type Query {
 
 type Address @table {
     id: ID!
-    payments: [Payment] @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
+    payments: [Payment] @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}, {table: "PAYMENT"}])
 }
 
 type Payment @table {
