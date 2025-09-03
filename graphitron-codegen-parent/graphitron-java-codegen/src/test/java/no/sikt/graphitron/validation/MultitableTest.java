@@ -3,8 +3,6 @@ package no.sikt.graphitron.validation;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import javax.validation.ValidationException;
-
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Multitable query validation (interfaces and unions)")
@@ -18,7 +16,7 @@ public class MultitableTest extends ValidationTest {
     @DisplayName("Interface returned in field has an implementing type with table missing primary key")
     void listedMultitableInterfaceNoPrimaryKey() {
         assertThatThrownBy(() -> generateFiles("listedNoPrimaryKey"))
-                .isInstanceOf(ValidationException.class)
+                .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("Interface 'SomeInterface' is returned in field 'query', but implementing " +
                         "type 'PgUser' has table 'PG_USER' which does not have a primary key.");
     }

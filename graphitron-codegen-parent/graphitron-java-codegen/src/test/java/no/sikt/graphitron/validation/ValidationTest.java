@@ -11,7 +11,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.slf4j.LoggerFactory;
 
-import javax.validation.ValidationException;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +49,7 @@ abstract public class ValidationTest extends GeneratorTest {
 
     protected void assertErrorsContain(Runnable f, String ... values) {
         assertThatThrownBy(f::run)
-                .isInstanceOf(ValidationException.class)
+                .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContainingAll(values);
     }
 
@@ -60,7 +59,7 @@ abstract public class ValidationTest extends GeneratorTest {
 
     protected void assertErrorsContain(String file, Set<SchemaComponent> components, String ... values) {
         assertThatThrownBy(() -> getProcessedSchema(file, components))
-                .isInstanceOf(ValidationException.class)
+                .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContainingAll(values);
     }
 
