@@ -28,7 +28,6 @@ public class OrderByEnumField extends AbstractField<EnumValueDefinition> {
         } else {
             indexName = null;
             ValidationHandler.addErrorMessage(String.format("Expected enum field '%s' of '%s' to have an '@%s(%s: ...)' directive, but no such directive was set", field.getName(), container, INDEX.getName(), NAME.getName()));
-            ValidationHandler.throwIfErrors();
         }
     }
 

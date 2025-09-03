@@ -8,7 +8,6 @@ package no.sikt.graphitron.validation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.validation.ValidationException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -40,7 +39,7 @@ public class ValidationHandler {
 
     public static void throwIfErrors () {
         if (!errorMessages.isEmpty()) {
-            throw new ValidationException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
+            throw new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
         }
     }
 
@@ -53,7 +52,7 @@ public class ValidationHandler {
 
     public static void isTrue (boolean expr, String message, Object ... values) {
         if (!expr) {
-            throw new ValidationException(String.format(message, values));
+            throw new InvalidSchemaException(String.format(message, values));
         }
     }
 
