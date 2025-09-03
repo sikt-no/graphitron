@@ -139,6 +139,15 @@ public class JavaMapperGeneratorToGraphTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Sets resolver keys for listed field with splitQuery")
+    void splitQueryListed() {
+        assertGeneratedContentContains(
+                "splitQueryListed",
+                "customer.setAddressKey(address.stream().map(internal_it_ -> DSL.row(internal_it_.getAddressId())).toList());"
+        );
+    }
+
+    @Test
     @DisplayName("Skips fields that are not mapped to a record field")
     void unconfiguredField() {
         assertGeneratedContentContains(

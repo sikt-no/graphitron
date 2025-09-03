@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -36,8 +37,12 @@ public record KeyWrapper(Key<?> key) {
      *
      * @return Row TypeName of the key variable
      */
+    public TypeName getRowTypeName(boolean asList) {
+        return getTypeName(false, asList);
+    }
+
     public TypeName getRowTypeName() {
-        return getTypeName(true, false);
+        return getRowTypeName(false);
     }
 
     /**
@@ -46,30 +51,20 @@ public record KeyWrapper(Key<?> key) {
      * @return Record TypeName of the key variable
      */
     public TypeName getRecordTypeName() {
-        return getRecordTypeName(true);
+        return getTypeName(true,false);
     }
 
-    /**
-     * Get the Record TypeName for the key variable
-     *
-     * @return Record TypeName of the key variable
-     */
-    public TypeName getRecordTypeName(boolean parameterized) {
-        return getTypeName(parameterized, true);
-    }
-
-    private TypeName getTypeName(boolean parameterized, boolean asRecordType) {
+    private TypeName getTypeName(boolean asRecordType, boolean asList) {
         var keyFields = key.getFields();
 
         if (keyFields.size() > 22) {
             throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
         }
-        var recordClassName = ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size()));
-        return parameterized ?
-                ParameterizedTypeName.get(
-                        recordClassName,
-                        keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new)
-                ) : recordClassName;
+        var parameterized = ParameterizedTypeName.get(
+                ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size())),
+                keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new));
+
+        return asList ? ParameterizedTypeName.get(LIST.className, parameterized) : parameterized;
     }
 
     /**

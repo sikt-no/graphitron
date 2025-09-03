@@ -5,9 +5,15 @@
                 "address": {
                     "id": "QWRkcmVzczoxNA"
                 },
-                "customer": {
-                    "id": "Q3VzdG9tZXI6Ng"
-                },
+                "customers": [
+                    {
+                        "id": "Q3VzdG9tZXI6Ng"
+                    },
+                    null,
+                    {
+                        "id": "Q3VzdG9tZXI6Mg"
+                    }
+                ],
                 "extraAddress": {
                     "id": "QWRkcmVzczo5"
                 }

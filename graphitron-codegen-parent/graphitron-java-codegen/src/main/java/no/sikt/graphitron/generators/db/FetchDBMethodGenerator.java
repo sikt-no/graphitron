@@ -1066,7 +1066,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (isRoot && !lookupExists) {
             return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
         } else if (!isRoot) {
-            return wrapMap(getKeyRowTypeName(referenceField, processedSchema), wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
+            return wrapMap(
+                    getKeyRowTypeName(referenceField, processedSchema),
+                    wrapListIf(type, referenceField.isIterableWrapped() && !processedSchema.isOrderedMultiKeyQuery(referenceField) || referenceField.hasForwardPagination()));
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }

@@ -1,0 +1,7 @@
+type MyJavaRecord @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+    address: [Address] @splitQuery
+}
+
+type Address @table {
+    id: ID
+}

@@ -126,12 +126,7 @@ public class DataFetcherHelper extends AbstractFetcher {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(List.of());
         }
-
-        var mergedKeys = mergeKeys(keys, env);
-
-        var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(mergedKeys), select);
-        var orderedResult = mergedKeys.stream().map(dbResult::get).collect(Collectors.toList());
-        return CompletableFuture.completedFuture(orderedResult);
+        return loadByKeysOrdered(mergeKeys(keys, env), dbFunction);
     }
 
     public static <K> List<String> mergeKeys(List<List<K>> keys, DataFetchingEnvironment env) {
@@ -163,6 +158,19 @@ public class DataFetcherHelper extends AbstractFetcher {
         }
 
         return mergedKeys;
+    }
+
+    public <K, V> CompletableFuture<List<V>> loadByResolverKeys(List<K> keys, DBQuery<K, V> dbFunction) {
+        if (keys.isEmpty()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return loadByKeysOrdered(keys, dbFunction);
+    }
+
+    private <K, V> CompletableFuture<List<V>> loadByKeysOrdered(List<K> keys, DBQuery<K, V> dbFunction) {
+        var dbResult = dbFunction.callDBMethod(dslContext, new HashSet<>(keys), select);
+        var orderedResult = keys.stream().map(dbResult::get).toList();
+        return CompletableFuture.completedFuture(orderedResult);
     }
 
     /**

@@ -2,6 +2,7 @@ package no.sikt.graphitron.generators.dto;
 
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
+import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.*;
@@ -12,9 +13,10 @@ import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY_DTO_SUFFIX;
 import static org.apache.commons.lang3.StringUtils.capitalize;
@@ -28,6 +30,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
     }
 
     protected TypeSpec.Builder getTypeSpecBuilder(String targetName, List<? extends GenerationSourceField<?>> fields) {
+        var isJavaRecord = processedSchema.hasJavaRecord(targetName);
         var keyMap = getKeyMapForResolverFields(fields, processedSchema);
         var classBuilder = TypeSpec.classBuilder(targetName)
                 .addModifiers(Modifier.PUBLIC)
@@ -41,22 +44,24 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
         List<String> allVariableNames = new ArrayList<>();
 
         var hasErrors = fields.stream().anyMatch(processedSchema::isExceptionOrExceptionUnion);
-        keyMap.values()
-                .stream()
-                .distinct()
-                .forEach((key) -> {
-                    var dtoVarName = key.getDTOVariableName();
-                    allVariableNames.add(dtoVarName);
-                    var typeName = key.getRecordTypeName();
-                    addClassKeyVariable(key.getRowTypeName(), dtoVarName, classBuilder);
-                    addConstructorKeyVariable(typeName, dtoVarName, constructorBuilder);
-                    if (hasErrors) {
-                        addConstructorKeyVariable(typeName, dtoVarName, constructorNoErrorsBuilder);
-                    }
-                });
 
-        fields
-                .stream()
+        if (!isJavaRecord) {
+            keyMap.values()
+                    .stream()
+                    .distinct()
+                    .forEach((key) -> {
+                        var dtoVarName = key.getDTOVariableName();
+                        allVariableNames.add(dtoVarName);
+                        var typeName = key.getRecordTypeName();
+                        addClassKeyVariable(key.getRowTypeName(), dtoVarName, classBuilder);
+                        addConstructorKeyVariable(typeName, dtoVarName, constructorBuilder);
+                        if (hasErrors) {
+                            addConstructorKeyVariable(typeName, dtoVarName, constructorNoErrorsBuilder);
+                        }
+                    });
+        }
+
+        fields.stream()
                 .filter(it -> !(it.isExplicitlyNotGenerated()))
                 .forEach(field -> {
                     var key = keyMap.getOrDefault(field.getName(), null);
@@ -83,7 +88,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
             classBuilder.addMethod(constructorNoErrorsBuilder.build());
         }
         return classBuilder
-                .addMethod(constructorBuilder.build())
+                .addMethodIf(!isJavaRecord, constructorBuilder.build())
                 .addMethod(getHashCodeMethod(allVariableNames))
                 .addMethod(getEqualsMethod(targetName, allVariableNames));
     }
@@ -185,7 +190,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     : typeClass;
 
         } else { // Fields with @splitQuery
-            return firstStepKeyForField.getRowTypeName();
+            return firstStepKeyForField.getRowTypeName(processedSchema.isOrderedMultiKeyQuery(field));
         }
     }
 
