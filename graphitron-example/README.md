@@ -5,6 +5,12 @@ The `graphitron-example-server` is a Quarkus application that runs a GraphQL ser
 
 [Integration tests](#Integration-tests) are included to ensure that Graphitron generates resolvers that work as expected. 
 
+<!-- START doctoc -->
+
+
+<!-- END doctoc -->
+
+
 ## Requirements
 
 - Docker - for running the Postgres database

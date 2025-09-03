@@ -3,6 +3,10 @@
 Graphitron schema transform is an integrated part of `graphitron-maven-plugin`, 
 providing GraphQL schema transformation capabilities.
 
+<!-- START doctoc -->
+
+<!-- END doctoc -->
+
 ## Usage
 
 The transform functionality is available as the `transform` goal of the maven-plugin.

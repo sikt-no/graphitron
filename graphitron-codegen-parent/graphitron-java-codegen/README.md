@@ -3,6 +3,71 @@ This is a code generation tool that implements GraphQL schemas by tying
 schemas to underlying database models. Graphitron creates complete or partial data fetcher implementations from GraphQL schemas
 using Java and [jOOQ](https://www.jooq.org/).
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**
+
+- [Features](#features)
+- [Usage](#usage)
+  - [Code interface](#code-interface)
+- [Maven Settings](#maven-settings)
+  - [Goals](#goals)
+  - [Configuration](#configuration)
+    - [General settings](#general-settings)
+    - [Code references](#code-references)
+- [Directives](#directives)
+  - [Common directives](#common-directives)
+    - [splitQuery directive](#splitquery-directive)
+    - [notGenerated directive](#notgenerated-directive)
+    - [field directive](#field-directive)
+  - [Tables, joins and records](#tables-joins-and-records)
+    - [table directive](#table-directive)
+    - [reference directive](#reference-directive)
+  - [Query conditions](#query-conditions)
+    - [Example: Setup](#example-setup)
+    - [Example: No _override_ on input parameter](#example-no-_override_-on-input-parameter)
+    - [Example: No _override_ on field with input parameters](#example-no-_override_-on-field-with-input-parameters)
+    - [Example: Both field and parameters](#example-both-field-and-parameters)
+    - [Example: With _override_ on input parameter](#example-with-_override_-on-input-parameter)
+    - [Example: With _override_ on field with input parameters](#example-with-_override_-on-field-with-input-parameters)
+    - [Example: With _override_ on both field and parameters](#example-with-_override_-on-both-field-and-parameters)
+    - [Example: Conditions on input type fields](#example-conditions-on-input-type-fields)
+    - [Example: Condition using flat record configuration](#example-condition-using-flat-record-configuration)
+    - [Example: Condition using nested record configurations](#example-condition-using-nested-record-configurations)
+    - [Example: Schema with listed input types and condition set _on_ listed input field](#example-schema-with-listed-input-types-and-condition-set-_on_-listed-input-field)
+    - [Example: Schema with listed input types and condition set on input field _inside_ a list input](#example-schema-with-listed-input-types-and-condition-set-on-input-field-_inside_-a-list-input)
+  - [Enums](#enums)
+  - [Differences between mutations and queries](#differences-between-mutations-and-queries)
+  - [Services](#services)
+    - [Resolving splitQuery fields after services](#resolving-splitquery-fields-after-services)
+      - [Services returning jOOQ records](#services-returning-jooq-records)
+      - [Services returning Java records](#services-returning-java-records)
+    - [Nested input structures](#nested-input-structures)
+    - [Input types with Java records](#input-types-with-java-records)
+    - [Context variables](#context-variables)
+    - [Response mapping](#response-mapping)
+  - [Error handling](#error-handling)
+  - [External field](#external-field)
+    - [Example](#example)
+  - [Interface queries](#interface-queries)
+    - [Single table interfaces](#single-table-interfaces)
+    - [Multi table interfaces](#multi-table-interfaces)
+  - [Multitable Unions](#multitable-unions)
+    - [Query conditions](#query-conditions-1)
+  - [Other directives](#other-directives)
+    - [lookupKey directive](#lookupkey-directive)
+    - [orderBy directive](#orderby-directive)
+- [Special interfaces](#special-interfaces)
+  - [Node](#node)
+  - [Error](#error)
+- [Global node identification](#global-node-identification)
+  - [node directive](#node-directive)
+  - [nodeId directive](#nodeid-directive)
+    - [Referencing another type's ID](#referencing-another-types-id)
+- [Graphitron integration tests](#graphitron-integration-tests)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Features
 * Generate the GraphQL code and database queries needed to resolve a GraphQL schema with a set of directives
   * In many cases, writing backend code can be skipped entirely!
