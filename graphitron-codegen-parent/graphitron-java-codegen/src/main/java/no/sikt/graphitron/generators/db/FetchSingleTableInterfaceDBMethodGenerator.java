@@ -124,7 +124,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .stream()
                 .filter(it -> !processedSchema.isExceptionOrExceptionUnion(it))
                 .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
-                .filter(it -> !implementations.stream().allMatch(impl -> overriddenFields.getOrDefault(impl.getName(), Set.of()).contains(it.getName())))
+                .filter(it -> !implementations.stream().allMatch(impl -> isOverriddenField(overriddenFields, impl.getName(), it)))
                 .forEach(allFields::add);
 
         implementations.forEach(impl ->
@@ -132,7 +132,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                         .stream()
                         .filter(f -> !(f.isResolver() && processedSchema.isObject(f)))
                         .filter(f ->
-                                overriddenFields.getOrDefault(impl.getName(), Set.of()).contains(f.getName())
+                                isOverriddenField(overriddenFields, impl.getName(), f)
                                 || allFields.stream().map(FieldSpecification::getName).noneMatch(it -> it.equals(f.getName())))
                         .forEach(allFields::add));
 
@@ -146,7 +146,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         }
 
         allFields.forEach(field -> {
-            var isOverriddenField = overriddenFields.getOrDefault(field.getContainerTypeName(), Set.of()).contains(field.getName());
+            var isOverriddenField = isOverriddenField(overriddenFields, field.getContainerTypeName(), field);
             var fieldAlias = field.getName();
             var fieldContext = context;
             if (isOverriddenField) {
@@ -178,7 +178,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
         var innerVariableName = returnInsideIfBlock ? DATA : INNER_DATA;
 
         for (var implementation : implementations) {
-            var overriddenFieldsForImpl = overriddenFields.getOrDefault(implementation.getName(), Set.of());
+            var overriddenFieldsForImpl = getOverriddenFieldsForImplementation(overriddenFields, implementation.getName());
             var hasOverriddenFields = !overriddenFieldsForImpl.isEmpty();
             var needInnerDataVariable = !returnInsideIfBlock && hasOverriddenFields;
 
@@ -225,6 +225,14 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
     private static @NotNull String getOverriddenFieldAlias(ObjectDefinition implementation, String it) {
         return implementation.getDiscriminator() + "_" + it;
+    }
+
+    private static boolean isOverriddenField(HashMap<String, Set<String>> overriddenFieldMap, String typeName, GenerationField field) {
+        return getOverriddenFieldsForImplementation(overriddenFieldMap, typeName).contains(field.getName());
+    }
+
+    private static Set<String> getOverriddenFieldsForImplementation(HashMap<String, Set<String>> overriddenFieldMap, String typeName) {
+        return overriddenFieldMap.getOrDefault(typeName, Set.of());
     }
 
     @Override
