@@ -53,6 +53,15 @@ public class ProviderTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("One query with one set of errors")
+    void query() {
+        assertGeneratedContentContains(
+                "query",
+                "var queryGenericList = List.of(m1);genericMappingsForOperation.put(\"query\", queryGenericList"
+        );
+    }
+
+    @Test
     @DisplayName("No errors exist")
     void noErrors() {
         assertNothingGenerated("noErrors");
@@ -120,9 +129,9 @@ public class ProviderTest extends GeneratorTest {
                 "-> new SomeError0",
                 "-> new SomeError1",
                 "mutation0GenericList = List.of(m1)",
-                "genericMappingsForMutation.put(\"mutation0\", mutation0GenericList",
+                "genericMappingsForOperation.put(\"mutation0\", mutation0GenericList",
                 "mutation1GenericList = List.of(m2)",
-                "genericMappingsForMutation.put(\"mutation1\", mutation1GenericList"
+                "genericMappingsForOperation.put(\"mutation1\", mutation1GenericList"
         );
     }
 
@@ -146,7 +155,7 @@ public class ProviderTest extends GeneratorTest {
                 "m1 = new DataAccessExceptionContentToErrorMapping(" +
                         "new DataAccessExceptionMappingContent(null, null),(path, msg) -> new SomeError(",
                 "mutationDatabaseList = List.of(m1)",
-                "dataAccessMappingsForMutation.put(\"mutation\", mutationDatabaseList"
+                "dataAccessMappingsForOperation.put(\"mutation\", mutationDatabaseList"
         );
     }
 
