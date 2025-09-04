@@ -16,7 +16,7 @@ type MockUpdateAddressAndCustomerPayload {
 }
 
 type MockUpdateAddressAndCustomerResult @record(record: {className: "no.sikt.graphitron.example.service.records.MockUpdateAddressAndCustomerResultRecord"}) {
-    customer: Customer @splitQuery
+    customers: [Customer] @splitQuery
     address: Address @splitQuery
     extraAddress: Address @field(name: "myAddress") @splitQuery
 }

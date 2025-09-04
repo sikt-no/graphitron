@@ -22,12 +22,9 @@ public class SplitQueryAfterJavaServiceTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Listed field is not currently supported")
+    @DisplayName("Listed field is supported")
     void listed() {
-        assertErrorsContain("listed", Set.of(CUSTOMER_TABLE),
-                "'DummyTypeRecord.customer' in a java record has splitQuery directive, " +
-                        "but is listed. This is not currently supported."
-        );
+        getProcessedSchema("listed", Set.of(CUSTOMER_TABLE));
     }
 
     @Test

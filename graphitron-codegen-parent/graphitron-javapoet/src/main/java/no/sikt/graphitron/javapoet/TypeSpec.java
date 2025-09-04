@@ -778,6 +778,13 @@ public final class TypeSpec {
             return this;
         }
 
+        public Builder addMethodIf(boolean predicate, MethodSpec methodSpec) {
+            if (predicate) {
+                addMethod(methodSpec);
+            }
+            return this;
+        }
+
         public Builder addTypes(Iterable<TypeSpec> typeSpecs) {
             checkArgument(typeSpecs != null, "typeSpecs == null");
             for (TypeSpec typeSpec : typeSpecs) {

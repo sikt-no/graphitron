@@ -1,6 +1,7 @@
 package no.sikt.graphitron.dto;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.dto.InterfaceDTOGenerator;
 import no.sikt.graphitron.generators.dto.TypeDTOGenerator;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -36,6 +38,11 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "splitQuery";
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(JAVA_RECORD_CUSTOMER);
     }
 
     @Test
@@ -242,6 +249,23 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     void referencingMultitableUnionConnection() {
         assertGeneratedContentContains("referencingMultitableUnionConnection",
                 "this.filmsKey = film_category_pkey"
+        );
+    }
+
+    @Test
+    @DisplayName("Multiple keys in java record")
+    void multipleKeysInJavaRecord() {
+        assertGeneratedContentContains("multipleKeysInJavaRecord",
+                "private Row1<Long> addressKey; private Row1<Long> cityKey;"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed resolver keys for java record")
+    void listedKeyInJavaRecord() {
+        assertGeneratedContentContains("listedKeyInJavaRecord",
+                "private List<Row1<Long>> addressKey;",
+                "setAddressKey(List<Row1<Long>> addressKey) { this.addressKey = addressKey;"
         );
     }
 }

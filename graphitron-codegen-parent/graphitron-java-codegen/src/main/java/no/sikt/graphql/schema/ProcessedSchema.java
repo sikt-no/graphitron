@@ -598,10 +598,17 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this field point to an input type with a Java record set in the schema?
+     * @return Does this type name point to a type with a Java record?
+     */
+    public boolean hasJavaRecord(String typeName) {
+        return Optional.ofNullable(getRecordType(typeName)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
+    }
+
+    /**
+     * @return Does this field point to a type with a Java record set in the schema?
      */
     public boolean hasJavaRecord(GenerationField field) {
-        return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
+        return hasJavaRecord(field.getTypeName());
     }
 
     /**
@@ -609,6 +616,13 @@ public class ProcessedSchema {
      */
     public boolean hasRecord(GenerationField field) {
         return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
+    }
+
+    /**
+     * @return Is this an ordered multi-key query?
+     */
+    public boolean isOrderedMultiKeyQuery(GenerationField field) {
+        return field.isIterableWrapped() && field.isResolver() && hasJavaRecord(field.getContainerTypeName());
     }
 
     /**
