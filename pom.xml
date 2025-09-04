@@ -23,7 +23,7 @@
     </modules>
 
     <properties>
-        <revision>5</revision>
+        <revision>6</revision>
         <changelist>-SNAPSHOT</changelist>
 
         <maven.compiler.source>17</maven.compiler.source>
