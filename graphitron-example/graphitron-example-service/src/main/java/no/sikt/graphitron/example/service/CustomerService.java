@@ -45,6 +45,13 @@ public class CustomerService {
         );
     }
 
+    public List<CustomerRecord> allCustomerEmails() {
+        throw new IllegalStateException("You are not allowed to access emails");
+    }
+
+    public List<CustomerRecord> allCustomerEmails_IllegalArgument() {
+        throw new IllegalArgumentException("This is the error message from the IllegalArgumentException");
+    }
 
     public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {
         var customer = new CustomerRecord();

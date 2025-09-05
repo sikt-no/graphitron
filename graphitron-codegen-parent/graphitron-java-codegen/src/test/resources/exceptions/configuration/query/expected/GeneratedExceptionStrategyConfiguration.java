@@ -14,9 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import no.sikt.graphql.exception.ExceptionStrategyConfiguration;
 import no.sikt.graphql.exception.ValidationViolationGraphQLException;
-import javax.inject.Singleton;
 
-@Singleton
 public class GeneratedExceptionStrategyConfiguration implements ExceptionStrategyConfiguration {
     private final Map<Class<? extends Throwable>, Set<String>> fieldsForException;
 

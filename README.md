@@ -10,4 +10,5 @@ For more information, see:
 -   [Online documentation](https://graphitron.sikt.no/)
 -   [Code-generator README](./graphitron-codegen-parent/graphitron-java-codegen/README.md) for detailed information on how to configure and use the Graphitron Java Code Generator.
 -   [Schema Transform README](./graphitron-schema-transform/README.md) for information on how to transform GraphQL schemas.
+-   [Common Module README](./graphitron-common/README.md) for exception handling framework and shared utilities.
 -   [Example project README](./graphitron-example/README.md) for an example of how to use Graphitron.

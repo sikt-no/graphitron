@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.FilmCategory;
@@ -30,6 +32,7 @@ public class FilmCategoryRecord extends UpdatableRecordImpl<FilmCategoryRecord> 
     /**
      * Getter for <code>public.film_category.film_id</code>.
      */
+    @NotNull
     public Integer getFilmId() {
         return (Integer) get(0);
     }
@@ -44,6 +47,7 @@ public class FilmCategoryRecord extends UpdatableRecordImpl<FilmCategoryRecord> 
     /**
      * Getter for <code>public.film_category.category_id</code>.
      */
+    @NotNull
     public Integer getCategoryId() {
         return (Integer) get(1);
     }

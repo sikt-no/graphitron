@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.Size;
+
 import java.math.BigDecimal;
 
 import no.sikt.graphitron.example.generated.jooq.enums.MpaaRating;
@@ -44,6 +46,7 @@ public class FilmListRecord extends TableRecordImpl<FilmListRecord> {
     /**
      * Getter for <code>public.film_list.title</code>.
      */
+    @Size(max = 255)
     public String getTitle() {
         return (String) get(1);
     }
@@ -72,6 +75,7 @@ public class FilmListRecord extends TableRecordImpl<FilmListRecord> {
     /**
      * Getter for <code>public.film_list.category</code>.
      */
+    @Size(max = 25)
     public String getCategory() {
         return (String) get(3);
     }

@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -45,6 +47,7 @@ public class PaymentRecord extends UpdatableRecordImpl<PaymentRecord> {
     /**
      * Getter for <code>public.payment.customer_id</code>.
      */
+    @NotNull
     public Integer getCustomerId() {
         return (Integer) get(1);
     }
@@ -59,6 +62,7 @@ public class PaymentRecord extends UpdatableRecordImpl<PaymentRecord> {
     /**
      * Getter for <code>public.payment.staff_id</code>.
      */
+    @NotNull
     public Integer getStaffId() {
         return (Integer) get(2);
     }
@@ -73,6 +77,7 @@ public class PaymentRecord extends UpdatableRecordImpl<PaymentRecord> {
     /**
      * Getter for <code>public.payment.rental_id</code>.
      */
+    @NotNull
     public Integer getRentalId() {
         return (Integer) get(3);
     }
@@ -87,6 +92,7 @@ public class PaymentRecord extends UpdatableRecordImpl<PaymentRecord> {
     /**
      * Getter for <code>public.payment.amount</code>.
      */
+    @NotNull
     public BigDecimal getAmount() {
         return (BigDecimal) get(4);
     }
@@ -101,6 +107,7 @@ public class PaymentRecord extends UpdatableRecordImpl<PaymentRecord> {
     /**
      * Getter for <code>public.payment.payment_date</code>.
      */
+    @NotNull
     public LocalDateTime getPaymentDate() {
         return (LocalDateTime) get(5);
     }

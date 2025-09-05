@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -44,6 +45,8 @@ public class ApprovalQueryTest {
     private static final Path QUERY_FILE_DIRECTORY = Paths.get("src", "test", "resources", "approval", "queries");
     private static final Path APPROVALS_FILE_DIRECTORY = Paths.get("src", "test", "resources", "approval", "approvals");
 
+    private static final Pattern UUID_PATTERN = Pattern.compile("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}");
+
     @DisplayName("Verifying recorded query results")
     @ParameterizedTest(name = "{index} {0} - {4} - variables ({3})")
     @MethodSource("queryFiles")
@@ -59,6 +62,7 @@ public class ApprovalQueryTest {
                 .asPrettyString();
 
         verify(response, new Options()
+                .withScrubber(str -> UUID_PATTERN.matcher(str).replaceAll("[UUID]"))
                 .forFile().withNamer(new NamerWrapper(
                         () -> queryFile.replace(".graphql", "-" + variableIdx + ".result"),
                         APPROVALS_FILE_DIRECTORY::toString))

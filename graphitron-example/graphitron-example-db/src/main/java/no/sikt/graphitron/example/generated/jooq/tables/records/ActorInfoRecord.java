@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.Size;
+
 import no.sikt.graphitron.example.generated.jooq.tables.ActorInfo;
 
 import org.jooq.impl.TableRecordImpl;
@@ -41,6 +43,7 @@ public class ActorInfoRecord extends TableRecordImpl<ActorInfoRecord> {
     /**
      * Getter for <code>public.actor_info.first_name</code>.
      */
+    @Size(max = 45)
     public String getFirstName() {
         return (String) get(1);
     }
@@ -55,6 +58,7 @@ public class ActorInfoRecord extends TableRecordImpl<ActorInfoRecord> {
     /**
      * Getter for <code>public.actor_info.last_name</code>.
      */
+    @Size(max = 45)
     public String getLastName() {
         return (String) get(2);
     }

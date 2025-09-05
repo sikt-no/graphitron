@@ -1,0 +1,64 @@
+extend type Mutation {
+    #Tests database level exception handling. Errors defined in payload
+    updateFilmReleaseYear_handledError(in: FilmReleaseYearInput!): FilmPayload @mutation(typeName: UPDATE)
+    #Tests database level exception handling. Errors not in payload. Errors are thus returned 'top level'
+    updateFilmReleaseYear_topLevelError(in: FilmReleaseYearInput!): [Film!] @mutation(typeName: UPDATE)
+}
+
+extend type Query {
+    #Tests business logic exception handling. Errors in payload
+    allCustomerEmails_handledError: CustomerEmailsPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "allCustomerEmails"
+        }
+    )
+    #Tests business logic exception handling. Errors not in payload. Errors are thus returned 'top level'
+    allCustomerEmails_topLevelError: [Customer!] @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "allCustomerEmails"
+        }
+    )
+    #Tests illegal argument exception handling. Errors not in payload. Errors are thus returned 'top level'
+    allCustomerEmails_iea_topLevelError: [Customer!] @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "allCustomerEmails_illegalArgument"
+        }
+    )
+}
+
+type CustomerEmailsPayload{
+    customers: [Customer!]
+    errors:  [CustomerEmailsError!]
+}
+
+type CustomerEmailsError implements Error @error(handlers: [
+    {handler: GENERIC, matches: "not allowed", className: "java.lang.IllegalStateException" description: "You do not have access to customer emails"}]) {
+    path: [String!]!
+    message: String!
+}
+
+input FilmReleaseYearInput @table(name: "FILM") {
+    filmId: ID! @nodeId(typeName: "Film")
+    releaseYear: Int @field(name: "RELEASE_YEAR") # constrained (((VALUE >= 1901) AND (VALUE <= 2155))
+}
+
+type FilmPayload {
+    film: [Film!]
+    errors: [UpdateFilmNameError!]
+}
+
+union UpdateFilmNameError = InvalidInput
+
+interface Error {
+    path: [String!]!
+    message: String!
+}
+
+type InvalidInput implements Error @error(handlers: [
+    {handler: DATABASE, code: "0", matches: "year_check", description: "Release year must be between 1901 and 2155"}]) {
+    path: [String!]!
+    message: String!
+}
