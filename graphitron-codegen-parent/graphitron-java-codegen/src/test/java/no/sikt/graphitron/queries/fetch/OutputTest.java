@@ -235,6 +235,15 @@ public class OutputTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Type without a table on root level wrapping a list of errors")
+    void outerNestedWithListedError() {
+        assertGeneratedContentContains(
+                "outerNestedWithListedError", Set.of(CUSTOMER_TABLE, VALIDATION_ERROR),
+                ".mapping(Functions.nullOnAllNull((internal_it_) -> new Wrapper(internal_it_)"
+        );
+    }
+
+    @Test
     @DisplayName("Type without a table inside one that has table set")
     void innerNestedRow() {
         assertGeneratedContentContains(
