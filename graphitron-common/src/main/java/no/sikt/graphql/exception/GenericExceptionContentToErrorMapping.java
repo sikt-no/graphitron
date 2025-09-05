@@ -3,10 +3,10 @@ package no.sikt.graphql.exception;
 import java.util.List;
 
 public class GenericExceptionContentToErrorMapping implements ExceptionContentToErrorMapping {
-    final private GenericExceptionMappingContent genericExceptionMappingContent;
+    final private GenericExceptionMatcher genericExceptionMappingContent;
     final private ErrorHandler errorHandler;
 
-    public GenericExceptionContentToErrorMapping(GenericExceptionMappingContent genericExceptionMappingContent, ErrorHandler errorHandler) {
+    public GenericExceptionContentToErrorMapping(GenericExceptionMatcher genericExceptionMappingContent, ErrorHandler errorHandler) {
         this.genericExceptionMappingContent = genericExceptionMappingContent;
         this.errorHandler = errorHandler;
     }

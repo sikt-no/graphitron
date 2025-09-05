@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Store;
@@ -44,6 +46,7 @@ public class StoreRecord extends UpdatableRecordImpl<StoreRecord> {
     /**
      * Getter for <code>public.store.manager_staff_id</code>.
      */
+    @NotNull
     public Integer getManagerStaffId() {
         return (Integer) get(1);
     }
@@ -58,6 +61,7 @@ public class StoreRecord extends UpdatableRecordImpl<StoreRecord> {
     /**
      * Getter for <code>public.store.address_id</code>.
      */
+    @NotNull
     public Integer getAddressId() {
         return (Integer) get(2);
     }

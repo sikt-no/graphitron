@@ -9,13 +9,14 @@ import java.util.concurrent.CancellationException;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class GenericExceptionMappingContentTest {
 
-    private GenericExceptionMappingContent underTest;
+class GenericExceptionMatcherTest {
+
+    private GenericExceptionMatcher underTest;
 
     @BeforeEach
     void setUp() {
-        underTest = new GenericExceptionMappingContent("java.lang.IllegalStateException", "test message");
+        underTest = new GenericExceptionMatcher("java.lang.IllegalStateException", "test message");
     }
 
     @Test

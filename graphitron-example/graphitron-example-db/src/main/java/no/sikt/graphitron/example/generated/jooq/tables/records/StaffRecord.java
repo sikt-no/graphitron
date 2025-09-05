@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Staff;
@@ -44,6 +47,8 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.first_name</code>.
      */
+    @NotNull
+    @Size(max = 45)
     public String getFirstName() {
         return (String) get(1);
     }
@@ -58,6 +63,8 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.last_name</code>.
      */
+    @NotNull
+    @Size(max = 45)
     public String getLastName() {
         return (String) get(2);
     }
@@ -72,6 +79,7 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.address_id</code>.
      */
+    @NotNull
     public Integer getAddressId() {
         return (Integer) get(3);
     }
@@ -86,6 +94,7 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.email</code>.
      */
+    @Size(max = 50)
     public String getEmail() {
         return (String) get(4);
     }
@@ -100,6 +109,7 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.store_id</code>.
      */
+    @NotNull
     public Integer getStoreId() {
         return (Integer) get(5);
     }
@@ -128,6 +138,8 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.username</code>.
      */
+    @NotNull
+    @Size(max = 16)
     public String getUsername() {
         return (String) get(7);
     }
@@ -142,6 +154,7 @@ public class StaffRecord extends UpdatableRecordImpl<StaffRecord> {
     /**
      * Getter for <code>public.staff.password</code>.
      */
+    @Size(max = 40)
     public String getPassword() {
         return (String) get(8);
     }

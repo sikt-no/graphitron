@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Rental;
@@ -44,6 +46,7 @@ public class RentalRecord extends UpdatableRecordImpl<RentalRecord> {
     /**
      * Getter for <code>public.rental.rental_date</code>.
      */
+    @NotNull
     public LocalDateTime getRentalDate() {
         return (LocalDateTime) get(1);
     }
@@ -58,6 +61,7 @@ public class RentalRecord extends UpdatableRecordImpl<RentalRecord> {
     /**
      * Getter for <code>public.rental.inventory_id</code>.
      */
+    @NotNull
     public Integer getInventoryId() {
         return (Integer) get(2);
     }
@@ -72,6 +76,7 @@ public class RentalRecord extends UpdatableRecordImpl<RentalRecord> {
     /**
      * Getter for <code>public.rental.customer_id</code>.
      */
+    @NotNull
     public Integer getCustomerId() {
         return (Integer) get(3);
     }
@@ -100,6 +105,7 @@ public class RentalRecord extends UpdatableRecordImpl<RentalRecord> {
     /**
      * Getter for <code>public.rental.staff_id</code>.
      */
+    @NotNull
     public Integer getStaffId() {
         return (Integer) get(5);
     }

@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -45,6 +48,7 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
     /**
      * Getter for <code>public.customer.store_id</code>.
      */
+    @NotNull
     public Integer getStoreId() {
         return (Integer) get(1);
     }
@@ -59,6 +63,8 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
     /**
      * Getter for <code>public.customer.first_name</code>.
      */
+    @NotNull
+    @Size(max = 45)
     public String getFirstName() {
         return (String) get(2);
     }
@@ -73,6 +79,8 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
     /**
      * Getter for <code>public.customer.last_name</code>.
      */
+    @NotNull
+    @Size(max = 45)
     public String getLastName() {
         return (String) get(3);
     }
@@ -87,6 +95,7 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
     /**
      * Getter for <code>public.customer.email</code>.
      */
+    @Size(max = 50)
     public String getEmail() {
         return (String) get(4);
     }
@@ -101,6 +110,7 @@ public class CustomerRecord extends UpdatableRecordImpl<CustomerRecord> {
     /**
      * Getter for <code>public.customer.address_id</code>.
      */
+    @NotNull
     public Integer getAddressId() {
         return (Integer) get(5);
     }

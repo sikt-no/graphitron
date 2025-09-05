@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.Size;
+
 import no.sikt.graphitron.example.generated.jooq.tables.CustomerList;
 
 import org.jooq.impl.TableRecordImpl;
@@ -55,6 +57,7 @@ public class CustomerListRecord extends TableRecordImpl<CustomerListRecord> {
     /**
      * Getter for <code>public.customer_list.address</code>.
      */
+    @Size(max = 50)
     public String getAddress() {
         return (String) get(2);
     }
@@ -69,6 +72,7 @@ public class CustomerListRecord extends TableRecordImpl<CustomerListRecord> {
     /**
      * Getter for <code>public.customer_list.zip code</code>.
      */
+    @Size(max = 10)
     public String getZipCode() {
         return (String) get(3);
     }
@@ -83,6 +87,7 @@ public class CustomerListRecord extends TableRecordImpl<CustomerListRecord> {
     /**
      * Getter for <code>public.customer_list.phone</code>.
      */
+    @Size(max = 20)
     public String getPhone() {
         return (String) get(4);
     }
@@ -97,6 +102,7 @@ public class CustomerListRecord extends TableRecordImpl<CustomerListRecord> {
     /**
      * Getter for <code>public.customer_list.city</code>.
      */
+    @Size(max = 50)
     public String getCity() {
         return (String) get(5);
     }
@@ -111,6 +117,7 @@ public class CustomerListRecord extends TableRecordImpl<CustomerListRecord> {
     /**
      * Getter for <code>public.customer_list.country</code>.
      */
+    @Size(max = 50)
     public String getCountry() {
         return (String) get(6);
     }

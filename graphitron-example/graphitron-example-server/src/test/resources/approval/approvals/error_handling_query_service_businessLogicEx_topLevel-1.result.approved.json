@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "An exception occurred. The error has been logged with id [UUID].",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "allCustomerEmails_topLevelError"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "allCustomerEmails_topLevelError": null
+    }
+}

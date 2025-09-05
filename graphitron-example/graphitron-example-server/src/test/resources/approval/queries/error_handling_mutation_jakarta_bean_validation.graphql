@@ -1,0 +1,8 @@
+mutation {
+    updateFilmName(in: {
+        filmId: "RmlsbToxNQ",
+        title: "This is an extremely long film title that exceeds the maximum allowed length of 255 characters. It contains way too many words and will definitely trigger a validation error when we try to update the film record with this excessively long title that just keeps going on and on without any real purpose other than to test the validation"
+    }) {
+        title
+    }
+}
