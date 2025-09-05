@@ -37,6 +37,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
@@ -512,7 +513,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
-        if (field.isID()) {
+        if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
                     renderedSource,
                     generateGetForID(field.getMappingFromFieldOverride(), context.getCurrentJoinSequence().isEmpty() ? null : context.getCurrentJoinSequence().getLast().getTable())
@@ -709,7 +710,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        if (field.isID()) {
+        if (field.isID() && !shouldMakeNodeStrategy()) {
             var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var table = isInRecordInput ? context.getCurrentJoinSequence().getLast().getTable() : context.iterateJoinSequenceFor(field).getLast().getTable();
             return CodeBlock.join(renderedSequence, generateHasForID(field.getMappingFromFieldOverride(), table, name, field.isIterableWrapped()));

@@ -54,6 +54,20 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("ID field which is not node ID")
+    void regularIdField() {
+        assertGeneratedContentContains("regularIdField", "_customer.CUSTOMER_ID");
+    }
+
+    @Test
+    @DisplayName("Input ID field which is not node ID")
+    void regularIdInputField() {
+        assertGeneratedContentContains("regularIdInputField", Set.of(CUSTOMER_TABLE),
+                "_customer.CUSTOMER_ID.eq(id)"
+        );
+    }
+
+    @Test
     @DisplayName("Multiple fields")
     void manyFields() {
         assertGeneratedContentContains("manyFields", "_customer.FIRST_NAME", "_customer.LAST_NAME");
