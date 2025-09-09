@@ -50,8 +50,33 @@ extend type Mutation {
             method: "createCustomerEmail"
         }
     )
+    updateCustomerEmail(input: [UpdateCustomerEmailInput!]!)
+    : UpdateCustomerEmailPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "updateCustomerEmail"
+        }
+    )
 }
 
 type CreateCustomerEmailPayload{
     customers: [Customer!]! @splitQuery
+}
+
+type UpdateCustomerEmailPayload{
+  emailUpdates: [UpdateCustomerEmail!]
+}
+
+type UpdateCustomerEmail @record(record: {className: "no.sikt.graphitron.example.service.records.UpdateCustomerEmailResult"}){
+  customerEmail: CustomerEmail!
+}
+
+type CustomerEmail @table(name: "CUSTOMER") {
+  customerId: Int @field(name: "CUSTOMER_ID")
+  email: String
+}
+
+input UpdateCustomerEmailInput @record(record: {className: "no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord"}){
+  customerId: Int @field(name: "CUSTOMER_ID")
+  email: String
 }
