@@ -21,7 +21,7 @@ public class ValidationHandler {
     }
 
     /**
-     * Adds a warning message that will be logged and might cause an exception depending on configuration.
+     * Adds a warning message that will be logged.
      * @param warningMessage - A description of the warning
      */
     public static void addWarningMessage(String warningMessage) {
