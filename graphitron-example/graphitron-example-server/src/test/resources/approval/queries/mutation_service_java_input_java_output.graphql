@@ -1,5 +1,5 @@
 mutation {
-    updateCustomerEmail(input: {customerId: 1, email: "DOES_NOT_MATTER_RESPONSE_HARDCODED_IN_SERVICE"}) {
+    updateCustomerEmail(input: {customerId: 1, email: "emailUpdated"}) {
         emailUpdates {
             customerEmail {
                 customerId
