@@ -48,7 +48,9 @@ public class CustomerService {
 
     public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {
         var customer = new CustomerRecord();
-        customer.setEmail("HARDCODED_IN_SERVICE");
+        UpdateCustomerEmailRecord first = input.get(0);
+        customer.setCustomerId(first.getCustomerId());
+        customer.setEmail(first.getEmail());
         return List.of(new UpdateCustomerEmailResult(customer));
     }
 
