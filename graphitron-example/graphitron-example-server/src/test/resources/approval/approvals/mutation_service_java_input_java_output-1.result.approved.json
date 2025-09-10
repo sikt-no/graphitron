@@ -4,8 +4,8 @@
             "emailUpdates": [
                 {
                     "customerEmail": {
-                        "customerId": null,
-                        "email": "HARDCODED_IN_SERVICE"
+                        "customerId": 1,
+                        "email": "emailUpdated"
                     }
                 }
             ]

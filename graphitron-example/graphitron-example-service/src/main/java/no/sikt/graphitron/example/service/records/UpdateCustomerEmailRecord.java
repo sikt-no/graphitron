@@ -1,23 +1,23 @@
 package no.sikt.graphitron.example.service.records;
 
 public class UpdateCustomerEmailRecord {
-  private String id;
+  private Integer customerId;
   private String email;
 
   public UpdateCustomerEmailRecord() {
   }
 
-  public UpdateCustomerEmailRecord(String id, String email) {
-    this.id = id;
+  public UpdateCustomerEmailRecord(Integer customerId, String email) {
+    this.customerId = customerId;
     this.email = email;
   }
 
-  public String getId() {
-    return id;
+  public Integer getCustomerId() {
+    return customerId;
   }
 
-  public void setId(String id) {
-    this.id = id;
+  public void setCustomerId(Integer customerId) {
+    this.customerId = customerId;
   }
 
   public String getEmail() {
