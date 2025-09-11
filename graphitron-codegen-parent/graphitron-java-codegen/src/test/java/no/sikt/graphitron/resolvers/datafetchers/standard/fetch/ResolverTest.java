@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.ReferencedEntry.CONTEXT_CONDITION;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Fetch resolvers - Resolvers for queries")
@@ -36,7 +37,7 @@ public class ResolverTest extends GeneratorTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(CONTEXT_CONDITION);
+        return makeReferences(CONTEXT_CONDITION, JAVA_RECORD_CUSTOMER);
     }
 
     @Override
@@ -195,6 +196,23 @@ public class ResolverTest extends GeneratorTest {
         assertGeneratedContentContains("operation/singleTableInterface",
                 "CompletableFuture<List<Address>>",
                 "QueryDBQueries.addressForQuery("
+        );
+    }
+
+    @Test
+    @DisplayName("SplitQuery field in Java record")
+    void splitQueryFromJavaRecord() {
+        assertGeneratedContentContains("splitquery/splitQueryFromJavaRecord",
+                "load(",
+                "addressForMyJavaRecord"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed splitQuery field in Java record")
+    void listedSplitQueryFromJavaRecord() {
+        assertGeneratedContentContains("splitquery/listedSplitQueryFromJavaRecord",
+                "return new DataFetcherHelper(env).loadByResolverKeys(myJavaRecord.getAddressKey()"
         );
     }
 }
