@@ -296,7 +296,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         // Made this obscure case because compilation failed on the type safety for some of these. No clue as to why.
-        if (!context.hasPreviousContext() && !context.hasApplicableTable() && fieldsWithoutTable.stream().anyMatch(FieldSpecification::isIterableWrapped)) {
+        var listedFieldWithoutTableIsPresent = context
+                .getReferenceObject()
+                .getFields()
+                .stream()
+                .filter(f -> !(f.isResolver() && processedSchema.isRecordType(f)))
+                .anyMatch(FieldSpecification::isIterableWrapped);
+
+        if (!context.hasPreviousContext() && !context.hasApplicableTable() && listedFieldWithoutTableIsPresent) {
             return CodeBlock.of("$T.nullOnAllNull(($L) -> new $T($N))", FUNCTIONS.className, VARIABLE_INTERNAL_ITERATION, className, VARIABLE_INTERNAL_ITERATION);
         }
 
