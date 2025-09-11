@@ -88,7 +88,7 @@ public class FieldReference {
         return new SQLJoinStatement(
                 joinSequence,
                 targetTable,
-                new Alias(adjustedReference, targetTable, isNullable),
+                new Alias(adjustedReference, targetTable, isNullable).toAliasWrapper(),
                 List.of(joinField),
                 isNullable
         );
@@ -133,30 +133,10 @@ public class FieldReference {
         );
     }
 
-    /**
-     * @return A join statement based on a key reference using path
-     */
-
-    public SQLJoinStatement createJoinOnExplicitPathFor(JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
-
-        var targetTable = hasTable() ? getTable() : tableNameBackup;
-        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_") ? joinSequence.getSecondLast().getMappingName() : joinSequence.getSecondLast().getCodeName();
-        var alias = new Alias(prefix + "_" + keyOverride.getCodeName(), joinSequence, isNullable);
-
-        return new SQLJoinStatement(
-                joinSequence,
-                targetTable,
-                alias,
-                List.of(),
-                isNullable
-        );
-    }
-
     @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;
-        if (obj instanceof FieldReference) {
-            var ref = (FieldReference) obj;
+        if (obj instanceof FieldReference ref) {
             return ref.hasTable() == this.hasTable() && (!this.hasTable() || ref.getTable().equals(this.getTable()))
                     && ref.hasKey() == this.hasKey() && (!this.hasKey() || ref.getKey().equals(this.getKey()))
                     && ref.hasTableCondition() == this.hasTableCondition() && (!this.hasTableCondition() || ref.getTableCondition().equals(this.tableCondition));

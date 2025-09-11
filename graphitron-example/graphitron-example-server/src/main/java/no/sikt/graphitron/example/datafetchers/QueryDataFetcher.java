@@ -16,6 +16,7 @@ public class QueryDataFetcher {
         return env -> new DataFetcherHelper(env).load(
                 (ctx, selectionSet) -> {
                     return new Address(
+                            null,
                             "1234",
                             "Street 1A",
                             "District",
