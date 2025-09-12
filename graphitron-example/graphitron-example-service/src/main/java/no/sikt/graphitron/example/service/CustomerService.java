@@ -2,7 +2,11 @@ package no.sikt.graphitron.example.service;
 
 import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 import no.sikt.graphitron.example.service.records.HelloWorldInput;
+import no.sikt.graphitron.example.service.records.UpdateCustomerEmailRecord;
+import no.sikt.graphitron.example.service.records.UpdateCustomerEmailResult;
 import org.jooq.DSLContext;
+
+import java.util.List;
 
 public class CustomerService {
     public CustomerService(DSLContext context) {
@@ -26,4 +30,13 @@ public class CustomerService {
         customer.setFirstName(input.getName());
         return customer;
     }
+
+    public List<UpdateCustomerEmailResult> updateCustomerEmail(List<UpdateCustomerEmailRecord> input) {
+        var customer = new CustomerRecord();
+        UpdateCustomerEmailRecord first = input.get(0);
+        customer.setCustomerId(first.getCustomerId());
+        customer.setEmail(first.getEmail());
+        return List.of(new UpdateCustomerEmailResult(customer));
+    }
+
 }
