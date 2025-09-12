@@ -843,8 +843,12 @@ public class ProcessedSchema {
         return isObject(name) && objectWithPreviousTable.containsKey(name);
     }
 
-    public boolean isObjectOrConnectionNodeWithPreviousTableObject(String name) {
-        return (isObject(name) || isConnectionObject(name)) && objectWithPreviousTable.containsKey(name);
+    public boolean isObjectOrConnectionNode(String name) {
+        return isObject(name) || isConnectionObject(name);
+    }
+
+    public boolean hasPreviousTable(String name) {
+        return objectWithPreviousTable.containsKey(name);
     }
 
     /**
