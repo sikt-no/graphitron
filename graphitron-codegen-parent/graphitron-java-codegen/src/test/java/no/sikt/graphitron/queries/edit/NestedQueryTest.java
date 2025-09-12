@@ -34,6 +34,24 @@ public class NestedQueryTest extends GeneratorTest {
     @Test  // Works the same for queries, but there were additional null-pointers for mutations.
     @DisplayName("Nested output without table")
     void nestedOutput() {
-        assertGeneratedContentContains("nestedOutput", "CustomerTable::new", "new Outer(internal_it_)", ".fetchOne(it -> it.into(Outer.class))");
+        assertGeneratedContentContains("nestedOutput",
+                "DSL.multiset(",
+                "CustomerTable::new",
+                "new Outer(internal_it_)",
+                ".fetchOne(it -> it.into(Outer.class))");
     }
+
+    @Test
+    @DisplayName("Listed return type on non-root level with split query")
+    void nestedOutputSplitQuery() {
+        assertGeneratedContentContains(
+                "nestedOutputSplitQuery",
+                "Map<Row1<Long>, List<CustomerTable>> customersForOuter(",
+                "DSL.multiset(",
+                "CustomerTable::new",
+                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1));",
+                ".fetchOne(it -> it.into(Outer.class))"
+        );
+    }
+
 }

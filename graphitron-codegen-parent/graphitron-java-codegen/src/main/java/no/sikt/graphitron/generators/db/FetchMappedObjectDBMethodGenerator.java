@@ -83,7 +83,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         if (!processedSchema.isRecordType(target)) {
             return generateForField(target, context);
         }
-        return target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName())
+        String containerTypeName = target.getContainerTypeName();
+        boolean shouldUseCorrelatedSubquery = target.isResolver()
+                && (
+                target.isIterableWrapped()
+                        || (processedSchema.isObjectOrConnectionNode(containerTypeName)
+                        && processedSchema.hasPreviousTable(containerTypeName)
+                )
+        );
+        return shouldUseCorrelatedSubquery
                 ? generateCorrelatedSubquery(target, context.nextContext(target))
                 : generateSelectRow(context);
     }
@@ -118,7 +126,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addIf(lookupExists, "$T::value1, ", RECORD2.className)
                 .addIf(!lookupExists, "r -> r.value1().valuesRow(), ");
 
-        if (processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(referenceField.getContainerTypeName()) && referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()) {
+        String containerTypeName = referenceField.getContainerTypeName();
+        boolean isIterableOrConnectionWithPreviousTable =
+                referenceField.isIterableWrapped()
+                        || (processedSchema.isObjectOrConnectionNode(containerTypeName)
+                        && processedSchema.hasPreviousTable(containerTypeName));
+
+        boolean useNestedMapping = (isIterableOrConnectionWithPreviousTable && !lookupExists)
+                        || referenceField.hasForwardPagination();
+
+        if (useNestedMapping) {
             if (referenceField.hasForwardPagination() && (referenceField.getOrderField().isPresent() || tableHasPrimaryKey(refObject.getTable().getName()))) {
                 return code.addStatement("r -> r.value2().map($T::value2))", RECORD2.className).build();
             }
