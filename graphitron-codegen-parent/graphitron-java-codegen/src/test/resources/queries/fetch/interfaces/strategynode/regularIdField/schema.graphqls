@@ -1,0 +1,7 @@
+type Query {
+  customer: Customer
+}
+
+type Customer @table {
+  id: ID @field(name: "CUSTOMER_ID")
+}
