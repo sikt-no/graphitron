@@ -1,0 +1,23 @@
+type Query {
+    query: Payment @notGenerated
+}
+
+type Payment @table {
+    staffAndCustomers: [PersonWithEmail] @splitQuery
+}
+
+interface PersonWithEmail {
+    address: Address @splitQuery
+}
+
+type StaffWithEmail implements PersonWithEmail @table(name: "STAFF") {
+    address: Address @splitQuery
+}
+
+type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
+    address: Address @splitQuery
+}
+
+type Address @table {
+    id: ID
+}
