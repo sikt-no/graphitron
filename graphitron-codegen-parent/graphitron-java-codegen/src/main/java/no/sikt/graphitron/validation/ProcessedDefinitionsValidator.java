@@ -112,9 +112,9 @@ public class ProcessedDefinitionsValidator {
                 .forEach(field -> {
                     var subTypes = schema.getTypesFromInterfaceOrUnion(field.getTypeName());
                     if (subTypes.size() < 2 && subTypes.stream().noneMatch(type -> type.implementsInterface(ERROR_TYPE.getName()))) {
-                        addErrorMessage(String.format(
+                        addFormatedErrorMessage(
                                 "Multitable queries is currently only supported for interface and unions with more than one implementing type. \n" +
-                                        "The field %s's type %s has %d implementing type(s).", field.getName(), field.getTypeName(), subTypes.size()));
+                                        "The field %s's type %s has %d implementing type(s).", field.getName(), field.getTypeName(), subTypes.size());
                     }
                 });
     }
@@ -124,8 +124,8 @@ public class ProcessedDefinitionsValidator {
                 .filter(ObjectDefinition::hasNodeDirective)
                 .forEach(objectDefinition -> {
                     if (!objectDefinition.hasTable()) {
-                        addErrorMessage(String.format("Type %s has the %s directive, but is missing the %s directive.",
-                                objectDefinition.getName(), NODE.getName(), TABLE.getName()));
+                        addFormatedErrorMessage("Type %s has the %s directive, but is missing the %s directive.",
+                                objectDefinition.getName(), NODE.getName(), TABLE.getName());
                     } else {
                         var tableFields = getJavaFieldNamesForTable(objectDefinition.getTable().getName());
                         objectDefinition.getKeyColumns().stream()
@@ -145,8 +145,8 @@ public class ProcessedDefinitionsValidator {
                         }
                     }
                     if (!objectDefinition.implementsInterface(NODE_TYPE.getName())) {
-                        addErrorMessage(String.format("Type %s has the %s directive, but does not implement the %s interface.",
-                                objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName()));
+                        addFormatedErrorMessage("Type %s has the %s directive, but does not implement the %s interface.",
+                                objectDefinition.getName(), NODE.getName(), NODE_TYPE.getName());
                     }
                 });
     }
@@ -174,30 +174,30 @@ public class ProcessedDefinitionsValidator {
                 : String.format("field %s.%s", field.getContainerTypeName(), field.getName());
 
         if (!(field.isID() || field.getTypeName().equals(STRING.className.simpleName()))) {
-            addErrorMessage(String.format(
+            addFormatedErrorMessage(
                     "%s has %s directive, but is not an ID or String field.",
                     capitalize(fieldName),
                     NODE_ID.getName()
-            ));
+            );
         }
 
         var referencedType = schema.getObject(field.getNodeIdTypeName());
 
         if (referencedType == null) {
-            addErrorMessage(String.format(
+            addFormatedErrorMessage(
                     "Type with name '%s' referenced in the %s directive for %s does not exist.",
                     field.getNodeIdTypeName(),
                     NODE_ID.getName(),
                     fieldName
-            ));
+            );
         } else if (!referencedType.hasNodeDirective()) {
-            addErrorMessage(String.format(
+            addFormatedErrorMessage(
                     "Referenced type '%s' referenced in the %s directive for %s is missing the necessary %s directive.",
                     field.getNodeIdTypeName(),
                     NODE_ID.getName(),
                     fieldName,
                     NODE.getName()
-            ));
+            );
         } else if (field instanceof ObjectField && (!field.getNodeIdTypeName().equals(field.getContainerTypeName()) || field.hasFieldReferences())) {
             // Only filter object fields because we currently don't have reference validation on input (GGG-209)
             var recordType = Optional
@@ -215,20 +215,20 @@ public class ProcessedDefinitionsValidator {
         }
 
         if (field.hasFieldDirective()) {
-            addErrorMessage(String.format(
+            addFormatedErrorMessage(
                     "%s has both the '%s' and '%s' directives, which is not supported.",
                     capitalize(fieldName),
                     NODE_ID.getName(),
                     FIELD.getName()
-            ));
+            );
         }
         if (field.isExternalField()) {
-            addErrorMessage(String.format(
+            addFormatedErrorMessage(
                     "%s has both the '%s' and '%s' directives, which is not supported.",
                     capitalize(fieldName),
                     NODE_ID.getName(),
                     EXTERNAL_FIELD.getName()
-            ));
+            );
         }
     }
 
@@ -249,20 +249,20 @@ public class ProcessedDefinitionsValidator {
                                     var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);
 
                                     if (foreignKeyOptional.isEmpty()) {
-                                        addErrorMessage(String.format("Cannot find foreign key for node ID field '%s' in jOOQ record input '%s'.",
+                                        addFormatedErrorMessage("Cannot find foreign key for node ID field '%s' in jOOQ record input '%s'.",
                                                 field.getName(),
-                                                field.getContainerTypeName()));
+                                                field.getContainerTypeName());
                                         return;
                                     }
 
                                     var foreignKey = foreignKeyOptional.get();
 
                                     if (!foreignKey.getTable().getName().equalsIgnoreCase(jooqRecordInput.getTable().getName())) {
-                                        addErrorMessage(String.format(
+                                        addFormatedErrorMessage(
                                                 "Node ID field '%s' in jOOQ record input '%s' references a table with an inverse key which is not supported.",
                                                 field.getName(),
                                                 field.getContainerTypeName()
-                                        ));
+                                        );
                                         return;
                                     }
 
@@ -270,24 +270,24 @@ public class ProcessedDefinitionsValidator {
                                     var firstForeignKeyReferencesTargetTable = foreignKey.getInverseKey().getTable().getName().equalsIgnoreCase(nodeType.getTable().getName());
 
                                     if (field.getFieldReferences().size() > 1 || (field.hasFieldReferences() && !firstForeignKeyReferencesTargetTable)) {
-                                        addErrorMessage(String.format(
+                                        addFormatedErrorMessage(
                                                 "Node ID field '%s' in jOOQ record input '%s' has a reference via table(s) which is not supported on jOOQ record inputs.",
                                                 field.getName(),
                                                 field.getContainerTypeName()
-                                        ));
+                                        );
                                         return;
                                     }
 
                                     var targetKey = getPrimaryOrUniqueKeyMatchingIdFields(nodeType);
 
                                     if (targetKey.isPresent() && !targetKey.get().equals(foreignKey.getKey())) {
-                                        addErrorMessage(String.format(
+                                        addFormatedErrorMessage(
                                                 "Node ID field '%s' in jOOQ record input '%s' uses foreign key '%s' which does not reference the same primary/unique key used for type '%s's node ID. This is not supported.",
                                                 field.getName(),
                                                 field.getContainerTypeName(),
                                                 foreignKey.getName(),
                                                 field.getNodeIdTypeName()
-                                        ));
+                                        );
                                     }
 
                                     if (isUsedInUpdateMutation(jooqRecordInput)) {
@@ -295,11 +295,11 @@ public class ProcessedDefinitionsValidator {
                                                 .map(Key::getFields)
                                                 .filter(it -> it.stream().anyMatch(pkF -> foreignKey.getFields().stream().anyMatch(pkF::equals)))
                                                 .stream().findFirst()
-                                                .ifPresent((a) -> addErrorMessage(String.format(
+                                                .ifPresent((a) -> addFormatedErrorMessage(
                                                         "Foreign key used for node ID field '%s' in jOOQ record input '%s' overlaps with the primary key of the jOOQ record table. This is not supported for update/upsert mutations .",
                                                         field.getName(),
                                                         field.getContainerTypeName()
-                                                )));
+                                                ));
                                     }
                                 })
                 );
@@ -336,7 +336,7 @@ public class ProcessedDefinitionsValidator {
                 .map(RecordObjectSpecification::getTable)
                 .map(JOOQMapping::getMappingName)
                 .filter(it -> !tableExists(it))
-                .forEach(it -> addErrorMessage(String.format("No table with name \"%s\" found.", it)));
+                .forEach(it -> addFormatedErrorMessage("No table with name \"%s\" found.", it));
 
         var allReferences = recordTypes
                 .values()
@@ -352,7 +352,7 @@ public class ProcessedDefinitionsValidator {
                 .map(FieldReference::getTable)
                 .map(JOOQMapping::getMappingName)
                 .filter(it -> !tableExists(it))
-                .forEach(it -> addErrorMessage(String.format("No table with name \"%s\" found.", it)));
+                .forEach(it -> addFormatedErrorMessage("No table with name \"%s\" found.", it));
 
         allReferences
                 .stream()
@@ -360,7 +360,7 @@ public class ProcessedDefinitionsValidator {
                 .map(FieldReference::getKey)
                 .map(JOOQMapping::getMappingName)
                 .filter(it -> !keyExists(it))
-                .forEach(it -> addErrorMessage(String.format("No key with name \"%s\" found.", it)));
+                .forEach(it -> addFormatedErrorMessage("No key with name \"%s\" found.", it));
 
 
         recordTypes
@@ -404,17 +404,17 @@ public class ProcessedDefinitionsValidator {
             } else if (fieldReference.hasTable()) {
                 String nextTable = fieldReference.getTable().getName();
                 if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) > 1) {
-                    addErrorMessage(String.format(
+                    addFormatedErrorMessage(
                             "Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use in the @reference directive instead."
                             , field.getName(), field.getContainerTypeName(), sourceTable, nextTable
-                    ));
+                    );
                     return;
                 }
                 if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) == 0) {
-                    addErrorMessage(String.format(
+                    addFormatedErrorMessage(
                             "\"Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify a valid path with the @reference directive."
                             , field.getName(), field.getContainerTypeName(), sourceTable, nextTable
-                    ));
+                    );
                     return;
                 }
                 if (nextTable.equals(targetTable)) {
@@ -426,9 +426,9 @@ public class ProcessedDefinitionsValidator {
         }
 
         if (getNumberOfForeignKeysBetweenTables(sourceTable, targetTable) > 1) {
-            addErrorMessage(String.format("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable));
+            addFormatedErrorMessage("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable);
         } else if (getNumberOfForeignKeysBetweenTables(sourceTable, targetTable) == 0) {
-            addErrorMessage(String.format("Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable));
+            addFormatedErrorMessage("Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable);
         }
     }
 
@@ -447,8 +447,8 @@ public class ProcessedDefinitionsValidator {
                             .toList();
 
                     if (!missingElements.isEmpty()) {
-                        addWarningMessage(String.format("No field(s) or method(s) with name(s) '%s' found in table '%s'",
-                                missingElements.stream().sorted().collect(Collectors.joining(", ")), tableName));
+                        addFormatedWarningMessage("No field(s) or method(s) with name(s) '%s' found in table '%s'",
+                                missingElements.stream().sorted().collect(Collectors.joining(", ")), tableName);
                     }
                 });
     }
@@ -585,7 +585,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(EnumDefinition::hasJavaEnumMapping)
                 .map(EnumDefinition::getEnumReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> addErrorMessage(String.format("No enum with name '%s' found.", e.getSchemaClassReference())));
+                .forEach(e -> addFormatedErrorMessage("No enum with name '%s' found.", e.getSchemaClassReference()));
 
         allFields
                 .stream()
@@ -594,7 +594,7 @@ public class ProcessedDefinitionsValidator {
                 .map(ObjectField::getService)
                 .map(ServiceWrapper::getReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> addErrorMessage(String.format("No service with name '%s' found.", e.getSchemaClassReference())));
+                .forEach(e -> addFormatedErrorMessage("No service with name '%s' found.", e.getSchemaClassReference()));
 
         allFields
                 .stream()
@@ -603,7 +603,7 @@ public class ProcessedDefinitionsValidator {
                 .map(ObjectField::getCondition)
                 .map(SQLCondition::getReference)
                 .filter(e -> !referenceSet.contains(e))
-                .forEach(e -> addErrorMessage(String.format("No condition with name '%s' found.", e.getSchemaClassReference())));
+                .forEach(e -> addFormatedErrorMessage("No condition with name '%s' found.", e.getSchemaClassReference()));
     }
 
     private void validateServiceMethods() {
@@ -616,7 +616,7 @@ public class ProcessedDefinitionsValidator {
                 .map(ServiceWrapper::getReference)
                 .filter(referenceSet::contains)
                 .filter(it -> referenceSet.getMethodsFrom(it).stream().findFirst().isEmpty())
-                .forEach(it -> addErrorMessage(String.format("Service reference with name '%s' does not contain a method named '%s'.", referenceSet.getClassFrom(it), it.getMethodName())));
+                .forEach(it -> addFormatedErrorMessage("Service reference with name '%s' does not contain a method named '%s'.", referenceSet.getClassFrom(it), it.getMethodName()));
     }
 
     private void validateUnionFieldsTable() {
@@ -629,7 +629,7 @@ public class ProcessedDefinitionsValidator {
                 if (schema.isUnion(field)) {
                     for (ObjectDefinition subType : schema.getUnionSubTypes(field.getTypeName())) {
                         if (!subType.hasTable()) {
-                            addErrorMessage(String.format("Type %s in Union '%s' in Query has no table.", subType.getName(), schema.getUnion(field).getName()));
+                            addFormatedErrorMessage("Type %s in Union '%s' in Query has no table.", subType.getName(), schema.getUnion(field).getName());
                         }
                     }
                 }
@@ -740,17 +740,17 @@ public class ProcessedDefinitionsValidator {
 
                                         if (it.hasCondition() != fieldInInterface.hasCondition()
                                                 || (it.hasCondition() && !it.getCondition().equals(fieldInInterface.getCondition()))) {
-                                            addErrorMessage(String.format(
+                                            addFormatedErrorMessage(
                                                     sharedErrorMessage,
                                                     CONDITION.getName(), impl.getName(), it.getName(), name
-                                            ));
+                                            );
                                         }
 
                                         if (!it.getFieldReferences().equals(fieldInInterface.getFieldReferences())) {
-                                            addErrorMessage(String.format(
+                                            addFormatedErrorMessage(
                                                     sharedErrorMessage,
                                                     REFERENCE.getName(), impl.getName(), it.getName(), name
-                                            ));
+                                            );
                                         }
                                     });
                         });
@@ -772,23 +772,23 @@ public class ProcessedDefinitionsValidator {
                                         String sharedErrorMessage = "Different configuration on fields in types implementing the same single table interface is currently not supported. " +
                                                 "Field '%s' occurs in two or more types implementing interface '%s', but there is a mismatch between the configuration of the '%s' directive.";
                                         if (!field.getUpperCaseName().equals(first.getUpperCaseName())) {
-                                            addErrorMessage(String.format(
+                                            addFormatedErrorMessage(
                                                     sharedErrorMessage,
                                                     entry.getKey(), interfaceDefinition.getName(), FIELD.getName()
-                                            ));
+                                            );
                                         }
 
                                         if (!field.getFieldReferences().equals(first.getFieldReferences())) {
-                                            addErrorMessage(String.format(
+                                            addFormatedErrorMessage(
                                                     sharedErrorMessage,
-                                                    entry.getKey(), interfaceDefinition.getName(), REFERENCE.getName()));
+                                                    entry.getKey(), interfaceDefinition.getName(), REFERENCE.getName());
                                         }
 
                                         if (!(field.hasCondition() == first.hasCondition()
                                                 && (!field.hasCondition() || field.getCondition().equals(first.getCondition())))) {
-                                            addErrorMessage(String.format(
+                                            addFormatedErrorMessage(
                                                     sharedErrorMessage,
-                                                    entry.getKey(), interfaceDefinition.getName(), CONDITION.getName()));
+                                                    entry.getKey(), interfaceDefinition.getName(), CONDITION.getName());
                                         }
                                     });
                                 });
@@ -825,8 +825,8 @@ public class ProcessedDefinitionsValidator {
                                     .map(AbstractObjectDefinition::getName)
                                     .orElse(typeName);
                             if (!field.isRootField() && (schema.isSingleTableInterface(field) || name.equals(NODE_TYPE.getName()))) {
-                                addErrorMessage(String.format("interface (%s) returned in non root object. This is not fully " +
-                                        "supported. Use with care", name));
+                                addFormatedErrorMessage("interface (%s) returned in non root object. This is not fully " +
+                                        "supported. Use with care", name);
                             }
 
                             if (name.equalsIgnoreCase(NODE_TYPE.getName())) {
@@ -847,11 +847,11 @@ public class ProcessedDefinitionsValidator {
                                         .filter(it -> it.implementsInterface(schema.getInterface(name).getName()))
                                         .forEach(implementation -> {
                                             if (!implementation.hasTable()) {
-                                                addErrorMessage(String.format("Interface '%s' is returned in field '%s', but type '%s' " +
-                                                        "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name));
+                                                addFormatedErrorMessage("Interface '%s' is returned in field '%s', but type '%s' " +
+                                                        "implementing '%s' does not have table set. This is not supported.", name, field.getName(), implementation.getName(), name);
                                             } else if (!tableHasPrimaryKey(implementation.getTable().getName())) {
-                                                addErrorMessage(String.format("Interface '%s' is returned in field '%s', but implementing type '%s' " +
-                                                        "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName()));
+                                                addFormatedErrorMessage("Interface '%s' is returned in field '%s', but implementing type '%s' " +
+                                                        "has table '%s' which does not have a primary key. This is not supported.", name, field.getName(), implementation.getName(), implementation.getTable().getName());
                                             }
                                         });
                             }
@@ -878,9 +878,9 @@ public class ProcessedDefinitionsValidator {
 
         records.forEach((tableName, schemaTypes) -> {
             if (schemaTypes.size() > 1) {
-                addErrorMessage(String.format(
+                addFormatedErrorMessage(
                         "Multiple types (%s) implement the %s interface and refer to the same table %s. This is not supported.",
-                        String.join(", ", schemaTypes), NODE_TYPE.getName(), tableName));
+                        String.join(", ", schemaTypes), NODE_TYPE.getName(), tableName);
             }
         });
     }
@@ -901,13 +901,11 @@ public class ProcessedDefinitionsValidator {
             var messageStart = String.format("Argument '%s' is a collection of InputFields ('%s') type.", field.getName(), field.getTypeName());
             var inputDefinitionFields = schema.getInputType(field).getFields();
 
-            inputDefinitionFields.stream().filter(AbstractField::isIterableWrapped).findFirst().ifPresent(it -> {
-                addErrorMessageAndThrow(String.format(
-                        "%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)",
-                        messageStart,
-                        it.getName()
-                ));
-            });
+            inputDefinitionFields.stream().filter(AbstractField::isIterableWrapped).findFirst().ifPresent(it -> addErrorMessageAndThrow(
+                    "%s Fields returning collections: '%s' are not supported on such types (used for generating condition tuples)",
+                    messageStart,
+                    it.getName()
+            ));
 
             var optionalFields = inputDefinitionFields
                     .stream()
@@ -1015,11 +1013,11 @@ public class ProcessedDefinitionsValidator {
         mutations
                 .stream()
                 .filter(it -> !it.hasMutationType() && !it.hasServiceReference())
-                .forEach(it -> addErrorMessage(String.format("Mutation '%s' is set to generate, but has neither a service nor mutation type set.", it.getName())));
+                .forEach(it -> addFormatedErrorMessage("Mutation '%s' is set to generate, but has neither a service nor mutation type set.", it.getName()));
         mutations
                 .stream()
                 .filter(it -> it.hasMutationType() && !new InputParser(it, schema).hasJOOQRecords())
-                .forEach(it -> addErrorMessage(String.format("Mutations must have at least one table attached when generating resolvers with queries. Mutation '%s' has no tables attached.", it.getName())));
+                .forEach(it -> addFormatedErrorMessage("Mutations must have at least one table attached when generating resolvers with queries. Mutation '%s' has no tables attached.", it.getName()));
     }
 
     private void validateMutationRequiredFields() {
@@ -1074,11 +1072,11 @@ public class ProcessedDefinitionsValidator {
                 .stream()
                 .filter(it -> it.getValue() != 1)
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
-                .forEach((key, value) -> addErrorMessage(String.format(
+                .forEach((key, value) -> addFormatedErrorMessage(
                         "%s is a field of a type without a table, and has %s potential input records to use as a source for the table in queries. In such cases, there must be exactly one input table so that it can be resolved unambiguously.",
                         key,
                         value
-                )));
+                ));
     }
 
     private void validateRecursiveRecordInputs(InputField field, boolean wasRecord, int recursion) {

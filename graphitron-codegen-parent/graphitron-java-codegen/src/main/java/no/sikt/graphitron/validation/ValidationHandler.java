@@ -21,6 +21,15 @@ public class ValidationHandler {
     }
 
     /**
+     * Adds an error message that will be thrown at a later time
+     * @param formatedErrorMessage - A formated description of the error.
+     * @param args - The arguments for the formatedErrorMessage
+     */
+    public static void addFormatedErrorMessage(String formatedErrorMessage, Object... args) {
+        errorMessages.add(String.format(formatedErrorMessage, args));
+    }
+
+    /**
      * Adds a warning message that will be logged.
      * @param warningMessage - A description of the warning
      */
@@ -29,12 +38,32 @@ public class ValidationHandler {
     }
 
     /**
+     * Adds a warning message that will be logged.
+     * @param formatedWarningMessage - A formated description of the warning
+     * @param args - Arguments for the formatedWarningMessage
+     */
+    public static void addFormatedWarningMessage(String formatedWarningMessage, Object... args) {
+        warningMessages.add(String.format(formatedWarningMessage, args));
+    }
+
+
+    /**
      * Adds an error message and immediately throws an InvalidSchemaException for all added error messages.
      * @param errorMessage - A description of the error.
      */
 
     public static void addErrorMessageAndThrow(String errorMessage){
         addErrorMessage(errorMessage);
+        throw new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
+    }
+
+    /**
+     * Adds an error message and immediately throws an InvalidSchemaException for all added error messages.
+     * @param formatedErrorMessage - A description of the error as a formated string.
+     * @param args - The arguments referenced in the formatedErrorMessage
+     */
+    public static void addErrorMessageAndThrow(String formatedErrorMessage, Object... args) {
+        addFormatedErrorMessage(formatedErrorMessage, args);
         throw new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
     }
 
@@ -71,7 +100,7 @@ public class ValidationHandler {
     }
 
     /**
-     *  Asserts that an expression is true and throws a InvalidSchemaExcpetion if the expression is false.
+     * format Asserts that an expression is true and throws a InvalidSchemaException if the expression is false.
      * @param expr - The expression to be checked.
      * @param message - A parameterized string describing the error
      * @param values - Values for the parameterized string.
