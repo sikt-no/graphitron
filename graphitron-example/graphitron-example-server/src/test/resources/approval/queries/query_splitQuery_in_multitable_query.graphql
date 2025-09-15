@@ -1,0 +1,18 @@
+{
+    reachableByEmail(
+        after: "eyJ0eXBlTmFtZSIgOiAiQ3VzdG9tZXJXaXRoRW1haWwiLCAiZmllbGRzIiA6IFs1OTddfQ"
+        first: 4
+    ) {
+        nodes {
+            email
+            address {
+                id
+            }
+            ... on StaffWithEmail {
+                store {
+                    id
+                }
+            }
+        }
+    }
+}

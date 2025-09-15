@@ -381,7 +381,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(field -> recordTypes.get(field.getTypeName()).hasTable() || field.hasFieldReferences() || field.isResolver())
                 .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
                 .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
-                .filter(it -> !schema.isMultiTableField(it)) // TODO: fix reference validation for multitable (GG-229)
+                .filter(it -> !schema.isMultiTableField(it) && !schema.isMultiTableInterface(it.getContainerTypeName())) // TODO: fix reference validation for multitable (GG-229)
                 .forEach((field) -> {
                             var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
                             var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();

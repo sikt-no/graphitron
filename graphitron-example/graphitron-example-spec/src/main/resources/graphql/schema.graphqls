@@ -214,3 +214,7 @@ type FilmActor implements Node @node @table(name: "FILM_ACTOR") {
 type FilmCategory implements Node @node @table(name: "FILM_CATEGORY") {
     id: ID!
 }
+
+type Store implements Node @node @table {
+    id: ID!
+}

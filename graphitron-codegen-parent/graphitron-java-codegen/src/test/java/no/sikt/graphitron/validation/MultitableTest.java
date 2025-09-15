@@ -60,4 +60,10 @@ public class MultitableTest extends ValidationTest {
                 "'Film.languages' returns a multitable query, but there is no implicit key between FILM and LANGUAGE. Multitable queries outside root is currently only supported between tables with one path."
         );
     }
+
+    @Test
+    @DisplayName("Multitable query outside root with splitQuery reference should have no validation errors")
+    void splitQueryReferenceInNestedQuery() {
+        getProcessedSchema("splitQueryReferenceInNestedQuery");
+    }
 }
