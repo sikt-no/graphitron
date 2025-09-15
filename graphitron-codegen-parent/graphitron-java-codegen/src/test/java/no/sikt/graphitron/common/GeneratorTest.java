@@ -99,15 +99,18 @@ public abstract class GeneratorTest {
                     var generatedFile = generatedFiles.get(expectedFileName);
                     var expected = formatExpectedFile(expectedFile);
                     assertList.add(
-                            () -> assertThat(formatGeneratedFile(generatedFile))
-                                    .withFailMessage(
-                                            "\u001B[33;1m%s\u001B[0;35m\n%s\n\n\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[0m",
-                                            MSG_GENERATED_EXPECT,
-                                            String.join("\n", generatedFile),
-                                            MSG_GENERATED_ACTUAL,
-                                            expected
-                                    )
-                                    .isEqualToIgnoringWhitespace(expected)
+                            () -> {
+                                String actual = formatGeneratedFile(generatedFile);
+                                assertThat(actual)
+                                        .withFailMessage(
+                                                "\u001B[33;1m%s\u001B[0;35m\n%s\n\n\u001B[33;1m%s\u001B[0;35m\n%s\n\u001B[0m",
+                                                MSG_GENERATED_EXPECT,
+                                                expected,
+                                                MSG_GENERATED_ACTUAL,
+                                                actual
+                                        )
+                                        .isEqualToIgnoringWhitespace(expected);
+                            }
                     );
 
                     var expectedFileImports = asImportList(expectedFile);
