@@ -1,0 +1,32 @@
+{
+    "data": {
+        "addressesByPostalCode": {
+            "nodes": [
+                {
+                    "__typename": "AddressInOneArea",
+                    "id": "QV8xOjIyMQ",
+                    "customers": [
+                        {
+                            "id": "Q3VzdG9tZXI6MjE3"
+                        }
+                    ]
+                },
+                {
+                    "__typename": "AddressInAnotherArea"
+                },
+                {
+                    "__typename": "AddressInAnotherArea"
+                },
+                {
+                    "__typename": "AddressInOneArea",
+                    "id": "QV8xOjU5NQ",
+                    "customers": [
+                        {
+                            "id": "Q3VzdG9tZXI6NTg5"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

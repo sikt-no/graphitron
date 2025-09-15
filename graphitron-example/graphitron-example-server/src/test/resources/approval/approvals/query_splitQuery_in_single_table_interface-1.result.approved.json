@@ -1,0 +1,20 @@
+{
+    "data": {
+        "addressesByPostalCode": {
+            "nodes": [
+                {
+                    "id": "QV8xOjIyMQ",
+                    "city": {
+                        "id": "Q2l0eVR5cGU6NDQ4"
+                    }
+                },
+                {
+                    "id": "QV8yOjMxMw",
+                    "city": {
+                        "id": "Q2l0eVR5cGU6MjYy"
+                    }
+                }
+            ]
+        }
+    }
+}

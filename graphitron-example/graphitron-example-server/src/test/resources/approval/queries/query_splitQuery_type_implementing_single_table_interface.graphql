@@ -1,0 +1,13 @@
+{
+    addressesByPostalCode(first: 4) {
+        nodes {
+            __typename
+            ... on AddressInOneArea {
+                id
+                customers {
+                    id
+                }
+            }
+        }
+    }
+}
