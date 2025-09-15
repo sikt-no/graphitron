@@ -5,6 +5,8 @@ import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 import no.sikt.graphitron.example.service.records.MockUpdateAddressAndCustomerResultRecord;
 import org.jooq.DSLContext;
 
+import java.util.List;
+
 public class MockService {
 
     public MockService(DSLContext context) {
@@ -21,9 +23,11 @@ public class MockService {
         address2.setAddressId(14);
         result.setAddress(address2);
 
-        var customer = new CustomerRecord();
-        customer.setCustomerId(6);
-        result.setCustomer(customer);
+        var customer6 = new CustomerRecord();
+        customer6.setCustomerId(6);
+        var customer2 = new CustomerRecord();
+        customer2.setCustomerId(2);
+        result.setCustomers(List.of(customer6, new CustomerRecord(), customer2));
 
         return result;
     }
