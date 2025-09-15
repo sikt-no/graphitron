@@ -2,6 +2,7 @@ package no.sikt.graphql.helpers.resolvers;
 
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
+import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.MultitenantGraphitronContext;
 import no.sikt.graphql.helpers.selection.ConnectionSelectionSet;
 import no.sikt.graphql.helpers.selection.SelectionSet;
@@ -29,17 +30,22 @@ public class EnvironmentHandler {
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
         String tenantPrefix = "";
-        if (env.getGraphQlContext().hasKey("DSLContext")) {
-            localContext = new HashMap<>();
-            dslContext = env.getGraphQlContext().get("DSLContext");
-            nextKeys = Map.of();
-        } else if (env.getGraphQlContext().hasKey("multitenantGraphitronContext")) {
-            MultitenantGraphitronContext c = env.getGraphQlContext().get("multitenantGraphitronContext");
-            Object lc = env.getLocalContext();
-            tenantPrefix = c.getTenantId(lc) + ":";
-            dslContext = c.getDslContext(lc);
-            localContext = new HashMap<>();
-            nextKeys = Map.of();
+
+        if (env.getGraphQlContext().hasKey("graphitronContext")) {
+            Object graphitronContext = env.getGraphQlContext().get("graphitronContext");
+            if (graphitronContext instanceof GraphitronContext c) {
+                localContext = new HashMap<>();
+                dslContext = c.getDslContext();
+                nextKeys = Map.of();
+            } else if (graphitronContext instanceof MultitenantGraphitronContext c) {
+                Object lc = env.getLocalContext();
+                tenantPrefix = c.getTenantId(lc) + ":";
+                dslContext = c.getDslContext(lc);
+                localContext = new HashMap<>();
+                nextKeys = Map.of();
+            } else {
+                throw new IllegalStateException("Unsupported type of graphitronContext: " + graphitronContext.getClass().getName());
+            }
         } else if (env.getLocalContext() instanceof DSLContext ctx) {
             localContext = new HashMap<>();
             dslContext = ctx;
