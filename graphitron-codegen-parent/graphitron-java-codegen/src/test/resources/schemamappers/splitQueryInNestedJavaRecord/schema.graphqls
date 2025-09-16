@@ -1,0 +1,15 @@
+type Query {
+    query: Payload @service(service: {name: "MAPPER_FETCH_SERVICE", method: "customerJavaQuery"})
+}
+
+type Payload {
+    customerJavaRecords: [CustomerJavaRecord]
+}
+
+type CustomerJavaRecord @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+    address: Address @splitQuery
+}
+
+type Address @table {
+    id: ID
+}

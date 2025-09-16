@@ -306,7 +306,7 @@ The method returns a jOOQ condition, which will be added to the where conditions
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(references: [{condition : {className: "CustomerCondition", method: "addressJoin"}}])
+  addresses: [Address!]! @splitQuery @reference(path: [{condition : {className: "CustomerCondition", method: "addressJoin"}}])
 }
 ```
 
@@ -332,7 +332,7 @@ are redundant since there is only one key between the tables. Assume the _Addres
 _Schema_:
 ```graphql
 type Customer @table {
-  addresses: [Address!]! @splitQuery @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}]) 
+  addresses: [Address!]! @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}]) 
 }
 ```
 
@@ -351,7 +351,7 @@ _Schema_:
 ```graphql
 type Payment @table {
   # The path here is PAYMENT -> RENTAL -> INVENTORY -> FILM
-  film: Film! @splitQuery @reference(references: [{table: "RENTAL"}, {table: "INVENTORY"}])
+  film: Film! @splitQuery @reference(path: [{table: "RENTAL"}, {table: "INVENTORY"}])
 }
 ```
 
@@ -1108,9 +1108,8 @@ Queries with input and [query conditions](#Query-conditions) are also supported.
 
 - Types implementing multiple single table interfaces are supported if they have the same discriminator value for all interfaces
 - The discriminator column must return a string type
-- Every field in the interface must have the same configuration in every implementing type
-  - For example, overriding **field** configuration from the interface is currently not supported
-- Other fields sharing the same name must also have the same configuration across the implementing types
+- Every reference field in the interface must have the same configuration in every implementing type
+- Other reference fields sharing the same name must also have the same configuration across the implementing types
 
 #### Multi table interfaces
 Multi table interfaces are interfaces where the implementations are spread across tables, and a row's type is determined by

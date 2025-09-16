@@ -1,0 +1,23 @@
+{
+    "data": {
+        "mockUpdateAddressAndCustomer": {
+            "result": {
+                "address": {
+                    "id": "QWRkcmVzczoxNA"
+                },
+                "customers": [
+                    {
+                        "id": "Q3VzdG9tZXI6Ng"
+                    },
+                    null,
+                    {
+                        "id": "Q3VzdG9tZXI6Mg"
+                    }
+                ],
+                "extraAddress": {
+                    "id": "QWRkcmVzczo5"
+                }
+            }
+        }
+    }
+}

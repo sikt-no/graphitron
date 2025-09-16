@@ -44,7 +44,7 @@ public class ProcessedSchema {
     private final Set<String> tableTypesWithTable, scalarTypes, typeNames, validFieldTypes;
     private final ObjectDefinition queryType, mutationType;
     private final Map<String, RecordObjectSpecification<?>> objectWithPreviousTable;
-    private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootObject;
+    private final no.sikt.graphitron.definitions.objects.SchemaDefinition rootSchemaObject;
     private final List<GenerationField> transformableFields;
     private final List<ObjectDefinition> unreferencedObjects;
     private final boolean nodeExists;
@@ -99,11 +99,11 @@ public class ProcessedSchema {
                 .stream()
                 .collect(Collectors.toMap(ExceptionDefinition::getName, Function.identity()));
 
-        rootObject = isObject(SCHEMA_QUERY.getName()) || isObject(SCHEMA_MUTATION.getName())
+        rootSchemaObject = isObject(SCHEMA_QUERY.getName()) || isObject(SCHEMA_MUTATION.getName())
                 ? new no.sikt.graphitron.definitions.objects.SchemaDefinition(createSchemaDefinition())
                 : null;
-        queryType = rootObject != null && rootObject.getQuery() != null ? getObject(rootObject.getQuery()) : null;
-        mutationType = rootObject != null && rootObject.getMutation() != null ? getObject(rootObject.getMutation()) : null;
+        queryType = rootSchemaObject != null && rootSchemaObject.getQuery() != null ? getObject(rootSchemaObject.getQuery()) : null;
+        mutationType = rootSchemaObject != null && rootSchemaObject.getMutation() != null ? getObject(rootSchemaObject.getMutation()) : null;
 
         inputs = InputDefinition.processInputDefinitions(typeRegistry.getTypes(InputObjectTypeDefinition.class))
                 .stream()
@@ -598,10 +598,17 @@ public class ProcessedSchema {
     }
 
     /**
-     * @return Does this field point to an input type with a Java record set in the schema?
+     * @return Does this type name point to a type with a Java record?
+     */
+    public boolean hasJavaRecord(String typeName) {
+        return Optional.ofNullable(getRecordType(typeName)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
+    }
+
+    /**
+     * @return Does this field point to a type with a Java record set in the schema?
      */
     public boolean hasJavaRecord(GenerationField field) {
-        return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false);
+        return hasJavaRecord(field.getTypeName());
     }
 
     /**
@@ -609,6 +616,13 @@ public class ProcessedSchema {
      */
     public boolean hasRecord(GenerationField field) {
         return Optional.ofNullable(getRecordType(field)).map(RecordObjectSpecification::hasRecordReference).orElse(false);
+    }
+
+    /**
+     * @return Is this an ordered multi-key query?
+     */
+    public boolean isOrderedMultiKeyQuery(GenerationField field) {
+        return field.isIterableWrapped() && field.isResolver() && hasJavaRecord(field.getContainerTypeName());
     }
 
     /**
@@ -710,6 +724,13 @@ public class ProcessedSchema {
      */
     public ObjectDefinition getMutationType() {
         return mutationType;
+    }
+
+    /**
+     * @return The root schema type, if it exists.
+     */
+    public no.sikt.graphitron.definitions.objects.SchemaDefinition getSchemaType() {
+        return rootSchemaObject;
     }
 
     /**

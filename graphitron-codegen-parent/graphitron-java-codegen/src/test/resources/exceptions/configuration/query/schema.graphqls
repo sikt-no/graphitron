@@ -1,0 +1,7 @@
+type Query {
+    query: Response
+}
+
+type Response {
+    errors: [ValidationError]
+}

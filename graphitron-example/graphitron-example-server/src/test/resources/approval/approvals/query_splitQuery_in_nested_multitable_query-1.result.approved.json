@@ -1,0 +1,54 @@
+{
+    "data": {
+        "payments": {
+            "edges": [
+                {
+                    "node": {
+                        "staffAndCustomersPaginated": {
+                            "nodes": [
+                                {
+                                    "email": "JENNIFER.DAVIS@sakilacustomer.org",
+                                    "address": {
+                                        "id": "QWRkcmVzczoxMA"
+                                    }
+                                },
+                                {
+                                    "store": {
+                                        "id": "U3RvcmU6MQ"
+                                    },
+                                    "email": "Mike.Hillyer@sakilastaff.com",
+                                    "address": {
+                                        "id": "QWRkcmVzczoz"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "node": {
+                        "staffAndCustomersPaginated": {
+                            "nodes": [
+                                {
+                                    "email": "JENNIFER.DAVIS@sakilacustomer.org",
+                                    "address": {
+                                        "id": "QWRkcmVzczoxMA"
+                                    }
+                                },
+                                {
+                                    "store": {
+                                        "id": "U3RvcmU6Mg"
+                                    },
+                                    "email": "Jon.Stephens@sakilastaff.com",
+                                    "address": {
+                                        "id": "QWRkcmVzczo0"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

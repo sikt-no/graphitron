@@ -1,0 +1,15 @@
+{
+    mockUpdateAddressAndCustomer {
+        result {
+            address {
+                id
+            }
+            customers {
+                id
+            }
+            extraAddress {
+                id
+            }
+        }
+    }
+}

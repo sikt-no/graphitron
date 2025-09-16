@@ -1,0 +1,38 @@
+{
+    "data": {
+        "reachableByEmail": {
+            "nodes": [
+                {
+                    "email": "WADE.DELVALLE@sakilacustomer.org",
+                    "address": {
+                        "id": "QWRkcmVzczo2MDQ"
+                    }
+                },
+                {
+                    "email": "AUSTIN.CINTRON@sakilacustomer.org",
+                    "address": {
+                        "id": "QWRkcmVzczo2MDU"
+                    }
+                },
+                {
+                    "email": "Mike.Hillyer@sakilastaff.com",
+                    "address": {
+                        "id": "QWRkcmVzczoz"
+                    },
+                    "store": {
+                        "id": "U3RvcmU6MQ"
+                    }
+                },
+                {
+                    "email": "Jon.Stephens@sakilastaff.com",
+                    "address": {
+                        "id": "QWRkcmVzczo0"
+                    },
+                    "store": {
+                        "id": "U3RvcmU6Mg"
+                    }
+                }
+            ]
+        }
+    }
+}

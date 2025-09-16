@@ -2,6 +2,7 @@ package no.sikt.graphitron.jooqrecordmappers;
 
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.MAPPER_FETCH_SERVICE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_NODE;
 
 @DisplayName("Mappers with node strategy (temporary test class)")
@@ -40,6 +43,11 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     @AfterAll
     static void tearDown() {
         GeneratorConfig.setNodeStrategy(false);
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(JAVA_RECORD_CUSTOMER, MAPPER_FETCH_SERVICE);
     }
 
     @Test
@@ -103,6 +111,15 @@ public class MapperNodeStrategyTest extends GeneratorTest {
     void toRecordWithReferenceKey() {
         assertGeneratedContentContains("toRecord/withReferenceKey", Set.of(CUSTOMER_NODE),
                 "nodeIdStrategy.setReferenceId(customerRecord, itCustomerInputTable.getAddressId(), \"Address\", Customer.CUSTOMER.ADDRESS_ID)"
+        );
+    }
+
+    @Test
+    @DisplayName("Wrapper field containing listed Java record with splitQuery field")
+    void listedFieldWithJavaRecord() {
+        assertGeneratedContentContains(
+                "toGraph/splitQueryInNestedJavaRecord",
+                "customerJavaRecordToGraphType(payloadRecord, nodeIdStrategy, pathHere + \"customerJavaRecords\")"
         );
     }
 }

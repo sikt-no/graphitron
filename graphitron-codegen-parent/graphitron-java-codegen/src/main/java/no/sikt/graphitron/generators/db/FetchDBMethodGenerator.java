@@ -39,6 +39,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.configuration.GeneratorConfig.useOptionalSelects;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyRowTypeName;
@@ -146,7 +147,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         select.addIf(shouldHaveOrderByToken, "\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), orderByFieldsBlock);
 
         if (context.getReferenceObject() == null || field.hasNodeID()) {
-            select.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context));
+            select.add(generateForField(field, context));
         } else {
             select.add(generateSelectRow(context));
         }
@@ -250,7 +251,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
         } else {
-            innerRowCode = (processedSchema.isUnion(field.getTypeName())) ? generateForUnionField(field, context) : generateForScalarField(field, context);
+            innerRowCode = generateForField(field, context);
         }
         return Pair.of(innerRowCode, fieldSource);
     }
@@ -308,7 +309,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         // Made this obscure case because compilation failed on the type safety for some of these. No clue as to why.
-        if (!context.hasPreviousContext() && !context.hasApplicableTable() && fieldsWithoutTable.stream().anyMatch(FieldSpecification::isIterableWrapped)) {
+        var listedFieldWithoutTableIsPresent = context
+                .getReferenceObject()
+                .getFields()
+                .stream()
+                .filter(f -> !(f.isResolver() && processedSchema.isRecordType(f)))
+                .anyMatch(FieldSpecification::isIterableWrapped);
+
+        if (!context.hasPreviousContext() && !context.hasApplicableTable() && listedFieldWithoutTableIsPresent) {
             return CodeBlock.of("$T.nullOnAllNull(($L) -> new $T($N))", FUNCTIONS.className, VARIABLE_INTERNAL_ITERATION, className, VARIABLE_INTERNAL_ITERATION);
         }
 
@@ -507,20 +515,24 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     /**
      * Generate a single argument in the row method call.
      */
-    protected CodeBlock generateForScalarField(GenerationField field, FetchContext context) {
-        return generateForScalarField(field, context, false);
+    protected CodeBlock generateForField(GenerationField field, FetchContext context) {
+        return generateForField(field, context, false);
     }
 
     /**
      * Generate a single argument in the row method call.
      */
-    protected CodeBlock generateForScalarField(GenerationField field, FetchContext context, boolean overrideEnum) {
+    protected CodeBlock generateForField(GenerationField field, FetchContext context, boolean overrideEnum) {
+        if (processedSchema.isUnion(field)) {
+            return generateForUnionField(field, context);
+        }
+
         if (processedSchema.isNodeIdField(field)) {
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
         }
 
         var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
-        if (field.isID()) {
+        if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
                     renderedSource,
                     generateGetForID(field.getMappingFromFieldOverride(), context.getCurrentJoinSequence().isEmpty() ? null : context.getCurrentJoinSequence().getLast().getTable())
@@ -593,7 +605,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                                             .stream()
                                             .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
                                             .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
-                                            .collect(Collectors.toList()),
+                                            .toList(),
                                     ", "))
             );
         }
@@ -717,7 +729,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             );
         }
 
-        if (field.isID()) {
+        if (field.isID() && !shouldMakeNodeStrategy()) {
             var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var table = isInRecordInput ? context.getCurrentJoinSequence().getLast().getTable() : context.iterateJoinSequenceFor(field).getLast().getTable();
             return CodeBlock.join(renderedSequence, generateHasForID(field.getMappingFromFieldOverride(), table, name, field.isIterableWrapped()));
@@ -764,15 +776,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var lastTable = fieldSequence.getLast().getTable();
             var unpacked = unpackElement(context, argumentInputFieldName, condition, lastTable);
 
-            if (!field.hasOverridingCondition() && !condition.isOverriddenByAncestors()) {
-                var tupleBlock = CodeBlock.builder();
-                if (processedSchema.isNodeIdField(field) || field.isID()) {
-                    tupleBlock.add(CodeBlock.of("$T.trueCondition()", DSL.className));
-                } else {
-                    tupleBlock.add((processedSchema.isUnion(field)) ? generateForUnionField(field, context) : generateForScalarField(field, context, condition.hasRecord()));
-                }
+            if (condition.isOverriddenByAncestors()) {
+                continue;
+            }
 
-                tupleFieldBlocks.add(tupleBlock.build());
+            if (!field.hasOverridingCondition()) {
                 if (processedSchema.isNodeIdField(field)) {
                     tupleVariableBlocks.add(unpacked);
                 } else if (field.isID()) {
@@ -780,11 +788,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 } else {
                     tupleVariableBlocks.add(inline(unpacked));
                 }
+
+                tupleFieldBlocks.add(makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName())));
                 selectedConditions.add(condition);
             }
 
-            if (field.hasCondition() && !condition.isOverriddenByAncestors()) {
-                tupleFieldBlocks.add(CodeBlock.of("$T.trueCondition()", DSL.className));
+            if (field.hasCondition()) {
+                tupleFieldBlocks.add(trueCondition());
 
                 var conditionInputs = List.of(fieldSequence.render(), unpacked);
                 tupleVariableBlocks.add(field.getCondition().formatToString(conditionInputs));
@@ -823,6 +833,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .unindent()
                 .unindent()
                 .build();
+    }
+
+    private CodeBlock makeTupleBlock(GenerationField field, FetchContext context, boolean hasRecord, boolean isClob) {
+        if (field.isID() || processedSchema.isNodeIdField(field)) {
+            return trueCondition();
+        }
+
+        return CodeBlock.join(
+                generateForField(field, context, hasRecord),
+                CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className)
+        );
     }
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
@@ -1057,7 +1078,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         if (isRoot && !lookupExists) {
             return wrapListIf(type, referenceField.isIterableWrapped() || referenceField.hasForwardPagination());
         } else if (!isRoot) {
-            return wrapMap(getKeyRowTypeName(referenceField, processedSchema), wrapListIf(type, referenceField.isIterableWrapped() && !lookupExists || referenceField.hasForwardPagination()));
+            return wrapMap(
+                    getKeyRowTypeName(referenceField, processedSchema),
+                    wrapListIf(type, referenceField.isIterableWrapped() && !processedSchema.isOrderedMultiKeyQuery(referenceField) || referenceField.hasForwardPagination()));
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }

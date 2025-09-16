@@ -1,3 +1,3 @@
 type City @table {
-  email: String! @reference(references: [{table: "ADDRESS", condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCity"}}, {table: "CUSTOMER"}])
+  email: String! @reference(path: [{table: "ADDRESS", condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "addressCity"}}, {table: "CUSTOMER"}])
 }

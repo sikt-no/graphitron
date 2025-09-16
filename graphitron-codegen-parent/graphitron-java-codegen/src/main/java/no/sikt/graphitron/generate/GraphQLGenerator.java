@@ -8,7 +8,7 @@ import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.generators.dto.*;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
-import no.sikt.graphitron.generators.exception.MutationExceptionStrategyConfigurationGenerator;
+import no.sikt.graphitron.generators.exception.ExceptionStrategyConfigurationGenerator;
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
@@ -63,7 +63,7 @@ public class GraphQLGenerator {
                 new RecordMapperClassGenerator(processedSchema, false),
                 new JavaRecordMapperClassGenerator(processedSchema, true),
                 new JavaRecordMapperClassGenerator(processedSchema, false),
-                new MutationExceptionStrategyConfigurationGenerator(processedSchema),
+                new ExceptionStrategyConfigurationGenerator(processedSchema),
                 new ExceptionToErrorMappingProviderGenerator(processedSchema),
                 new TypeRegistryClassGenerator(),
                 new CodeInterfaceClassGenerator(processedSchema)

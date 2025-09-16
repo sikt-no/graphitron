@@ -1,5 +1,6 @@
 package no.sikt.graphitron.dto;
 
+import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.dto.TypeDTOGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.common.configuration.ReferencedEntry.JAVA_RECORD_CUSTOMER;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 public class TypeDTOGeneratorTest extends DTOGeneratorTest {
@@ -32,6 +34,11 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     @DisplayName("Type with multiple fields")
     void multipleFields() {
         assertGeneratedContentMatches("multipleFields");
+    }
+
+    @Override
+    protected Set<ExternalReference> getExternalReferences() {
+        return makeReferences(JAVA_RECORD_CUSTOMER);
     }
 
     @Test
@@ -100,5 +107,11 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
                 "this.errors = errors",
                 "Customer(String id){this.id = id;this.errors = null"
         );
+    }
+
+    @Test
+    @DisplayName("Type for java record")
+    void javaRecord() {
+        assertGeneratedContentMatches("javaRecord");
     }
 }

@@ -1,5 +1,5 @@
 type Query {
-  query(email: String! @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])): Address
+  query(email: String! @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])): Address
 }
 
 type Address @table {

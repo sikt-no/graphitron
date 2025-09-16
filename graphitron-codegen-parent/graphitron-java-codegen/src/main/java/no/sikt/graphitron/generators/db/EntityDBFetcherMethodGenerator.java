@@ -164,14 +164,12 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
             var fieldContext = context.nextContext(field);
             return generateCorrelatedSubquery(field, fieldContext);
         }
-        if (!processedSchema.isUnion(field)) {
-            return generateForScalarField(field, context);
+
+        var fieldCode = generateForField(field, context);
+        if (processedSchema.isUnion(field) && processedSchema.getUnion(field).getFieldTypeNames().size() > 1) {
+            return FormatCodeBlocks.wrapCoalesce(indentIfMultiline(fieldCode));
         }
-        var unionCode = generateForUnionField(field, context);
-        if (processedSchema.getUnion(field).getFieldTypeNames().size() > 1) {
-            return FormatCodeBlocks.wrapCoalesce(indentIfMultiline(unionCode));
-        }
-        return unionCode;
+        return fieldCode;
     }
 
     @Override

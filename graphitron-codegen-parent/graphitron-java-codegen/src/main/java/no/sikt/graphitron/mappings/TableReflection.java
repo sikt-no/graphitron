@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelationType;
 import org.jetbrains.annotations.NotNull;
 import org.jooq.*;
+import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
 import java.lang.reflect.InvocationTargetException;
@@ -397,6 +398,13 @@ public class TableReflection {
 
     public static Optional<Class<?>> getFieldType(String table, String name) {
         return getField(table, name).map(Typed::getType);
+    }
+
+    public static boolean fieldTypeIsCLOB(String table, String name) {
+        return getField(table, name)
+                .flatMap(it -> Optional.ofNullable(it.getDataType().getSQLDataType()))
+                .map(it -> it.equals(SQLDataType.CLOB))
+                .orElse(false);
     }
 
     private static Function<Schema, Stream<java.lang.reflect.Field>> getFieldsFromSchemaClass(String className) {

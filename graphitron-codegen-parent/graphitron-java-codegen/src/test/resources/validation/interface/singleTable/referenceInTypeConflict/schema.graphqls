@@ -8,7 +8,7 @@ interface Address @table(name: "ADDRESS") @discriminate(on: "DISTRICT"){
 
 type AddressInDistrictOne implements Address @table(name: "ADDRESS") @discriminator(value: "ONE") {
     postalCode: String @field(name: "POSTAL_CODE")
-    customer: CustomerTable @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+    customer: CustomerTable @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 
 type AddressInDistrictTwo implements Address @table(name: "ADDRESS") @discriminator(value: "TWO") {

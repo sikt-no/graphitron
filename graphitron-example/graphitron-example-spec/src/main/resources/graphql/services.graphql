@@ -7,6 +7,18 @@ extend type Query {
     customerService: Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJooqRecordInput(input: CustomerInput!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
     customerServiceWithJavaRecordInput(input: HelloWorldInputObject!): Customer @service(service: {className: "no.sikt.graphitron.example.service.CustomerService", method: "customer"})
+
+    mockUpdateAddressAndCustomer: MockUpdateAddressAndCustomerPayload @service(service: {className: "no.sikt.graphitron.example.service.MockService"})
+}
+
+type MockUpdateAddressAndCustomerPayload {
+    result: MockUpdateAddressAndCustomerResult
+}
+
+type MockUpdateAddressAndCustomerResult @record(record: {className: "no.sikt.graphitron.example.service.records.MockUpdateAddressAndCustomerResultRecord"}) {
+    customers: [Customer] @splitQuery
+    address: Address @splitQuery
+    extraAddress: Address @field(name: "myAddress") @splitQuery
 }
 
 type HelloWorldObject @record(record: {className: "no.sikt.graphitron.example.service.records.HelloWorldRecord"}){
@@ -26,6 +38,6 @@ input HelloWorldInputObject @record(record: {className: "no.sikt.graphitron.exam
 
 input CustomerInput @table(name: "CUSTOMER") {
     id: ID! @nodeId(typeName: "Customer")
-    addressId: ID @nodeId(typeName: "Address") @reference(references: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+    addressId: ID @nodeId(typeName: "Address") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
 }

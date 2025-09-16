@@ -4,15 +4,19 @@ extend type Query {
 
 interface PersonWithEmail {
     email: String
+    address: Address @splitQuery
 }
 
 type StaffWithEmail implements PersonWithEmail @table(name: "STAFF") {
     email: String
+    address: Address @splitQuery
+    store: Store @splitQuery @reference(path: [{key: "STAFF__STAFF_STORE_ID_FKEY"}])
 }
 
 type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
     name: CustomerName
     email: String
+    address: Address @splitQuery
 }
 
 extend type Payment {

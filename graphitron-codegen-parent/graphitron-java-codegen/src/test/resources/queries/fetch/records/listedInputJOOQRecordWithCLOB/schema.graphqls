@@ -1,0 +1,11 @@
+type Query {
+    query(in: [FilmInput]): [Film]
+}
+
+type Film @table {
+    id: ID!
+}
+
+input FilmInput @table(name: "FILM") {
+    description: String!
+}

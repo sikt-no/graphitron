@@ -1,0 +1,21 @@
+{
+    payments(first: 2, after: "WzE3MV0") {
+        edges {
+            node {
+                staffAndCustomersPaginated(first: 2) {
+                    nodes {
+                        ... on StaffWithEmail {
+                            store {
+                                id
+                            }
+                        }
+                        email
+                        address {
+                            id
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

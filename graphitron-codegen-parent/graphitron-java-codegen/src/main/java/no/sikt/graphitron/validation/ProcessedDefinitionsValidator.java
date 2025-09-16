@@ -82,7 +82,7 @@ public class ProcessedDefinitionsValidator {
         validateSingleTableInterfaceDefinitions();
         validateInterfacesReturnedInFields();
         validateMultitableFieldsOutsideRoot();
-        validateTypesUsingNodeInterface();
+        validateTypesUsingNodeInterfaceWithoutNodeDirective();
         validateInputFields();
         validateExternalMappingReferences();
         validateServiceMethods();
@@ -381,7 +381,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(field -> recordTypes.get(field.getTypeName()).hasTable() || field.hasFieldReferences() || field.isResolver())
                 .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
                 .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
-                .filter(it -> !schema.isMultiTableField(it)) // TODO: fix reference validation for multitable (GG-229)
+                .filter(it -> !schema.isMultiTableField(it) && !schema.isMultiTableInterface(it.getContainerTypeName())) // TODO: fix reference validation for multitable (GG-229)
                 .forEach((field) -> {
                             var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
                             var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
@@ -748,13 +748,6 @@ public class ProcessedDefinitionsValidator {
                                                 "a single table interface is not currently supported, and must be identical " +
                                                 "with interface. Type '%s' has a configuration mismatch on field '%s' from the interface '%s'.";
 
-                                        if (!fieldInInterface.getUpperCaseName().equals(it.getUpperCaseName())) {
-                                            errorMessages.add(String.format(
-                                                    sharedErrorMessage,
-                                                    FIELD.getName(), impl.getName(), it.getName(), name
-                                            ));
-                                        }
-
                                         if (it.hasCondition() != fieldInInterface.hasCondition()
                                                 || (it.hasCondition() && !it.getCondition().equals(fieldInInterface.getCondition()))) {
                                             errorMessages.add(String.format(
@@ -877,7 +870,7 @@ public class ProcessedDefinitionsValidator {
                 );
     }
 
-    private void validateTypesUsingNodeInterface() {
+    private void validateTypesUsingNodeInterfaceWithoutNodeDirective() {
         if (!schema.nodeExists() ||
                 schema.getQueryType() == null ||
                 schema.getQueryType().getFieldByName(uncapitalize(NODE_TYPE.getName())) == null ||
@@ -889,7 +882,7 @@ public class ProcessedDefinitionsValidator {
                 .getObjects()
                 .values()
                 .stream()
-                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable())
+                .filter(it -> it.implementsInterface(NODE_TYPE.getName()) && it.hasTable() && !it.hasNodeDirective())
                 .collect(groupingBy(
                         it -> it.getTable().getName(), Collectors.mapping(ObjectDefinition::getName, Collectors.toSet())));
 
@@ -1301,10 +1294,6 @@ public class ProcessedDefinitionsValidator {
 
                     if (!schema.isObject(field) || !schema.getObject(field.getTypeName()).hasTable()) {
                         errorMessages.add(errorMessageStart + " does not return a type with table. This is not supported.");
-                    }
-
-                    if (field.isIterableWrapped()) {
-                        errorMessages.add(errorMessageStart + " is listed. This is not currently supported.");
                     }
 
                     if (field.hasForwardPagination()) {

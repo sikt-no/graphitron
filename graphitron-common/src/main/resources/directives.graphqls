@@ -100,7 +100,7 @@ If neither table or key are provided and none can be automatically inferred, the
 """
 directive @reference(
   """The ordered list of reference elements composes the path from the table of this type to the table corresponding to the type of the field."""
-  references: [ReferenceElement!]!
+  path: [ReferenceElement!]!
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """

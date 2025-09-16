@@ -331,6 +331,16 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("Listed splitQuery field after service returning java record")
+    void afterJavaServiceListed() {
+        assertGeneratedContentContains(
+                "afterJavaServiceListed", Set.of(CUSTOMER_TABLE),
+                "Map<Row1<Long>, Address> addressForCustomer(DSLContext ctx, Set<Row1<Long>> customerResolverKeys",
+                ".select(DSL.row(_address.ADDRESS_ID), DSL.row(_address"
+        );
+    }
+
+    @Test
     @DisplayName("Nested splitQuery field after service returning java record")
     void afterJavaServiceNested() {
         assertGeneratedContentContains(
