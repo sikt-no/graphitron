@@ -1,9 +1,11 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -16,8 +18,12 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
+import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_INTERNAL_ITERATION;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -123,20 +129,29 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isExceptionOrExceptionUnion(it))
-                .filter(f -> !(f.isResolver() && (processedSchema.isObject(f) || processedSchema.isInterface(f))))
-                .filter(it -> !implementations.stream().allMatch(impl -> isOverriddenField(overriddenFields, impl.getName(), it)))
+                .filter(it -> !implementations.stream()
+                        .allMatch(impl -> isOverriddenField(overriddenFields, impl.getName(), it)))
                 .forEach(allFields::add);
 
         implementations.forEach(impl ->
                 impl.getFields()
                         .stream()
-                        .filter(f -> !(f.isResolver() && processedSchema.isObject(f)))
                         .filter(f ->
                                 isOverriddenField(overriddenFields, impl.getName(), f)
                                 || allFields.stream().map(FieldSpecification::getName).noneMatch(it -> it.equals(f.getName())))
                         .forEach(allFields::add));
 
+
         var rowElements = new ArrayList<CodeBlock>();
+
+        getKeySetForResolverFields(allFields, processedSchema)
+                .forEach(key ->
+                        rowElements.add(
+                                CodeBlock.of("$L.as($S)",
+                                        getSelectKeyColumnRow(key.key(), context.getTargetTableName(), context.getTargetAlias()),
+                                        key.key().getName()))
+                );
+
         rowElements.add(CodeBlock.of("$L.$N.as($S)",
                 context.getTargetAlias(), processedSchema.getInterface(target).getDiscriminatorFieldName(), DISCRIMINATOR));
 
@@ -179,16 +194,17 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
         for (var implementation : implementations) {
             var overriddenFieldsForImpl = getOverriddenFieldsForImplementation(overriddenFields, implementation.getName());
-            var hasOverriddenFields = !overriddenFieldsForImpl.isEmpty();
-            var needInnerDataVariable = !returnInsideIfBlock && hasOverriddenFields;
+            var resolverFieldsForImpl = implementation.getFields().stream().filter(GenerationSourceField::isResolver).toList();
+            var needToManuallySetFields = !overriddenFieldsForImpl.isEmpty() || !resolverFieldsForImpl.isEmpty();
+            var needInnerDataVariable = !returnInsideIfBlock && needToManuallySetFields;
 
             var intoBlock = CodeBlock.of("$N.into($T.class)", VARIABLE_INTERNAL_ITERATION, implementation.getGraphClassName());
 
             mapping.addIf(!isFirst, "else ")
                     .beginControlFlow("if ($N.equals($S))", DISCRIMINATOR_VALUE, implementation.getDiscriminator())
-                    .addStatementIf(!hasOverriddenFields && returnInsideIfBlock, "return $L", intoBlock)
-                    .addStatementIf(!hasOverriddenFields && !returnInsideIfBlock, "$N = $L", DATA, intoBlock)
-                    .declareIf(hasOverriddenFields, innerVariableName, intoBlock);
+                    .addStatementIf(!needToManuallySetFields && returnInsideIfBlock, "return $L", intoBlock)
+                    .addStatementIf(!needToManuallySetFields && !returnInsideIfBlock, "$N = $L", DATA, intoBlock)
+                    .declareIf(needToManuallySetFields, innerVariableName, intoBlock);
 
             overriddenFieldsForImpl.forEach(
                     it -> {
@@ -201,8 +217,22 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                     }
             );
 
+            resolverFieldsForImpl.forEach(
+                    it -> {
+                        var key = findKeyForResolverField(it, processedSchema);
+                        mapping.add("$N$L",
+                                innerVariableName,
+                                (new MethodMapping(it.getName())).asSetKeyCall(
+                                        CodeBlock.of("$N.get($S, $T.class).valuesRow()",
+                                                VARIABLE_INTERNAL_ITERATION,
+                                                key.key().getName(),
+                                                key.getRecordTypeName(false)))
+                        );
+                    }
+            );
+
             mapping.addStatementIf(needInnerDataVariable, "$N = $N", DATA, INNER_DATA)
-                    .addStatementIf(returnInsideIfBlock && hasOverriddenFields, "return $N", innerVariableName)
+                    .addStatementIf(returnInsideIfBlock && needToManuallySetFields, "return $N", innerVariableName)
                     .endControlFlow();
             isFirst = false;
         }

@@ -5,12 +5,15 @@ extend type Query {
 interface AddressByPostalCode @table(name: "ADDRESS") @discriminate(on: "POSTAL_CODE") {
     mostSignificantAddressLine: String @field(name: "ADDRESS_")
     spokenLanguage: Language @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
+    city: City @splitQuery
 }
 
 type AddressInOneArea implements AddressByPostalCode & Node @node(typeId: "A_1", keyColumns: "ADDRESS_ID") @table(name: "ADDRESS") @discriminator(value: "22474") {
     id: ID!
     mostSignificantAddressLine: String @field(name: "ADDRESS_")
     spokenLanguage: Language @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
+    city: City @splitQuery
+    customers: [Customer] @splitQuery
 }
 
 type AddressInAnotherArea implements AddressByPostalCode & Node @node(typeId: "A_2") @table(name: "ADDRESS") @discriminator(value: "9668") {
@@ -18,4 +21,5 @@ type AddressInAnotherArea implements AddressByPostalCode & Node @node(typeId: "A
     spokenLanguage: Language @reference(path: [{condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "spokenLanguageForAddressByPostalCode"}}])
     mostSignificantAddressLine: String @field(name: "ADDRESS2")
     postalCode: String @field(name: "POSTAL_CODE")
+    city: City @splitQuery
 }

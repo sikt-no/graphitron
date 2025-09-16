@@ -1,0 +1,15 @@
+{
+    addressesByPostalCode(first: 2) {
+        nodes {
+            ... on AddressInOneArea {
+                id
+            }
+            ... on AddressInAnotherArea {
+                id
+            }
+            city {
+                id
+            }
+        }
+    }
+}

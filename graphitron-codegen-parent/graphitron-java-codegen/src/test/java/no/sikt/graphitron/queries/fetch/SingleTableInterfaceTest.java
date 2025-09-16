@@ -125,4 +125,25 @@ public class SingleTableInterfaceTest extends InterfaceTest {
 
         );
     }
+
+    @Test
+    @DisplayName("With splitQuery reference in interface")
+    void splitQueryReferenceInInterface() {
+        assertGeneratedContentContains("splitQueryReferenceInInterface",
+                "DSL.row(_address.ADDRESS_ID).as(\"address_pkey\")",
+                " _data.setCustomerKey(internal_it_.get(\"address_pkey\", Record1.class).valuesRow())"
+
+        );
+    }
+
+    @Test
+    @DisplayName("With splitQuery reference in type")
+    void splitQueryReferenceInType() {
+        assertGeneratedContentContains("splitQueryReferenceInType",
+                "DSL.row(_address.ADDRESS_ID).as(\"address_pkey\")",
+                "AddressInDistrictOne.class); _data.setCustomerKey(internal_it_.get(\"address_pkey\"",
+                "return internal_it_.into(AddressInDistrictTwo.class);"
+
+        );
+    }
 }
