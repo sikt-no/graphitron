@@ -4,7 +4,7 @@ type Query {
 
 type Customer @table{
     id: ID
-    staff: Staff @reference(references: [{table: "Address"}]) @tableMethod(service: {className: "no.sikt.graphitron.codereferences.services.StaffTableMethod", method: "staffTable"})
+    staff: Staff @reference(path: [{table: "Address"}]) @tableMethod(service: {className: "no.sikt.graphitron.codereferences.services.StaffTableMethod", method: "staffTable"})
 }
 
 type Staff @table{
