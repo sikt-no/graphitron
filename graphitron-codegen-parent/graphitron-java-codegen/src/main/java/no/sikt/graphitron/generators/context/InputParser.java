@@ -117,7 +117,7 @@ public class InputParser {
      * @return List of input names that the field specifies.
      */
     public List<String> getMethodInputNames() {
-        return methodInputs.keySet().stream().toList();
+        return new ArrayList<>(methodInputs.keySet());
     }
 
     /**
