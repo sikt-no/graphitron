@@ -3,6 +3,27 @@
 Graphitron schema transform is an integrated part of `graphitron-maven-plugin`, 
 providing GraphQL schema transformation capabilities.
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**
+
+- [Usage](#usage)
+- [Plugin Configuration Parameters](#plugin-configuration-parameters)
+- [Functionality](#functionality)
+  - [Feature Flag Transformation](#feature-flag-transformation)
+    - [How it Works](#how-it-works)
+    - [Multiple Feature Flags Handling](#multiple-feature-flags-handling)
+  - [Automatic Feature Directive Application](#automatic-feature-directive-application)
+  - [Schema Splitting](#schema-splitting)
+  - [Apollo Federation Support](#apollo-federation-support)
+    - [Tags](#tags)
+    - [Removing Federation Definitions](#removing-federation-definitions)
+  - [Relay Connection Expansion](#relay-connection-expansion)
+    - [Example Usage](#example-usage)
+    - [Customization](#customization)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Usage
 
 The transform functionality is available as the `transform` goal of the maven-plugin.

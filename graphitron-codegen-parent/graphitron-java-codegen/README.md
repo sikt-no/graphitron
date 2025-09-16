@@ -3,6 +3,10 @@ This is a code generation tool that implements GraphQL schemas by tying
 schemas to underlying database models. Graphitron creates complete or partial data fetcher implementations from GraphQL schemas
 using Java and [jOOQ](https://www.jooq.org/).
 
+<!-- START doctoc -->
+
+<!-- END doctoc -->
+
 ## Features
 * Generate the GraphQL code and database queries needed to resolve a GraphQL schema with a set of directives
   * In many cases, writing backend code can be skipped entirely!
