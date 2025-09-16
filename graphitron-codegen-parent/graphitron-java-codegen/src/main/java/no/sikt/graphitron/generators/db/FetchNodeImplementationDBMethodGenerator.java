@@ -25,6 +25,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStri
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VARIABLE_SELECT;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.RECORD2;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.SELECTION_SET;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
@@ -47,7 +48,8 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
         var implementation = getLocalObject();
         var implementationTableObject = implementation.getTable();
         if (implementationTableObject == null) {
-            throw new IllegalArgumentException(String.format("Type %s needs to have the @%s directive set to be able to implement interface %s", implementation.getName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName()));
+            addErrorMessageAndThrow("Type %s needs to have the @%s directive set to be able to implement interface %s",
+                    implementation.getName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName());
         }
 
         var virtualReference = new VirtualSourceField(getLocalObject(), target.getTypeName());

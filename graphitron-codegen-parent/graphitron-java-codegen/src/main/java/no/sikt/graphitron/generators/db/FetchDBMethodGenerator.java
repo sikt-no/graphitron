@@ -1043,7 +1043,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private static String getIndexName(OrderByEnumField enumField) {
         var indexName = enumField.getIndexName();
         if(indexName.isEmpty()) {
-            ValidationHandler.addErrorMessageAndThrow(String.format("No index name found on enumField %s", enumField.getName()));
+            ValidationHandler.addErrorMessageAndThrow("No index name found on enumField %s", enumField.getName());
         }
         return indexName.orElseThrow();
     }

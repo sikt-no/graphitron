@@ -11,30 +11,13 @@ public class ValidationHandler {
     private static final Set<String> warningMessages = new LinkedHashSet<>();
     private static final Logger LOGGER = LoggerFactory.getLogger(ValidationHandler.class);
 
-
-    /**
-     * Adds an error message that will be thrown at a later time
-     * @param errorMessage - A description of the error.
-     */
-    public static void addErrorMessage(String errorMessage) {
-        errorMessages.add(errorMessage);
-    }
-
     /**
      * Adds an error message that will be thrown at a later time
      * @param formatedErrorMessage - A formated description of the error.
      * @param args - The arguments for the formatedErrorMessage
      */
-    public static void addFormatedErrorMessage(String formatedErrorMessage, Object... args) {
+    public static void addErrorMessage(String formatedErrorMessage, Object... args) {
         errorMessages.add(String.format(formatedErrorMessage, args));
-    }
-
-    /**
-     * Adds a warning message that will be logged.
-     * @param warningMessage - A description of the warning
-     */
-    public static void addWarningMessage(String warningMessage) {
-        warningMessages.add(warningMessage);
     }
 
     /**
@@ -42,19 +25,8 @@ public class ValidationHandler {
      * @param formatedWarningMessage - A formated description of the warning
      * @param args - Arguments for the formatedWarningMessage
      */
-    public static void addFormatedWarningMessage(String formatedWarningMessage, Object... args) {
+    public static void addWarningMessage(String formatedWarningMessage, Object... args) {
         warningMessages.add(String.format(formatedWarningMessage, args));
-    }
-
-
-    /**
-     * Adds an error message and immediately throws an InvalidSchemaException for all added error messages.
-     * @param errorMessage - A description of the error.
-     */
-
-    public static void addErrorMessageAndThrow(String errorMessage){
-        addErrorMessage(errorMessage);
-        throw new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
     }
 
     /**
@@ -63,8 +35,12 @@ public class ValidationHandler {
      * @param args - The arguments referenced in the formatedErrorMessage
      */
     public static void addErrorMessageAndThrow(String formatedErrorMessage, Object... args) {
-        addFormatedErrorMessage(formatedErrorMessage, args);
+        addErrorMessage(formatedErrorMessage, args);
         throw new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
+    }
+
+    public static InvalidSchemaException getException() {
+        return new InvalidSchemaException("Problems have been found that prevent code generation: \n" + String.join("\n", errorMessages));
     }
 
     /**
