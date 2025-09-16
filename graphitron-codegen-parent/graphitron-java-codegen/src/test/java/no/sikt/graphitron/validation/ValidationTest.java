@@ -49,7 +49,7 @@ abstract public class ValidationTest extends GeneratorTest {
 
     protected void assertErrorsContain(Runnable f, String ... values) {
         assertThatThrownBy(f::run)
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContainingAll(values);
     }
 
@@ -59,7 +59,7 @@ abstract public class ValidationTest extends GeneratorTest {
 
     protected void assertErrorsContain(String file, Set<SchemaComponent> components, String ... values) {
         assertThatThrownBy(() -> getProcessedSchema(file, components))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContainingAll(values);
     }
 
@@ -67,12 +67,16 @@ abstract public class ValidationTest extends GeneratorTest {
     public void setup() {
         var logWatch = new ListAppender<ILoggingEvent>();
         logWatch.start();
-        ((Logger) LoggerFactory.getLogger(ProcessedDefinitionsValidator.class)).addAppender(logWatch);
+        ((Logger) LoggerFactory.getLogger(ValidationHandler.class)).addAppender(logWatch);
         this.logWatcher = logWatch;
+        ValidationHandler.resetErrorMessages();
+        ValidationHandler.resetWarningMessages();
     }
 
     @AfterEach
     public void teardown() {
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
+        ValidationHandler.resetErrorMessages();
+        ValidationHandler.resetWarningMessages();
     }
 }

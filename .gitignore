@@ -19,6 +19,9 @@ dist/
 # Local mise config
 .mise.local.toml
 
+# Local claude config
+CLAUDE.local.md
+
 /graphitron-example/graphitron-example-server/.approval_tests**
 /graphitron-codegen-parent/graphitron-java-codegen/src/test/java/no/sikt/graphitron/jooq/generated/**
 graphitron-example/graphitron-example-server/src/test/resources/approval/approvals/*.received.json

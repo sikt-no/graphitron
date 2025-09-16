@@ -1,10 +1,7 @@
 package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.InputField;
-import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.VirtualSourceField;
+import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
 import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
@@ -26,9 +23,9 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.apache.commons.lang3.Validate;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 
@@ -1015,9 +1012,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var orderByFieldToDBIndexName = orderByFieldEnum
                 .getFields()
                 .stream()
-                .collect(Collectors.toMap(AbstractField::getName, enumField -> enumField.getIndexName().orElseThrow()));
+                .collect(Collectors.toMap(AbstractField::getName, FetchDBMethodGenerator::getIndexName));
 
-        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> Validate.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
+        orderByFieldToDBIndexName.forEach((orderByField, indexName) -> ValidationHandler.isTrue(TableReflection.tableHasIndex(targetTableName, indexName),
                 "Table '%S' has no index '%S' necessary for sorting by '%s'", targetTableName, indexName, orderByField));
 
         var sortFieldMapEntries = orderByFieldToDBIndexName.entrySet()
@@ -1041,6 +1038,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         QUERY_HELPER.className, actualRefTable, sortFieldsMapBlock, orderInputFieldName, capitalize(GraphQLReservedName.ORDER_BY_FIELD.getName()), orderInputFieldName)
                 .unindent().unindent()
                 .build();
+    }
+
+    private static String getIndexName(OrderByEnumField enumField) {
+        var indexName = enumField.getIndexName();
+        if(indexName.isEmpty()) {
+            ValidationHandler.addErrorMessageAndThrow("No index name found on enumField %s", enumField.getName());
+        }
+        return indexName.orElseThrow();
     }
 
     @NotNull

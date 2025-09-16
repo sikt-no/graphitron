@@ -29,6 +29,7 @@ import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethod
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.getPrimaryKeyForTable;
 import static no.sikt.graphitron.mappings.TableReflection.getTableClass;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
@@ -78,7 +79,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         for (var implementation : implementations) {
             if (!implementation.hasTable()) {
-                throw new IllegalArgumentException(String.format("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName()));
+                addErrorMessageAndThrow("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName());
             }
             String typeName = implementation.getName();
             sortFieldQueryMethodCalls.add(getSortFieldsMethodName(target, implementation));

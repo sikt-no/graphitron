@@ -16,7 +16,7 @@ public class MultitableTest extends ValidationTest {
     @DisplayName("Interface returned in field has an implementing type with table missing primary key")
     void listedMultitableInterfaceNoPrimaryKey() {
         assertThatThrownBy(() -> generateFiles("listedNoPrimaryKey"))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(InvalidSchemaException.class)
                 .hasMessageContaining("Interface 'SomeInterface' is returned in field 'query', but implementing " +
                         "type 'PgUser' has table 'PG_USER' which does not have a primary key.");
     }

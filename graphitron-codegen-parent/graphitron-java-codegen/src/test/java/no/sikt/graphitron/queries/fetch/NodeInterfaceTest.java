@@ -4,6 +4,7 @@ import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
+import no.sikt.graphitron.validation.InvalidSchemaException;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
@@ -60,8 +61,8 @@ public class NodeInterfaceTest extends GeneratorTest {
     @DisplayName("Type implements interface but does not set table")
     void withoutTable() {
         assertThatThrownBy(() -> generateFiles("withoutTable"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage(String.format("Type Type needs to have the @%s directive set to be able to implement interface Node", GenerationDirective.TABLE.getName()));
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining(String.format("Type Type needs to have the @%s directive set to be able to implement interface Node", GenerationDirective.TABLE.getName()));
     }
 
     @Test

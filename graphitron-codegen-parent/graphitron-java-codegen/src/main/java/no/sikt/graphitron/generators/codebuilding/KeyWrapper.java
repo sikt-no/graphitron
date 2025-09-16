@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jooq.Key;
 import org.jooq.Typed;
@@ -19,6 +20,8 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessage;
+import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAndThrow;
 import static no.sikt.graphql.directives.GenerationDirective.SPLIT_QUERY;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
@@ -62,7 +65,7 @@ public record KeyWrapper(Key<?> key) {
         var keyFields = key.getFields();
 
         if (keyFields.size() > 22) {
-            throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
+            addErrorMessageAndThrow("Key '%s' has more than 22 fields, which is not supported.", key.getName());
         }
 
         var rowOrRecordClass = ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size()));
@@ -124,9 +127,11 @@ public record KeyWrapper(Key<?> key) {
             var targetTable = processedSchema.getRecordType(field).getTable().getName();
 
             return getPrimaryKeyForTable(targetTable)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to be referenced from a service.",
-                                    field.getContainerTypeName(), field.getName(), targetTable)));
+                    .orElseThrow(() -> {
+                        addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to be referenced from a service."
+                        , field.getContainerTypeName(), field.getName(), targetTable);
+                        return ValidationHandler.getException();
+                    });
         }
 
         var tableFromFieldType = processedSchema.isRecordType(field) ? processedSchema.getRecordType(field).getTable() : null;
@@ -136,9 +141,11 @@ public record KeyWrapper(Key<?> key) {
 
         if (GeneratorConfig.alwaysUsePrimaryKeyInSplitQueries() || processedSchema.isMultiTableField(field)) {
             return primaryKeyOptional
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",
-                                    field.getContainerTypeName(), field.getName(), previousTable.getName(), SPLIT_QUERY.getName())));
+                    .orElseThrow(() -> {
+                        addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in %s field.",
+                                field.getContainerTypeName(), field.getName(), previousTable.getName(), SPLIT_QUERY.getName());
+                        return ValidationHandler.getException();
+                    });
         }
 
         if (processedSchema.isScalar(field.getTypeName()) && !field.hasFieldReferences()) {
@@ -151,26 +158,42 @@ public record KeyWrapper(Key<?> key) {
                 foreignKeyName = firstRef.getKey().getName();
             } else if (firstRef.hasTableCondition() && implicitKey.isEmpty()) {
                 return primaryKeyOptional
-                        .orElseThrow(() -> new IllegalArgumentException(
-                                String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
-                                        field.getContainerTypeName(), field.getName(), previousTable.getName())));
+                        .orElseThrow(() -> {
+                            addErrorMessage(
+                                "Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table without a foreign key.",
+                                        field.getContainerTypeName(), field.getName(), previousTable.getName());
+                                return ValidationHandler.getException();
+                        });
             } else {
                 foreignKeyName = implicitKey.stream().findFirst()
-                        .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
+                        .orElseThrow(() -> {
+                            addErrorMessage("Cannot find implicit key for field '%s' in type '%s'.",
+                            field.getName(), field.getContainerTypeName());
+                            return ValidationHandler.getException();
+                        });
             }
         } else {
             foreignKeyName = findImplicitKey(previousTable.getName(), (tableFromFieldType != null ? tableFromFieldType : previousTable).getName())
-                    .orElseThrow(() -> new RuntimeException("Cannot find implicit key for field '" + field.getName() + "' in type '" + field.getContainerTypeName() + "'."));
+                    .orElseThrow(() -> {
+                        addErrorMessage("Cannot find implicit key for field '%s' in type '%s'.",
+                                field.getName(), field.getContainerTypeName());
+                        return ValidationHandler.getException();
+                    });
         }
 
         var foreignKey = getForeignKey(foreignKeyName)
-                .orElseThrow(() -> new RuntimeException("Cannot find key with name " + foreignKeyName));
+                .orElseThrow(() -> {
+                   addErrorMessage("Cannot find key with name %s", foreignKeyName);
+                   return ValidationHandler.getException();
+                });
 
         if (!foreignKey.getTable().getName().equalsIgnoreCase(previousTable.getName())) { // Reverse reference
             return primaryKeyOptional
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            String.format("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in a listed field.",
-                                    field.getContainerTypeName(), field.getName(), previousTable.getName())));
+                    .orElseThrow(() -> {
+                       addErrorMessage("Code generation failed for %s.%s as the table %s must have a primary key in order to reference another table in a listed field.",
+                               field.getContainerTypeName(), field.getName(), previousTable.getName());
+                       return ValidationHandler.getException();
+                    });
         }
         return foreignKey;
     }

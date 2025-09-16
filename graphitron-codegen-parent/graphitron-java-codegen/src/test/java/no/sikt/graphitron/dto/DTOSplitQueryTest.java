@@ -6,6 +6,7 @@ import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.dto.InterfaceDTOGenerator;
 import no.sikt.graphitron.generators.dto.TypeDTOGenerator;
 import no.sikt.graphitron.generators.dto.UnionDTOGenerator;
+import no.sikt.graphitron.validation.InvalidSchemaException;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -197,8 +198,8 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
     @DisplayName("Subtype field with splitQuery should throw error")
     void subtype() {
         assertThatThrownBy(() -> generateFiles("subtype"))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("Cannot find implicit key for field 'someType' in type 'VacationDestination'.");
+                .isInstanceOf(InvalidSchemaException.class)
+                .hasMessageContaining("Cannot find implicit key for field 'someType' in type 'VacationDestination'.");
     }
 
     @Test

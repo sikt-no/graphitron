@@ -4,9 +4,9 @@ import graphql.language.FieldDefinition;
 import graphql.language.IntValue;
 import no.sikt.graphitron.definitions.fields.containedtypes.FieldType;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 import no.sikt.graphql.naming.GraphQLReservedName;
-import org.apache.commons.lang3.Validate;
 
 import java.util.*;
 import java.util.function.Function;
@@ -50,9 +50,9 @@ public class ObjectField extends GenerationSourceField<FieldDefinition> {
         lookupKeys = nonReservedArguments.stream().filter(ArgumentField::isLookupKey).map(AbstractField::getName).collect(Collectors.toCollection(LinkedHashSet::new));
         hasLookupKey = !lookupKeys.isEmpty();
         argumentsByName = arguments.stream().collect(Collectors.toMap(AbstractField::getName, Function.identity(), (x, y) -> y, LinkedHashMap::new));
-        Validate.isTrue(!hasLookupKey || getOrderField().isEmpty(),
+        ValidationHandler.isTrue(!hasLookupKey || getOrderField().isEmpty(),
                 "'%s' has both @%s and @%s defined. These directives can not be used together", getName(), ORDER_BY.getName(), LOOKUP_KEY.getName());
-        Validate.isTrue(!hasLookupKey || !hasPagination(),
+        ValidationHandler.isTrue(!hasLookupKey || !hasPagination(),
                 "'%s' has both pagination and @%s defined. These can not be used together", getName(), LOOKUP_KEY.getName());
     }
 

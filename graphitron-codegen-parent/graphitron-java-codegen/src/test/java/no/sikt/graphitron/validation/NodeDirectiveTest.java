@@ -24,7 +24,7 @@ public class NodeDirectiveTest extends ValidationTest {
     @DisplayName("Node directive missing node interface")
     void notImplementingNode() {
         assertErrorsContain("notImplementingNode",
-                "Problems have been found that prevent code generation:\n" +
+                "Problems have been found that prevent code generation:",
                         "Type Customer has the node directive, but does not implement the Node interface."
         );
     }
@@ -33,7 +33,7 @@ public class NodeDirectiveTest extends ValidationTest {
     @DisplayName("Node directive missing table directive")
     void missingTable() {
         assertErrorsContain("missingTable",
-                "Problems have been found that prevent code generation:\n" +
+                "Problems have been found that prevent code generation:",
                         "Type Customer has the node directive, but is missing the table directive."
         );
     }
