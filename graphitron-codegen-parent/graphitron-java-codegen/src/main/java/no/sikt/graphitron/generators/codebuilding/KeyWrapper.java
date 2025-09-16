@@ -38,7 +38,7 @@ public record KeyWrapper(Key<?> key) {
      * @return Row TypeName of the key variable
      */
     public TypeName getRowTypeName(boolean asList) {
-        return getTypeName(false, asList);
+        return getTypeName(false, asList, true);
     }
 
     public TypeName getRowTypeName() {
@@ -51,20 +51,26 @@ public record KeyWrapper(Key<?> key) {
      * @return Record TypeName of the key variable
      */
     public TypeName getRecordTypeName() {
-        return getTypeName(true,false);
+        return getTypeName(true,false, true);
     }
 
-    private TypeName getTypeName(boolean asRecordType, boolean asList) {
+    public TypeName getRecordTypeName(boolean parameterized) {
+        return getTypeName(true,false, parameterized);
+    }
+
+    private TypeName getTypeName(boolean asRecordType, boolean asList, boolean parameterized) {
         var keyFields = key.getFields();
 
         if (keyFields.size() > 22) {
             throw new RuntimeException(String.format("Key '%s' has more than 22 fields, which is not supported.", key.getName()));
         }
-        var parameterized = ParameterizedTypeName.get(
-                ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size())),
-                keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new));
 
-        return asList ? ParameterizedTypeName.get(LIST.className, parameterized) : parameterized;
+        var rowOrRecordClass = ClassName.get("org.jooq", String.format("%s%d", asRecordType ? "Record" : "Row", keyFields.size()));
+        var maybeParameterized = parameterized
+                ? ParameterizedTypeName.get(rowOrRecordClass, keyFields.stream().map(Typed::getType).map(ClassName::get).toArray(ClassName[]::new))
+                : rowOrRecordClass;
+
+        return asList ? ParameterizedTypeName.get(LIST.className, maybeParameterized) : maybeParameterized;
     }
 
     /**
