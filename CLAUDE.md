@@ -1,101 +1,88 @@
 # Graphitron Project - Claude Code Reference
 
-## Project Overview
-Graphitron is a code generation tool that creates source code by linking GraphQL schemas to underlying database models. It's developed by Sikt – the Norwegian Agency for Shared Services in Education and Research.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Tech Stack
-- **Language**: Java
-- **Build Tool**: Maven
-- **Framework**: GraphQL code generation
-- **Database**: JOOQ for database interaction
-- **Testing**: JUnit
+## Project Overview
+Graphitron is a Maven-based code generation tool that creates Java source code by linking GraphQL schemas to underlying database models. It's developed by Sikt – the Norwegian Agency for Shared Services in Education and Research.
+
+## Technology Stack
+- **Language**: Java 17 with Jakarta EE 
+- **Build Tool**: Maven (multi-module project)
+- **GraphQL**: GraphQL Java 24.2 with Apollo Federation support
+- **Database**: jOOQ 3.19.18 for database access
+- **Testing**: JUnit 5 with AssertJ assertions
+- **Database**: PostgreSQL
+- **Example Server**: Quarkus framework
 
 ## Project Structure
 ```
 graphitron/
-├── graphitron-codegen-parent/     # Java code generation from GraphQL schemas
+├── graphitron-common/              # Shared utilities and exception handling
+├── graphitron-codegen-parent/      # Java code generation from GraphQL schemas
 │   ├── graphitron-java-codegen/   # Main code generator
 │   └── graphitron-javapoet/       # Java code generation utilities
-├── graphitron-common/             # Shared components
-├── graphitron-example/            # Example implementation
-├── graphitron-schema-transform/   # Schema transformation utilities
-├── graphitron-maven-plugin/       # Maven plugin integration
-└── graphitron-servlet-parent/     # Servlet support
+├── graphitron-maven-plugin/        # Maven plugin for code generation and schema transformation
+├── graphitron-schema-transform/    # GraphQL schema transformation (feature flags, Federation, Relay)
+├── graphitron-servlet-parent/      # Servlet implementations (javax and jakarta)
+└── graphitron-example/             # Complete working example using Sakila database
 ```
 
-## Key Components
+## Documentation
+- **Main README**: [/README.md](/README.md) - Project overview and getting started
+- **Example README**: [/graphitron-example/README.md](/graphitron-example/README.md) - Sakila example implementation
+- **Schema Transform README**: [/graphitron-schema-transform/README.md](/graphitron-schema-transform/README.md) - Schema transformation features
+- **Java Codegen README**: [/graphitron-codegen-parent/graphitron-java-codegen/README.md](/graphitron-codegen-parent/graphitron-java-codegen/README.md)
+- **JavaPoet README**: [/graphitron-codegen-parent/graphitron-javapoet/README.md](/graphitron-codegen-parent/graphitron-javapoet/README.md)
 
-### Validation System
-- **ValidationHandler** (`graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/validation/ValidationHandler.java`): Central validation handler for error and warning messages
-- **InvalidSchemaException**: Custom exception for schema validation errors
-- **ProcessedDefinitionsValidator**: Validates processed GraphQL definitions
+## Key Architecture
 
-### Current Branch: GG-253-validation
-Working on validation improvements with recent commits:
-- Added formatting functionality for error messages
-- Added documentation in ValidationHandler.java
-- Introduced new InvalidSchemaException
-- Removed unnecessary maven dependencies
+### Code Generation Process
+1. GraphQL schemas are processed and potentially transformed
+2. jOOQ generates Java classes from database schema
+3. Graphitron maven plugin generates resolvers linking GraphQL types to jOOQ classes
+4. Generated code integrates with servlet-based GraphQL servers
 
-## Build Commands
+### Maven Plugin Goals
+The graphitron-maven-plugin provides:
+- **generate-code**: Generate Java code from GraphQL schemas
+- **transform**: Transform schemas (Apollo Federation, Relay connections, feature flags)
+
+## Common Development Commands
+
 ```bash
-# Build the entire project
-mvn clean install
+mise r clean            # Clean all target directories
+mise r build-all        # Full build with install
+mise r start           # Start example server in dev mode (hot reload)
+mise r sakila          # Start example database (Sakila)
+mise r jooq            # Regenerate jOOQ classes from database
+mise r rebuild <module> # Rebuild specific module while server is running
 
-# Run tests
-mvn test
-
-# Build without tests
-mvn clean install -DskipTests
-
-# Generate code (from graphitron-example directory)
-mvn graphitron:generate-code
+# For quick builds without tests/javadocs, use Maven profiles:
+mvn clean install -Pquick
 ```
 
-## Testing
-- Test files located in `src/test/java` directories
-- Approval testing used in graphitron-example with `.approved.json` files
-- GraphQL test schemas in `src/test/resources`
-
-## Important Files
-- Main configuration: `pom.xml` files in each module
-- GraphQL schemas: `*.graphqls` files
-- Directives: `graphitron-common/src/main/resources/directives.graphqls`
+## Testing & Important Files
+- **Testing**: JUnit 5 with AssertJ, approval tests, Quarkus test framework, TestContainers
+- **Test locations**: `src/test/java` and `src/test/resources`
+- **Configuration**: `pom.xml` files in each module
+- **GraphQL schemas**: `*.graphqls` files
+- **Directives**: `graphitron-common/src/main/resources/directives.graphqls`
 
 ## Development Guidelines
-1. Follow existing code conventions and patterns
-2. Use the ValidationHandler for error/warning reporting
-3. Write tests for new functionality
-4. Document GraphQL schema changes
-
-## Useful Maven Commands for Development
-```bash
-# Clean all target directories
-mvn clean
-
-# Compile only
-mvn compile
-
-# Package the project
-mvn package
-
-# Install to local repository
-mvn install
-
-# Check for dependency updates
-mvn versions:display-dependency-updates
-
-# Generate dependency tree
-mvn dependency:tree
-```
+1. **Always check existing code patterns** in neighboring files before writing new code
+2. **Check pom.xml** before adding any dependencies - use what's already available
+3. **Write tests** using JUnit 5 and AssertJ for all new functionality
+4. **Follow the framework patterns** already established in the codebase
 
 ## Common Tasks
-- **Adding validation**: Use ValidationHandler.addErrorMessage() or addWarningMessage()
-- **Schema changes**: Update .graphqls files and regenerate code
-- **Testing GraphQL queries**: Add test cases in graphitron-example/src/test/resources
+- **Schema changes**: Update .graphqls files → run `mvn graphitron:generate-code`
+- **Database changes**: Update database → run `mise r jooq` to regenerate classes
+- **Unit tests**: Add test cases in `src/test/java` using JUnit 5 and AssertJ
+- **Integration tests**: Add GraphQL query tests in `graphitron-example/src/test/resources` (approval testing)
+- **Development server**: Use `mise r start` for hot reload with Quarkus
 
-## Notes
-- Project uses JOOQ for database record mapping
-- Supports both Java records and JOOQ records
-- Implements GraphQL Federation support
-- Has node ID strategies for GraphQL node interface implementation
+## Key Features
+- jOOQ for type-safe database access (supports Java records and jOOQ records)
+- Apollo Federation and Relay support for GraphQL
+- Schema transformation with feature flags
+- Both javax and jakarta servlet compatibility
