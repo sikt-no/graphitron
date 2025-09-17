@@ -44,15 +44,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(target, context);
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-
+        for (var alias: context.getAliasSet()) {
+            if (alias.hasTableMethod()){
+                createServiceDependency(alias.getReferenceObjectField());
+            }
+        }
         var querySource = context.renderQuerySource(getLocalTable());
-
         var refContext = target.isResolver() ? context.nextContext(target) : context;
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
-
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
-
         var orderFields = !LookupHelpers.lookupExists(target, processedSchema) && (target.isIterableWrapped() || target.hasForwardPagination() || !isRoot)
                 ? createOrderFieldsDeclarationBlock(target, actualRefTable, actualRefTableName)
                 : CodeBlock.empty();
@@ -60,7 +61,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var returnType = processedSchema.isRecordType(target)
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
+
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
+                .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet()))
                 .addCode(selectAliasesBlock)
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)

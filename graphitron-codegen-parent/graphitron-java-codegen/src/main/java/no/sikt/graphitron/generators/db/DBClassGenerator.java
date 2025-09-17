@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.configuration.CodeGenerationThresholds;
 import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -123,8 +124,11 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
     }
 
     protected void warnOrCrashIfMethodsExceedsBounds(TypeSpec typeSpec) {
+
+        CodeGenerationThresholds codeGenerationThresholds = GeneratorConfig.getCodeGenerationThresholds();
+        if (codeGenerationThresholds == null) return;
         var codeGenerationThresholdEvaluator = new CodeGenerationThresholdEvaluator(
-                GeneratorConfig.getCodeGenerationThresholds(),
+                codeGenerationThresholds,
                 typeSpec
         );
         var upperBoundMessages = codeGenerationThresholdEvaluator.getUpperBoundMessages();
