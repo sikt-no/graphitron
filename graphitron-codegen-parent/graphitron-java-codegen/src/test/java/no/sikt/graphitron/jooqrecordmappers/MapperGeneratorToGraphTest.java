@@ -168,4 +168,13 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
                 " if (select.contains(pathHere + \"address\")) {customer.setAddressKey(DSL.row(itCustomerRecord.getCustomerId()));}"
         );
     }
+
+    @Test
+    @DisplayName("SplitQuery list")
+    void withSplitQueryList() {
+        assertGeneratedContentContains("withSplitQueryList",
+                " if (select.contains(pathHere + \"customers\")) {customerPayload.setCustomersKey(customerPayloadRecord.stream().map(internal_it_ -> DSL.row(internal_it_.getCustomerId())).toList());}"
+        );
+    }
+
 }

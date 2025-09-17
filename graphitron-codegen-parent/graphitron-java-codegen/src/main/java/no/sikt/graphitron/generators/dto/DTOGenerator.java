@@ -2,7 +2,7 @@ package no.sikt.graphitron.generators.dto;
 
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
+import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.*;
@@ -13,12 +13,12 @@ import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY_DTO_SUFFIX;
+import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public abstract class DTOGenerator extends AbstractClassGenerator {
@@ -68,10 +68,14 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     var variableName = getDTOVariableNameForField(field);
                     var typeName = getTypeNameForField(field, key);
                     var setValue = field.isResolver() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
+                    RecordObjectSpecification<?> recordType = processedSchema.getRecordType(field.getContainerTypeName());
+                    boolean hasTable = recordType != null && !recordType.hasTable() && field.isResolver();
+                    boolean isList = field.isIterableWrapped() && hasTable;
+
                     allVariableNames.add(variableName);
 
                     addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
-                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver());
+                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), isList);
                     if (hasErrors) {
                         addConstructorFieldVariable(
                                 typeName,
@@ -79,7 +83,8 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                                 constructorNoErrorsBuilder,
                                 setValue,
                                 processedSchema.isExceptionOrExceptionUnion(field),
-                                field.isResolver()
+                                field.isResolver(),
+                                isList
                         );
                     }
                 });
@@ -120,9 +125,10 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                 .addMethod(getSetterMethod(fieldType, name));
     }
 
-    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver) {
+    private void addConstructorFieldVariable(TypeName fieldType, String name, MethodSpec.Builder constructorBuilder, String setValueInConstructor, boolean isError, boolean isResolver, boolean isList) {
         constructorBuilder
-                .addStatement("this.$N = $N", name, isError ? "null" : setValueInConstructor)
+                .addStatementIf(isList, "this.$N = $T.of($N)", name, LIST.className, isError ? "null" : setValueInConstructor)
+                .addStatementIf(!isList, "this.$N = $N", name, isError ? "null" : setValueInConstructor)
                 .addParameterIf(!isResolver && !isError, fieldType, name);
     }
 

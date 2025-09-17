@@ -61,7 +61,7 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void listedSplitQueryInNestedJavaRecord() {
         assertGeneratedContentContains(
                 "listedSplitQueryInNestedJooqRecord",
-                "customer.setAddressesKey(DSL.row(itCustomerRecord.getCustomerId()));"
+                "customer.setAddressesKey(customerRecord.stream().map(internal_it_ -> DSL.row(internal_it_.getCustomerId())).toList());"
         );
     }
 }

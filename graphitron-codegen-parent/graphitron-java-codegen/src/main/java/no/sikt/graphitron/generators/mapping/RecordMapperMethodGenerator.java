@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.ifNotNull;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
 public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     public RecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -52,8 +53,11 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             var previousHadSource = innerContext.getPreviousContext().hasSourceName();
 
             var innerCode = CodeBlock.builder();
-            if (innerField.isResolver()) {
-                innerCode.add(innerContext.getResolverKeySetMappingBlockForJooqRecord());
+            if (innerField.isResolver() && innerField.isIterableWrapped() && innerContext.hasTable()) {
+                innerCode.add(innerContext.getResolverKeySetMappingBlockForJavaRecord(uncapitalize(type.asRecordName())));
+            }
+            else if (innerField.isResolver()) {
+                    innerCode.add(innerContext.getResolverKeySetMappingBlockForJooqRecord());
             } else if (!isType) {
                 innerCode.add(innerContext.getFieldSetMappingBlock());
             } else if (!previousHadSource) {
