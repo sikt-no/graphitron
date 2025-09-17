@@ -1,8 +1,16 @@
-# query with orderby should return nodes in correct order
-query OrderingQuery ($orderBy: FilmsOrderByInput){
-    films(first: 2, orderBy: $orderBy) {
-        nodes {
-            id
+# Query with orderBy and optional after parameter for pagination
+# Tests ordering and pagination functionality
+query OrderingQuery ($orderBy: FilmsOrderByInput, $after: String){
+    films(first: 2, orderBy: $orderBy, after: $after) {
+        edges {
+            cursor
+            node {
+                id
+            }
+        }
+        pageInfo {
+            startCursor
+            endCursor
         }
     }
 }

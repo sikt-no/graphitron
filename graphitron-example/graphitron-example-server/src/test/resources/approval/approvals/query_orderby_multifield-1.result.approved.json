@@ -1,0 +1,42 @@
+{
+    "data": {
+        "inventories": {
+            "edges": [
+                {
+                    "cursor": "WzEsIDFd",
+                    "node": {
+                        "id": "SW52ZW50b3J5OjE"
+                    }
+                },
+                {
+                    "cursor": "WzEsIDFd",
+                    "node": {
+                        "id": "SW52ZW50b3J5OjI"
+                    }
+                },
+                {
+                    "cursor": "WzEsIDFd",
+                    "node": {
+                        "id": "SW52ZW50b3J5OjM"
+                    }
+                },
+                {
+                    "cursor": "WzEsIDFd",
+                    "node": {
+                        "id": "SW52ZW50b3J5OjQ"
+                    }
+                },
+                {
+                    "cursor": "WzEsIDRd",
+                    "node": {
+                        "id": "SW52ZW50b3J5OjE2"
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WzEsIDFd",
+                "endCursor": "WzEsIDRd"
+            }
+        }
+    }
+}

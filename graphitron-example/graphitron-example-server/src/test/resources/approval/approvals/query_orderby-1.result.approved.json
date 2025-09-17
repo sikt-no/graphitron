@@ -1,14 +1,24 @@
 {
     "data": {
         "films": {
-            "nodes": [
+            "edges": [
                 {
-                    "id": "RmlsbTox"
+                    "cursor": "WyJBQ0FERU1ZIERJTk9TQVVSIl0",
+                    "node": {
+                        "id": "RmlsbTox"
+                    }
                 },
                 {
-                    "id": "RmlsbToy"
+                    "cursor": "WyJBQ0UgR09MREZJTkdFUiJd",
+                    "node": {
+                        "id": "RmlsbToy"
+                    }
                 }
-            ]
+            ],
+            "pageInfo": {
+                "startCursor": "WyJBQ0FERU1ZIERJTk9TQVVSIl0",
+                "endCursor": "WyJBQ0UgR09MREZJTkdFUiJd"
+            }
         }
     }
 }

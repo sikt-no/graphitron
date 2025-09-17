@@ -1,0 +1,20 @@
+# Multi-field orderBy with and without after token should work correctly with seek pagination
+# The IDX_STORE_ID_FILM_ID index has TWO fields (store_id, film_id)
+query MultiFieldOrderBy($orderBy: InventoriesOrderByInput, $after: String) {
+    inventories(
+        first: 5,
+        orderBy: $orderBy,
+        after: $after
+    ) {
+        edges {
+            cursor
+            node {
+                id
+            }
+        }
+        pageInfo {
+            startCursor
+            endCursor
+        }
+    }
+}
