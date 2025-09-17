@@ -1,0 +1,24 @@
+{
+    "data": {
+        "films": {
+            "edges": [
+                {
+                    "cursor": "WyJBRkZBSVIgUFJFSlVESUNFIl0",
+                    "node": {
+                        "id": "RmlsbTo0"
+                    }
+                },
+                {
+                    "cursor": "WyJBRlJJQ0FOIEVHRyJd",
+                    "node": {
+                        "id": "RmlsbTo1"
+                    }
+                }
+            ],
+            "pageInfo": {
+                "startCursor": "WyJBRkZBSVIgUFJFSlVESUNFIl0",
+                "endCursor": "WyJBRlJJQ0FOIEVHRyJd"
+            }
+        }
+    }
+}

@@ -37,6 +37,8 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
+    
+    inventories(orderBy: InventoriesOrderByInput @orderBy): [Inventory] @asConnection
 }
 
 type Mutation {
@@ -173,6 +175,24 @@ input FilmCreateInput @table(name: "FILM") {
 enum FilmsOrderByFields {
     TITLE @index(name: "IDX_TITLE")
     LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
+}
+
+type Inventory implements Node @node @table {
+    id: ID!
+    inventoryId: Int! @field(name: "INVENTORY_ID")
+    filmId: Int! @field(name: "FILM_ID")
+    storeId: Int! @field(name: "STORE_ID")
+    film: Film
+    lastUpdate: LocalDateTime @field(name: "LAST_UPDATE")
+}
+
+input InventoriesOrderByInput {
+    orderByField: InventoriesOrderByFields!
+    direction: OrderDirection!
+}
+
+enum InventoriesOrderByFields {
+    STORE_ID_FILM_ID @index(name: "IDX_STORE_ID_FILM_ID")
 }
 
 enum OrderDirection {

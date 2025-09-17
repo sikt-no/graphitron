@@ -1,0 +1,26 @@
+[
+  {
+    "_comment": "Multi-field orderBy WITHOUT after token (ASC)",
+    "orderBy": {
+      "orderByField": "STORE_ID_FILM_ID",
+      "direction": "ASC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "Multi-field orderBy WITHOUT after token (DESC)",
+    "orderBy": {
+      "orderByField": "STORE_ID_FILM_ID",
+      "direction": "DESC"
+    },
+    "after": null
+  },
+  {
+    "_comment": "Multi-field orderBy WITH after token for pagination",
+    "orderBy": {
+      "orderByField": "STORE_ID_FILM_ID",
+      "direction": "ASC"
+    },
+    "after": "WzEsIDNd"
+  }
+]

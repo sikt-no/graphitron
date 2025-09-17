@@ -1,14 +1,26 @@
 [
   {
+    "_comment": "Single-field orderBy WITHOUT after token (ASC)",
     "orderBy": {
-      "orderByField": "LANGUAGE",
+      "orderByField": "TITLE",
       "direction": "ASC"
-    }
+    },
+    "after": null
   },
   {
+    "_comment": "Single-field orderBy WITHOUT after token (DESC)",
     "orderBy": {
       "orderByField": "TITLE",
       "direction": "DESC"
-    }
+    },
+    "after": null
+  },
+  {
+    "_comment": "Single-field orderBy WITH after token for pagination",
+    "orderBy": {
+      "orderByField": "TITLE",
+      "direction": "ASC"
+    },
+    "after": "WyJBREFQVEFUSU9OIEhPTEVTIl0"
   }
 ]
