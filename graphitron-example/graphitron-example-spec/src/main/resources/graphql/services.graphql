@@ -41,3 +41,17 @@ input CustomerInput @table(name: "CUSTOMER") {
     addressId: ID @nodeId(typeName: "Address") @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
     firstName: String @field(name: "FIRST_NAME")
 }
+
+extend type Mutation {
+    createCustomerEmail(input: [String!]!)
+    : CreateCustomerEmailPayload @service(
+        service: {
+            className: "no.sikt.graphitron.example.service.CustomerService",
+            method: "createCustomerEmail"
+        }
+    )
+}
+
+type CreateCustomerEmailPayload{
+    customers: [Customer!]! @splitQuery
+}

@@ -622,7 +622,7 @@ public class ProcessedSchema {
      * @return Is this an ordered multi-key query?
      */
     public boolean isOrderedMultiKeyQuery(GenerationField field) {
-        return field.isIterableWrapped() && field.isResolver() && hasJavaRecord(field.getContainerTypeName());
+        return field.isIterableWrapped() && field.isResolver() && (hasJavaRecord(field.getContainerTypeName()) || !getRecordType(field.getContainerTypeName()).hasTable());
     }
 
     /**

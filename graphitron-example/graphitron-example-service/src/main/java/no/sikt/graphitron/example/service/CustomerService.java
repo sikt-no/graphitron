@@ -4,6 +4,8 @@ import no.sikt.graphitron.example.generated.jooq.tables.records.CustomerRecord;
 import no.sikt.graphitron.example.service.records.HelloWorldInput;
 import org.jooq.DSLContext;
 
+import java.util.List;
+
 public class CustomerService {
     public CustomerService(DSLContext context) {
     }
@@ -26,4 +28,9 @@ public class CustomerService {
         customer.setFirstName(input.getName());
         return customer;
     }
+
+    public List<CustomerRecord> createCustomerEmail(List<String> input) {
+        return List.of();
+    }
+
 }

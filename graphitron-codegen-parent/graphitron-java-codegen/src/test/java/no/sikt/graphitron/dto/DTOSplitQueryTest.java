@@ -269,4 +269,15 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
                 "setAddressKey(List<Row1<Long>> addressKey) { this.addressKey = addressKey;"
         );
     }
+
+
+    @Test
+    @DisplayName("Listed resolver keys for java record")
+    void listedKeyInJavaRecordSplitQuery() {
+        assertGeneratedContentContains("listedKeyInJavaRecordSplitQuery",
+                "this.addressKey = List.of(address_pkey.valuesRow());",
+                "private List<Row1<Long>> addressKey;",
+                "setAddressKey(List<Row1<Long>> addressKey) { this.addressKey = addressKey;"
+        );
+    }
 }
