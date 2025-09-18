@@ -78,8 +78,30 @@ mvn clean install -Pquick
 - **Schema changes**: Update .graphqls files → run `mvn graphitron:generate-code`
 - **Database changes**: Update database → run `mise r jooq` to regenerate classes
 - **Unit tests**: Add test cases in `src/test/java` using JUnit 5 and AssertJ
-- **Integration tests**: Add GraphQL query tests in `graphitron-example/src/test/resources` (approval testing)
 - **Development server**: Use `mise r start` for hot reload with Quarkus
+
+## Integration Testing
+
+### Approval Testing Framework
+The example server uses approval testing for GraphQL queries:
+- **Test queries**: `graphitron-example-server/src/test/resources/approval/queries/*.graphql`
+- **Variables**: Optional `*.variables.json` for parameterized tests
+- **Approved results**: `graphitron-example-server/src/test/resources/approval/approvals/*.approved.json`
+- Tests automatically run all .graphql files found in queries directory
+
+### Adding Integration Tests
+1. Create a `.graphql` file in `queries/` directory
+2. (Optional) Add `*.variables.json` for parameterized tests with multiple test cases
+3. Run tests to generate approval file: `mvn test -pl :graphitron-example-server`
+4. Review and stage the generated `.approved.json` file
+
+### Example Schema (Sakila Database)
+Located in `graphitron-example-spec/src/main/resources/graphql/schema.graphqls`
+- Based on the Sakila sample database (DVD rental store)
+- Main tables: Film, Customer, Payment, Inventory, Staff, Language
+- Supports ordering via `@orderBy` directive with index specifications
+- Use `@asConnection` for Relay-style pagination
+- When adding new types: include `@table` directive and proper field mappings
 
 ## Key Features
 - jOOQ for type-safe database access (supports Java records and jOOQ records)
