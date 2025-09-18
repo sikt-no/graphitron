@@ -43,7 +43,7 @@ input CustomerInput @table(name: "CUSTOMER") {
 }
 
 extend type Mutation {
-    createCustomerEmail(input: [String!]!)
+    createCustomerEmail
     : CreateCustomerEmailPayload @service(
         service: {
             className: "no.sikt.graphitron.example.service.CustomerService",

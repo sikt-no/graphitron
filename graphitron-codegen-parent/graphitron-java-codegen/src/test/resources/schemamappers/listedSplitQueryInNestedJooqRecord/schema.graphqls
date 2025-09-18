@@ -1,12 +1,12 @@
 type Query {
-    query: Payload @service(service: {className: "MapperFetchService", method: "customerQuery"})
+    query: Payload @service(service: {className: "MapperFetchService", method: "cityQuery"})
 }
 
 type Payload {
-    customers: [Customer]
+    cities: [City]
 }
 
-type Customer @table {
+type City @table {
     addresses: [Address] @splitQuery
 }
 

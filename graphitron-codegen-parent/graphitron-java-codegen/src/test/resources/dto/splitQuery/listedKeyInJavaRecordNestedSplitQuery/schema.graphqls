@@ -1,0 +1,15 @@
+type MyJavaRecord @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
+    payload: Payload
+}
+
+type Payload {
+    result: Result
+}
+
+type Result {
+    address: [Address] @splitQuery
+}
+
+type Address @table {
+    id: ID
+}

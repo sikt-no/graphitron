@@ -1,5 +1,5 @@
 type Query {
-  customerQuery(in: [String!]!): CustomerPayload @service(service: {name: "MAPPER_FETCH_SERVICE"})
+  customerQuery: CustomerPayload @service(service: {name: "MAPPER_FETCH_SERVICE"})
 }
 
 type CustomerPayload {

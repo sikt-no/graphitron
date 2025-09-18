@@ -69,13 +69,12 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     var typeName = getTypeNameForField(field, key);
                     var setValue = field.isResolver() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
                     RecordObjectSpecification<?> recordType = processedSchema.getRecordType(field.getContainerTypeName());
-                    boolean hasTable = recordType != null && !recordType.hasTable() && field.isResolver();
-                    boolean isList = field.isIterableWrapped() && hasTable;
+                    boolean hasTable = recordType != null && !recordType.hasTable();
 
                     allVariableNames.add(variableName);
 
                     addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
-                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), isList);
+                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), hasTable && field.isIterableWrapped() && !processedSchema.isConnectionObject(field.getContainerTypeName()) && field.isResolver());
                     if (hasErrors) {
                         addConstructorFieldVariable(
                                 typeName,
@@ -84,7 +83,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                                 setValue,
                                 processedSchema.isExceptionOrExceptionUnion(field),
                                 field.isResolver(),
-                                isList
+                                hasTable && field.isResolver()
                         );
                     }
                 });

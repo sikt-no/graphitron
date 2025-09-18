@@ -114,4 +114,15 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
     void javaRecord() {
         assertGeneratedContentMatches("javaRecord");
     }
+
+
+    @Test
+    @DisplayName("Contains container listed")
+    void withContainerListed() {
+        assertGeneratedContentContains(
+                "withContainerListed",
+                "public CustomerContainerListed(List<Customer> customers) {this.customers = customers;}"
+        );
+    }
+
 }
