@@ -834,7 +834,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
         var field = condition.getInput();
         if (processedSchema.isNodeIdField(field)) {
-            return hasIdBlock(CodeBlock.of("$N", VARIABLE_INTERNAL_ITERATION), context.getReferenceObject(), context.getTargetAlias());
+            var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
+                    ? processedSchema.getRecordType(field.getNodeIdTypeName())
+                    : context.getReferenceObject();
+            return hasIdBlock(CodeBlock.of("$N", VARIABLE_INTERNAL_ITERATION), referenceObject, context.getTargetAlias());
         }
 
         if (!condition.hasRecord()) {

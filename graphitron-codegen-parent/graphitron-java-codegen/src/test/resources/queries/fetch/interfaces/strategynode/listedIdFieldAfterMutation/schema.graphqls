@@ -1,0 +1,11 @@
+type Query {
+    customer(in: [CustomerInput]): Output @mutation(typeName: DELETE)
+}
+
+type Output {
+    id: [ID] @field(name: "CUSTOMER_ID")
+}
+
+input CustomerInput @table(name: "Customer") {
+    id: ID @nodeId(typeName: "CustomerNode")
+}

@@ -68,6 +68,14 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("Querying a list of regular ID fields after mutation")
+    void listedIdFieldAfterMutation() {
+        assertGeneratedContentContains("listedIdFieldAfterMutation", Set.of(CUSTOMER_NODE),
+                "DSL.multiset(DSL.select(_customer.CUSTOMER_ID)"
+        );
+    }
+
+    @Test
     @DisplayName("Multiple fields")
     void manyFields() {
         assertGeneratedContentContains("manyFields", "_customer.FIRST_NAME", "_customer.LAST_NAME");
