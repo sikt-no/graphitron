@@ -43,6 +43,7 @@ public class ProviderTest extends GeneratorTest {
 
     @BeforeEach
     public void setup() {
+        super.setup();
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
     }
 

@@ -35,7 +35,8 @@ public class MapperGeneratorToRecordValidationTest extends GeneratorTest {
     }
 
     @BeforeEach
-    void before() {
+    public void setup() {
+        super.setup();
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
     }
 

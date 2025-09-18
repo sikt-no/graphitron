@@ -63,6 +63,7 @@ class DBClassGeneratorTest extends GeneratorTest {
 
     @BeforeEach
     public void setup() {
+        super.setup();
         var logWatch = new ListAppender<ILoggingEvent>();
         logWatch.start();
         ((Logger) LoggerFactory.getLogger(DBClassGenerator.class)).addAppender(logWatch);
@@ -71,6 +72,7 @@ class DBClassGeneratorTest extends GeneratorTest {
 
     @AfterEach
     public void teardown() {
+        super.teardown();
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
     }
 
