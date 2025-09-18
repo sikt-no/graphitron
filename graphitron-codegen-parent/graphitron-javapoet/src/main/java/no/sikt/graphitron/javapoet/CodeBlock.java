@@ -134,6 +134,10 @@ public final class CodeBlock {
         return empty();
     }
 
+    public static CodeBlock inlineIf(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
+        return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
+    }
+
     public static CodeBlock ofIf(boolean predicate, Supplier<CodeBlock> codeBlock) {
         if (predicate) {
             return codeBlock.get();

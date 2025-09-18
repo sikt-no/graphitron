@@ -29,6 +29,8 @@ import org.jooq.SelectJoinStep;
 import org.jooq.SelectSelectStep;
 import org.jooq.exception.DataAccessException;
 
+import java.util.stream.IntStream;
+
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 
 /**
@@ -104,7 +106,8 @@ public enum JavaPoetClassName {
     NODE_ID_STRATEGY(NodeIdStrategy.class),
     SELECT_JOIN_STEP(SelectJoinStep.class),
     SELECT_FIELD(SelectField.class),
-    SELECT_SELECT_STEP(SelectSelectStep.class);
+    SELECT_SELECT_STEP(SelectSelectStep.class),
+    INT_STREAM(IntStream.class);
 
     public final ClassName className;
 

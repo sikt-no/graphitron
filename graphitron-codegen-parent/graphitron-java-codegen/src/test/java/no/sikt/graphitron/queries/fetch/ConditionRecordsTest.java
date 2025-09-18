@@ -87,8 +87,8 @@ public class ConditionRecordsTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listInputJavaRecordAndFieldCondition", Set.of(STAFF, NAME_INPUT_JAVA),
                 "_staff.ACTIVE.eq(active)",
-                "_staff.FIRST_NAME,_staff.LAST_NAME).in(namesRecordList.stream().map(internal_it_ ->" +
-                        "DSL.row(DSL.inline(internal_it_.getFirstName()),DSL.inline(internal_it_.getLastName())",
+                "_staff.FIRST_NAME,_staff.LAST_NAME).in(IntStream.range(0, namesRecordList.size()).mapToObj(internal_it_ ->" +
+                        "DSL.row(DSL.val(namesRecordList.get(internal_it_).getFirstName()),DSL.val(namesRecordList.get(internal_it_).getLastName())",
                 ".nameList(_staff, namesRecordList)",
                 ".fieldWithListInput(_staff, namesRecordList, active)"
         );
@@ -123,8 +123,8 @@ public class ConditionRecordsTest extends GeneratorTest {
                 ".where(" +
                         "input3Record.getInputs2() != null && input3Record.getInputs2().size() > 0 ?" +
                         "DSL.row(DSL.trueCondition()).in(" +
-                                "input3Record.getInputs2().stream().map(internal_it_ ->" +
-                                        "DSL.row(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_staff, internal_it_.getInput1()))" +
+                                "IntStream.range(0, input3Record.getInputs2().size()).mapToObj(internal_it_ ->" +
+                                        "DSL.row(no.sikt.graphitron.codereferences.conditions.RecordStaffCondition.input1(_staff, input3Record.getInputs2().get(internal_it_).getInput1()))" +
                                 ").toList()" +
                         ") : DSL.noCondition()" +
                 ")" +

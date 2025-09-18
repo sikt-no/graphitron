@@ -4,5 +4,5 @@ type Query {
 
 input CustomerInput @table(name: "CUSTOMER") {
   id: ID!
-  first: String! @field(name: "FIRST_NAME")
+  first: String @field(name: "FIRST_NAME")
 }
