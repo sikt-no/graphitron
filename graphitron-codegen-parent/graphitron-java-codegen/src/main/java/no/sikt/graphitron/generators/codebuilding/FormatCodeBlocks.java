@@ -553,6 +553,15 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps the provided CodeBlock in a jOOQ val.
+     */
+    @NotNull
+    public static CodeBlock val(CodeBlock code) {
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.val($L)", DSL.className, code);
+    }
+
+
+    /**
      * @return Add appropriate indentation if this code has multiple lines.
      */
     @NotNull

@@ -175,8 +175,8 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     void listedInputJOOQRecord() {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord", Set.of(CUSTOMER_NODE, CUSTOMER_NODE_INPUT_TABLE),
-                ".where(inRecordList.size() > 0 ? DSL.row(DSL.trueCondition()).in(inRecordList.stream().map(internal_it_ ->" +
-                        "DSL.row(nodeIdStrategy.hasId(\"CustomerNode\", internal_it_, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))" +
+                ".where(inRecordList.size() > 0 ? DSL.row(DSL.trueCondition()).in(IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ ->" +
+                        "DSL.row(nodeIdStrategy.hasId(\"CustomerNode\", inRecordList.get(internal_it_), _customer.fields(_customer.getPrimaryKey().getFieldsArray())))" +
                         ").toList()) : DSL.noCondition()"
         );
     }

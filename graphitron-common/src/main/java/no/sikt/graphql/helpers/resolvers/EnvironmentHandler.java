@@ -11,6 +11,8 @@ import org.jooq.DSLContext;
 import org.jooq.Row;
 
 import java.util.*;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -54,9 +56,11 @@ public class EnvironmentHandler {
             throw new IllegalStateException("Can't find DSLContext");
         }
 
-        select = new SelectionSet(getSelectionSetsFromEnvironment(env));
-        connectionSelect = new ConnectionSelectionSet(getSelectionSetsFromEnvironment(env));
         arguments = flattenArgumentKeys(env.getArguments());
+        select = new SelectionSet(getSelectionSetsFromEnvironment(env));
+        select.setArgumentMap(env.getArguments());
+        select.setArgumentSet(flattenIndexedArgumentKeys(env.getArguments(), ""));
+        connectionSelect = new ConnectionSelectionSet(getSelectionSetsFromEnvironment(env));
         executionPath = env.getExecutionStepInfo().getPath().toString();
         dataloaderName = String.format("%s%sFor%s", tenantPrefix, capitalize(env.getField().getName()), env.getExecutionStepInfo().getObjectType().getName());
     }
@@ -140,5 +144,34 @@ public class EnvironmentHandler {
         }
 
         return result;
+    }
+
+    private static Set<String> flattenIndexedArgumentKeys(Map<String, Object> arguments, String path) {
+        var result = new HashSet<String>();
+        for (var arg : arguments.entrySet()) {
+            var key = arg.getKey();
+            var value = arg.getValue();
+            var nextPath = path.isEmpty() ? key : path + "/" + key;
+            result.add(nextPath);
+
+            if (value instanceof Map) {
+                result.addAll(flattenArgumentKeys((Map<String, Object>) value, nextPath));
+            }
+
+            if (value instanceof List<?> listValue) {
+                var first = listValue.stream().findFirst();
+                if (first.isPresent() && first.get() instanceof Map) {
+                    IntStream.range(0, listValue.size()).forEach(index -> {
+                        result.addAll(flattenArgumentKeys((Map<String, Object>) listValue.get(index), nextPath+"["+index+"]"));
+                    });
+                }
+            }
+        }
+
+        return result;
+    }
+
+    public Set<String> createArgumentSet(Map<String, Object> arguments, String path) {
+        return null;
     }
 }

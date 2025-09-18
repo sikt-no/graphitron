@@ -5,6 +5,7 @@ import graphql.schema.SelectedField;
 import org.jooq.Field;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -18,6 +19,8 @@ import static org.jooq.impl.DSL.noField;
 public class SelectionSet {
     protected final Set<String> selectionSet;
     private final String prefix;
+    private Map<String, Object> argumentMap;
+    private Set<String> argumentSet;
 
     public SelectionSet(List<DataFetchingFieldSelectionSet> selectionSets) {
         this.selectionSet = selectionSets.stream()
@@ -50,5 +53,21 @@ public class SelectionSet {
 
     public boolean contains(String path) {
         return selectionSet.stream().anyMatch(it -> it.contains(prefix + path));
+    }
+
+    public void setArgumentMap(Map<String, Object> argumentMap) {
+        this.argumentMap = argumentMap;
+    }
+
+    public Map<String, Object> getArgumentMap() {
+        return argumentMap;
+    }
+
+    public void setArgumentSet(Set<String> argumentSet) {
+        this.argumentSet = argumentSet;
+    }
+
+    public Set<String> getArgumentSet() {
+        return argumentSet;
     }
 }

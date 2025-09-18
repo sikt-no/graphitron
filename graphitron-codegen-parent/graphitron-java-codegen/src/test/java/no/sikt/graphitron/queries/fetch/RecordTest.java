@@ -57,7 +57,8 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
                 "DSL.row(DSL.trueCondition(), DSL.trueCondition()).in(" +
-                        "inRecordList.stream().map(internal_it_ -> DSL.row(_customer.hasId(internal_it_.getId()), _customer.hasId(internal_it_.getOtherID()))).toList()" +
+                        "IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> DSL.row(_customer.hasId(inRecordList.get(internal_it_).getId()),",
+                        "_customer.hasId(inRecordList.get(internal_it_).getOtherID())",
                         ") : DSL.noCondition()"
         );
     }
@@ -79,16 +80,23 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
-                "DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(" +
-                        "inRecordList.stream().map(internal_it_ -> DSL.row(_customer.hasId(internal_it_.getId()), DSL.inline(internal_it_.getFirstName()))).toList()" +
-                        ") : DSL.noCondition()"
+                """
+                        DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(
+                        IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> 
+                                DSL.row(
+                                	_customer.hasId(inRecordList.get(internal_it_).getId()),
+                                	select.getArgumentSet().contains("in[" + internal_it_ + "]/first") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _customer.FIRST_NAME
+                                )).toList()
+                            )
+                        : DSL.noCondition()
+                        """
         );
     }
 
     @Test // Special case where nesting path should not be used since the records are flat structures.
     @DisplayName("Listed input jOOQ records with an extra input type inside")
     void listedNestedInputJOOQRecord() {
-        assertGeneratedContentContains("listedNestedInputJOOQRecord", ".inline(internal_it_.getFirstName())");
+        assertGeneratedContentContains("listedNestedInputJOOQRecord", ".val(inRecordList.get(internal_it_).getFirstName())");
     }
 
     @Test
@@ -100,7 +108,9 @@ public class RecordTest extends GeneratorTest {
     @Test // Not sure if this is allowed.
     @DisplayName("Input type with an ID field annotated with @field without @nodeId")
     void fieldOverrideID() {
-        assertGeneratedContentContains("fieldOverrideID", "_payment.hasCustomerId(internal_it_.getCustomerId())", "_payment.hasPaymentId(internal_it_.getPaymentId())");
+        assertGeneratedContentContains("fieldOverrideID",
+                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/customerID\") ? _payment.hasCustomerId(inRecordList.get(internal_it_).getCustomerId()) : DSL.trueCondition()",
+                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/paymentID\") ? _payment.hasPaymentId(inRecordList.get(internal_it_).getPaymentId()) : DSL.trueCondition()");
     }
 
     @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.
