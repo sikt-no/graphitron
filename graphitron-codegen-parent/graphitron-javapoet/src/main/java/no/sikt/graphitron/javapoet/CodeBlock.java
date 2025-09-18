@@ -134,7 +134,7 @@ public final class CodeBlock {
         return empty();
     }
 
-    public static CodeBlock inlineIf(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
+    public static CodeBlock ofTernary(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
         return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
     }
 

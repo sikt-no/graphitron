@@ -82,7 +82,7 @@ public class RecordTest extends GeneratorTest {
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
                 """
                         DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(
-                        IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> 
+                        IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ ->
                                 DSL.row(
                                 	_customer.hasId(inRecordList.get(internal_it_).getId()),
                                 	select.getArgumentSet().contains("in[" + internal_it_ + "]/first") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _customer.FIRST_NAME

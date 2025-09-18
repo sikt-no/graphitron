@@ -22,7 +22,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.mappings.JavaPoetClassName;
 import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.naming.GraphQLReservedName;
@@ -776,19 +775,19 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                         condition.getSourceInput().getName() + "[" , VARIABLE_INTERNAL_ITERATION, "]/" + field.getName());
                 if (processedSchema.isNodeIdField(field)) {
                     if(field.isNullable()) {
-                        tupleVariableBlocks.add(CodeBlock.inlineIf(argumentSelect, unpacked, trueCondition()));
+                        tupleVariableBlocks.add(CodeBlock.ofTernary(argumentSelect, unpacked, trueCondition()));
                     } else {
                         tupleVariableBlocks.add(unpacked);
                     }
                 } else if (field.isID()) {
                     if(field.isNullable()) {
-                        tupleVariableBlocks.add(CodeBlock.inlineIf(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
+                        tupleVariableBlocks.add(CodeBlock.ofTernary(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
                     } else {
                         tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
                     }
                 } else {
                     if (field.isNullable()) {
-                        tupleVariableBlocks.add(CodeBlock.inlineIf(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
+                        tupleVariableBlocks.add(CodeBlock.ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
                     }else{
                         tupleVariableBlocks.add(val(unpacked));
                     }
