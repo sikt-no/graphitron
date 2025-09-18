@@ -50,11 +50,13 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
 
             var innerContext = context.iterateContext(innerField);
             var isType = innerContext.targetIsType();
-            var previousHadSource = innerContext.getPreviousContext().hasSourceName();
+            MapperContext previousContext = innerContext.getPreviousContext();
+            var previousHadSource = previousContext.hasSourceName();
 
             var innerCode = CodeBlock.builder();
             if (innerField.isResolver()) {
-                if (innerField.isIterableWrapped() && innerContext.hasTable()) {
+                if (innerContext.hasTable() && innerField.isIterableWrapped()
+                        && !previousContext.getTarget().isIterableWrapped()) {
                     innerCode.add(innerContext.getResolverKeySetMappingBlock(uncapitalize(type.asRecordName())));
                 } else {
                     innerCode.add(innerContext.getResolverKeySetMappingBlock());

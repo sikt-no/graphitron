@@ -26,7 +26,7 @@ public class RecordMapperClassGenerator extends AbstractMapperClassGenerator<Gen
     @Override
     protected boolean filterProperties(GenerationField field) {
         var type = processedSchema.getRecordType(field);
-        if (!type.hasTable() && !field.hasServiceReference() || type.hasJavaRecordReference()) {
+        if (!type.hasTable() && !field.hasServiceReference() || type.hasJavaRecordReference() || field.isResolver()) {
             return false;
         }
 
