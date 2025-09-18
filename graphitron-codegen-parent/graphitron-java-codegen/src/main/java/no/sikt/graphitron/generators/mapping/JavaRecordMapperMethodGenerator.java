@@ -58,7 +58,7 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                     innerCode.add(iterateRecords(innerContext));
                 }
             } else {
-                innerCode.add(innerContext.getResolverKeySetMappingBlockForJavaRecord(varName));
+                innerCode.add(innerContext.getResolverKeySetMappingBlock(varName));
             }
 
             if (!innerCode.isEmpty()) {

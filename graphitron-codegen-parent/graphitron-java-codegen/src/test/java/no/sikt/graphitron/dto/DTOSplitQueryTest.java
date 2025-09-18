@@ -272,9 +272,20 @@ public class DTOSplitQueryTest extends DTOGeneratorTest {
 
 
     @Test
-    @DisplayName("Listed resolver keys for java record")
+    @DisplayName("Listed resolver keys for java record with split query")
     void listedKeyInJavaRecordSplitQuery() {
         assertGeneratedContentContains("listedKeyInJavaRecordSplitQuery",
+                "this.addressKey = List.of(address_pkey.valuesRow());",
+                "private List<Row1<Long>> addressKey;",
+                "setAddressKey(List<Row1<Long>> addressKey) { this.addressKey = addressKey;"
+        );
+    }
+
+    @Test
+    @DisplayName("Listed resolver keys for java record with nested split query")
+    void listedKeyInJavaRecordSplitQueryNested() {
+        assertGeneratedContentContains("listedKeyInJavaRecordNestedSplitQuery",
+                "public Payload(Result result) {this.result = result;}",
                 "this.addressKey = List.of(address_pkey.valuesRow());",
                 "private List<Row1<Long>> addressKey;",
                 "setAddressKey(List<Row1<Long>> addressKey) { this.addressKey = addressKey;"

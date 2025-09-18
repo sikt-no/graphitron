@@ -29,8 +29,18 @@ public class CustomerService {
         return customer;
     }
 
-    public List<CustomerRecord> createCustomerEmail(List<String> input) {
-        return List.of();
+    public List<CustomerRecord> createCustomerEmail() {
+        return List.of(
+                createCustomer(4, "HARDCODED_FIRSTNAME_1", "HARDCODED_LASTNAME_1", "HARDCODED_EMAIL_1"),
+                createCustomer(2, "HARDCODED_FIRSTNAME_2", "HARDCODED_LASTNAME_2", "HARDCODED_EMAIL_2"),
+                createCustomer(3, "HARDCODED_FIRSTNAME_3", "HARDCODED_LASTNAME_3", "HARDCODED_EMAIL_3")
+        );
+    }
+
+    private CustomerRecord createCustomer(int id, String firstName, String lastName, String email) {
+        return new CustomerRecord(
+                id, null, firstName, lastName, email, null, null, null, null, null
+        );
     }
 
 }
