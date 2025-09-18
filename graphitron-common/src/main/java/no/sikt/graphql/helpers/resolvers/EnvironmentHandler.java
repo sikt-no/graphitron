@@ -11,7 +11,6 @@ import org.jooq.Row;
 
 import java.util.*;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
@@ -42,7 +41,6 @@ public class EnvironmentHandler {
 
         arguments = flattenArgumentKeys(env.getArguments());
         select = new SelectionSet(getSelectionSetsFromEnvironment(env));
-        select.setArgumentMap(env.getArguments());
         select.setArgumentSet(flattenIndexedArgumentKeys(env.getArguments(), ""));
         connectionSelect = new ConnectionSelectionSet(getSelectionSetsFromEnvironment(env));
         executionPath = env.getExecutionStepInfo().getPath().toString();

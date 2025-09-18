@@ -55,14 +55,6 @@ public class SelectionSet {
         return selectionSet.stream().anyMatch(it -> it.contains(prefix + path));
     }
 
-    public void setArgumentMap(Map<String, Object> argumentMap) {
-        this.argumentMap = argumentMap;
-    }
-
-    public Map<String, Object> getArgumentMap() {
-        return argumentMap;
-    }
-
     public void setArgumentSet(Set<String> argumentSet) {
         this.argumentSet = argumentSet;
     }
