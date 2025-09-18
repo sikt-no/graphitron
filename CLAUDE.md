@@ -93,7 +93,7 @@ The example server uses approval testing for GraphQL queries:
 1. Create a `.graphql` file in `queries/` directory
 2. (Optional) Add `*.variables.json` for parameterized tests with multiple test cases
 3. Run tests to generate approval file: `mvn test -pl :graphitron-example-server`
-4. Review and commit the generated `.approved.json` file
+4. Review and stage the generated `.approved.json` file
 
 ### Example Schema (Sakila Database)
 Located in `graphitron-example-spec/src/main/resources/graphql/schema.graphqls`
