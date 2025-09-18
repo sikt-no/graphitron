@@ -61,7 +61,15 @@ public class MapperGeneratorToGraphTest extends GeneratorTest {
     void listedSplitQueryInNestedJavaRecord() {
         assertGeneratedContentContains(
                 "listedSplitQueryInNestedJooqRecord",
-                "customers.setAddressesKey(customerRecord.stream().map(internal_it_ -> DSL.row(internal_it_.getCustomerId())).toList());"
+                " city.setAddressesKey(DSL.row(itCityRecord.getCityId()));"
         );
+    }
+
+    @Test
+    @DisplayName("idk")
+    void idk() {
+        var generatedFiles = generateFiles("idk");
+        contains(generatedFiles, "payload.setCitiesKey(payloadRecord.stream().map(internal_it_ -> DSL.row(internal_it_.getCityId())).toList());");
+        doesNotContain(generatedFiles, "class CityTypeMapper");
     }
 }
