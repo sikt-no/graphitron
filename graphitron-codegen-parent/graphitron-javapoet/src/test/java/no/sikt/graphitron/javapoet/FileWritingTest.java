@@ -101,7 +101,7 @@ public final class FileWritingTest {
     }
 
     @Test
-    public void testWriteDouble() throws IOException {
+    public void testFileNotRewrittenWhenContentUnchanged() throws IOException {
         TypeSpec type = TypeSpec.classBuilder("Test").build();
         JavaFile file = JavaFile.builder("", type).build();
         file.writeTo(tmp.getRoot());
