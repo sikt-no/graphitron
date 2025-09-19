@@ -2,9 +2,10 @@ package no.sikt.graphql.helpers.resolvers;
 
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
+import no.sikt.graphql.GraphitronContext;
+import no.sikt.graphql.MultitenantGraphitronContext;
 import no.sikt.graphql.helpers.selection.ConnectionSelectionSet;
 import no.sikt.graphql.helpers.selection.SelectionSet;
-import no.sikt.graphql.naming.LocalContextNames;
 import org.dataloader.BatchLoaderEnvironment;
 import org.jooq.DSLContext;
 import org.jooq.Row;
@@ -28,21 +29,36 @@ public class EnvironmentHandler {
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
-        if (false) { // Disabled until everything uses context as a map.
-            localContext = Optional.of((Map<String, Object>) env.getLocalContext()).orElse(new HashMap<>());
-            dslContext = (DSLContext) localContext.get(LocalContextNames.DSL_CONTEXT.getName());  // Must exist.
-            nextKeys = Optional.of((Map<String, Map<String, Row>>) localContext.get(LocalContextNames.NEXT_KEYS.getName())).orElse(Map.of());
-        } else {
+        String tenantPrefix = "";
+
+        if (env.getGraphQlContext().hasKey("graphitronContext")) {
+            Object graphitronContext = env.getGraphQlContext().get("graphitronContext");
+            if (graphitronContext instanceof GraphitronContext c) {
+                localContext = new HashMap<>();
+                dslContext = c.getDslContext();
+                nextKeys = Map.of();
+            } else if (graphitronContext instanceof MultitenantGraphitronContext c) {
+                Object lc = env.getLocalContext();
+                tenantPrefix = c.getTenantId(lc) + ":";
+                dslContext = c.getDslContext(lc);
+                localContext = new HashMap<>();
+                nextKeys = Map.of();
+            } else {
+                throw new IllegalStateException("Unsupported type of graphitronContext: " + graphitronContext.getClass().getName());
+            }
+        } else if (env.getLocalContext() instanceof DSLContext ctx) {
             localContext = new HashMap<>();
-            dslContext = env.getLocalContext();
+            dslContext = ctx;
             nextKeys = Map.of();
+        } else {
+            throw new IllegalStateException("Can't find DSLContext");
         }
 
         select = new SelectionSet(getSelectionSetsFromEnvironment(env));
         connectionSelect = new ConnectionSelectionSet(getSelectionSetsFromEnvironment(env));
         arguments = flattenArgumentKeys(env.getArguments());
         executionPath = env.getExecutionStepInfo().getPath().toString();
-        dataloaderName = String.format("%sFor%s", capitalize(env.getField().getName()), env.getExecutionStepInfo().getObjectType().getName());
+        dataloaderName = String.format("%s%sFor%s", tenantPrefix, capitalize(env.getField().getName()), env.getExecutionStepInfo().getObjectType().getName());
     }
 
     public DataFetchingEnvironment getEnv() {
