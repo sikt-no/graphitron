@@ -1,3 +1,6 @@
+type Query  {
+    vacationDestination: VacationDestination @notGenerated
+}
 type VacationDestination @table(name: "VACATION_DESTINATION") {
     customers: [CustomerTable] @splitQuery @reference(path: [{condition: {name: "DUMMY_CONDITION"}, table: "CUSTOMER"}])
 }

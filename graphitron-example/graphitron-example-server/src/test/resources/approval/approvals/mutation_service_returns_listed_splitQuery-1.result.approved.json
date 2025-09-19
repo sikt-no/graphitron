@@ -1,0 +1,20 @@
+{
+    "data": {
+        "createCustomerEmail": {
+            "customers": [
+                {
+                    "id": "Q3VzdG9tZXI6NA",
+                    "email": "BARBARA.JONES@sakilacustomer.org"
+                },
+                {
+                    "id": "Q3VzdG9tZXI6Mg",
+                    "email": "PATRICIA.JOHNSON@sakilacustomer.org"
+                },
+                {
+                    "id": "Q3VzdG9tZXI6Mw",
+                    "email": "LINDA.WILLIAMS@sakilacustomer.org"
+                }
+            ]
+        }
+    }
+}

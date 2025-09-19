@@ -1,3 +1,7 @@
+type Query  {
+    city: City @notGenerated
+}
+
 type City @table {
     addresses: [AddressByDistrict] @splitQuery
 }

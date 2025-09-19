@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.dto;
 
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.*;
@@ -68,13 +67,12 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                     var variableName = getDTOVariableNameForField(field);
                     var typeName = getTypeNameForField(field, key);
                     var setValue = field.isResolver() ? key.getDTOVariableName() + ".valuesRow()" : field.getName();
-                    RecordObjectSpecification<?> recordType = processedSchema.getRecordType(field.getContainerTypeName());
-                    boolean hasTable = recordType != null && !recordType.hasTable();
 
                     allVariableNames.add(variableName);
 
                     addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
-                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), hasTable && field.isIterableWrapped() && !processedSchema.isConnectionObject(field.getContainerTypeName()) && field.isResolver());
+                    boolean shouldWrapAsList = processedSchema.isOrderedMultiKeyQuery(field);
+                    addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), shouldWrapAsList);
                     if (hasErrors) {
                         addConstructorFieldVariable(
                                 typeName,
@@ -83,7 +81,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                                 setValue,
                                 processedSchema.isExceptionOrExceptionUnion(field),
                                 field.isResolver(),
-                                hasTable && field.isResolver()
+                                shouldWrapAsList
                         );
                     }
                 });
