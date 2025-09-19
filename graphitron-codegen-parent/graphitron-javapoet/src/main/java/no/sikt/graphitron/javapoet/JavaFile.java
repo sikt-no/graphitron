@@ -22,23 +22,16 @@ import javax.lang.model.element.Element;
 import javax.tools.JavaFileObject;
 import javax.tools.JavaFileObject.Kind;
 import javax.tools.SimpleJavaFileObject;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
+import java.io.*;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.security.DigestInputStream;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static no.sikt.graphitron.javapoet.Util.checkArgument;
@@ -157,20 +150,55 @@ public final class JavaFile {
     public Path writeToPath(Path directory, Charset charset) throws IOException {
         checkArgument(Files.notExists(directory) || Files.isDirectory(directory),
                 "path %s exists but is not a directory.", directory);
-        Path outputDirectory = directory;
+        var outputDirectory = directory;
         if (!packageName.isEmpty()) {
             for (String packageComponent : packageName.split("\\.")) {
                 outputDirectory = outputDirectory.resolve(packageComponent);
             }
-            Files.createDirectories(outputDirectory);
         }
 
         Path outputPath = outputDirectory.resolve(typeSpec.name() + ".java");
-        try (Writer writer = new OutputStreamWriter(Files.newOutputStream(outputPath), charset)) {
-            writeTo(writer);
+        var existing = hashExistingFile(outputPath);
+        if (existing.isPresent()) {
+            if (!existing.get().equals(sha256())) {
+                writeJavaFile(charset, outputDirectory, outputPath);
+            }
+        } else {
+            writeJavaFile(charset, outputDirectory, outputPath);
         }
 
         return outputPath;
+    }
+
+    private void writeJavaFile(Charset charset, Path outputDirectory, Path outputPath) throws IOException {
+        Files.createDirectories(outputDirectory);
+        if (!packageName.isEmpty()) {
+            var directory = outputDirectory;
+            for (String packageComponent : packageName.split("\\.")) {
+                directory = outputDirectory.resolve(packageComponent);
+            }
+            Files.createDirectories(directory);
+        }
+
+        try (Writer writer = Files.newBufferedWriter(outputPath, charset)) {
+            writeTo(writer);
+        }
+    }
+
+    static Optional<String> hashExistingFile(Path outputPath) throws IOException {
+        if (Files.exists(outputPath)) {
+            try {
+                var digest = MessageDigest.getInstance("SHA-256");
+                try (var stream = new DigestInputStream(Files.newInputStream(outputPath), digest)) {
+                    stream.transferTo(OutputStream.nullOutputStream()); //We need to read the file fully
+                }
+                return Optional.of(HexFormat.of().formatHex(digest.digest()));
+
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -194,8 +222,8 @@ public final class JavaFile {
      */
     public void writeTo(Filer filer) throws IOException {
         String fileName = packageName.isEmpty()
-                          ? typeSpec.name()
-                          : packageName + "." + typeSpec.name();
+                ? typeSpec.name()
+                : packageName + "." + typeSpec.name();
         List<Element> originatingElements = typeSpec.originatingElements();
         JavaFileObject filerSourceFile = filer.createSourceFile(fileName,
                 originatingElements.toArray(new Element[originatingElements.size()]));
@@ -280,10 +308,26 @@ public final class JavaFile {
         }
     }
 
+    //package visible for testing
+    String sha256() {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            //We need to write the stream fully, but we ignore the actual bytes
+            try (var result = new OutputStreamWriter(new DigestOutputStream(OutputStream.nullOutputStream(), digest))) {
+                writeTo(result);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException e) {
+            throw new AssertionError();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public JavaFileObject toJavaFileObject() {
         URI uri = URI.create((packageName.isEmpty()
-                              ? typeSpec.name()
-                              : packageName.replace('.', '/') + '/' + typeSpec.name())
+                ? typeSpec.name()
+                : packageName.replace('.', '/') + '/' + typeSpec.name())
                 + Kind.SOURCE.extension);
         return new SimpleJavaFileObject(uri, Kind.SOURCE) {
             private final long lastModified = System.currentTimeMillis();
