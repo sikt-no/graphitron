@@ -527,7 +527,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var content = CodeBlock.of(
-                "$L.$N$L",
+                "nvl($L.$N$L, 1)",
                 renderedSource,
                 field.getUpperCaseName(),
                 overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
@@ -825,7 +825,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .indent()
                 .indent()
                 .add("$T.range(0, $N.size()).mapToObj($N ->\n", INT_STREAM.className, argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
-                //.add("$N.stream().map($L ->\n", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
                 .indent()
                 .indent()
                 .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
@@ -845,6 +844,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return trueCondition();
         }
 
+        if(TableReflection.fieldIsNullable(context.getCurrentJoinSequence().getLast().getTable().getName(), field.getName()).orElse(false)) {
+            return CodeBlock.join(
+                    generateForField(field, context, hasRecord),
+                    CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className)
+            );
+        }
         return CodeBlock.join(
                 generateForField(field, context, hasRecord),
                 CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className)
