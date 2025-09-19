@@ -172,14 +172,6 @@ public final class JavaFile {
 
     private void writeJavaFile(Charset charset, Path outputDirectory, Path outputPath) throws IOException {
         Files.createDirectories(outputDirectory);
-        if (!packageName.isEmpty()) {
-            var directory = outputDirectory;
-            for (String packageComponent : packageName.split("\\.")) {
-                directory = outputDirectory.resolve(packageComponent);
-            }
-            Files.createDirectories(directory);
-        }
-
         try (Writer writer = Files.newBufferedWriter(outputPath, charset)) {
             writeTo(writer);
         }
