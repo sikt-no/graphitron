@@ -25,6 +25,15 @@ public class NodeIdInputTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Type provided in jOOQ record input field does not exist")
+    void typeDoesNotExistInJooqRecordInput() {
+        assertErrorsContain(
+                () -> getProcessedSchema("typeDoesNotExistInJooqRecordInput", Set.of(CUSTOMER_NODE)),
+                "Type with name 'DoesNotExist' referenced in the nodeId directive for field CustomerInput.someId does not exist."
+        );
+    }
+
+    @Test
     @DisplayName("Type does not have the @node directive")
     void typeDoesNotHaveNodeDirective() {
         assertErrorsContain(

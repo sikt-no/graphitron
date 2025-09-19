@@ -244,6 +244,7 @@ public class ProcessedDefinitionsValidator {
                         jooqRecordInput.getFields()
                                 .stream()
                                 .filter(FieldSpecification::hasNodeID)
+                                .filter(it -> schema.isObject(it.getNodeIdTypeName())) // This is validated in checkNodeId
                                 .filter(it -> !schema.getRecordType(it.getNodeIdTypeName()).getTable().equals(jooqRecordInput.getTable()))
                                 .forEach(field -> {
                                     var foreignKeyOptional = getForeignKeyForNodeIdReference(field, schema);

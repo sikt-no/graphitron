@@ -1,0 +1,8 @@
+type Query {
+  query(input: CustomerInput): CustomerNode
+}
+
+
+input CustomerInput @table(name: "CUSTOMER") {
+    someId: ID @nodeId(typeName: "DoesNotExist")
+}
