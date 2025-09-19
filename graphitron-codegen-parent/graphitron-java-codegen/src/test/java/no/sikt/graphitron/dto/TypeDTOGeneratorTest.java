@@ -117,10 +117,10 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
 
 
     @Test
-    @DisplayName("Contains container listed")
-    void withContainerListed() {
+    @DisplayName("Type with listed field referencing another DTO")
+    void dtoFieldListed() {
         assertGeneratedContentContains(
-                "withContainerListed",
+                "dtoFieldListed",
                 "public CustomerContainerListed(List<Customer> customers) {this.customers = customers;}"
         );
     }
