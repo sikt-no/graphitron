@@ -55,10 +55,10 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
 
             var innerCode = CodeBlock.builder();
             if (innerField.isResolver()) {
-                if (processedSchema.isOrderedMultiKeyQuery(field)) {
+                if (processedSchema.isOrderedMultiKeyQuery(innerField)) {
                     innerCode.add(innerContext.getResolverKeySetMappingBlock(uncapitalize(type.asRecordName())));
                 } else {
-                    innerCode.add(innerContext.getResolverKeySetMappingBlock());
+                    innerCode.add(innerContext.getResolverKeySetMappingBlockForJooqRecord());
                 }
             } else if (!isType) {
                 innerCode.add(innerContext.getFieldSetMappingBlock());

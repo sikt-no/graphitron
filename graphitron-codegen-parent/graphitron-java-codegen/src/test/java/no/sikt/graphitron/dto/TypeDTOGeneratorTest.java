@@ -115,7 +115,6 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
         assertGeneratedContentMatches("javaRecord");
     }
 
-
     @Test
     @DisplayName("Type with listed field referencing another DTO")
     void dtoFieldListed() {

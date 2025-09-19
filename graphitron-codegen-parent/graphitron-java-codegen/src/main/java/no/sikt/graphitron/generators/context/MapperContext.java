@@ -388,7 +388,7 @@ public class MapperContext {
         return getSetMappingBlock(applyEnumConversion(target.getTypeName(), getSourceGetCallBlock()));
     }
 
-    public CodeBlock getResolverKeySetMappingBlock() {
+    public CodeBlock getResolverKeySetMappingBlockForJooqRecord() {
         return getResolverKeySetMappingBlock(asIterableIf(previousContext.sourceName, previousContext.isIterable), false);
     }
 
