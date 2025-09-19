@@ -18,10 +18,10 @@ public class CodeGenerationThresholdEvaluator {
     private final static Pattern SELECT_PATTERN = Pattern.compile("\\.select\\(");
 
     public CodeGenerationThresholdEvaluator(CodeGenerationThresholds thresholds, TypeSpec typeSpec) {
-        this.upperBoundLinesOfCode = thresholds.getUpperBoundLinesOfCode();
-        this.upperBoundNestingDepth = thresholds.getUpperBoundNestingDepth();
-        this.crashPointLinesOfCode = thresholds.getCrashPointLinesOfCode();
-        this.crashPointNestingDepth = thresholds.getCrashPointNestingDepth();
+        this.upperBoundLinesOfCode = thresholds == null ? null : thresholds.getUpperBoundLinesOfCode();
+        this.upperBoundNestingDepth = thresholds == null ? null : thresholds.getUpperBoundNestingDepth();
+        this.crashPointLinesOfCode = thresholds == null ? null : thresholds.getCrashPointLinesOfCode();
+        this.crashPointNestingDepth = thresholds == null ? null : thresholds.getCrashPointNestingDepth();
 
         typeSpec.methodSpecs().forEach(method -> {
             addMessageIfMethodExceedsNestingDepthBounds(method, typeSpec.name());
