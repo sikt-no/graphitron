@@ -9,10 +9,12 @@ import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
 import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
+import no.sikt.graphitron.validation.ValidationHandler;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 import org.junit.ComparisonFailure;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.function.Executable;
 
 import java.io.IOException;
@@ -316,9 +318,18 @@ public abstract class GeneratorTest {
         assertThat(generateFiles(schemaFolder, extraComponents).keySet()).isEmpty();
     }
 
+    @BeforeEach
+    public void setup() {
+        // Reset ValidationHandler state before each test to prevent cross-test contamination
+        ValidationHandler.resetErrorMessages();
+        ValidationHandler.resetWarningMessages();
+    }
+    
     @AfterEach
-    public void destroy() {
+    public void teardown() {
         GeneratorConfig.clear(); // To prevent any config from remaining when running multiple tests.
+        ValidationHandler.resetErrorMessages();
+        ValidationHandler.resetWarningMessages();
     }
 
     protected static List<String> readFileAsStrings(Path file) {

@@ -44,6 +44,7 @@ public class ConfigurationTest extends GeneratorTest {
 
     @BeforeEach
     public void setup() {
+        super.setup();
         GeneratorConfig.setRecordValidation(new RecordValidation(true, "ValidationError"));// Putting a union here does not work.
     }
 

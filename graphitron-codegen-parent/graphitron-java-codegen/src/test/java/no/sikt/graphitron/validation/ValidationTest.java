@@ -65,18 +65,16 @@ abstract public class ValidationTest extends GeneratorTest {
 
     @BeforeEach
     public void setup() {
+        super.setup();
         var logWatch = new ListAppender<ILoggingEvent>();
         logWatch.start();
         ((Logger) LoggerFactory.getLogger(ValidationHandler.class)).addAppender(logWatch);
         this.logWatcher = logWatch;
-        ValidationHandler.resetErrorMessages();
-        ValidationHandler.resetWarningMessages();
     }
 
     @AfterEach
     public void teardown() {
+        super.teardown();
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
-        ValidationHandler.resetErrorMessages();
-        ValidationHandler.resetWarningMessages();
     }
 }
