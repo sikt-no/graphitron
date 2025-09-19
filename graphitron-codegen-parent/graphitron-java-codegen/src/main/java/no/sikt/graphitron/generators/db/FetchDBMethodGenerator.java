@@ -527,11 +527,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         var content = CodeBlock.of(
-                "nvl($L.$N$L, 1)",
+                "$L.$N$L",
                 renderedSource,
                 field.getUpperCaseName(),
                 overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
         );
+
+
         return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
@@ -844,16 +846,16 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return trueCondition();
         }
 
-        if(TableReflection.fieldIsNullable(context.getCurrentJoinSequence().getLast().getTable().getName(), field.getName()).orElse(false)) {
-            return CodeBlock.join(
-                    generateForField(field, context, hasRecord),
-                    CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className)
-            );
-        }
-        return CodeBlock.join(
+        var generatedField = CodeBlock.join(
                 generateForField(field, context, hasRecord),
-                CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className)
-        );
+                CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className));
+
+        if (fieldIsNullable(context.getTargetTable().getName(), field.getName()).orElse(false)) {
+            var type = getFieldType(context.getTargetTable().getName(), field.getName());
+            return CodeBlock.of("$T.nvl($L,$T.noField($T.class))",DSL.className, generatedField,DSL.className, type.orElseThrow());
+        }
+
+        return generatedField;
     }
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
