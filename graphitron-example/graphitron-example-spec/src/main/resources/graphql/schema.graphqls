@@ -140,6 +140,7 @@ type Film implements Node @node @table {
     title: String
     description: String
     language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+    length: Int!
 }
 
 input FilmLookupInput {
@@ -160,6 +161,7 @@ input FilmInput @table(name: "FILM") {
 input FilmNameInput @table(name: "FILM") {
     filmId: ID! @nodeId(typeName: "Film")
     title: String
+    length: Int!
 }
 
 input FilmDescriptionInput @table(name: "FILM") {

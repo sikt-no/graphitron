@@ -1,5 +1,6 @@
 mutation {
-    updateFilmName(in: {filmId: "RmlsbToxNQ", title: "ALIEN BASE"}) {
+    updateFilmName(in: {filmId: "RmlsbToxNQ", title: "ALIEN BASE", length: 2448}) {
         title
+        length
     }
 }

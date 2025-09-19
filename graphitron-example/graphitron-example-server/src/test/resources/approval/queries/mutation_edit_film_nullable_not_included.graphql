@@ -1,0 +1,6 @@
+mutation {
+    updateFilmName(in: {filmId: "RmlsbTo1", length: 1337}) {
+        title
+        length
+    }
+}
