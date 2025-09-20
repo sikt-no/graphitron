@@ -164,7 +164,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var shouldHaveOrderByToken = isConnection && !orderByFieldsBlock.isEmpty();
 
         CodeBlock.Builder select = CodeBlock.builder();
-        select.addIf(shouldHaveOrderByToken, "\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), orderByFieldsBlock);
+        select.addIf(
+                shouldHaveOrderByToken,
+                "\n$T.getOrderByToken($L, $L),\n",
+                QUERY_HELPER.className,
+                context.getTargetAlias(),
+                orderByFieldsBlock
+        );
 
         if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add(generateForField(field, context));
@@ -172,7 +178,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false, false);
         var joins = createSelectJoins(context.getJoinSet());
 
         var contents = CodeBlock.builder()
@@ -649,7 +655,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             FetchContext context,
             String resolverKeyParamName,
             boolean isRoot,
-            boolean isResolverRoot
+            boolean isResolverRoot,
+            boolean isMultiTable
     ) {
         var conditionList = new ArrayList<CodeBlock>();
 
@@ -689,7 +696,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        if (isResolverRoot) {
+        // Fields that implement a multi-table interface or are part of a union are handled differently. In these
+        // cases, skip input conditions when there is a resolver root.
+        if (isResolverRoot && !isMultiTable) {
             conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
         }
 
@@ -1187,5 +1196,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return context.getReferenceObjectField().isResolver() &&
                context.getReferenceObjectField().isIterableWrapped() &&
                ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
+    }
+
+    protected boolean isIterableWrappedResolverWithPagination(GenerationField field) {
+        return field.isResolver() &&
+               field.isIterableWrapped() &&
+               ((ObjectField) field).hasForwardPagination();
     }
 }

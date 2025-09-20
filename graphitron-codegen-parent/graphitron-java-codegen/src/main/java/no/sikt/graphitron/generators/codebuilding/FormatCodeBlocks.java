@@ -729,7 +729,14 @@ public class FormatCodeBlocks {
     }
 
     public static CodeBlock getSelectKeyColumn(FetchContext context) {
-        return getSelectKeyColumn(context.getResolverKey().key(), context.getTargetTableName(), context.getTargetAlias());
+        var table = hasIterableWrappedResolverWithPagination(context)
+                    ? context.getTargetTableName()
+                    : context.getSourceTableName();
+        var alias = hasIterableWrappedResolverWithPagination(context)
+                    ? context.getTargetAlias()
+                    : context.getSourceAlias();
+
+        return getSelectKeyColumn(context.getResolverKey().key(), table, alias);
     }
 
     public static CodeBlock createNodeIdBlock(RecordObjectSpecification<?> obj, String targetAlias) {

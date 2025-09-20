@@ -14,6 +14,12 @@ public class QueryDBQueries {
         var _a_paymentp2007_02 = PAYMENT_P2007_02.as("paymentp200702_1287600187");
         var countPaymentTypeOne = DSL.select(DSL.count().as("$count")).from(_a_paymentp2007_01);
         var countPaymentTypeTwo = DSL.select(DSL.count().as("$count")).from(_a_paymentp2007_02);
+//    public static Integer countPaymentsForQuery(DSLContext ctx) {
+//        var _paymentp2007_01 = PAYMENT_P2007_01.as("_01_1056813272");
+//        var _paymentp2007_02 = PAYMENT_P2007_02.as("_02_2817843554");
+//
+//        var countPaymentTypeOne = DSL.select(DSL.count().as("$count")).from(_paymentp2007_01);
+//        var countPaymentTypeTwo = DSL.select(DSL.count().as("$count")).from(_paymentp2007_02);
 
         var unionCountQuery = countPaymentTypeTwo
                 .unionAll(countPaymentTypeOne)
