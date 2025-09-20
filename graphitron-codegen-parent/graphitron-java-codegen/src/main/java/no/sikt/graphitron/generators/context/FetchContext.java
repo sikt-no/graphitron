@@ -668,7 +668,6 @@ public class FetchContext {
         return newSequence;
     }
 
-
     public CodeBlock renderQuerySource(JoinElement localTable) {
         return currentJoinSequence.render(localTable == null ? getReferenceTable() : localTable);
     }

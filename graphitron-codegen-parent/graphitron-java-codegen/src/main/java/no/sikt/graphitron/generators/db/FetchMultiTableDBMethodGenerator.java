@@ -55,7 +55,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         var unionOrInterfaceDefinition = processedSchema.isUnion(target) ? processedSchema.getUnion(target) : processedSchema.getInterface(target);
 
-        // Order is important for paginated queries as it gets data fields by index in the mapping
+        // Order is important for paginated queries as it gets data fields by index in the mapping.
+        // (These are all the types that implement the interface or are part of the union)
         LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
@@ -77,6 +78,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .orElse(null);
         }
 
+        // Iterate over all types that implement the same interface or are part of the union. This is done to construct
+        // the query segment that joins the tables associated with these implementing types.
         for (var implementation : implementations) {
             if (!implementation.hasTable()) {
                 addErrorMessageAndThrow("Type '%s' is returned in an interface query, but not have table set. This is not supported.", implementation.getName());
@@ -113,7 +116,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         return CodeBlock.builder()
                 .declareIf(target.hasForwardPagination(), TOKEN, () -> getTokenVariableDeclaration(implementations))
-                .addIf(target.isResolver(), () -> createAliasDeclarations(initialContext.getAliasSet()))
+                .addIf(target.isResolver(), () -> createAliasDeclarations(
+                        initialContext.getAliasSet().stream().limit(1).collect(Collectors.toSet())))
                 .declare(UNION_KEYS_QUERY, unionQuery)
                 .add("\n")
                 .add(mappedDeclarationBlock.build())
@@ -128,7 +132,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .addIf(target.isResolver(), "\n)")
                 .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)", initialContext.renderQuerySource(getLocalTable())))
-                .addIf(target.isResolver(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.isResolver()))
+                .addIf(target.isResolver(),
+                       () -> CodeBlock.of("\n$L", formatWhereContents(
+                               initialContext, resolverKeyParamName, isRoot, target.isResolver(), processedSchema.isMultiTableField(target))))
                 .add(createFetchAndMapping(target, implementations))
                 .build();
     }
@@ -157,7 +163,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(FetchContext::getAliasSet)
                 .stream()
                 .findFirst()
-                .ifPresent(it -> it.stream().map(Alias::getMappingName).forEach(additionalInputs::add));
+                .flatMap(it -> it.stream().map(Alias::getMappingName).findFirst())
+                .ifPresent(additionalInputs::add);
 
         if (isConnection) {
             additionalInputs.add(PAGE_SIZE_NAME);
@@ -202,7 +209,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         if (target.isResolver()) {
             return CodeBlock.builder()
-                    .add("\n.fetchMap(")
+                    .add(".fetchMap(")
                     .indent()
                     .add("\nr -> r.value1().valuesRow(),")
                     .add("\nr -> r.value2().map($L)\n);", mappingContent)
@@ -222,7 +229,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private CodeBlock createMappingContent(ClassName interfaceClassName, Set<ObjectDefinition> implementations, boolean isConnection) {
         var code = CodeBlock.builder()
                 .indent()
-                .beginControlFlow("$N -> ", VARIABLE_INTERNAL_ITERATION)
+                .beginControlFlow("\n$N ->", VARIABLE_INTERNAL_ITERATION)
                 .addIf(isConnection, "$T $N;\n", RECORD2.className, VARIABLE_RESULT)
                 .beginControlFlow("switch ($N.get(0, $T.class))", VARIABLE_INTERNAL_ITERATION, STRING.className);
 
@@ -290,7 +297,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
         var virtualTarget = new VirtualSourceField(implementation, target);
         var context = new FetchContext(processedSchema, virtualTarget, localObject, false);
-        var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
+        var refContext = isIterableWrappedResolverWithPagination(virtualTarget)
+                         ? context.nextContext(virtualTarget)
+                         : context;
 
         return List.of(getSortFieldsMethod(target, implementation, refContext, methodInputs), getMappedMethod(target, implementation));
     }
@@ -346,8 +355,12 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .addIf(target.hasForwardPagination(), "$T.row(\n", DSL.className)
                 .addIf(target.hasForwardPagination(), () ->
-                        CodeBlock.of("$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
-                                QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName()))
+                        CodeBlock.of(
+                                "$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
+                                QUERY_HELPER.className,
+                                context.getTargetAlias(),
+                                getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()),
+                                implementation.getName()))
                 .add("$T.select($L)", DSL.className, indentIfMultiline(selectCode))
                 .unindent()
                 .addIf(target.hasForwardPagination(), ")\n")
@@ -365,7 +378,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var isConnection = queryTarget.hasForwardPagination();
         var code = CodeBlock.builder();
         var alias = context.getTargetAlias();
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, true);
+        var whereBlock = formatWhereContents(
+                context, resolverKeyParamName, isRoot, false, processedSchema.isMultiTableField(queryTarget));
         String implName = implementation.getName();
 
         var aliasesExcludingStartAlias = Optional.ofNullable(initialContext)

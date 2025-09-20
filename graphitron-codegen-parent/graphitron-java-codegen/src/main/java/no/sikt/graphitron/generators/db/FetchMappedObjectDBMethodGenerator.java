@@ -49,7 +49,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 context,
                 resolverKeyParamName,
                 isRoot,
-                isIterableWrappedResolverWithPagination(targetField)
+                targetField.isResolver(),
+                false
         );
 
         var refContext = isIterableWrappedResolverWithPagination(targetField)
@@ -60,7 +61,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         var selectAliasesBlock = createAliasDeclarations(context.getAliasSet());
 
-        var orderFields = !LookupHelpers.lookupExists(targetField, processedSchema) && (targetField.isIterableWrapped() || targetField.hasForwardPagination() || !isRoot)
+        var orderFields =
+                !LookupHelpers.lookupExists(targetField, processedSchema) &&
+                (targetField.isIterableWrapped() ||
+                 targetField.hasForwardPagination() ||
+                 !isRoot)
                 ? createOrderFieldsDeclarationBlock(targetField, actualRefTable, actualRefTableName)
                 : CodeBlock.empty();
 
@@ -79,8 +84,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)
                 .addCode(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
-                .addCodeIf(!targetField.isResolver() && !orderFields.isEmpty(), ".orderBy($L)\n", ORDER_FIELDS_NAME)
-                .addCodeIf(targetField.hasForwardPagination() && !targetField.isResolver(), this::createSeekAndLimitBlock)
+                .addCodeIf(!orderFields.isEmpty() && !(targetField.isResolver() && !targetField.isIterableWrapped() && !targetField.hasForwardPagination()) , ".orderBy($L)\n", ORDER_FIELDS_NAME)
+                .addCodeIf(targetField.hasForwardPagination() && !targetField.isIterableWrapped(), this::createSeekAndLimitBlock)
                 .addCode(setFetch(targetField))
                 .unindent()
                 .unindent()
@@ -110,7 +115,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 Stream.of(
                         getInitialKey(context),
                         CodeBlock.ofIf(
-                                target.hasForwardPagination() && !target.isResolver(),
+                                target.hasForwardPagination(),
                                 "$T.getOrderByToken($L, $L),\n",
                                 QUERY_HELPER.className,
                                 actualRefTable, ORDER_FIELDS_NAME),
