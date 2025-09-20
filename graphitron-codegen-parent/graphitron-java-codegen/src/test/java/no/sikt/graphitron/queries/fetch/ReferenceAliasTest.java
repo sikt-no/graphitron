@@ -80,6 +80,7 @@ public class ReferenceAliasTest extends ReferenceTest {
                 "_customer.address().as(",
                 "DSL.row(customer_2952383337_address.getId()",
                 ".from(_customer",
+                ".join(customer_29",
                 ".where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))"
         );
     }
