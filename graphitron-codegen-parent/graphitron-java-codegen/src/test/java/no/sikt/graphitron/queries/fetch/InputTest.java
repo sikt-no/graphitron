@@ -173,4 +173,20 @@ public class InputTest extends GeneratorTest {
                 ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address)).fetch" // Make sure conditon is not applied on outer query
         );
     }
+
+    @Test
+    @DisplayName("Input with table and return type with field having reference")
+    void inputWithTableReturnTypeWithReference() {
+        var generated = generateFiles("inputWithTableReturnTypeWithReference");
+        contains(generated,
+                "var city_1887334959_country = _city.country().as(\"country_250273815\");",
+                "DSL.select(city_1887334959_country.COUNTRY_)",
+                ".from(city_1887334959_country)"
+        );
+        doesNotContain(generated,
+                "var country_250273815_city = city_1887334959_country.city().as(\"city_1589919764\");",
+                "DSL.select(country_250273815_city.COUNTRY_)",
+                ".join(country_250273815_city)"
+        );
+    }
 }
