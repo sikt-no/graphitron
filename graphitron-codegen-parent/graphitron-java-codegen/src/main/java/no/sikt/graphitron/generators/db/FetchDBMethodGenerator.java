@@ -10,6 +10,7 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
+import no.sikt.graphitron.definitions.objects.InputDefinition;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
@@ -46,6 +47,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -583,15 +585,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     CodeBlock.of("$L.$L.in($L)",
                             context.renderQuerySource(getLocalTable()),
                             processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatorFieldName(),
-                            CodeBlock.join(
-                                    processedSchema
-                                            .getObjects()
-                                            .values()
-                                            .stream()
-                                            .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
-                                            .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
-                                            .toList(),
-                                    ", "))
+                            processedSchema
+                                    .getObjects()
+                                    .values()
+                                    .stream()
+                                    .filter(it -> it.implementsInterface(processedSchema.getInterface(context.getReferenceObjectField()).getName()))
+                                    .map(it -> CodeBlock.of("$S", it.getDiscriminator()))
+                                    .collect(CodeBlock.joining(", "))
+                    )
             );
         }
 
@@ -676,8 +677,21 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 continue;
             }
 
-            allConditionCodeBlocks.add(createTupleCondition(
-                    context, conditionTuple.path(), conditionTuple.conditions()));
+            if (context.getReferenceObjectField().getContainerTypeName().equals(SCHEMA_MUTATION.getName())) {
+                var recordField = findUsableRecord((ObjectField) context.getReferenceObjectField());
+                var recordFieldName = asListedRecordNameIf(recordField.getName(), recordField.isIterableWrapped());
+                allConditionCodeBlocks.add(
+                        CodeBlock.of(
+                                "$L.hasIds($N.stream().map(it -> it.getId()).collect($T.toSet()))",
+                                context.getCurrentJoinSequence().render(),
+                                recordFieldName,
+                                COLLECTORS.className
+                        )
+                );
+                break;
+            }
+
+            allConditionCodeBlocks.add(createTupleCondition(context, conditionTuple.path(), conditionTuple.conditions()));
         }
 
         for (var inputCondition : inputsWithRecord) {
@@ -699,6 +713,28 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             allConditionCodeBlocks.add(condition.getKey().getCondition().formatToString(inputs));
         }
         return allConditionCodeBlocks;
+    }
+
+    private InputField findUsableRecord(ObjectField target) {
+        var parser = new InputParser(target, processedSchema);
+        var responseObject = processedSchema.getObject(target);
+        if (responseObject.hasTable()) {
+            var responseFieldTableName = responseObject.getTable().getMappingName();
+            return parser
+                    .getJOOQRecords()
+                    .values()
+                    .stream()
+                    .filter(it -> processedSchema.getInputType(it).getTable().getMappingName().equals(responseFieldTableName))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table reference '" + responseFieldTableName + "' to."));
+        }
+        return parser
+                .getJOOQRecords()
+                .entrySet()
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
+                .getValue(); // In practice this supports only one record type at once.
     }
 
     private CodeBlock formatCondition(InputCondition inputCondition, CodeBlock renderedSequence, FetchContext context) {
