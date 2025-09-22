@@ -56,7 +56,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * @param <U> Type that the resolver fetches.
      */
     public <T, U> CompletableFuture<U> load(Supplier<T> dbFunction, TransformCall<A, T, U> dbTransform) {
-        return CompletableFuture.completedFuture(dbTransform.transform(abstractTransformer, dbFunction.get()));
+        return CompletableFuture.supplyAsync(() -> dbTransform.transform(abstractTransformer, dbFunction.get()));
     }
 
     /**
@@ -79,7 +79,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
             TransformCall<A, List<Pair<String, T>>, List<Pair<String, U>>> dbTransform,
             Function<ConnectionImpl<U>, C> connectionFunction
     ) {
-        return CompletableFuture.completedFuture(
+        return CompletableFuture.supplyAsync(() ->
                 getPaginatedConnection(
                         dbTransform.transform(abstractTransformer, dbFunction.get()),
                         pageSize,
@@ -157,7 +157,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
         }
 
         var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
-        return CompletableFuture.completedFuture(
+        return CompletableFuture.supplyAsync(() ->
                 getPaginatedConnection(
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName())
                                 ? resultAsMap(keys, dbFunction.apply(idSet))
@@ -178,7 +178,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
         }
 
         var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
-        return CompletableFuture.completedFuture(
+        return CompletableFuture.supplyAsync(() ->
                 resultAsMap(keys, dbFunction.apply(idSet))
                         .entrySet()
                         .stream()
