@@ -35,7 +35,6 @@ public class GeneratorConfig {
             generatedSchemaModelsPackage,
             generatedJooqPackage;
 
-    private static boolean makeKickstart = false;
     private static boolean makeNodeStrategy = false;
     private static boolean alwaysUsePrimaryKeyInSplitQueries = true;
 
@@ -111,7 +110,6 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
-        makeKickstart = mojo.makeKickstart();
         makeNodeStrategy = mojo.makeNodeStrategy();
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
@@ -184,10 +182,6 @@ public class GeneratorConfig {
 
     public static boolean recordValidationEnabled() {
         return recordValidation != null && recordValidation.isEnabled();
-    }
-
-    public static boolean shouldMakeKickstart() {
-        return makeKickstart;
     }
 
     public static boolean shouldMakeNodeStrategy() {

@@ -269,11 +269,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     }
 
     @Override
-    public boolean makeKickstart() {
-        return makeKickstart;
-    }
-
-    @Override
     public boolean makeNodeStrategy() {
         return makeNodeStrategy;
     }

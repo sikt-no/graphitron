@@ -36,7 +36,7 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArra
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
+import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -452,12 +452,11 @@ public class FormatCodeBlocks {
      */
     @NotNull
     public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean atResolver) {
-        var typeName = field.getTypeName();
         var idCall = CodeBlock.of(".getId()");
         return CodeBlock.of(
                 "$T.$L($L, $L, $L.withPrefix($L))$L",
-                getQueryClassName(asQueryClass(typeName)),
-                asNodeQueryName(typeName),
+                getQueryClassName(getFormatGeneratedName(OPERATION_QUERY.getName() + NODE_TYPE.getName(), field.getTypeName()) + DBClassGenerator.FILE_NAME_SUFFIX),
+                asNodeQueryName(field.getTypeName()),
                 asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
                 field.isIterableWrapped() ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
                 atResolver ? asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
