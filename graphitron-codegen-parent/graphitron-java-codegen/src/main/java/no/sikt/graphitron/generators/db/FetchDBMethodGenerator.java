@@ -29,7 +29,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 
-import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -58,7 +57,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
     protected final boolean isRoot = getLocalObject().isOperationRoot();
     protected final boolean isQueryAfterMutation = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
-    private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
+    private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY = 22;
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -116,10 +115,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
         }
         return codeBuilder.build();
-    }
-
-    protected static CodeBlock createAliasDeclarations(Alias alias) {
-        return createAliasDeclarations(Set.of(alias));
     }
 
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
@@ -259,7 +254,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
      protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
-        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
+        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded, keySet.size())
@@ -438,7 +433,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     /**
-     * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
+     * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
     private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<KeyWrapper> keySet) {
@@ -847,26 +842,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return trueCondition();
         }
 
-        var generatedField = CodeBlock.join(
+        return CodeBlock.join(
                 generateForField(field, context, hasRecord),
                 CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className));
-
-        if (fieldIsNullable(context.getTargetTable().getName(), field.getName()).orElse(false)) {
-            var type = getFieldType(context.getTargetTable().getName(), field.getName());
-            return CodeBlock.of("$T.nvl($L,$L)",DSL.className, generatedField, getDefaultElementForType(type.orElseThrow()));
-        }
-
-        return generatedField;
-    }
-
-    private Object getDefaultElementForType(Class<?> type) {
-        switch (type.getSimpleName()) {
-            case "String": return "\"1\"";
-            case "Integer": return 1;
-            case "OffsetDateTime": return OffsetDateTime.MIN;
-            default: throw new IllegalArgumentException(String.format("Type %s is not yet supported in Graphitron, please reach out to the Graphitron team and " +
-                    "we will add it promptly.", type));
-        }
     }
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
