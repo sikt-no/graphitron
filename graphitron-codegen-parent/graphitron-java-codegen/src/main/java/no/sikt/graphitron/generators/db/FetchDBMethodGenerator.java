@@ -29,6 +29,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -852,10 +853,20 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         if (fieldIsNullable(context.getTargetTable().getName(), field.getName()).orElse(false)) {
             var type = getFieldType(context.getTargetTable().getName(), field.getName());
-            return CodeBlock.of("$T.nvl($L,$T.noField($T.class))",DSL.className, generatedField,DSL.className, type.orElseThrow());
+            return CodeBlock.of("$T.nvl($L,$L)",DSL.className, generatedField, getDefaultElementForType(type.orElseThrow()));
         }
 
         return generatedField;
+    }
+
+    private Object getDefaultElementForType(Class<?> type) {
+        switch (type.getSimpleName()) {
+            case "String": return "\"1\"";
+            case "Integer": return 1;
+            case "OffsetDateTime": return OffsetDateTime.MIN;
+            default: throw new IllegalArgumentException(String.format("Type %s is not yet supported in Graphitron, please reach out to the Graphitron team and " +
+                    "we will add it promptly.", type));
+        }
     }
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
