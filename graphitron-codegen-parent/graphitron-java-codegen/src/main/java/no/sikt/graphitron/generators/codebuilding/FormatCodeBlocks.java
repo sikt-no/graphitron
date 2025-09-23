@@ -808,9 +808,9 @@ public class FormatCodeBlocks {
         return code.add(".stream().map(it -> it.getId())$L", collectToList()).build();
     }
 
-    private static InputField findUsableRecord(GenerationField target, ProcessedSchema schema, InputParser parser) {
+    public static InputField findUsableRecord(GenerationField target, ProcessedSchema schema, InputParser parser) {
         var responseObject = schema.getObject(target);
-        if (responseObject.hasTable()) {
+        if (responseObject != null && responseObject.hasTable()) {
             var responseFieldTableName = responseObject.getTable().getMappingName();
             return parser
                     .getJOOQRecords()

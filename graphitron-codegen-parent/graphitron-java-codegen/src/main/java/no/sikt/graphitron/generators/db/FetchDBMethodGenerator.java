@@ -756,14 +756,14 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var tupleVariableBlocks = new ArrayList<CodeBlock>();
 
         for (var condition : conditions) {
+            if (condition.isOverriddenByAncestors()) {
+                continue;
+            }
+
             var field = condition.getInput();
             var fieldSequence = context.iterateJoinSequenceFor(field);
             var lastTable = fieldSequence.getLast().getTable();
             var unpacked = unpackElement(context, argumentInputFieldName, condition, lastTable);
-
-            if (condition.isOverriddenByAncestors()) {
-                continue;
-            }
 
             if (!field.hasOverridingCondition()) {
                 if (processedSchema.isNodeIdField(field)) {

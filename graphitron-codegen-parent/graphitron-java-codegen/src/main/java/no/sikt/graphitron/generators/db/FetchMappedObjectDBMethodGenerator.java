@@ -15,7 +15,9 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.findUsableRecord;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asListedRecordNameIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -43,7 +45,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(target, context);
-        var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+        var parser = new InputParser(target, processedSchema);
+        var whereBlock = target.hasMutationType()
+                ? pkCheck(target, context, parser)
+                : formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
 
         var querySource = context.renderQuerySource(getLocalTable());
 
@@ -60,7 +65,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         var returnType = processedSchema.isRecordType(target)
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
-        return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
+        return getSpecBuilder(target, returnType, parser)
                 .addCode(selectAliasesBlock)
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
@@ -77,6 +82,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .unindent()
                 .unindent()
                 .build();
+    }
+
+    private CodeBlock pkCheck(ObjectField target, FetchContext context, InputParser parser) {
+        var record = findUsableRecord(target, processedSchema, parser);
+        return CodeBlock.of(".where($T.hasPK($N, $N))\n", QUERY_HELPER.className, context.getTargetAlias(), asListedRecordNameIf(record.getName(), record.isIterableWrapped()));
     }
 
     private CodeBlock getSelectRowOrField(ObjectField target, FetchContext context) {

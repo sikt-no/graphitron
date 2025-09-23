@@ -1,7 +1,7 @@
 package no.sikt.graphql.helpers.query;
 
-import org.jooq.Record;
 import org.jooq.*;
+import org.jooq.Record;
 import org.jooq.impl.DSL;
 import org.jooq.impl.TableImpl;
 import org.json.JSONArray;
@@ -10,6 +10,7 @@ import org.json.JSONObject;
 import java.lang.constant.Constable;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -150,5 +151,24 @@ public class QueryHelper {
                 .stream()
                 .map(it -> it == null ? null : map.getOrDefault(it, null))
                 .toList();
+    }
+
+    public static <T extends TableRecord<T>> Condition hasPK(Table<T> table, TableRecord<T> record) {
+        var fields = table.fields(table.getPrimaryKey().getFieldsArray());
+        return row(fields).eq(row(extractPKValues(record, fields)));
+    }
+
+    public static <T extends TableRecord<T>> Condition hasPK(Table<T> table, List<T> records) {
+        var fields = table.fields(table.getPrimaryKey().getFieldsArray());
+        return row(fields).in(records.stream().map(r -> row(extractPKValues(r, fields))).toList());
+    }
+
+    private static <T extends TableRecord<T>> List<?> extractPKValues(TableRecord<T> record, Field<?>[] fields) {
+        var valuesMap = Arrays.stream(fields).collect(Collectors.toMap(Field::getName, record::get));
+        var nullFields = valuesMap.entrySet().stream().filter(it -> it.getValue() == null).map(Map.Entry::getKey).collect(Collectors.joining(" "));
+        if (!nullFields.isEmpty()) {
+            throw new IllegalStateException("PK fields must not be null. Null found: " + nullFields);
+        }
+        return new ArrayList<>(valuesMap.values());
     }
 }

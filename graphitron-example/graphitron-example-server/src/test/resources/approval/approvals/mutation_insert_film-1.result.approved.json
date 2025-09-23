@@ -1,10 +1,22 @@
 {
-    "data": {
-        "insertFilm": {
-            "title": "Jojo's Bizarre Adventure: The Motion Picture",
-            "language": {
-                "id": "TGFuZ3VhZ2U6Mw"
+    "errors": [
+        {
+            "message": "Exception while fetching data (/insertFilm) : null",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "insertFilm"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
             }
         }
+    ],
+    "data": {
+        "insertFilm": null
     }
 }
