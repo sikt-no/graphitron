@@ -7,22 +7,21 @@ import no.sikt.graphitron.definitions.objects.InputDefinition;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphql.directives.GenerationDirective.LOOKUP_KEY;
-import static no.sikt.graphql.directives.GenerationDirective.ORDER_BY;
+import static no.sikt.graphql.directives.GenerationDirective.*;
 
 /**
  * A field for a {@link InputDefinition}.
  */
 public class InputField extends GenerationSourceField<InputValueDefinition> {
     private final String defaultValue;
-    private final boolean isLookupKey;
-    private final boolean isOrderField;
+    private final boolean isLookupKey, isMutationKey, isOrderField;
 
     public InputField(InputValueDefinition field, String container) {
         super(field, new FieldType(field.getType()), container);
         defaultValue = field.getDefaultValue() != null ? field.getDefaultValue().toString() : "";
 
         isLookupKey = field.hasDirective(LOOKUP_KEY.getName());
+        isMutationKey = field.hasDirective(MUTATION_KEY.getName());
         isOrderField = field.hasDirective(ORDER_BY.getName());
     }
 
@@ -45,6 +44,13 @@ public class InputField extends GenerationSourceField<InputValueDefinition> {
      */
     public boolean isLookupKey() {
         return isLookupKey;
+    }
+
+    /**
+     * @return Is this input field to be used as a key for a mutation result?
+     */
+    public boolean isMutationKey() {
+        return isMutationKey;
     }
 
     /**

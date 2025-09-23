@@ -42,7 +42,7 @@ Context arguments must be added to the GraphQLContext at run-time.
 directive @service(service: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
 
 """
-The @error directive serves to map specific Java exceptions to GraphQL errors.
+Maps specific Java exceptions to GraphQL errors.
 This directive is applied to error types in the schema and accepts a list of
 handlers with parameters, specifying how various exceptions should be mapped.
 """
@@ -146,12 +146,12 @@ directive @fetchByID on FIELD_DEFINITION
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 
 input ExternalCodeReference {
-    name: String @deprecated(reason: "Fases ut til fordel for `class`"),
-    """Navnet på klassen man ønsker å referere til.
+    name: String @deprecated(reason: "Will be replaced with `class`"),
+    """Name of the class to reference.
 
-    Dersom pakken klassen finnes i er importert i `externalReferences` i graphitron-konfigurasjonen så holder det med det forenklede navnet, ellers må det fullstendige navnet (fqcn) oppgis."""
+    If the package is imported in `externalReferences` in the maven configuration, the shortened name will suffice, otherwise the full name (fqcn) is required."""
     className: String
-    """Navnet på metoden man ønsker å referere til."""
+    """Name of the method that should be used."""
     method: String
 }
 
@@ -202,3 +202,11 @@ directive @nodeId(
   """
   typeName: String!
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+
+"""
+Specifies which input fields should be used for fetching mutations results. This should probably be the primary key.
+If this is not specified, all mutation inputs are assumed to be the mutation keys.
+
+This feature is only required when not using nodeId, as without it the primary key columns can not be automatically resolved for IDs.
+"""
+directive @mutationKey on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION

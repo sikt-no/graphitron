@@ -46,6 +46,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -755,7 +756,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var tupleFieldBlocks = new ArrayList<CodeBlock>();
         var tupleVariableBlocks = new ArrayList<CodeBlock>();
 
-        for (var condition : conditions) {
+        var filteredConditions = context.getReferenceObjectField().getContainerTypeName().equals(SCHEMA_MUTATION.getName()) && conditions.stream().anyMatch(it -> it.getInput().isMutationKey())
+                ? conditions.stream().filter(it -> it.getInput().isMutationKey()).toList()
+                : conditions;
+
+        for (var condition : filteredConditions) {
             var field = condition.getInput();
             var fieldSequence = context.iterateJoinSequenceFor(field);
             var lastTable = fieldSequence.getLast().getTable();
