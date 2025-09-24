@@ -154,17 +154,16 @@ abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, 
             }
         }
 
-        var code = CodeBlock.builder();
-        aliasSet.stream()
+        var codeBlocks = aliasSet.stream()
                 .map(AliasWrapper::getReferenceObjectField)
                 .filter(Objects::nonNull)
                 .filter(field -> dependencyMap.containsKey(field.getName()))
                 .flatMap(field -> dependencyMap.get(field.getName()).stream())
                 .filter(dep -> dep instanceof ServiceDependency)
                 .distinct()
-                .map(dep -> (ServiceDependency) dep)
-                .forEach(dep -> code.add(dep.getDeclarationCode(true)));
+                .map(dep -> ((ServiceDependency) dep).getDeclarationCode(true))
+                .collect(CodeBlock.joining());
 
-        return code.build();
+        return CodeBlock.builder().add(codeBlocks).build();
     }
 }
