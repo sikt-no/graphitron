@@ -63,12 +63,6 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         return field.getTypeClass();
     }
 
-    protected ServiceDependency createServiceDependency(GenerationField target) {
-        var dependency = new ServiceDependency(target.getService().getClassName());
-        dependencyMap.computeIfAbsent(target.getName(), (s) -> new ArrayList<>()).add(dependency);
-        return dependency;
-    }
-
     protected CodeBlock getMethodCall(ObjectField target, InputParser parser, boolean isMutatingMethod) {
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
@@ -285,21 +279,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         return target.hasForwardPagination() ? "loadPaginated" : "load";
     }
 
-    /**
-     * @return Code that declares any service dependencies set for this generator.
-     */
-    protected CodeBlock declareAllServiceClasses(String methodName) {
-        var code = CodeBlock.builder();
-        dependencyMap
-                .getOrDefault(methodName, List.of())
-                .stream()
-                .filter(dep -> dep instanceof ServiceDependency) // Inelegant solution, but it should work for now.
-                .distinct()
-                .sorted()
-                .map(dep -> (ServiceDependency) dep)
-                .forEach(dep -> code.add(dep.getDeclarationCode()));
-        return code.build();
-    }
+
 
     /**
      * @return CodeBlock for declaring the transformer class and calling it on each record input.

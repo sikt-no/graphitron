@@ -51,7 +51,18 @@ abstract public class NamedDependency implements Dependency, Comparable<Dependen
 
     @Override
     public CodeBlock getDeclarationCode() {
-        return CodeBlock.declare(getName(), "new $T($L)", getTypeName(), asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME));
+        return getDeclarationCode(false);
+    }
+
+    public CodeBlock getDeclarationCode(boolean excludeCtx) {
+        return excludeCtx ?
+                CodeBlock.declare(getName(), "new $T()", getTypeName()) :
+                CodeBlock.declare(
+                        getName(),
+                        "new $T($L)",
+                        getTypeName(),
+                        asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)
+                );
     }
 
     @Override

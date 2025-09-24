@@ -37,8 +37,12 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
-    
+
     inventories(orderBy: InventoriesOrderByInput @orderBy): [Inventory] @asConnection
+
+    addressTableService(input: String @field(name: "POSTAL_CODE")): Address @tableService(service: {className: "no.sikt.graphitron.example.service.AddressTableService", method: "addressTableService"} )
+    addressTableServiceConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableService(service: {className: "no.sikt.graphitron.example.service.AddressTableService", method: "addressTableService"} )
+    addressTableServiceSplitquery(input: String @field(name: "POSTAL_CODE")): Address @tableService(service: {className: "no.sikt.graphitron.example.service.AddressTableService", method: "addressTableService"} ) @splitQuery
 }
 
 type Mutation {

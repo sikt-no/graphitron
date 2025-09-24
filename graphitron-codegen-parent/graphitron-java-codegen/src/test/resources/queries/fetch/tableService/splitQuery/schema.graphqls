@@ -1,0 +1,7 @@
+type Query {
+    customer(first_name:String): Customer @tableService(service: {className: "no.sikt.graphitron.codereferences.services.CustomerTableService", method: "customerTable"}) @splitQuery
+}
+
+type Customer @table {
+    id: String
+}

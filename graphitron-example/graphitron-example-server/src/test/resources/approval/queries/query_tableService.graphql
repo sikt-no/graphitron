@@ -1,0 +1,5 @@
+{
+    addressTableService(input: "35200") {
+        id
+    }
+}
