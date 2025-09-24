@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -156,7 +157,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(FetchContext::getAliasSet)
                 .stream()
                 .findFirst()
-                .ifPresent(it -> it.stream().map(Alias::getMappingName).forEach(additionalInputs::add));
+                .ifPresent(it -> it.stream().map(AliasWrapper::getAlias).map(Alias::getMappingName).forEach(additionalInputs::add));
 
         if (isConnection) {
             additionalInputs.add(PAGE_SIZE_NAME);
@@ -306,8 +307,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .flatMap(it -> it.getAliasSet().stream().findFirst())
                     .ifPresent(startAlias ->
                             methodBuilder.addParameter(
-                                    getTableClass(startAlias.getTable().getName()).orElseThrow(),
-                                    startAlias.getMappingName()
+                                    getTableClass(startAlias.getAlias().getTable().getName()).orElseThrow(),
+                                    startAlias.getAlias().getMappingName()
                             )
                     );
         }

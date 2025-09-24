@@ -8,6 +8,7 @@ import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
@@ -16,6 +17,7 @@ import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
+import no.sikt.graphitron.generators.codebuilding.NameFormat;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -109,10 +111,20 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * @param aliasSet  Set of aliases to be defined.
      * @return Code block which declares all the aliases that will be used in a select query.
      */
-    protected static CodeBlock createAliasDeclarations(Set<Alias> aliasSet) {
+    protected static CodeBlock createAliasDeclarations(Set<AliasWrapper> aliasSet) {
         var codeBuilder = CodeBlock.builder();
-        for (var alias : aliasSet) {
+        for (var aliasWrapper : aliasSet) {
+            var alias = aliasWrapper.getAlias();
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
+            if (aliasWrapper.hasTableMethod()) {
+                var args = alias.getMappingName();
+                if (!aliasWrapper.getInputNames().isEmpty())
+                    args += ", " + String.join(", ", aliasWrapper.getInputNames());
+                if (!aliasWrapper.getReferenceObjectField().getContextFields().isEmpty())
+                    args += ", " + String.join(", ", aliasWrapper.getReferenceObjectField().getContextFields().keySet().stream().map(NameFormat::asContextFieldName).toList());
+                codeBuilder.addStatement(
+                        reassignFromServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
+            }
         }
         return codeBuilder.build();
     }

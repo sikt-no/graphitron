@@ -62,6 +62,12 @@ public class ResolverTest extends GeneratorTest {
     }
 
     @Test
+    @DisplayName("TableMethod with context input")
+    void tableMethodWithContextInput() {
+        assertGeneratedContentContains("operation/contextTableMethod", "QueryDBQueries.customerForQuery(ctx, _c_ctxField, selectionSet)");
+    }
+
+    @Test
     @DisplayName("Basic root service with both a context parameter and a standard parameter")
     void withContextInputAndArgument() {
         assertGeneratedContentContains("operation/withContextInputAndArgument", "query(i, _c_ctxField)");

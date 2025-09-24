@@ -971,6 +971,16 @@ public class ReturnB {
 }
 ```
 
+### Table method
+The **tableMethod** directive allows a field to use a jOOQ table returned from a custom Java method.
+
+For example, you can annotate a field in your schema with the **tableMethod** directive, referencing a method like [AddressTableMethod](https://github.com/sikt-no/graphitron/blob/main/graphitron-example/graphitron-example-service/src/main/java/no/sikt/graphitron/example/service/AddressTableMethod.java):
+```graphql
+type Query {
+    address: Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"})
+}
+```
+
 ### Error handling
 Graphitron allows for simple error handling. In the schema a type is an error type if it implements
 the _Error_ interface and has the **error** directive set. Unions of such types are also considered error types.

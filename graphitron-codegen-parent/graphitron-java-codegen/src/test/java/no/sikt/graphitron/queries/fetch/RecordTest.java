@@ -161,4 +161,20 @@ public class RecordTest extends GeneratorTest {
                 ".select(customer_2952383337_address.DISTRICT).from(customer_2952383337_address))).mapping"
         );
     }
+
+    @Test
+    @DisplayName("TableMethod with Java Record")
+    void tableMethodWithJavaRecord() {
+        assertGeneratedContentContains("javaRecordWithTableMethod",
+                "var _customer = CUSTOMER.as(\"customer_2952383337\")",
+                "_customer = customerTableMethod.customerTable(_customer, inRecord)");
+    }
+
+    @Test
+    @DisplayName("TableMethod with jOOQ Record")
+    void tableMethodWithJOOQRecord() {
+        assertGeneratedContentContains("jOOQRecordWithTableMethod",
+                "var _customer = CUSTOMER.as(\"customer_2952383337\")",
+                "_customer = customerTableMethod.customerTable(_customer, inRecord)");
+    }
 }

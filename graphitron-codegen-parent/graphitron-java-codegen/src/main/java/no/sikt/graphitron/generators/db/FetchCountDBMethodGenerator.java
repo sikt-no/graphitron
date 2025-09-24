@@ -46,7 +46,6 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
-        CodeBlock code;
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
             return getSpecBuilder(target, parser)
                     .addCode(getCodeForMultitableCountMethod(target))
@@ -55,9 +54,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
         var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-
         var nextContext = target.isResolver() ? context.nextContext(target) : context;
         return getSpecBuilder(target, parser)
+                .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet()))
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
                 .addCode("return $N\n", CONTEXT_NAME)
                 .indent()

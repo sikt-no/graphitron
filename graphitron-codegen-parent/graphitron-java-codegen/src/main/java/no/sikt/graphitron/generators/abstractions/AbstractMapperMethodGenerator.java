@@ -55,7 +55,7 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
         var fillCode = iterateRecords(context); // Note, do before declaring dependencies.
         var type = processedSchema.getRecordType(target);
         var currentSource = type.asSourceClassName(toRecord);
-        var source = wrapListIf(currentSource != null ? currentSource : target.getService().getGenericReturnType(), context.hasSourceName());
+        var source = wrapListIf(currentSource != null ? currentSource : target.getExternalMethod().getGenericReturnType(), context.hasSourceName());
         var noRecordIterability = !context.hasSourceName() && target.isIterableWrapped();
         var hasIterable = context.hasSourceName() || noRecordIterability;
         return getDefaultSpecBuilder(methodName, context.getInputVariableName(), source, wrapListIf(context.getReturnType(), noRecordIterability || context.hasRecordReference()))

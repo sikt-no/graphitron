@@ -15,6 +15,7 @@ public enum GenerationDirectiveParam {
     TYPE("typeName"),
     ENUM("enumReference"),
     SERVICE("service"),
+    TABLE_METHOD_REFERENCE("tableMethodReference"),
     ERROR("error"),
     CLASSNAME("className"),
     METHOD("method"),

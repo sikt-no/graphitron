@@ -38,7 +38,7 @@ public class TransformerMethodGenerator extends AbstractSchemaMethodGenerator<Ge
         return getDefaultSpecBuilder(
                 methodName,
                 wrapListIf(type.asTargetClassName(toRecord), currentSource == null && target.isIterableWrapped()),
-                currentSource != null || !target.hasServiceReference() ? currentSource : target.getService().getGenericReturnType()
+                currentSource != null || !target.hasServiceReference() ? currentSource : target.getExternalMethod().getGenericReturnType()
         )
                 .addParameterIf(toRecord && useValidation(type), STRING.className, PATH_INDEX_NAME)
                 .addCode(getMethodContent(target))

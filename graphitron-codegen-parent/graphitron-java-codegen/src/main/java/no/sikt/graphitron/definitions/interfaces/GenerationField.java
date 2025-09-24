@@ -48,7 +48,7 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     /**
      * @return The wrapper object for a service reference, if the field has a service set. Otherwise, null.
      */
-    ServiceWrapper getService();
+    ServiceWrapper getExternalMethod();
 
     /**
      * @return Get any context fields related to this field. This may be either service or condition context fields (without duplicates).
@@ -76,4 +76,6 @@ public interface GenerationField extends GenerationTarget, FieldSpecification {
     MethodMapping getMappingForRecordFieldOverride();
 
     boolean hasFieldDirective();
+
+    boolean hasTableMethodDirective();
 }
