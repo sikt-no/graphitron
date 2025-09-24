@@ -46,6 +46,7 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.context.JooqRecordReferenceHelpers.getSourceFieldsForForeignKey;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -55,6 +56,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
     protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
     protected final boolean isRoot = getLocalObject().isOperationRoot();
+    protected final boolean isQueryAfterMutation = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
@@ -657,7 +659,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 conditionBuilder.add(formatCondition(inputCondition, renderedSequence, context));
 
                 if (checksNotEmpty) {
-                    conditionBuilder.add(" : $T.noCondition()", DSL.className);
+                    conditionBuilder.add(" : $T.$L()",
+                            DSL.className,
+                            field instanceof VirtualInputField ? "falseCondition" : "noCondition"
+                    );
                 }
                 allConditionCodeBlocks.add(conditionBuilder.build());
             }
@@ -890,12 +895,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     pathNameForIterableFields.add(inputCondition.getNameWithPathString());
                 }
 
+                var innerFields = isQueryAfterMutation && processedSchema.hasJOOQRecord(inputField) ?
+                        getPrimaryKeyForTable(processedSchema.getRecordType(inputField).getTable().getName())
+                                .map(it -> it.getFields().stream().map(col -> new VirtualInputField(col.getName(), inputField.getContainerTypeName())).toList())
+                                .orElse(List.of())
+                        : processedSchema.getInputType(inputField).getFields();
+
                 inputBuffer.addAll(
                         0,
-                        processedSchema
-                                .getInputType(inputField)
-                                .getFields()
-                                .stream()
+                        innerFields.stream()
                                 .map(inputCondition::iterate)
                                 .toList()
                 );

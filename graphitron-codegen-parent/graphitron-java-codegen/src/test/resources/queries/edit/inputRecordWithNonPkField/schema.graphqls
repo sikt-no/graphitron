@@ -1,0 +1,9 @@
+type Mutation {
+  mutation(in: CustomerInputTableWithName): ID @mutation(typeName: UPDATE)
+}
+
+
+input CustomerInputTableWithName @table(name: "CUSTOMER") {
+    id: ID!
+    firstName: String! @field(name: "FIRST_NAME")
+}
