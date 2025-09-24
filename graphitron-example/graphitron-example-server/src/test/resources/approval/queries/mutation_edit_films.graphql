@@ -1,0 +1,5 @@
+mutation {
+    updateFilmNames(in: [{filmId: "RmlsbToyMg", title: "UFO"}, {filmId: "RmlsbToyMw", title: "ALIEN"}]) {
+        title
+    }
+}

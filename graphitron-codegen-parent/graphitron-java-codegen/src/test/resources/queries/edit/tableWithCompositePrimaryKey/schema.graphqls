@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: VacationDestinationInput): ID @mutation(typeName: INSERT)
+}
+
+input VacationDestinationInput @table(name: "VACATION_DESTINATION") {
+    id: ID!
+}
