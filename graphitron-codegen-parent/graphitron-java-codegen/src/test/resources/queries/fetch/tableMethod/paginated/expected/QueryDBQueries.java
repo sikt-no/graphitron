@@ -1,11 +1,10 @@
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
-
 import fake.graphql.example.model.Customer;
 import java.lang.Integer;
 import java.lang.String;
 import java.util.List;
-import no.sikt.graphitron.codereferences.services.CustomerTableService;
+import no.sikt.graphitron.codereferences.services.CustomerTableMethod;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -18,8 +17,8 @@ public class QueryDBQueries {
     public static List<Pair<String, Customer>> customerForQuery(DSLContext ctx, String first_name,
                                                                 Integer pageSize, String after, SelectionSet select) {
         var _customer = CUSTOMER.as("customer_2952383337");
-        var customerTableService = new CustomerTableService();
-        _customer = customerTableService.customerTable(_customer, first_name);
+        var customerTableMethod = new CustomerTableMethod();
+        _customer = customerTableMethod.customerTable(_customer, first_name);
         var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(

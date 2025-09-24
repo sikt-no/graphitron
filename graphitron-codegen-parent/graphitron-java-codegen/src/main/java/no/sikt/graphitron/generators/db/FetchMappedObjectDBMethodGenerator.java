@@ -47,8 +47,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         // Note that this must happen before alias declaration.
         var selectRowBlock = getSelectRowOrField(target, context);
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-        var fieldHasTableService = target.hasTableServiceDirective();
-        if (fieldHasTableService) {
+        var fieldHasTableMethod = target.hasTableMethodDirective();
+        if (fieldHasTableMethod) {
             createServiceDependency(target);
         }
         var querySource = context.renderQuerySource(getLocalTable());
@@ -65,7 +65,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 GraphQLReservedName.PAGINATION_LAST,
                 GraphQLReservedName.PAGINATION_FIRST).map(GraphQLReservedName::getName).toList();
 
-        var tableServiceArgs = fieldHasTableService ? target.getArguments()
+        var tableMethodArgs = fieldHasTableMethod ? target.getArguments()
                 .stream()
                 .map(AbstractField::getName).
                 filter(name -> !reservedNames.contains(name))
@@ -73,11 +73,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                         args -> args.isEmpty() ? CodeBlock.empty() : CodeBlock.of(", $L", args)))
                 : null;
 
-        var tableServiceBlock = fieldHasTableService ? invokeServiceBlock(
+        var tableMethodBlock = fieldHasTableMethod ? invokeServiceBlock(
                 target.getService().getClassName().simpleName(),
                 target.getService().getMethodName(),
                 context.getTargetAlias(),
-                tableServiceArgs)
+                tableMethodArgs)
                 : null;
 
         var returnType = processedSchema.isRecordType(target)
@@ -85,8 +85,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
                 .addCode(selectAliasesBlock)
-                .addCodeIf(fieldHasTableService, declareAllServiceClasses(target.getName(), true))
-                .addStatementIf(fieldHasTableService, tableServiceBlock)
+                .addCodeIf(fieldHasTableMethod, declareAllServiceClasses(target.getName(), true))
+                .addStatementIf(fieldHasTableMethod, tableMethodBlock)
                 .addCode(orderFields)
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()

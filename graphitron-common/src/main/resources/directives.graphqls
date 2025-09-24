@@ -205,6 +205,6 @@ directive @nodeId(
 
 
 """
-Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableService
+Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod
 """
-directive @tableService(service: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
+directive @tableMethod(service: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION

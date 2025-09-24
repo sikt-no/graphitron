@@ -9,11 +9,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-@DisplayName("Fetch tableService queries")
-public class TableServiceTest extends GeneratorTest {
+@DisplayName("Fetch tableMethod queries")
+public class TableMethodTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "queries/fetch/tableService";
+        return "queries/fetch/tableMethod";
     }
 
     @Override
@@ -22,31 +22,31 @@ public class TableServiceTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("TableService test")
-    void testTableService() {
+    @DisplayName("TableMethod test")
+    void testTableMethod() {
         assertGeneratedContentContains("default",
-                "var customerTableService = new CustomerTableService();",
-                        "_customer = customerTableService.customerTable(_customer)",
+                "var customerTableMethod = new CustomerTableMethod();",
+                        "_customer = customerTableMethod.customerTable(_customer)",
                         ".from(_customer)");
     }
 
     @Test
-    @DisplayName("TableService arguments test")
-    void testWithArgsTableService() {
+    @DisplayName("TableMethod arguments test")
+    void testWithArgsTableMethod() {
         assertGeneratedContentContains("withArgs",
-                "var customerTableService = new CustomerTableService();",
-                "_customer = customerTableService.customerTable(_customer, first_name)",
+                "var customerTableMethod = new CustomerTableMethod();",
+                "_customer = customerTableMethod.customerTable(_customer, first_name)",
                 ".from(_customer)");
     }
 
     @Test
-    @DisplayName("TableService paginated test")
-    void testConnectionTableService() {
+    @DisplayName("TableMethod paginated test")
+    void testConnectionTableMethod() {
         assertGeneratedContentMatches("paginated");
     }
     @Test
-    @DisplayName("TableService splitQuery test")
-    void testSplitQueryTableService() {
+    @DisplayName("TableMethod splitQuery test")
+    void testSplitQueryTableMethod() {
         assertGeneratedContentMatches("splitQuery");
     }
 }
