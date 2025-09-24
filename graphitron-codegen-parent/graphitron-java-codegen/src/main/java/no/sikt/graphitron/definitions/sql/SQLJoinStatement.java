@@ -1,9 +1,9 @@
 package no.sikt.graphitron.definitions.sql;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
-import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.generators.context.JoinListSequence;
+import no.sikt.graphitron.javapoet.CodeBlock;
 
 import java.util.List;
 import java.util.Objects;
@@ -15,7 +15,7 @@ import java.util.Objects;
 public class SQLJoinStatement extends SQLJoin {
     private final JoinElement joinTargetTable;
     private final String comparableJoinString;
-    private final Alias joinAlias;
+    private final AliasWrapper joinAlias;
     private final CodeBlock joinString;
 
     /**
@@ -23,11 +23,11 @@ public class SQLJoinStatement extends SQLJoin {
      * @param joinFields List of any conditions for the join operation.
      * @param nullable What kind of join operation is to be used.
      */
-    public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, Alias joinAlias, List<SQLJoinField> joinFields, boolean nullable) {
+    public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, AliasWrapper joinAlias, List<SQLJoinField> joinFields, boolean nullable) {
         super(joinSequence, joinFields, nullable);
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;
-        joinString = super.toJoinString(joinAlias.getMappingName());
+        joinString = super.toJoinString(joinAlias.getAlias().getMappingName());
         comparableJoinString = joinString.toString();
     }
 
@@ -48,7 +48,7 @@ public class SQLJoinStatement extends SQLJoin {
     /**
      * @return The alias to be used to uniquely distinguish this join operation.
      */
-    public Alias getJoinAlias() {
+    public AliasWrapper getJoinAlias() {
         return joinAlias;
     }
 
@@ -62,8 +62,7 @@ public class SQLJoinStatement extends SQLJoin {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof SQLJoinStatement)) return false;
-        SQLJoinStatement that = (SQLJoinStatement) o;
+        if (!(o instanceof SQLJoinStatement that)) return false;
         return Objects.equals(comparableJoinString, that.comparableJoinString);
     }
 

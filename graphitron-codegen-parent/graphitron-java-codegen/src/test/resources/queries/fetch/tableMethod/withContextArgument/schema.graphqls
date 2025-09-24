@@ -1,0 +1,7 @@
+type Query {
+    customer: Customer @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"}, contextArguments: "ctxField")
+}
+
+type Customer @table{
+    id: ID
+}

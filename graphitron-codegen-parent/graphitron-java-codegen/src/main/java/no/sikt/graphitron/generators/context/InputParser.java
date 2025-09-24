@@ -114,6 +114,13 @@ public class InputParser {
     }
 
     /**
+     * @return List of input names that the field specifies.
+     */
+    public List<String> getMethodInputNames() {
+        return new ArrayList<>(methodInputs.keySet());
+    }
+
+    /**
      * @return Map of inputs that the field specifies.
      */
     public Map<String, InputField> getMethodInputsWithOrderField() {

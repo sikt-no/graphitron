@@ -76,8 +76,7 @@ public class Alias implements JoinElement {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Alias)) return false;
-        Alias that = (Alias) o;
+        if (!(o instanceof Alias that)) return false;
         return Objects.equals(name, that.name);
     }
 
@@ -95,5 +94,9 @@ public class Alias implements JoinElement {
 
     private String prefixStringIfFirstCharIsDigit(String string) {
         return (Character.isDigit(string.charAt(0)) ? "_" : "") + string;
+    }
+
+    public AliasWrapper toAliasWrapper() {
+        return new AliasWrapper(this);
     }
 }

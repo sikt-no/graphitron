@@ -202,3 +202,9 @@ directive @nodeId(
   """
   typeName: String!
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+
+
+"""
+Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod
+"""
+directive @tableMethod(tableMethodReference: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION

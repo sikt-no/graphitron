@@ -1,0 +1,5 @@
+{
+    addressTableMethod(input: "35200") {
+        id
+    }
+}
