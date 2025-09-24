@@ -32,9 +32,9 @@ public class TableMethodTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("defualt")
-    void testTableMethod() {
-        assertGeneratedContentContains("default",
+    @DisplayName("No extra arguments")
+    void noExtraArguments() {
+        assertGeneratedContentContains("noExtraArguments",
                 "var customerTableMethod = new CustomerTableMethod();",
                         "_customer = customerTableMethod.customerTable(_customer)",
                         ".from(_customer)");
@@ -42,8 +42,8 @@ public class TableMethodTest extends GeneratorTest {
 
     @Test
     @DisplayName("One argument")
-    void testWithArgsTableMethod() {
-        assertGeneratedContentContains("withArgs" ,
+    void withOneArgument() {
+        assertGeneratedContentContains("withOneArgument" ,
                 "var customerTableMethod = new CustomerTableMethod();",
                 "_customer = customerTableMethod.customerTable(_customer, first_name)",
                 ".from(_customer)");
@@ -51,20 +51,20 @@ public class TableMethodTest extends GeneratorTest {
 
     @Test
     @DisplayName("With pagination")
-    void testConnectionTableMethod() {
+    void paginated() {
         assertGeneratedContentContains("paginated" , Set.of(CUSTOMER_CONNECTION),
                 "_customer = customerTableMethod.customerTable(_customer, first_name);");
     }
     @Test
     @DisplayName("On splitQuery")
-    void testSplitQueryTableMethod() {
+    void splitQuery() {
         assertGeneratedContentContains("splitQuery" , Set.of(CUSTOMER_CONNECTION),
                 "_customer = customerTableMethod.customerTable(_customer);");
     }
 
     @Test
     @DisplayName("With reference")
-    void testTableMethodWithReference() {
+    void reference() {
         assertGeneratedContentContains("reference",
                 "var _customer = CUSTOMER.as(\"customer_2952383337\");"
                 , "_customer = customerTableMethod.customerTable(_customer, first_name);"
@@ -74,7 +74,7 @@ public class TableMethodTest extends GeneratorTest {
 
     @Test
     @DisplayName("With ContextArgument")
-    void testTableMethodWithContextArgument() {
+    void withContextArgument() {
         assertGeneratedContentContains("withContextArgument",
                 "_customer = customerTableMethod.customerTable(_customer, _c_ctxField);",
                 "public static Customer customerForQuery(DSLContext ctx, String _c_ctxField");
