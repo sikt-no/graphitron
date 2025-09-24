@@ -96,13 +96,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         if (!processedSchema.isRecordType(targetField)) {
             return generateForField(targetField, context);
         }
-        return targetField.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(targetField.getContainerTypeName())
-                ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
-                : generateSelectRow(context);
 
-//        return isIterableWrappedResolverWithPagination(targetField)
-//               ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
-//               : generateSelectRow(context);
+        return isIterableWrappedResolverWithPagination(targetField)
+               ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
+               : generateSelectRow(context);
     }
 
     private CodeBlock createSelectBlock(
@@ -139,7 +136,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             return CodeBlock.statementOf(".fetch$L(it -> it.into($T.class))", referenceField.isIterableWrapped() ? "" : "One", refObject.getGraphClassName());
         }
 
-        if (referenceField.isResolver() && referenceField.isIterableWrapped()) {
+        // Use fetchGroups only for fields that are not record types. The reason for this, is that for record types,
+        // the Datafetcher for the field passes a set of keys and expects a map in return, where each key maps to
+        // exactly one model or DTO.
+        if (processedSchema.isIterableResolverFieldAndNoJavaRecord(referenceField)) {
             return CodeBlock
                     .builder()
                     .add(".fetchGroups")
