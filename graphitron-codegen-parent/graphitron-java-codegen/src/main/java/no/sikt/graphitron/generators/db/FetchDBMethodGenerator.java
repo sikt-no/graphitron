@@ -731,9 +731,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var checksNotEmpty = !checks.isEmpty()
                     && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs
-            var renderedSequence = isInRecordInput ?
-                    CodeBlock.of(context.getTargetAlias())
-                    :  context.iterateJoinSequenceFor(field).render();
+            var renderedSequence = isInRecordInput
+                                   ? CodeBlock.of(context.getTargetAlias())
+                                   : context.iterateJoinSequenceFor(field).render();
             if (renderedSequence.isEmpty()) {
                 continue;
             }

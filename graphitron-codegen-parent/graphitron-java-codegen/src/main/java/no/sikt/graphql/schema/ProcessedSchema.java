@@ -660,6 +660,18 @@ public class ProcessedSchema {
                 && hasTable;
     }
 
+    public boolean isIterableResolverFieldAndNoJavaRecord(GenerationField field) {
+        RecordObjectSpecification<?> type = getRecordType(field.getTypeName());
+        boolean hasTable = type != null && type.hasTable();
+        String containerTypeName = field.getContainerTypeName();
+        boolean isJavaRecordOrNoPreviousTable = hasJavaRecord(containerTypeName)
+                                                || !isObjectWithPreviousTableObject(containerTypeName);
+
+        return field.isIterableWrapped()
+               && field.isResolver()
+               && !(isJavaRecordOrNoPreviousTable && hasTable);
+    }
+
     /**
      * @return Get an input type with this name.
      */

@@ -624,13 +624,16 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Temporary test for reference ID argument (not node strategy) outside root ")
+    @DisplayName("Temporary test for reference ID argument (not node strategy) outside root")
+    // TODO: Uncertain about rules when input argument has reference directive. In this test, a new customer-alias
+    //  is created, and the reference to store is made through this alias instead of the previous path
+    //  (address->customer->store). The generated code for this test should be verified to see if it behaves as expected.
     void idArgumentOnNonRootQueryWithoutNodeStrategy() {
         assertGeneratedContentContains(
                 "idArgumentOnNonRootQueryWithoutNodeStrategy", Set.of(CUSTOMER_TABLE),
                 "customer_1589604633_store_left.hasStaffId(staffId)"
+//                "customer_2952383337_store_left.hasStaffId(staffId)"
         );
-
     }
 
     @Test
