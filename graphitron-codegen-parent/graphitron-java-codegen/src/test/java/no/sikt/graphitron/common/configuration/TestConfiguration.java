@@ -1,6 +1,5 @@
 package no.sikt.graphitron.common.configuration;
 
-import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
@@ -37,7 +36,7 @@ public class TestConfiguration {
         return processedSchema;
     }
 
-    public static void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms, List<Extension> extendedClasses) {
+    public static void setProperties(List<ExternalReference> references, List<GlobalTransform> globalTransforms) {
         GeneratorConfig.setProperties(
                 Set.of(),
                 "",
@@ -53,13 +52,12 @@ public class TestConfiguration {
                     "no.sikt.graphitron.codereferences.extensionmethods.ClassWithExtensionMethod",
                     "no.sikt.graphitron.codereferences.extensionmethods.ClassWithDuplicatedExtensionMethod"
                 ),
-                globalTransforms,
-                extendedClasses
+                globalTransforms
         );
     }
 
     public static void setProperties(List<ExternalReference> references) {
-        setProperties(references, List.of(), List.of());
+        setProperties(references, List.of());
     }
 
     public static void setProperties() {
@@ -70,7 +68,6 @@ public class TestConfiguration {
                 DEFAULT_JOOQ_PACKAGE,
                 List.of(),
                 Set.of(),
-                List.of(),
                 List.of()
         );
     }
