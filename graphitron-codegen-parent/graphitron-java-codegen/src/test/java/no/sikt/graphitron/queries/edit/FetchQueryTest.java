@@ -75,4 +75,17 @@ public class FetchQueryTest extends GeneratorTest {
                 ".where(inRecord != null && inRecord.getCustomerId() != null ? _a_customer.CUSTOMER_ID.eq(inRecord.getCustomerId()) : DSL.falseCondition()).fetch"
         );
     }
+
+    @Test
+    @DisplayName("Listed return type on non-root level with split query")
+    void nestedOutputSplitQuery() {
+        assertGeneratedContentContains(
+                "nestedOutputSplitQuery",
+                "Map<Row1<Long>, CustomerTable> customersForOuter(",
+                "CustomerTable::new",
+                ".where(DSL.row(_customer.CUSTOMER_ID).in(outerResolverKeys))",
+                ".fetchMap(r -> r.value1().valuesRow(), Record2::value2);",
+                ".fetchOne(it -> it.into(Outer.class))"
+        );
+    }
 }
