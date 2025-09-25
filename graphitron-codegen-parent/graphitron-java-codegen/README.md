@@ -719,6 +719,8 @@ that compiles, but will always fail when executed.
 
 Note that mutations need either the **mutationType** or the **service** directive set, but not both, in order to be generated.
 
+> **Important:** The output from generated update and insert mutations is currently incorrect. The mutation output is being fetched and filtered based on the input fields rather than returning the actual mutated record(s).
+
 ### Services
 The **service** directive allows for full customization of any database operations while still generating data fetchers.
 The directive points to a class [entry](#code-references) in the POM XML.
