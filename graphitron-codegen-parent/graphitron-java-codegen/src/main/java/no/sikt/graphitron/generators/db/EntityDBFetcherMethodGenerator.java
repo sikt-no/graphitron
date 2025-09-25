@@ -2,9 +2,7 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -15,6 +13,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
@@ -30,19 +29,19 @@ import static no.sikt.graphitron.mappings.TableReflection.getFieldType;
 public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
     private static final String NESTED_NAME = "nested";
 
-    public EntityDBFetcherMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public EntityDBFetcherMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var targetType = processedSchema.getObject(target);
+        var targetType = processedSchema.getRecordType(target);
         var mapType = getObjectMapTypeName();
-        if (!getLocalObject().isEntity() || !processedSchema.hasEntitiesField()) {
+        if (!processedSchema.hasEntitiesField() || !targetType.isEntity()) {
             return getDefaultSpecBuilder(asEntityQueryMethodName(targetType.getName()), mapType).build();
         }
 
-        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var context = new FetchContext(processedSchema, target, getSourceContainer(), false);
         var selectCode = generateSelectRow(context);
         var querySource = context.renderQuerySource(targetType.getTable());
         var whereBlock = formatWhere(context);
@@ -110,7 +109,7 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
         conditionCode.add("$N.", context.getTargetAlias());
         if (field.isID()) {
             if (GeneratorConfig.shouldMakeNodeStrategy()) {
-                return hasIdBlock(CodeBlock.of("($T) $N.get($S)", STRING.className, VARIABLE_INPUT_MAP, key), getLocalObject(), context.getTargetAlias());
+                return hasIdBlock(CodeBlock.of("($T) $N.get($S)", STRING.className, VARIABLE_INPUT_MAP, key), context.getReferenceObject(), context.getTargetAlias());
             } else {
                 conditionCode.add("hasId(($T) ", STRING.className);
             }
@@ -174,13 +173,14 @@ public class EntityDBFetcherMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        var query = processedSchema.getQueryType();
-        if (!processedSchema.hasEntitiesField()) {
+        if (!processedSchema.hasEntitiesField()) { // Note: No entity field here yet: || processedSchema.getEntitiesField().isExplicitlyNotGenerated()) {
             return List.of();
         }
-        if (!getLocalObject().isEntity()) { // Note: No entity field here yet: || processedSchema.getEntitiesField().isExplicitlyNotGenerated()) {
+
+        var source = getSource();
+        if (Optional.ofNullable(processedSchema.getRecordType(source)).map(it -> !it.isEntity()).orElse(true)) {
             return List.of();
         }
-        return List.of(generate(new VirtualSourceField(getLocalObject(), query.getName())));
+        return List.of(generate(source));
     }
 }

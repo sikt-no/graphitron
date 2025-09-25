@@ -11,7 +11,6 @@ import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
@@ -54,20 +53,20 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * Abstract generator for various database fetching methods.
  */
 public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectField> {
-    protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
-    protected final boolean isRoot = getLocalObject().isOperationRoot();
-    protected final boolean isQueryAfterMutation = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
+    protected final String resolverKeyParamName = uncapitalize(getSourceContainer().getName()) + capitalize(RESOLVER_KEYS_NAME);
+    protected final boolean isRoot = getSourceContainer().isOperationRoot();
+    protected final boolean isQueryAfterMutation = getSourceContainer().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
     private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
 
-    public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public FetchDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     protected CodeBlock getInitialKey(FetchContext context) {
         var code = CodeBlock.builder();
 
         var ref = (ObjectField) context.getReferenceObjectField();
-        var table = context.renderQuerySource(getLocalTable());
+        var table = context.renderQuerySource(getSourceTable());
         if (LookupHelpers.lookupExists(ref, processedSchema)) {
             var concatBlock = LookupHelpers.getLookUpKeysAsColumnList(ref, table, processedSchema);
             if (concatBlock.toString().contains(".inline(")) {
@@ -139,7 +138,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, "", getSourceContainer().isOperationRoot(), false);
         var joins = createSelectJoins(context.getJoinSet());
 
         var sequence = context.getCurrentJoinSequence();
@@ -235,7 +234,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                     context.getTargetAlias());
         } else if (field.invokesSubquery()) {
             var fieldContext = context.nextContext(field);
-            fieldSource = fieldContext.renderQuerySource(getLocalTable()).toString();
+            fieldSource = fieldContext.renderQuerySource(getSourceTable()).toString();
             innerRowCode = generateCorrelatedSubquery(field, fieldContext);
         } else {
             innerRowCode = generateForField(field, context);
@@ -477,7 +476,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             } else {
                 innerMappingCode.add(
                         CodeBlock.of("$L.$N.getDataType().convert(r[$L])",
-                                field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getLocalTable()),
+                                field.hasFieldReferences() ? sourceForReferenceFields.get(field.getName()) : context.renderQuerySource(getSourceTable()),
                                 field.getUpperCaseName(), i)
                 );
             }
@@ -518,7 +517,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
         }
 
-        var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
+        var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getSourceTable());
         if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
                     renderedSource,
@@ -583,7 +582,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             // Discriminator condition for single table interface
             conditionList.add(
                     CodeBlock.of("$L.$L.in($L)",
-                            context.renderQuerySource(getLocalTable()),
+                            context.renderQuerySource(getSourceTable()),
                             processedSchema.getInterface(context.getReferenceObjectField()).getDiscriminatorFieldName(),
                             CodeBlock.join(
                                     processedSchema
@@ -1062,7 +1061,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     @NotNull
     protected MethodSpec.Builder getSpecBuilder(ObjectField referenceField, TypeName refTypeName, InputParser parser) {
         return getDefaultSpecBuilder(
-                asQueryMethodName(referenceField.getName(), getLocalObject().getName()),
+                asQueryMethodName(referenceField.getName(), getSourceContainer().getName()),
                 getReturnType(referenceField, refTypeName)
         )
                 .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)

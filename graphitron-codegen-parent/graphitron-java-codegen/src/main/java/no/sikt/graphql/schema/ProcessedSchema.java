@@ -363,12 +363,11 @@ public class ProcessedSchema {
                 .collect(Collectors.toSet());
     }
 
-    /*
+    /**
     * Returns the ObjectDefinition for each Type in a union given that the name
     * supplied is a union. Otherwise, return the ObjectDefinition for all types
     * that implements the given interface.
     * */
-
     public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(String name) {
         if (isUnion(name)) {
             return getUnionSubTypes(isConnectionObject(name) ? getConnectionObject(name).getNodeType() : name);
@@ -379,15 +378,14 @@ public class ProcessedSchema {
         return null;
     }
 
-    /*
+    /**
      * Returns the ObjectDefinition for each type implementing an interface given its interfaceTypeDefinition
      * */
     public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(InterfaceDefinition interfaceDefinition) {
         return getTypesFromInterfaceOrUnion(interfaceDefinition.getName());
     }
 
-
-    /*
+    /**
      * Returns the ObjectDefinition for each type in a union given its unionTypeDefinition
      * */
     public Set<ObjectDefinition> getTypesFromInterfaceOrUnion(UnionDefinition unionDefinition) {

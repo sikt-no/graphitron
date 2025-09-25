@@ -3,7 +3,7 @@ package no.sikt.graphitron.wiring;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.operations.OperationClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.operations.OperationClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,7 +33,7 @@ public class WiringBuilderMutationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "mutation",
                 Set.of(CUSTOMER_TABLE, CUSTOMER_INPUT_TABLE),
-                ".newTypeWiring(\"Mutation\").dataFetcher(\"mutation\", MutationGeneratedDataFetcher.mutation()"
+                ".newTypeWiring(\"Mutation\").dataFetcher(\"mutation\", MutationMutationGeneratedDataFetcher.mutation()"
         );
     }
 }
