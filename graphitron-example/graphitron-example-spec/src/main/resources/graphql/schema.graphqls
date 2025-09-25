@@ -40,9 +40,9 @@ type Query {
 
     inventories(orderBy: InventoriesOrderByInput @orderBy): [Inventory] @asConnection
 
-    addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
-    addressTableMethodSplitQuery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
-    addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(service: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodSplitQuery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
 }
 
 type Mutation {

@@ -1,5 +1,5 @@
 type Query {
-    customer(in: CustomerInput): CustomerTable @tableMethod(service: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+    customer(in: CustomerInput): CustomerTable @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
 }
 
 input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {

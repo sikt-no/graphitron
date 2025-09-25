@@ -12,6 +12,7 @@ import static no.sikt.graphql.directives.GenerationDirective.TABLE_METHOD;
  */
 public class ServiceWrapper extends CodeReferenceWrapper {
     public <T extends NamedNode<T> & DirectivesContainer<T>> ServiceWrapper(T field) {
-        super(field, field.hasDirective(SERVICE.getName()) ? SERVICE : TABLE_METHOD, GenerationDirectiveParam.SERVICE);
+        super(field, field.hasDirective(SERVICE.getName()) ? SERVICE : TABLE_METHOD,
+                field.hasDirective(SERVICE.getName()) ? GenerationDirectiveParam.SERVICE : GenerationDirectiveParam.TABLE_METHOD_REFERENCE);
     }
 }
