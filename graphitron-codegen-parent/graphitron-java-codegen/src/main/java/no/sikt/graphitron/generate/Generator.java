@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generate;
 
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
-import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
@@ -25,8 +24,6 @@ public interface Generator {
     Set<String> getExternalReferenceImports();
 
     List<GlobalTransform> getGlobalTransforms();
-
-    List<Extension> getExtensions();
 
     String getApiPackageName();
 

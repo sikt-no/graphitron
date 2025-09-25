@@ -47,7 +47,7 @@ public class InputDefinition extends RecordObjectDefinition<InputObjectTypeDefin
     public static List<InputDefinition> processInputDefinitions(List<InputObjectTypeDefinition> inputs) {
         return inputs
                 .stream()
-                .map(it -> GeneratorConfig.getExtendedFunctionality().createExtensionIfAvailable(InputDefinition.class, new Class[]{InputObjectTypeDefinition.class}, it))
+                .map(InputDefinition::new)
                 .collect(Collectors.toList());
     }
 }

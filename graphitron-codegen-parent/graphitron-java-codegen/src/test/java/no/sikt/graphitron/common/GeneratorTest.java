@@ -3,7 +3,6 @@ package no.sikt.graphitron.common;
 import no.sikt.graphitron.common.configuration.ReferencedEntry;
 import no.sikt.graphitron.common.configuration.SchemaComponent;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.configuration.externalreferences.GlobalTransform;
@@ -40,7 +39,6 @@ public abstract class GeneratorTest {
     protected final boolean checkProcessedSchemaDefault;
     private final Set<ExternalReference> references;
     private final Set<GlobalTransform> globalTransforms;
-    private final List<Extension> extendedClasses;
 
     private final static String
             MSG_CONTAIN_EXPECT = "Expected to find",
@@ -63,7 +61,6 @@ public abstract class GeneratorTest {
         this.components = getComponents();
         this.references = getExternalReferences();
         this.globalTransforms = getGlobalTransforms();
-        this.extendedClasses = getExtendedClasses();
     }
 
     public String getSourceTestPath() {
@@ -219,7 +216,7 @@ public abstract class GeneratorTest {
         var allPaths = allComponents.stream().flatMap(it -> it.getPaths().stream()).collect(Collectors.toSet());
         var allReferences = Stream.concat(references.stream(), allComponents.stream().flatMap(it -> makeReferences(it.getReferences()).stream())).collect(Collectors.toSet());
 
-        setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms), extendedClasses);
+        setProperties(new ArrayList<>(allReferences), new ArrayList<>(globalTransforms));
         return allPaths;
     }
 
@@ -378,9 +375,5 @@ public abstract class GeneratorTest {
 
     protected Set<GlobalTransform> getGlobalTransforms() {
         return Set.of();
-    }
-
-    protected List<Extension> getExtendedClasses() {
-        return List.of();
     }
 }

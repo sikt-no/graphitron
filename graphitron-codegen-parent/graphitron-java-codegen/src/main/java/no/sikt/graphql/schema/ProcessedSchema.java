@@ -191,7 +191,7 @@ public class ProcessedSchema {
      * Ensure that the definitions created in this class match database names where applicable.
      */
     public void validate(boolean checkTypes) {
-        ProcessedDefinitionsValidator processedDefinitionsValidator = GeneratorConfig.getExtendedFunctionality().createExtensionIfAvailable(ProcessedDefinitionsValidator.class, new Class[]{ProcessedSchema.class}, this);
+        ProcessedDefinitionsValidator processedDefinitionsValidator = new ProcessedDefinitionsValidator(this);
         if (checkTypes) {
             processedDefinitionsValidator.validateObjectFieldTypes();
         }

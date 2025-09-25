@@ -46,8 +46,6 @@ public class GeneratorConfig {
     private static Set<String> externalReferenceImports;
     private static List<GlobalTransform> globalTransforms;
 
-    private static ExtendedFunctionality extendedFunctionality;
-
     private static RecordValidation recordValidation;
 
     private static CodeGenerationThresholds codeGenerationThresholds;
@@ -62,8 +60,7 @@ public class GeneratorConfig {
             String jooqPkg,
             List<ExternalReference> references,
             Set<String> imports,
-            List<GlobalTransform> globalTransforms,
-            List<Extension> extendedClasses
+            List<GlobalTransform> globalTransforms
     ) {
         generatorSchemaFiles = files;
         userSchema = files;
@@ -79,7 +76,6 @@ public class GeneratorConfig {
         externalReferenceImports = imports;
 
         GeneratorConfig.globalTransforms = globalTransforms;
-        extendedFunctionality = new ExtendedFunctionality(extendedClasses);
     }
 
     /**
@@ -110,7 +106,6 @@ public class GeneratorConfig {
 
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
-        extendedFunctionality = new ExtendedFunctionality(mojo.getExtensions() != null ? mojo.getExtensions() : List.of());
         makeKickstart = mojo.makeKickstart();
         makeNodeStrategy = mojo.makeNodeStrategy();
         alwaysUsePrimaryKeyInSplitQueries = true;
@@ -224,10 +219,6 @@ public class GeneratorConfig {
 
     public static void setOutputDirectory(String path) {
         outputDirectory = path + "/" + PLUGIN_OUTPUT_PATH;
-    }
-
-    public static ExtendedFunctionality getExtendedFunctionality() {
-        return extendedFunctionality;
     }
 
     public static int getMaxAllowedPageSize() {

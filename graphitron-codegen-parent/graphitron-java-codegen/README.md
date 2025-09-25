@@ -94,8 +94,6 @@ In order for Graphitron to find the external Java code it needs to be listed in 
 
 * _externalReferences_ - List of references to classes that can be applied through certain directives. Note that this is being deprecated in favor of using the className in the directives.
 * _externalReferenceImports_ - List of packages that should be searched for classNames used in directives.
-* _extensions_ - Graphitron classes can be modified with extensions, allowing plugin users to provide their own implementations to modify the code generation process.
-  Currently, all extensions are instantiated via [ExtendedFunctionality](https://github.com/sikt-no/graphitron/blob/main/graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/configuration/ExtendedFunctionality.java), limiting extension to specific classes.
 
 Example of referencing a class through the configuration:
 ```xml

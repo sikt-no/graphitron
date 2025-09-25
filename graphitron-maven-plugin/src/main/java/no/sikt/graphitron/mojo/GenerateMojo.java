@@ -5,7 +5,6 @@ import com.kobylynskyi.graphql.codegen.model.MappingConfig;
 import com.kobylynskyi.graphql.codegen.model.RelayConfig;
 import graphql.parser.ParserOptions;
 import no.sikt.graphitron.configuration.CodeGenerationThresholds;
-import no.sikt.graphitron.configuration.Extension;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.RecordValidation;
 import no.sikt.graphitron.configuration.externalreferences.ExternalMojoClassReference;
@@ -99,10 +98,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Parameter(property = "generate.globalRecordTransforms")
     @SuppressWarnings("unused")
     private List<GlobalTransform> globalRecordTransforms;
-
-    @Parameter(property = "generate.extensions")
-    @SuppressWarnings("unused")
-    private List<Extension> extensions;
 
     @Parameter(property = "generate.recordValidation")
     @SuppressWarnings("unused")
@@ -261,11 +256,6 @@ public class GenerateMojo extends AbstractMojo implements Generator {
     @Override
     public List<GlobalTransform> getGlobalTransforms() {
         return globalRecordTransforms;
-    }
-
-    @Override
-    public List<Extension> getExtensions() {
-        return extensions;
     }
 
     @Override
