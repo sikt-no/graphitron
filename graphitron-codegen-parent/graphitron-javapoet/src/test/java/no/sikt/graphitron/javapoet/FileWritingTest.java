@@ -101,6 +101,25 @@ public final class FileWritingTest {
     }
 
     @Test
+    public void testFileNotRewrittenWhenContentUnchanged() throws IOException {
+        TypeSpec type = TypeSpec.classBuilder("Test").build();
+        JavaFile file = JavaFile.builder("", type).build();
+        file.writeTo(tmp.getRoot());
+
+        File testFile = new File(tmp.getRoot(), "Test.java");
+        assertThat(testFile.exists()).isTrue();
+        var calculatedHash = JavaFile.hashExistingFile(testFile.toPath()).orElseThrow(() -> new AssertionError("No hash exists for " + testFile.getAbsolutePath()));
+        var lastModified = testFile.lastModified();
+        String hash = file.sha256();
+        file.writeTo(tmp.getRoot());
+        var calculatedHashNew = JavaFile.hashExistingFile(testFile.toPath()).orElseThrow(() -> new AssertionError("No hash exists for " + testFile.getAbsolutePath()));
+        assertThat(lastModified).isEqualTo(testFile.lastModified());
+        assertThat(hash).isEqualTo(calculatedHash);
+        assertThat(hash).isEqualTo(calculatedHashNew);
+        assertThat(hash).isEqualTo("3cb4fc0d69712780633922d3b9273a61721c614c7d676e76b0fd5e36c6eaf75d");
+    }
+
+    @Test
     public void filerDefaultPackage() throws IOException {
         TypeSpec type = TypeSpec.classBuilder("Test").build();
         JavaFile.builder("", type).build().writeTo(filer);
