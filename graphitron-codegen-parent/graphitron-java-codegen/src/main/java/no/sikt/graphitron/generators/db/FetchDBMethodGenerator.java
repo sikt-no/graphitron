@@ -769,23 +769,23 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
 
             if (!field.hasOverridingCondition()) {
-                var argumentSelect = CodeBlock.ofIf(field.isNullable(), "select.getArgumentSet().contains($S + $N + $S)"  ,
-                        condition.getSourceInput().getName() + "[" , VARIABLE_INTERNAL_ITERATION, "]/" + field.getName());
+                var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.getArgumentSet().contains($S + $N + $S)",
+                        VARIABLE_SELECT, condition.getSourceInput().getName() + "[" , VARIABLE_INTERNAL_ITERATION, "]/" + field.getName());
                 if (processedSchema.isNodeIdField(field)) {
                     if(field.isNullable()) {
-                        tupleVariableBlocks.add(CodeBlock.ofTernary(argumentSelect, unpacked, trueCondition()));
+                        tupleVariableBlocks.add(ofTernary(argumentSelect, unpacked, trueCondition()));
                     } else {
                         tupleVariableBlocks.add(unpacked);
                     }
                 } else if (field.isID()) {
                     if(field.isNullable()) {
-                        tupleVariableBlocks.add(CodeBlock.ofTernary(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
+                        tupleVariableBlocks.add(ofTernary(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
                     } else {
                         tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
                     }
                 } else {
                     if (field.isNullable()) {
-                        tupleVariableBlocks.add(CodeBlock.ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
+                        tupleVariableBlocks.add(ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
                     }else{
                         tupleVariableBlocks.add(val(unpacked));
                     }
@@ -844,26 +844,28 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         return CodeBlock.join(
                 generateForField(field, context, hasRecord),
-                CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className));
+                CodeBlock.ofIf(isClob, ".cast($T.class)", STRING.className)
+        );
     }
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
         var field = condition.getInput();
+        var getElement = CodeBlock.of("$N.get($N)", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION);
         if (processedSchema.isNodeIdField(field)) {
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
                     ? processedSchema.getRecordType(field.getNodeIdTypeName())
                     : context.getReferenceObject();
-            return hasIdBlock(CodeBlock.of("$N.get($N)", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION), referenceObject, context.getTargetAlias());
+            return hasIdBlock(getElement, referenceObject, context.getTargetAlias());
         }
 
         if (!condition.hasRecord()) {
-            return CodeBlock.of("$N.get($N)$L",argumentInputFieldName, VARIABLE_INTERNAL_ITERATION, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+            return CodeBlock.of("$L$L",getElement, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
         }
 
         var mapping = field.isID() && !Optional.ofNullable(processedSchema.getRecordType(condition.getSourceInput())).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false)
                 ? generateGetForID(field.getMappingFromFieldOverride(), table)
                 : field.getMappingForRecordFieldOverride().asGetCall();
-        return CodeBlock.of("$N.get($N)$L",argumentInputFieldName, VARIABLE_INTERNAL_ITERATION, mapping);
+        return CodeBlock.of("$L$L",getElement, mapping);
     }
 
     @NotNull

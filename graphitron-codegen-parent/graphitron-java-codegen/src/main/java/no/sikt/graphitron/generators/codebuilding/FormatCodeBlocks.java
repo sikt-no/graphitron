@@ -1015,4 +1015,8 @@ public class FormatCodeBlocks {
     private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(CodeBlock target) {
         return CodeBlock.of("$L.getPrimaryKey().getFieldsArray()", target);
     }
+
+    public static CodeBlock ofTernary(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
+        return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
+    }
 }

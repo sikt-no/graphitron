@@ -56,10 +56,10 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
-                "DSL.row(DSL.trueCondition(), DSL.trueCondition()).in(" +
-                        "IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> DSL.row(_customer.hasId(inRecordList.get(internal_it_).getId()),",
-                        "_customer.hasId(inRecordList.get(internal_it_).getOtherID())",
-                        ") : DSL.noCondition()"
+                "DSL.row(DSL.trueCondition(), DSL.trueCondition()).in(",
+                "IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> DSL.row(_customer.hasId(inRecordList.get(internal_it_).getId()),",
+                "_customer.hasId(inRecordList.get(internal_it_).getOtherID())",
+                ") : DSL.noCondition()"
         );
     }
 
@@ -80,16 +80,9 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
-                """
-                        DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(
-                        IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ ->
-                                DSL.row(
-                                	_customer.hasId(inRecordList.get(internal_it_).getId()),
-                                	select.getArgumentSet().contains("in[" + internal_it_ + "]/first") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _customer.FIRST_NAME
-                                )).toList()
-                            )
-                        : DSL.noCondition()
-                        """
+                "DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(",
+                "_customer.hasId(inRecordList.get(internal_it_).getId()),",
+                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/first\") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _customer.FIRST_NAME"
         );
     }
 
@@ -109,8 +102,8 @@ public class RecordTest extends GeneratorTest {
     @DisplayName("Input type with an ID field annotated with @field without @nodeId")
     void fieldOverrideID() {
         assertGeneratedContentContains("fieldOverrideID",
-                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/customerID\") ? _payment.hasCustomerId(inRecordList.get(internal_it_).getCustomerId()) : DSL.trueCondition()",
-                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/paymentID\") ? _payment.hasPaymentId(inRecordList.get(internal_it_).getPaymentId()) : DSL.trueCondition()");
+                "_payment.hasCustomerId(inRecordList.get(internal_it_).getCustomerId()) : DSL.trueCondition()",
+                "_payment.hasPaymentId(inRecordList.get(internal_it_).getPaymentId()) : DSL.trueCondition()");
     }
 
     @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.

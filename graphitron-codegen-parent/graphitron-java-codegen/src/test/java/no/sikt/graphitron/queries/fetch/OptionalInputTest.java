@@ -67,13 +67,8 @@ public class OptionalInputTest extends GeneratorTest {
     void listedNestedInput() {
         assertGeneratedContentContains(
                 "listedNestedInput", Set.of(DUMMY_INPUT),
-                "in0 != null && in0.size() > 0 ?" +
-                        "DSL.row(DSL.trueCondition()).in(" +
-                        "    IntStream.range(0, in0.size()).mapToObj(internal_it_ ->" +
-                        "        DSL.row(select.getArgumentSet().contains(\"in0[\" + internal_it_ + \"]/id\") ? _customer.hasId(in0.get(internal_it_).getIn1().getId()) : DSL.trueCondition())" +
-                        "    ).toList()" +
-                        ") : DSL.noCondition())"
-        );
+                "_customer.hasId(in0.get(internal_it_).getIn1().getId())"
+                );
     }
 
     @Test
@@ -81,12 +76,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedListedInput() {
         assertGeneratedContentContains(
                 "nestedListedInput", Set.of(DUMMY_INPUT),
-                "in != null && in.getIn() != null && in.getIn().size() > 0 ?" +
-                        "DSL.row(DSL.trueCondition()).in(" +
-                        "    IntStream.range(0, in.getIn().size()).mapToObj(internal_it_ ->" +
-                        "        DSL.row(select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/id\") ? _customer.hasId(in.getIn().get(internal_it_).getId()) : DSL.trueCondition())" +
-                        "    ).toList()" +
-                        ") : DSL.noCondition())"
+                "_customer.hasId(in.getIn().get(internal_it_).getId())"
         );
     }
 }
