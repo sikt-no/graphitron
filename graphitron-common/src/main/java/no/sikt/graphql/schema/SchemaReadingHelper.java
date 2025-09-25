@@ -26,9 +26,9 @@ public class SchemaReadingHelper {
     /**
      * Default is 15000 for the GraphQL parser. With a new directive on every field it goes over this limit.
      * If the errors about preventing DoS attacks show up again, increase the values in this file.
-     * DoS is not relevant here since this is only used for reading our own local schema files.
+     * DoS is not relevant here since this is only used for reading local schema files.
      */
-    private final static int MAX_TOKENS = MAX_QUERY_TOKENS * 8;
+    private final static int MAX_TOKENS = MAX_QUERY_TOKENS * 12;
     /**
      * Default is 1 MB (1024 * 1024) for the GraphQL parser.
      */
