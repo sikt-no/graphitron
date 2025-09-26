@@ -1,3 +1,0 @@
-type Query {
-  query(in: CustomerInputTable): Customer @service(service: {name: "RESOLVER_FETCH_SERVICE"})
-}

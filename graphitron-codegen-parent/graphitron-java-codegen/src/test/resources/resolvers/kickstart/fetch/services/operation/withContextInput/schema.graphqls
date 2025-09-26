@@ -1,3 +1,0 @@
-type Query {
-  query: String @service(service: {name: "CONTEXT_SERVICE"}, contextArguments: "ctxField")
-}
