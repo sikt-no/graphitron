@@ -5,6 +5,7 @@ import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.records.CustomerRecord;
@@ -39,11 +40,11 @@ public class QueryDBQueries {
                                         _customer.FIRST_NAME,
                                         DSL.trueCondition()
                                 ).in(
-                                        inRecordList.stream().map(internal_it_ ->
+                                        IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ ->
                                                 DSL.row(
-                                                        _customer.hasId(internal_it_.getId()),
-                                                        DSL.inline(internal_it_.getFirstName()),
-                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, internal_it_.getFirstName())
+                                                        _customer.hasId(inRecordList.get(internal_it_).getId()),
+                                                        DSL.val(inRecordList.get(internal_it_).getFirstName()),
+                                                        no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerString(_customer, inRecordList.get(internal_it_).getFirstName())
                                                 )
                                         ).toList()
                                 ) : DSL.noCondition()

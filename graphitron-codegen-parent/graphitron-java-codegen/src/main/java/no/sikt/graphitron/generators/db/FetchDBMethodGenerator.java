@@ -57,7 +57,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     protected final String resolverKeyParamName = uncapitalize(getLocalObject().getName()) + capitalize(RESOLVER_KEYS_NAME);
     protected final boolean isRoot = getLocalObject().isOperationRoot();
     protected final boolean isQueryAfterMutation = getLocalObject().getName().equalsIgnoreCase(SCHEMA_MUTATION.getName());
-    private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY = 22;
+    private static final int MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY = 22;
 
     public FetchDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -115,10 +115,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
         }
         return codeBuilder.build();
-    }
-
-    protected static CodeBlock createAliasDeclarations(Alias alias) {
-        return createAliasDeclarations(Set.of(alias));
     }
 
     protected CodeBlock generateCorrelatedSubquery(GenerationField field, FetchContext context) {
@@ -258,7 +254,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
      protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
-        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
+        boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
                 ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded, keySet.size())
@@ -437,7 +433,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     /**
-     * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
+     * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPE_SAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
     private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<KeyWrapper> keySet) {
@@ -532,6 +528,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 field.getUpperCaseName(),
                 overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
         );
+
+
         return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
     }
 
@@ -771,12 +769,26 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
 
             if (!field.hasOverridingCondition()) {
+                var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.getArgumentSet().contains($S + $N + $S)",
+                        VARIABLE_SELECT, condition.getSourceInput().getName() + "[" , VARIABLE_INTERNAL_ITERATION, "]/" + field.getName());
                 if (processedSchema.isNodeIdField(field)) {
-                    tupleVariableBlocks.add(unpacked);
+                    if(field.isNullable() && !(field instanceof VirtualInputField)) {
+                        tupleVariableBlocks.add(ofTernary(argumentSelect, unpacked, trueCondition()));
+                    } else {
+                        tupleVariableBlocks.add(unpacked);
+                    }
                 } else if (field.isID()) {
-                    tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
+                    if(field.isNullable() && !(field instanceof VirtualInputField)) {
+                        tupleVariableBlocks.add(ofTernary(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
+                    } else {
+                        tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
+                    }
                 } else {
-                    tupleVariableBlocks.add(inline(unpacked));
+                    if (field.isNullable() && !(field instanceof VirtualInputField)) {
+                        tupleVariableBlocks.add(ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
+                    }else{
+                        tupleVariableBlocks.add(val(unpacked));
+                    }
                 }
 
                 tupleFieldBlocks.add(makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName())));
@@ -810,7 +822,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add(".in(\n")
                 .indent()
                 .indent()
-                .add("$N.stream().map($L ->\n", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
+                .add("$T.range(0, $N.size()).mapToObj($N ->\n", INT_STREAM.className, argumentInputFieldName, VARIABLE_INTERNAL_ITERATION)
                 .indent()
                 .indent()
                 .add(wrapRow(CodeBlock.join(tupleVariableBlocks, ",\n")))
@@ -838,21 +850,22 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     private CodeBlock unpackElement(FetchContext context, String argumentInputFieldName, InputCondition condition, JOOQMapping table) {
         var field = condition.getInput();
+        var getElement = CodeBlock.of("$N.get($N)", argumentInputFieldName, VARIABLE_INTERNAL_ITERATION);
         if (processedSchema.isNodeIdField(field)) {
             var referenceObject = processedSchema.hasJOOQRecord(field.getContainerTypeName())
                     ? processedSchema.getRecordType(field.getNodeIdTypeName())
                     : context.getReferenceObject();
-            return hasIdBlock(CodeBlock.of("$N", VARIABLE_INTERNAL_ITERATION), referenceObject, context.getTargetAlias());
+            return hasIdBlock(getElement, referenceObject, context.getTargetAlias());
         }
 
         if (!condition.hasRecord()) {
-            return CodeBlock.of("$N$L", VARIABLE_INTERNAL_ITERATION, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
+            return CodeBlock.of("$L$L",getElement, condition.getNameWithPathString().replaceFirst(Pattern.quote(argumentInputFieldName), ""));
         }
 
         var mapping = field.isID() && !Optional.ofNullable(processedSchema.getRecordType(condition.getSourceInput())).map(RecordObjectSpecification::hasJavaRecordReference).orElse(false)
                 ? generateGetForID(field.getMappingFromFieldOverride(), table)
                 : field.getMappingForRecordFieldOverride().asGetCall();
-        return CodeBlock.of("$N$L", VARIABLE_INTERNAL_ITERATION, mapping);
+        return CodeBlock.of("$L$L",getElement, mapping);
     }
 
     @NotNull

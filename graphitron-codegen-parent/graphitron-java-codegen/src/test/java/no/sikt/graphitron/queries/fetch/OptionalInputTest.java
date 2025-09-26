@@ -67,13 +67,8 @@ public class OptionalInputTest extends GeneratorTest {
     void listedNestedInput() {
         assertGeneratedContentContains(
                 "listedNestedInput", Set.of(DUMMY_INPUT),
-                "in0 != null && in0.size() > 0 ?" +
-                        "DSL.row(DSL.trueCondition()).in(" +
-                        "    in0.stream().map(internal_it_ ->" +
-                        "        DSL.row(_customer.hasId(internal_it_.getIn1().getId()))" +
-                        "    ).toList()" +
-                        ") : DSL.noCondition())"
-        );
+                "_customer.hasId(in0.get(internal_it_).getIn1().getId())"
+                );
     }
 
     @Test
@@ -81,12 +76,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedListedInput() {
         assertGeneratedContentContains(
                 "nestedListedInput", Set.of(DUMMY_INPUT),
-                "in != null && in.getIn() != null && in.getIn().size() > 0 ?" +
-                        "DSL.row(DSL.trueCondition()).in(" +
-                        "    in.getIn().stream().map(internal_it_ ->" +
-                        "        DSL.row(_customer.hasId(internal_it_.getId()))" +
-                        "    ).toList()" +
-                        ") : DSL.noCondition())"
+                "_customer.hasId(in.getIn().get(internal_it_).getId())"
         );
     }
 }

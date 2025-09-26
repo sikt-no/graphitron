@@ -553,6 +553,15 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that wraps the provided CodeBlock in a jOOQ val.
+     */
+    @NotNull
+    public static CodeBlock val(CodeBlock code) {
+        return CodeBlock.ofIf(!code.isEmpty(), "$T.val($L)", DSL.className, code);
+    }
+
+
+    /**
      * @return Add appropriate indentation if this code has multiple lines.
      */
     @NotNull
@@ -1005,5 +1014,9 @@ public class FormatCodeBlocks {
 
     private static @NotNull CodeBlock getPrimaryKeyFieldsBlock(CodeBlock target) {
         return CodeBlock.of("$L.getPrimaryKey().getFieldsArray()", target);
+    }
+
+    public static CodeBlock ofTernary(CodeBlock ifExpr, CodeBlock thenExpr, CodeBlock elseExpr) {
+        return CodeBlock.of("$L ? $L : $L", ifExpr, thenExpr, elseExpr);
     }
 }

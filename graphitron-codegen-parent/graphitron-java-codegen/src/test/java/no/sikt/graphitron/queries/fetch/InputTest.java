@@ -139,12 +139,8 @@ public class InputTest extends GeneratorTest {
     void nestedListedInputTwoFields() {
         assertGeneratedContentContains(
                 "nestedListedInputTwoFields",
-                "in.getIn().size() > 0 ?" +
-                        "DSL.row(_customer.FIRST_NAME, _customer.LAST_NAME).in(" +
-                        "        in.getIn().stream().map(internal_it_ ->" +
-                        "                DSL.row(DSL.inline(internal_it_.getFirst()), DSL.inline(internal_it_.getLast()))" +
-                        "        ).toList()" +
-                        ") : DSL.noCondition()"
+                "_customer.FIRST_NAME, _customer.LAST_NAME",
+                "DSL.val(in.getIn().get(internal_it_).getFirst()), DSL.val(in.getIn().get(internal_it_).getLast())"
                 );
     }
 
