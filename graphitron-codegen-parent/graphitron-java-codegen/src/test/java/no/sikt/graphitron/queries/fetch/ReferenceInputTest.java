@@ -155,8 +155,8 @@ public class ReferenceInputTest extends ReferenceTest {
     void inputWithTableReturnTypeWithReference() {
         var generated = generateFiles("inputWithTableReturnTypeWithReference");
         contains(generated,
-                "city_1887334959_country = _city.country()",
-                "city_1887334959_country.COUNTRY_"
+                "_a_city_760939060_country = _a_city.country()",
+                "_a_city_760939060_country.COUNTRY_"
         );
 
         doesNotContain(generated, "city()");
