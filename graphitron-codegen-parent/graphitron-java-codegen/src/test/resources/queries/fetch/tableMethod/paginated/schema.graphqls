@@ -1,0 +1,8 @@
+type Query {
+    customer(first: Int = 100, after: String, first_name:String): CustomerConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+}
+
+type Customer @table {
+    id: String
+}
+

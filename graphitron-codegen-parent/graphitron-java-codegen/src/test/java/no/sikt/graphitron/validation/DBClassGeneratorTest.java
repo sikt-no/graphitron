@@ -11,10 +11,8 @@ import no.sikt.graphitron.generate.GraphQLGenerator;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.Ignore;
+import org.junit.jupiter.api.*;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
@@ -76,6 +74,7 @@ class DBClassGeneratorTest extends GeneratorTest {
         ((Logger) LoggerFactory.getLogger(GraphQLGenerator.class)).detachAndStopAllAppenders();
     }
 
+    //@Disabled("Config needs to be fixed for individual tests")
     @Test
     @DisplayName("Throws error when exceeding crash point")
     void throwsErrorWhenExceedingCrashPoint() {
@@ -88,6 +87,7 @@ class DBClassGeneratorTest extends GeneratorTest {
 
     }
 
+    //@Disabled("Config needs to be fixed for individual tests")
     @Test
     @DisplayName("Logging a warning when exceeding upper bound")
     void warnsWhenExceedingUpperBound() {

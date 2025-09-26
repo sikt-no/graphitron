@@ -6,6 +6,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.TableRelation;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
@@ -34,7 +35,7 @@ public class FetchContext {
     private final JoinListSequence currentJoinSequence;
 
     private final LinkedHashSet<SQLJoinStatement> joinSet;
-    private final LinkedHashSet<Alias> aliasSet;
+    private final LinkedHashSet<AliasWrapper> aliasSet;
     private final List<GenerationField> conditionSourceFields;
     private final ArrayList<CodeBlock> conditionList;
     private final String graphPath;
@@ -64,7 +65,7 @@ public class FetchContext {
             JoinListSequence pastJoinSequence,
             RecordObjectSpecification<?> previousObject,
             LinkedHashSet<SQLJoinStatement> joinSet,
-            LinkedHashSet<Alias> aliasSet,
+            LinkedHashSet<AliasWrapper> aliasSet,
             ArrayList<CodeBlock> conditionList,
             String pastGraphPath,
             int recCounter,
@@ -158,7 +159,7 @@ public class FetchContext {
     /**
      * @return Set of aliases created by this and any other context created from this one.
      */
-    public Set<Alias> getAliasSet() {
+    public Set<AliasWrapper> getAliasSet() {
         return aliasSet;
     }
 
@@ -399,9 +400,7 @@ public class FetchContext {
         var lastTable = !updatedSequence.isEmpty() ? updatedSequence.getLast().getTable() : getPreviousTable(); // Wrong if key was reverse.
         if (Objects.equals(lastTable, refTable) && (!referencesFromField.isEmpty() || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))) {
             if (updatedSequence.isEmpty()) {
-                var alias = new Alias(asInternalName(refTable.getCodeName()), JoinListSequence.of(refTable), false);
-                aliasSet.add(alias);
-                return JoinListSequence.of(alias);
+                return makeAlias(refTable);
             } else {
                 return updatedSequence;
             }
@@ -416,9 +415,7 @@ public class FetchContext {
         if (!finalSequence.isEmpty()) {
             return finalSequence;
         } else {
-            var alias = new Alias(asInternalName(refTable.getCodeName()), JoinListSequence.of(refTable), false);
-            aliasSet.add(alias);
-            return JoinListSequence.of(alias);
+            return makeAlias(refTable);
         }
     }
 
@@ -457,14 +454,10 @@ public class FetchContext {
         var target = relation.getToTable();
 
         if (previous == null) {
-            var alias = new Alias(asInternalName(target.getCodeName()), JoinListSequence.of(target), false);
-            aliasSet.add(alias);
-            return JoinListSequence.of(alias);
+            return makeAlias(target);
         }
         if (getReferenceObjectField().isResolver() && previousContext == null) {
-            var alias = new Alias(asInternalName(previous.getCodeName()), JoinListSequence.of(previous), false);
-            aliasSet.add(alias);
-            return JoinListSequence.of(alias);
+            return makeAlias(previous);
         }
 
         var targetOrPrevious = target != null ? target : previous;
@@ -483,7 +476,7 @@ public class FetchContext {
             if (newSequence.isEmpty()) {
                 var alias = new Alias(previous.getCodeName() + "_" + getReferenceObjectField().getName(), JoinListSequence.of(previous), false);
                 newSequence.add(alias);
-                aliasSet.add(alias);
+                aliasSet.add(alias.toAliasWrapper());
 
                 var primaryKey = getTable(previous.getName()).map(Table::getPrimaryKey).stream().findFirst()
                         .orElseThrow(() ->
@@ -497,7 +490,7 @@ public class FetchContext {
             var join = fRef.createConditionJoinFor(newSequence, targetOrPrevious, requiresLeftJoin);
             if (!newSequence.isEmpty() || addAllJoinsToJoinSet) joinSet.add(join);
             aliasSet.add(join.getJoinAlias());
-            return newSequence.cloneAdd(join.getJoinAlias());
+            return newSequence.cloneAdd(join.getJoinAlias().getAlias());
         }
 
         if (keyToUse != null) {
@@ -505,10 +498,10 @@ public class FetchContext {
             if (newSequence.isEmpty()) aliasJoinSequence = aliasJoinSequence.cloneAdd(previousContext == null || previousContext.getCurrentJoinSequence().isEmpty() ? previous : previousContext.getCurrentJoinSequence().getLast());
             aliasJoinSequence = aliasJoinSequence.cloneAdd(keyToUse);
 
-            var join = fRef.createJoinOnExplicitPathFor(keyToUse, aliasJoinSequence, target, requiresLeftJoin);
+            var join = createJoinOnExplicitPathFor(fRef, keyToUse, aliasJoinSequence, target, requiresLeftJoin);
             if (!newSequence.isEmpty() || addAllJoinsToJoinSet)  joinSet.add(join);
             aliasSet.add(join.getJoinAlias());
-            newSequence = newSequence.cloneAdd(join.getJoinAlias());
+            newSequence = newSequence.cloneAdd(join.getJoinAlias().getAlias());
         }
 
         if (fRef.hasTableCondition() && relation.hasRelation()) {
@@ -517,6 +510,31 @@ public class FetchContext {
         }
 
         return newSequence;
+    }
+
+    /**
+     * @return A join statement based on a key reference using path
+     */
+
+    public SQLJoinStatement createJoinOnExplicitPathFor(FieldReference fRef, JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
+
+        var targetTable = fRef.hasTable() ? fRef.getTable() : tableNameBackup;
+        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_") ? joinSequence.getSecondLast().getMappingName() : joinSequence.getSecondLast().getCodeName();
+        var alias = new AliasWrapper(new Alias(prefix + "_" + keyOverride.getCodeName(), joinSequence, isNullable), referenceObjectField, targetTable.equals(referenceTable), processedSchema);
+
+        return new SQLJoinStatement(
+                joinSequence,
+                targetTable,
+                alias,
+                List.of(),
+                isNullable
+        );
+    }
+
+    private JoinListSequence makeAlias(JOOQMapping mapping) {
+        AliasWrapper alias = new AliasWrapper(new Alias(asInternalName(mapping.getCodeName()), JoinListSequence.of(mapping), false), referenceObjectField, processedSchema);
+        aliasSet.add(alias);
+        return JoinListSequence.of(alias.getAlias());
     }
 
     public CodeBlock renderQuerySource(JOOQMapping localTable) {

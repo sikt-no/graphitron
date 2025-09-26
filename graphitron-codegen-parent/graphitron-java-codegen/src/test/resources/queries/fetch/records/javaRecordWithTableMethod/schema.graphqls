@@ -1,0 +1,8 @@
+type Query {
+    customer(in: CustomerInput): CustomerTable @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+}
+
+input CustomerInput @record(record: {name: "DUMMY_RECORD"}) {
+    id: ID!
+    id2: ID! @field(name: "Id", javaName: "otherID")
+}

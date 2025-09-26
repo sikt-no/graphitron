@@ -37,8 +37,12 @@ type Query {
     citiesWithoutId: [CityWithoutID] @asConnection
 
     languageOrStaff: [LanguageStaffUnion] @asConnection
-    
+
     inventories(orderBy: InventoriesOrderByInput @orderBy): [Inventory] @asConnection
+
+    addressTableMethod(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodSplitQuery(input: String @field(name: "POSTAL_CODE")): Address @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
+    addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
 }
 
 type Mutation {
@@ -95,6 +99,7 @@ type Address implements Node @node @table @key(fields: "id", resolvable: false) 
     city: City!
     zip: String @field(name: "POSTAL_CODE")
     phone: String!
+    citySplitQuery: City! @splitQuery
 }
 
 type City implements Node @table @node(typeId: "CityType"){

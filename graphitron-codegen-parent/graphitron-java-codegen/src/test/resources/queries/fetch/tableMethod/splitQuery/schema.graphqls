@@ -1,0 +1,11 @@
+type Query {
+    customer: Customer @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.codereferences.services.CustomerTableMethod", method: "customerTable"})
+}
+
+type Customer @table {
+    address: Address @splitQuery
+}
+
+type Address @table {
+    id: ID
+}
