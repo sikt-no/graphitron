@@ -104,7 +104,6 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
-
     /**
      * @param aliasSet  Set of aliases to be defined.
      * @return Code block which declares all the aliases that will be used in a select query.
@@ -131,7 +130,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var shouldHaveOrderByToken = isConnection && !orderByFieldsBlock.isEmpty();
 
         CodeBlock.Builder select = CodeBlock.builder();
-        select.addIf(shouldHaveOrderByToken, "\n$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, context.getTargetAlias(), orderByFieldsBlock);
+        select.addIf(
+                shouldHaveOrderByToken,
+                "\n$T.getOrderByToken($L, $L),\n",
+                QUERY_HELPER.className,
+                context.getTargetAlias(),
+                orderByFieldsBlock
+        );
 
         if (context.getReferenceObject() == null || field.hasNodeID()) {
             select.add(generateForField(field, context));
@@ -139,7 +144,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             select.add(generateSelectRow(context));
         }
 
-        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
+        var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false, false);
         var joins = createSelectJoins(context.getJoinSet());
 
         var sequence = context.getCurrentJoinSequence();
@@ -257,11 +262,21 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return reference.get();
     }
 
-     protected CodeBlock createMapping(FetchContext context, List<? extends GenerationField> fieldsWithoutSplitting, HashMap<String, String> referenceFieldSources, List<CodeBlock> rowElements, LinkedHashSet<KeyWrapper> keySet) {
+     protected CodeBlock createMapping(
+             FetchContext context,
+             List<? extends GenerationField> fieldsWithoutSplitting,
+             HashMap<String, String> referenceFieldSources,
+             List<CodeBlock> rowElements,
+             LinkedHashSet<KeyWrapper> keySet
+     ) {
         boolean maxTypeSafeFieldSizeIsExceeded = fieldsWithoutSplitting.size() + keySet.size() > MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY;
 
         CodeBlock regularMappingFunction = context.shouldUseEnhancedNullOnAllNullCheck()
-                ? createMappingFunctionWithEnhancedNullSafety(fieldsWithoutSplitting, context.getReferenceObject().getGraphClassName(), maxTypeSafeFieldSizeIsExceeded, keySet.size())
+                ? createMappingFunctionWithEnhancedNullSafety(
+                        fieldsWithoutSplitting,
+                        context.getReferenceObject().getGraphClassName(),
+                        maxTypeSafeFieldSizeIsExceeded,
+                        keySet.size())
                 : createMappingFunction(context, fieldsWithoutSplitting, maxTypeSafeFieldSizeIsExceeded);
 
         var mappingContent = maxTypeSafeFieldSizeIsExceeded
@@ -379,7 +394,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return codeBlockConditions.build();
     }
 
-    private CodeBlock createMappingFunctionWithEnhancedNullSafety(List<? extends GenerationField> fieldsWithoutTable, TypeName graphClassName, boolean maxTypeSafeFieldSizeIsExceeded, int keyCount) {
+    private CodeBlock createMappingFunctionWithEnhancedNullSafety(
+            List<? extends GenerationField> fieldsWithoutTable,
+            TypeName graphClassName,
+            boolean maxTypeSafeFieldSizeIsExceeded,
+            int keyCount
+    ) {
         var codeBlockArguments = CodeBlock.builder();
         var codeBlockConditions = CodeBlock.builder();
         var codeBlockConstructor = CodeBlock.builder();
@@ -440,7 +460,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * Used when fields size exceeds {@link #MAX_NUMBER_OF_FIELDS_SUPPORTED_WITH_TYPESAFETY}. This
      * requires the mapping function to be wrapped with explicit mapping, without type safety.
      */
-    private CodeBlock wrapWithExplicitMapping(CodeBlock mappingFunction, FetchContext context, List<? extends GenerationField> fieldsWithoutTable, HashMap<String, String> sourceForReferenceFields, LinkedHashSet<KeyWrapper> keySet) {
+    private CodeBlock wrapWithExplicitMapping(
+            CodeBlock mappingFunction,
+            FetchContext context,
+            List<? extends GenerationField> fieldsWithoutTable,
+            HashMap<String, String> sourceForReferenceFields,
+            LinkedHashSet<KeyWrapper> keySet
+    ) {
         var innerMappingCode = new ArrayList<CodeBlock>();
 
         int i = 0;
@@ -518,11 +544,25 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             return createNodeIdBlock(context.getReferenceObject(), context.getTargetAlias());
         }
 
-        var renderedSource = field.isInput() ? context.iterateJoinSequenceFor(field).render() : context.renderQuerySource(getLocalTable());
+        var renderedSource = field.isInput()
+                ? context.iterateJoinSequenceFor(field).render()
+                : context.renderQuerySource(
+                        hasIterableWrappedResolverWithPagination(context)
+                        ? getLocalTable() // Implies being called from the FetchDBMethodGenerator.generateCorrelatedSubquery-method
+                        : context.getCurrentJoinSequence().size() > 1
+                          ? context.getCurrentJoinSequence().getLast()
+                          : !context.getCurrentJoinSequence().isEmpty()
+                            ? context.getCurrentJoinSequence().getFirst()
+                            : null);
+
         if (field.isID() && !shouldMakeNodeStrategy()) {
             return CodeBlock.join(
                     renderedSource,
-                    generateGetForID(field.getMappingFromFieldOverride(), context.getCurrentJoinSequence().isEmpty() ? null : context.getCurrentJoinSequence().getLast().getTable())
+                    generateGetForID(
+                            field.getMappingFromFieldOverride(),
+                            context.getCurrentJoinSequence().isEmpty()
+                            ? null
+                            : context.getCurrentJoinSequence().getLast().getTable())
             );
         }
 
@@ -532,7 +572,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 field.getUpperCaseName(),
                 overrideEnum ? CodeBlock.empty() : toJOOQEnumConverter(field.getTypeName(), processedSchema)
         );
-        return context.getShouldUseOptional() && useOptionalSelects() ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content)) : content;
+
+        return context.getShouldUseOptional() && useOptionalSelects()
+               ? (CodeBlock.of("$N.optional($S, $L)", VARIABLE_SELECT, context.getGraphPath() + field.getName(), content))
+               : content;
     }
 
     private CodeBlock generateGetForID(MethodMapping mapping, JOOQMapping table) {
@@ -573,10 +616,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return CodeBlock.join(code, ",\n");
     }
 
-    /**
-     * @return Formatted CodeBlock for the where-statement and surrounding code. Applies conditions and joins.
-     */
-    protected CodeBlock formatWhereContents(FetchContext context, String resolverKeyParamName, boolean isRoot, boolean isResolverRoot) {
+    protected CodeBlock formatWhereContents(
+            FetchContext context,
+            String resolverKeyParamName,
+            boolean isRoot,
+            boolean isResolverRoot,
+            boolean isMultiTable
+    ) {
         var conditionList = new ArrayList<CodeBlock>();
 
         if (context.getReferenceObject() instanceof InterfaceDefinition) {
@@ -615,6 +661,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
+        // Fields that implement a multi-table interface or are part of a union are handled differently. In these
+        // cases, skip input conditions when there is a resolver root.
+        if (isResolverRoot && !isMultiTable) {
+            conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
+        }
+
         var code = CodeBlock.builder();
         var hasWhere = false;
         for (var condition : conditionList) {
@@ -644,9 +696,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var isInRecordInput = processedSchema.isInputType(field.getContainerTypeName()) && processedSchema.hasJOOQRecord(field.getContainerTypeName());
             var checksNotEmpty = !checks.isEmpty()
                     && !(isInRecordInput && processedSchema.isNodeIdField(field)); // Skip null checks for nodeId in jOOQ record inputs
-            var renderedSequence = isInRecordInput ?
-                    CodeBlock.of(context.getTargetAlias())
-                    :  context.iterateJoinSequenceFor(field).render();
+            var renderedSequence = isInRecordInput
+                                   ? CodeBlock.of(context.getTargetAlias())
+                                   : context.iterateJoinSequenceFor(field).render();
             if (renderedSequence.isEmpty()) {
                 continue;
             }
@@ -1088,5 +1140,17 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         } else {
             return wrapMap(STRING.className, wrapListIf(type, referenceField.hasForwardPagination()));
         }
+    }
+
+    private boolean hasIterableWrappedResolverWithPagination(FetchContext context) {
+        return context.getReferenceObjectField().isResolver() &&
+               context.getReferenceObjectField().isIterableWrapped() &&
+               ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
+    }
+
+    protected boolean isIterableWrappedResolverWithPagination(GenerationField field) {
+        return field.isResolver() &&
+               field.isIterableWrapped() &&
+               ((ObjectField) field).hasForwardPagination();
     }
 }

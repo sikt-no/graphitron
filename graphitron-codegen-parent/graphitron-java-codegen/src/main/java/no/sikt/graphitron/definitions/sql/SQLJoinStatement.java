@@ -19,11 +19,18 @@ public class SQLJoinStatement extends SQLJoin {
     private final CodeBlock joinString;
 
     /**
+     * @param joinSequence The "left" side of a join statement. This is the table/sequence to join from.
      * @param joinTargetTable The "right" side of a join statement. This is the table to be joined with.
      * @param joinFields List of any conditions for the join operation.
      * @param nullable What kind of join operation is to be used.
      */
-    public SQLJoinStatement(JoinListSequence joinSequence, JoinElement joinTargetTable, Alias joinAlias, List<SQLJoinField> joinFields, boolean nullable) {
+    public SQLJoinStatement(
+            JoinListSequence joinSequence,
+            JoinElement joinTargetTable,
+            Alias joinAlias,
+            List<SQLJoinField> joinFields,
+            boolean nullable
+    ) {
         super(joinSequence, joinFields, nullable);
         this.joinTargetTable = joinTargetTable;
         this.joinAlias = joinAlias;

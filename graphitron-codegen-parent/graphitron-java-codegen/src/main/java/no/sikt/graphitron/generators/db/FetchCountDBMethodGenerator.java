@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.db;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -13,6 +14,7 @@ import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -46,20 +48,17 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @Override
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
-        CodeBlock code;
+
         if (processedSchema.isMultiTableInterface(target.getTypeName()) || processedSchema.isUnion(target.getTypeName())) {
             return getSpecBuilder(target, parser)
                     .addCode(getCodeForMultitableCountMethod(target))
                     .build();
         }
+
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
-        var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
-
-        var nextContext = target.isResolver() ? context.nextContext(target) : context;
-        code = CodeBlock.builder()
-
-                .build();
+        var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), false);
+        var nextContext = isIterableWrappedResolverWithPagination(target) ? context.nextContext(target) : context;
 
         return getSpecBuilder(target, parser)
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
@@ -82,7 +81,8 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock getCodeForMultitableCountMethod(ObjectField target) {
-        var code = CodeBlock.builder();
+        var initialCode = CodeBlock.builder();
+        var aliases = new LinkedHashSet<Alias>();
         var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
         if (target.isResolver()) {
@@ -91,32 +91,40 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .findFirst()
                     .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
                     .map(FetchContext::getAliasSet)
-                    .ifPresent(it -> code.add(createAliasDeclarations(it)));
+                    .ifPresent(aliases::addAll);
         }
 
         implementations.forEach(implementation -> {
             var virtualTarget = new VirtualSourceField(implementation, target);
             var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-            var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
-            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
+            var refContext = isIterableWrappedResolverWithPagination(virtualTarget)
+                             ? context.nextContext(virtualTarget)
+                             : context;
+            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), false);
             var countForImplementation = CodeBlock.builder()
                     .add("$T.select(", DSL.className)
                     .addIf(!isRoot,() -> CodeBlock.of("$L)",getSelectKeyColumnRow(context)))
                     .addIf(isRoot, "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
-                    .add("\n.from($L)\n", context.getTargetAlias())
+                    .add("\n.from($L)\n", isIterableWrappedResolverWithPagination(virtualTarget)
+                                          ? context.getTargetAlias()
+                                          : context.getSourceAlias())
                     .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            var aliasesToDeclare = !target.isResolver() ? refContext.getAliasSet() :
-                    context.getAliasSet().stream().findFirst()
-                            .map(startAlias -> context.getAliasSet().stream().filter(it -> !it.equals(startAlias)).collect(Collectors.toSet()))
-                            .orElse(refContext.getAliasSet());
+            if (!isIterableWrappedResolverWithPagination(target)) {
+                aliases.addAll(refContext.getAliasSet());
+            } else {
+                aliases.addAll(context.getAliasSet().stream().findFirst()
+                       .map(startAlias -> context.getAliasSet().stream().filter(
+                               it -> !it.equals(startAlias)).collect(Collectors.toSet()))
+                       .orElse(refContext.getAliasSet()));
+            }
 
-            code
-                    .add(createAliasDeclarations(aliasesToDeclare))
-                    .declare(getCountVariableName(implementation.getName()), countForImplementation.build());
+            initialCode.declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });
+
+        var code = CodeBlock.builder().add(createAliasDeclarations(aliases)).add("\n").add(initialCode.build());
 
         var unionQuery = implementations.stream()
                 .map(AbstractObjectDefinition::getName)
