@@ -35,8 +35,10 @@ public class FetchQueryTest extends GeneratorTest {
     @DisplayName("Nested output without table")
     void nestedOutput() {
         assertGeneratedContentContains("nestedOutput",
-                "CustomerTable::new", "new Outer(internal_it_)", ".fetchOne(it -> it.into(Outer.class))",
-                "DSL.row(DSL.inline(internal_it_.getCustomerId()))"
+                "CustomerTable::new",
+                "new Outer(internal_it_)",
+                ".fetchOne(it -> it.into(Outer.class))",
+                " DSL.val(inRecordList.get(internal_it_).getCustomerId())"
         );
     }
 
@@ -60,8 +62,8 @@ public class FetchQueryTest extends GeneratorTest {
     @DisplayName("Listed output with composite primary key")
     void tableWithCompositePrimaryKeyListed() {
         assertGeneratedContentContains("tableWithCompositePrimaryKeyListed",
-                "DSL.row(_vacationdestination.DESTINATION_ID, _vacationdestination.COUNTRY_NAME)" +
-                        ".in(inRecordList.stream().map(internal_it_ -> DSL.row(DSL.inline(internal_it_.getDestinationId()), DSL.inline(internal_it_.getCountryName()))).toList())"
+                "DSL.row(_vacationdestination.DESTINATION_ID, _vacationdestination.COUNTRY_NAME)",
+                        "DSL.val(inRecordList.get(internal_it_).getDestinationId())"
         );
     }
 

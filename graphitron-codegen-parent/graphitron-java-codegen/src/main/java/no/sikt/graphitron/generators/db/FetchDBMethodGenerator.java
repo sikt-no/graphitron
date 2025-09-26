@@ -772,19 +772,19 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 var argumentSelect = CodeBlock.ofIf(field.isNullable(), "$N.getArgumentSet().contains($S + $N + $S)",
                         VARIABLE_SELECT, condition.getSourceInput().getName() + "[" , VARIABLE_INTERNAL_ITERATION, "]/" + field.getName());
                 if (processedSchema.isNodeIdField(field)) {
-                    if(field.isNullable()) {
+                    if(field.isNullable() && !(field instanceof VirtualInputField)) {
                         tupleVariableBlocks.add(ofTernary(argumentSelect, unpacked, trueCondition()));
                     } else {
                         tupleVariableBlocks.add(unpacked);
                     }
                 } else if (field.isID()) {
-                    if(field.isNullable()) {
+                    if(field.isNullable() && !(field instanceof VirtualInputField)) {
                         tupleVariableBlocks.add(ofTernary(argumentSelect, CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())), trueCondition()));
                     } else {
                         tupleVariableBlocks.add(CodeBlock.join(fieldSequence.render(), generateHasForID(field.getMappingFromFieldOverride(), lastTable, unpacked, field.isIterableWrapped())));
                     }
                 } else {
-                    if (field.isNullable()) {
+                    if (field.isNullable() && !(field instanceof VirtualInputField)) {
                         tupleVariableBlocks.add(ofTernary(argumentSelect, val(unpacked), makeTupleBlock(field, context, condition.hasRecord(), fieldTypeIsCLOB(lastTable.getName(), field.getUpperCaseName()))));
                     }else{
                         tupleVariableBlocks.add(val(unpacked));
