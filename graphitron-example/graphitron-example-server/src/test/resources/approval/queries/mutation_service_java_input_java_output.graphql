@@ -1,0 +1,10 @@
+mutation {
+    updateCustomerEmail(input: {customerId: 1, email: "emailUpdated"}) {
+        emailUpdates {
+            customerEmail {
+                customerId
+                email
+            }
+        }
+    }
+}

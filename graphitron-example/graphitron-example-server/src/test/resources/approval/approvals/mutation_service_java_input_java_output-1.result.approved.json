@@ -1,0 +1,14 @@
+{
+    "data": {
+        "updateCustomerEmail": {
+            "emailUpdates": [
+                {
+                    "customerEmail": {
+                        "customerId": 1,
+                        "email": "emailUpdated"
+                    }
+                }
+            ]
+        }
+    }
+}
