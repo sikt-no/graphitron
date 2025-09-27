@@ -57,10 +57,6 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
 
         var nextContext = target.isResolver() ? context.nextContext(target) : context;
-        code = CodeBlock.builder()
-
-                .build();
-
         return getSpecBuilder(target, parser)
                 .addCode(createAliasDeclarations(nextContext.getAliasSet()))
                 .addCode("return $N\n", CONTEXT_NAME)

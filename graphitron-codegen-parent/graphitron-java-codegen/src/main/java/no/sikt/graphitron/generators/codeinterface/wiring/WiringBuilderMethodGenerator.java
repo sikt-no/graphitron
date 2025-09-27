@@ -8,7 +8,7 @@ import no.sikt.graphitron.definitions.helpers.ScalarUtils;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
 import no.sikt.graphitron.generators.abstractions.SimpleMethodGenerator;
-import no.sikt.graphitron.generators.resolvers.datafetchers.typeresolvers.TypeResolverClassGenerator;
+import no.sikt.graphitron.generators.datafetchers.typeresolvers.TypeResolverClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

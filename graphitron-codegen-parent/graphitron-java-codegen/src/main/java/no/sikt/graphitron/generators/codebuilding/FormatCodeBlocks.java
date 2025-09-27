@@ -2,8 +2,6 @@ package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.fields.InputField;
-import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
@@ -11,8 +9,6 @@ import no.sikt.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
-import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.generators.context.MapperContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -29,14 +25,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 
-import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getGeneratedClassName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArrayList;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
-import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -701,141 +695,6 @@ public class FormatCodeBlocks {
                 CONTEXT_NAME,
                 asListedName(recordName)
         );
-    }
-
-    /**
-     * @return Code for constructing any structure of response types.
-     */
-    public static CodeBlock makeResponses(MapperContext context, ObjectField field, ProcessedSchema schema, InputParser parser) {
-        var target = context.getTarget();
-        if (!context.targetIsType() || schema.isExceptionOrExceptionUnion(target)) {
-            return CodeBlock.empty();
-        }
-
-        var targetTypeName = target.getTypeName();
-        var object = context.getTargetType();
-        var record = findUsableRecord(target, schema, parser);
-        var wrapInFor = (!context.isTopLevelContext() || target.isIterableWrapped()) && record.isIterableWrapped();
-        var code = CodeBlock
-                .builder()
-                .add("\n")
-                .declareNew(targetTypeName, object.getGraphClassName());
-        var filteredFields = object
-                .getFields()
-                .stream()
-                .filter(it -> !it.getMappingFromFieldOverride().getName().equalsIgnoreCase(ERROR_FIELD.getName()))
-                .toList(); //TODO tmp solution to skip mapping Errors as this is handled by "MutationExceptionStrategy"
-        for (var innerField : filteredFields) {
-            var innerContext = context.iterateContext(innerField);
-            if (!innerContext.targetIsType()) {
-                if (innerField.isID()) {
-                    code
-                            .beginControlFlow("if ($L)", selectionSetLookup(innerContext.getPath(), true, false))
-                            .add(innerContext.getSetMappingBlock(getIDMappingCode(innerContext, field, schema, parser)))
-                            .endControlFlow()
-                            .add("\n");
-                }
-                continue;
-            }
-
-            var recordField = findUsableRecord(innerField, schema, parser); // In practice this supports only one record type at once. Can't map to types that are not records.
-            var recordName = asIterableIf(asListedRecordNameIf(recordField.getName(), recordField.isIterableWrapped()), wrapInFor);
-            var innerCode = schema.implementsNode(innerField)
-                    ? idFetchAllowingDuplicates(innerContext, innerField, recordName, true)
-                    : CodeBlock.join(makeResponses(innerContext, field, schema, parser), formatResponseMapping(innerContext, innerField, recordField));
-
-            code
-                    .beginControlFlow("if ($N != null && $L)", recordName, selectionSetLookup(innerContext.getPath(), true, false))
-                    .add(innerCode)
-                    .endControlFlow()
-                    .add("\n");
-        }
-
-        if (!wrapInFor) {
-            return code.build();
-        }
-
-        return CodeBlock
-                .builder()
-                .declareNew(asListedName(targetTypeName), wrapArrayList(object.getGraphClassName()))
-                .add(wrapFor(asListedRecordName(record.getName()), code.add(addToList(targetTypeName)).build()))
-                .build();
-    }
-
-    private static CodeBlock formatResponseMapping(MapperContext context, GenerationField innerField, InputField recordField) {
-        var inputSource = !context.getTargetType().hasTable()
-                ? innerField.getTypeName()
-                : asGetMethodVariableName(asRecordName(recordField.getName()), innerField.getName());
-
-        var recordIterable = recordField.isIterableWrapped();
-        if (recordIterable == context.isIterable()) {
-            return context.getSetMappingBlock(asListedNameIf(inputSource, context.isIterable()));
-        }
-
-        if (!recordIterable && context.isIterable()) {
-            return context.getSetMappingBlock(listOf(uncapitalize(inputSource)));
-        }
-
-        return context.getSetMappingBlock(CodeBlock.of("$N$L.orElse($L)", asListedName(inputSource), findFirst(), listOf()));
-    }
-
-    public static CodeBlock getIDMappingCode(MapperContext context, ObjectField field, ProcessedSchema schema, InputParser parser) {
-        var inputSource = field
-                .getArguments()
-                .stream()
-                .filter(InputField::isID)
-                .findFirst();
-
-        boolean isIterable = context.isIterable(), shouldMap = true;
-        String idSource;
-        if (inputSource.isPresent()) {
-            var source = inputSource.get();
-            isIterable = source.isIterableWrapped();
-            shouldMap = isIterable || schema.isInputType(source);
-            idSource = source.getName();
-        } else {
-            var previousField = context.isTopLevelContext() ? context.getTarget() : context.getPreviousContext().getTarget();
-            var recordSource = parser
-                    .getJOOQRecords()
-                    .entrySet()
-                    .stream()
-                    .filter(it -> schema.getInputType(it.getValue()).getFields().stream().anyMatch(InputField::isID))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Could not find a suitable ID to return for '" + previousField.getName() + "'."));
-            idSource = asIterableIf(recordSource.getKey(), previousField.isIterableWrapped() && schema.isObject(previousField));
-        }
-
-        var code = CodeBlock.builder().add("$N", idSource);
-        if (!shouldMap) {
-            return code.build();
-        }
-
-        if (!isIterable) {
-            return code.add(".getId()").build();
-        }
-
-        return code.add(".stream().map(it -> it.getId())$L", collectToList()).build();
-    }
-
-    private static InputField findUsableRecord(GenerationField target, ProcessedSchema schema, InputParser parser) {
-        var responseObject = schema.getObject(target);
-        if (responseObject.hasTable()) {
-            var responseFieldTableName = responseObject.getTable().getMappingName();
-            return parser
-                    .getJOOQRecords()
-                    .values()
-                    .stream()
-                    .filter(it -> schema.getInputType(it).getTable().getMappingName().equals(responseFieldTableName))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table reference '" + responseFieldTableName + "' to."));
-        }
-        return parser
-                .getJOOQRecords()
-                .entrySet()
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Could not find an appropriate record to map table references to."))
-                .getValue(); // In practice this supports only one record type at once.
     }
 
     public static CodeBlock fetchMapping(boolean iterable) {

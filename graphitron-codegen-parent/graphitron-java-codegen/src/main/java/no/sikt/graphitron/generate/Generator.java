@@ -29,8 +29,6 @@ public interface Generator {
 
     String getModelPackageName();
 
-    boolean makeKickstart();
-
     boolean makeNodeStrategy();
 
     CodeGenerationThresholds getCodeGenerationThresholds();
