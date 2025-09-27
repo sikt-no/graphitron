@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -46,6 +49,8 @@ public class FilmRecord extends UpdatableRecordImpl<FilmRecord> {
     /**
      * Getter for <code>public.film.title</code>.
      */
+    @NotNull
+    @Size(max = 255)
     public String getTitle() {
         return (String) get(1);
     }
@@ -88,6 +93,7 @@ public class FilmRecord extends UpdatableRecordImpl<FilmRecord> {
     /**
      * Getter for <code>public.film.language_id</code>.
      */
+    @NotNull
     public Integer getLanguageId() {
         return (Integer) get(4);
     }
@@ -226,6 +232,7 @@ public class FilmRecord extends UpdatableRecordImpl<FilmRecord> {
      * configuration.
      */
     @Deprecated
+    @NotNull
     public Object getFulltext() {
         return get(13);
     }

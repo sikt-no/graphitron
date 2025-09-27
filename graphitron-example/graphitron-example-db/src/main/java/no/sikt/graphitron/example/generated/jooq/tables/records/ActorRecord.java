@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Actor;
@@ -44,6 +47,8 @@ public class ActorRecord extends UpdatableRecordImpl<ActorRecord> {
     /**
      * Getter for <code>public.actor.first_name</code>.
      */
+    @NotNull
+    @Size(max = 45)
     public String getFirstName() {
         return (String) get(1);
     }
@@ -58,6 +63,8 @@ public class ActorRecord extends UpdatableRecordImpl<ActorRecord> {
     /**
      * Getter for <code>public.actor.last_name</code>.
      */
+    @NotNull
+    @Size(max = 45)
     public String getLastName() {
         return (String) get(2);
     }

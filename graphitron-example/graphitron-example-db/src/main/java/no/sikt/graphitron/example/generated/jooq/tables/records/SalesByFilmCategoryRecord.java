@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.Size;
+
 import java.math.BigDecimal;
 
 import no.sikt.graphitron.example.generated.jooq.tables.SalesByFilmCategory;
@@ -29,6 +31,7 @@ public class SalesByFilmCategoryRecord extends TableRecordImpl<SalesByFilmCatego
     /**
      * Getter for <code>public.sales_by_film_category.category</code>.
      */
+    @Size(max = 25)
     public String getCategory() {
         return (String) get(0);
     }

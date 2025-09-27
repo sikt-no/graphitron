@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "An exception occurred. The error has been logged with id [UUID]: Value violates constraint: year",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "updateFilmReleaseYear_topLevelError"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "updateFilmReleaseYear_topLevelError": null
+    }
+}

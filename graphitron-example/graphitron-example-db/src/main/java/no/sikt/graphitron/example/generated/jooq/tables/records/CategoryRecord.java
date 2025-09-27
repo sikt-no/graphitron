@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Category;
@@ -44,6 +47,8 @@ public class CategoryRecord extends UpdatableRecordImpl<CategoryRecord> {
     /**
      * Getter for <code>public.category.name</code>.
      */
+    @NotNull
+    @Size(max = 25)
     public String getName() {
         return (String) get(1);
     }

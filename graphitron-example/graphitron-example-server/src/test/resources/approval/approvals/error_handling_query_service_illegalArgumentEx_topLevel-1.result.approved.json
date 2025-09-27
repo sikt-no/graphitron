@@ -1,0 +1,22 @@
+{
+    "errors": [
+        {
+            "message": "This is the error message from the IllegalArgumentException",
+            "locations": [
+                {
+                    "line": 2,
+                    "column": 5
+                }
+            ],
+            "path": [
+                "allCustomerEmails_iea_topLevelError"
+            ],
+            "extensions": {
+                "classification": "DataFetchingException"
+            }
+        }
+    ],
+    "data": {
+        "allCustomerEmails_iea_topLevelError": null
+    }
+}

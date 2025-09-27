@@ -1,0 +1,16 @@
+{
+    "data": {
+        "updateFilmReleaseYear_handledError": {
+            "errors": [
+                {
+                    "__typename": "InvalidInput",
+                    "message": "Release year must be between 1901 and 2155",
+                    "path": [
+                        "updateFilmReleaseYear_handledError"
+                    ]
+                }
+            ],
+            "film": null
+        }
+    }
+}

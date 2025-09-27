@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Inventory;
@@ -44,6 +46,7 @@ public class InventoryRecord extends UpdatableRecordImpl<InventoryRecord> {
     /**
      * Getter for <code>public.inventory.film_id</code>.
      */
+    @NotNull
     public Integer getFilmId() {
         return (Integer) get(1);
     }
@@ -58,6 +61,7 @@ public class InventoryRecord extends UpdatableRecordImpl<InventoryRecord> {
     /**
      * Getter for <code>public.inventory.store_id</code>.
      */
+    @NotNull
     public Integer getStoreId() {
         return (Integer) get(2);
     }

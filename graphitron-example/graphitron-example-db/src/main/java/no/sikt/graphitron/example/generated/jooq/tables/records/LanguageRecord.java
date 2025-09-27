@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Language;
@@ -44,6 +47,8 @@ public class LanguageRecord extends UpdatableRecordImpl<LanguageRecord> {
     /**
      * Getter for <code>public.language.name</code>.
      */
+    @NotNull
+    @Size(max = 20)
     public String getName() {
         return (String) get(1);
     }

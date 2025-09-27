@@ -4,6 +4,8 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -44,6 +46,7 @@ public class PaymentP2007_01Record extends TableRecordImpl<PaymentP2007_01Record
     /**
      * Getter for <code>public.payment_p2007_01.customer_id</code>.
      */
+    @NotNull
     public Integer getCustomerId() {
         return (Integer) get(1);
     }
@@ -58,6 +61,7 @@ public class PaymentP2007_01Record extends TableRecordImpl<PaymentP2007_01Record
     /**
      * Getter for <code>public.payment_p2007_01.staff_id</code>.
      */
+    @NotNull
     public Integer getStaffId() {
         return (Integer) get(2);
     }
@@ -72,6 +76,7 @@ public class PaymentP2007_01Record extends TableRecordImpl<PaymentP2007_01Record
     /**
      * Getter for <code>public.payment_p2007_01.rental_id</code>.
      */
+    @NotNull
     public Integer getRentalId() {
         return (Integer) get(3);
     }
@@ -86,6 +91,7 @@ public class PaymentP2007_01Record extends TableRecordImpl<PaymentP2007_01Record
     /**
      * Getter for <code>public.payment_p2007_01.amount</code>.
      */
+    @NotNull
     public BigDecimal getAmount() {
         return (BigDecimal) get(4);
     }
@@ -100,6 +106,7 @@ public class PaymentP2007_01Record extends TableRecordImpl<PaymentP2007_01Record
     /**
      * Getter for <code>public.payment_p2007_01.payment_date</code>.
      */
+    @NotNull
     public LocalDateTime getPaymentDate() {
         return (LocalDateTime) get(5);
     }

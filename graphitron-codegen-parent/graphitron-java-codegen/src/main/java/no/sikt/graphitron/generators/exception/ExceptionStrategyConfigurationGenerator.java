@@ -42,7 +42,6 @@ public class ExceptionStrategyConfigurationGenerator extends AbstractSchemaClass
     @Override
     public TypeSpec generate(SchemaDefinition schemaDefinition) {
         return getSpec("GeneratedExceptionStrategyConfiguration", List.of())
-                .addAnnotation(SINGLETON.className)
                 .addMethod(createConstructor(schemaDefinition))
                 .build();
     }

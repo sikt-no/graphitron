@@ -5,10 +5,10 @@ import org.jooq.exception.DataAccessException;
 import java.util.List;
 
 public class DataAccessExceptionContentToErrorMapping implements ExceptionContentToErrorMapping {
-    final private DataAccessExceptionMappingContent dataAccessExceptionMapping;
+    final private DataAccessMatcher dataAccessExceptionMapping;
     final private ErrorHandler errorHandler;
 
-    public DataAccessExceptionContentToErrorMapping(DataAccessExceptionMappingContent dataAccessExceptionMapping, ErrorHandler errorHandler) {
+    public DataAccessExceptionContentToErrorMapping(DataAccessMatcher dataAccessExceptionMapping, ErrorHandler errorHandler) {
         this.dataAccessExceptionMapping = dataAccessExceptionMapping;
         this.errorHandler = errorHandler;
     }
