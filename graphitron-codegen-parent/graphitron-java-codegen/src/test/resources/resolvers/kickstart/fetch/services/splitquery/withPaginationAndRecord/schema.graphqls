@@ -1,5 +1,0 @@
-type Wrapper {
-  id: ID
-
-  query(first: Int = 100, after: String, in: CustomerInputTable): CustomerConnection @splitQuery @service(service: {name: "RESOLVER_FETCH_SERVICE", method: "queryMap"})
-}

@@ -25,7 +25,6 @@ public class SchemaReader {
     private static final String SCHEMA_FILE_SUFFIX = ".graphql", SCHEMA_FILE_SUFFIX2 = ".graphqls";
 
     public static TypeDefinitionRegistry getTypeDefinitionRegistry(List<String> schemas) {
-        // https://github.com/kobylynskyi/graphql-java-codegen/blob/master/src/main/java/com/kobylynskyi/graphql/codegen/parser/GraphQLDocumentParser.java
         return new SchemaParser().buildRegistry(readSchemas(schemas));
     }
 

@@ -1,7 +1,0 @@
-type Mutation {
-  mutation(in: Input): ID @service(service: {name: "RESOLVER_MUTATION_SERVICE"})
-}
-
-input Input {
-  id: ID
-}

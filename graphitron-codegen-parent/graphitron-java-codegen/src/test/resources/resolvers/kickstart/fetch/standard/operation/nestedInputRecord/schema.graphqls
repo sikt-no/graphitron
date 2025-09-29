@@ -1,7 +1,0 @@
-type Query {
-  query(in0: Wrapper): DummyType
-}
-
-input Wrapper @table(name: "CUSTOMER") {
-  in1: CustomerInputTable  # The inputs need different names to avoid a variable name conflict.
-}

@@ -1,7 +1,0 @@
-type Query {
-  query: Wrapper @service(service: {name: "RESOLVER_FETCH_SERVICE", method: "queryJavaRecord"})
-}
-
-type Wrapper {
-  record: DummyTypeRecord
-}

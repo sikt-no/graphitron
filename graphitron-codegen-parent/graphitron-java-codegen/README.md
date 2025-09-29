@@ -75,7 +75,6 @@ The options are the same for both goals.
 * `extensions` -  See [Code references](#code-references).
 * `maxAllowedPageSize` - The maximum number of items that can be returned from "Cursor Connections Specification" based data fetchers. And thus also the database query limit.
 * `scalars` - Extra scalars that can be used in code generation and that will be added automatically to the wiring. Reflection is used to find all the scalar definitions of the provided class(es).
-* `makeKickstart` - Flag indicating if Graphitron should generate code compatible with graphql-kickstart. This is deprecated and should not be used for new projects.
 * `recordValidation` - Controls whether generated mutations should include validation of JOOQ records through the Jakarta Bean Validation specification.
   * `enabled` - Flag indicating if Graphitron should generate record validation code
   * `schemaErrorType` - Name of the schema error to be returned in case of validation violations and IllegalArgumentExceptions.
