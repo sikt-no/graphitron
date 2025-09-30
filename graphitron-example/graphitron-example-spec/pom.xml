@@ -123,7 +123,7 @@
                                 <externalReferenceImport>no.sikt.graphitron.example.service</externalReferenceImport>
                             </externalReferenceImports>
                             <userSchemaFiles>
-                                <schemaFile>${project.basedir}/target/generated-resources/graphql_transformer/schema.graphql</schemaFile>
+                                <schemaFile>schema.graphql</schemaFile>
                             </userSchemaFiles>
                             <makeNodeStrategy>true</makeNodeStrategy>
                             <scalars>

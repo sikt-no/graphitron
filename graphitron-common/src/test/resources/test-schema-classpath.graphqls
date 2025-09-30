@@ -1,0 +1,17 @@
+# Test schema for classpath loading tests
+type Query {
+    testQuery: String
+    getUser(id: ID!): User
+}
+
+type User {
+    id: ID!
+    username: String!
+    email: String
+}
+
+type Product {
+    id: ID!
+    name: String!
+    price: Float
+}
