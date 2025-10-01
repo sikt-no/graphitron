@@ -1,0 +1,14 @@
+mutation {
+  updateFilmReleaseYear_handledError(in: {filmId: "RmlsbTox", releaseYear: 2999}) {
+    errors {
+      ... on InvalidInput {
+        __typename
+        message
+        path
+      }
+    }
+    film {
+      id
+    }
+  }
+}

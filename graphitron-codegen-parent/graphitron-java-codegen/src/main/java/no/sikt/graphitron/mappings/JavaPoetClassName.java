@@ -1,6 +1,5 @@
 package no.sikt.graphitron.mappings;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import graphql.GraphQLError;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.TypeResolver;
@@ -9,6 +8,7 @@ import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.TypeRuntimeWiring;
 import no.sikt.graphitron.generators.mapping.TransformerClassGenerator;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.validation.RecordValidator;
 import no.sikt.graphql.NodeIdHandler;
 import no.sikt.graphql.NodeIdStrategy;
@@ -45,7 +45,7 @@ public enum JavaPoetClassName {
     COMPLETABLE_FUTURE(java.util.concurrent.CompletableFuture.class),
     DATA_ACCESS_EXCEPTION(DataAccessException.class),
     DATA_ACCESS_EXCEPTION_CONTENT_TO_ERROR_MAPPING(DataAccessExceptionContentToErrorMapping.class),
-    DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(DataAccessExceptionMappingContent.class),
+    DATA_ACCESS_EXCEPTION_MAPPING_CONTENT(DataAccessMatcher.class),
     DATA_FETCHING_ENVIRONMENT(graphql.schema.DataFetchingEnvironment.class),
     ENVIRONMENT_HANDLER(EnvironmentHandler.class),
     DATA_FETCHER(graphql.schema.DataFetcher.class),
@@ -59,7 +59,7 @@ public enum JavaPoetClassName {
     FUNCTION(java.util.function.Function.class),
     FUNCTIONS(org.jooq.Functions.class),
     GENERIC_EXCEPTION_CONTENT_TO_ERROR_MAPPING(GenericExceptionContentToErrorMapping.class),
-    GENERIC_EXCEPTION_MAPPING_CONTENT(GenericExceptionMappingContent.class),
+    GENERIC_EXCEPTION_MAPPING_CONTENT(GenericExceptionMatcher.class),
     GRAPHQL_ERROR(GraphQLError.class),
     HASH_MAP(java.util.HashMap.class),
     HASH_SET(java.util.HashSet.class),
@@ -86,7 +86,6 @@ public enum JavaPoetClassName {
     RESOLVER_HELPERS(ResolverHelpers.class),
     SELECTION_SET(SelectionSet.class),
     SET(java.util.Set.class),
-    SINGLETON(javax.inject.Singleton.class),
     STRING(java.lang.String.class),
     THROWABLE(Throwable.class),
     VALIDATION_VIOLATION_EXCEPTION(ValidationViolationGraphQLException.class),

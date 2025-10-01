@@ -3,16 +3,16 @@ package no.sikt.graphql.exception;
 import java.util.List;
 
 public class GenericExceptionContentToErrorMapping implements ExceptionContentToErrorMapping {
-    final private GenericExceptionMappingContent genericExceptionMappingContent;
+    final private GenericExceptionMatcher genericExceptionMatcher;
     final private ErrorHandler errorHandler;
 
-    public GenericExceptionContentToErrorMapping(GenericExceptionMappingContent genericExceptionMappingContent, ErrorHandler errorHandler) {
-        this.genericExceptionMappingContent = genericExceptionMappingContent;
+    public GenericExceptionContentToErrorMapping(GenericExceptionMatcher genericExceptionMatcher, ErrorHandler errorHandler) {
+        this.genericExceptionMatcher = genericExceptionMatcher;
         this.errorHandler = errorHandler;
     }
 
     public boolean matches(Throwable exception) {
-        return genericExceptionMappingContent.matches(exception);
+        return genericExceptionMatcher.matches(exception);
     }
 
     @Override

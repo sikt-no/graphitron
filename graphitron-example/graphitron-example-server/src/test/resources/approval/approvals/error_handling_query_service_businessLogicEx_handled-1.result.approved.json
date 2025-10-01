@@ -1,0 +1,15 @@
+{
+    "data": {
+        "allCustomerEmails_handledError": {
+            "errors": [
+                {
+                    "__typename": "CustomerEmailsError",
+                    "path": [
+                        "allCustomerEmails_handledError"
+                    ],
+                    "message": "You do not have access to customer emails"
+                }
+            ]
+        }
+    }
+}

@@ -6,13 +6,11 @@ import java.lang.String;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.inject.Singleton;
 import no.sikt.graphql.exception.DataAccessExceptionContentToErrorMapping;
 import no.sikt.graphql.exception.ExceptionToErrorMappingProvider;
 import no.sikt.graphql.exception.GenericExceptionContentToErrorMapping;
-import no.sikt.graphql.exception.GenericExceptionMappingContent;
+import no.sikt.graphql.exception.GenericExceptionMatcher;
 
-@Singleton
 public class GeneratedExceptionToErrorMappingProvider implements ExceptionToErrorMappingProvider {
     private final Map<String, List<DataAccessExceptionContentToErrorMapping>> dataAccessMappingsForOperation;
 
@@ -22,7 +20,7 @@ public class GeneratedExceptionToErrorMappingProvider implements ExceptionToErro
         dataAccessMappingsForOperation = new HashMap<>();
         genericMappingsForOperation = new HashMap<>();
         var m1 = new GenericExceptionContentToErrorMapping(
-                new GenericExceptionMappingContent("java.lang.IllegalArgumentException", null),
+                new GenericExceptionMatcher("java.lang.IllegalArgumentException", null),
                 (path, msg) -> new SomeError(path, msg));
 
         var mutationGenericList = List.of(m1);

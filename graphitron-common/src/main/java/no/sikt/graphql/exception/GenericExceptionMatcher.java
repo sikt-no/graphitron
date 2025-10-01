@@ -4,11 +4,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-public class GenericExceptionMappingContent {
+/**
+ * Generic matcher for exceptions that checks class type and message content.
+ * Can match against the full exception cause chain.
+ */
+public class GenericExceptionMatcher {
     private final String substringOfExceptionMessage;
     private final String fullyQualifiedClassName;
 
-    public GenericExceptionMappingContent(String fullyQualifiedClassName, String substringOfExceptionMessage) {
+    public GenericExceptionMatcher(String fullyQualifiedClassName, String substringOfExceptionMessage) {
         this.substringOfExceptionMessage = substringOfExceptionMessage;
         this.fullyQualifiedClassName = fullyQualifiedClassName;
     }
@@ -34,5 +38,3 @@ public class GenericExceptionMappingContent {
                 .orElse(true);
     }
 }
-
-

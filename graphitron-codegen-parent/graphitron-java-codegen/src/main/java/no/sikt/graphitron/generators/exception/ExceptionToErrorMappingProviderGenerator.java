@@ -39,7 +39,6 @@ public class ExceptionToErrorMappingProviderGenerator extends AbstractSchemaClas
     @Override
     public TypeSpec generate(SchemaDefinition schemaDefinition) {
         return getSpec("GeneratedExceptionToErrorMappingProvider", List.of())
-                .addAnnotation(SINGLETON.className)
                 .addMethod(createConstructor(schemaDefinition))
                 .build();
     }

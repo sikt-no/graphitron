@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Country;
@@ -44,6 +47,8 @@ public class CountryRecord extends UpdatableRecordImpl<CountryRecord> {
     /**
      * Getter for <code>public.country.country</code>.
      */
+    @NotNull
+    @Size(max = 50)
     public String getCountry() {
         return (String) get(1);
     }

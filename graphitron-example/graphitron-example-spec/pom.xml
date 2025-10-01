@@ -37,9 +37,9 @@
             <version>${revision}${changelist}</version>
         </dependency>
         <dependency>
-            <groupId>org.hibernate.validator</groupId>
-            <artifactId>hibernate-validator</artifactId>
-            <version>8.0.2.Final</version>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-error-handling-jakarta</artifactId>
+            <version>${revision}${changelist}</version>
         </dependency>
         <dependency>
             <groupId>jakarta.enterprise</groupId>
@@ -115,8 +115,8 @@
                             <jooqGeneratedPackage>${generatedJooqPackage}</jooqGeneratedPackage>
                             <maxAllowedPageSize>1000</maxAllowedPageSize>
                             <recordValidation>
-                                <enabled>false</enabled>
-                                <schemaErrorType>UgyldigInput</schemaErrorType>
+                                <enabled>true</enabled>
+                                <schemaErrorType>InvalidInput</schemaErrorType>
                             </recordValidation>
                             <outputPackage>${generatedGraphitronPackage}</outputPackage>
                             <externalReferenceImports>

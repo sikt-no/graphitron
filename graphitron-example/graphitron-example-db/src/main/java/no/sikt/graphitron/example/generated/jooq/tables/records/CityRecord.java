@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.City;
@@ -44,6 +47,8 @@ public class CityRecord extends UpdatableRecordImpl<CityRecord> {
     /**
      * Getter for <code>public.city.city</code>.
      */
+    @NotNull
+    @Size(max = 50)
     public String getCity() {
         return (String) get(1);
     }
@@ -58,6 +63,7 @@ public class CityRecord extends UpdatableRecordImpl<CityRecord> {
     /**
      * Getter for <code>public.city.country_id</code>.
      */
+    @NotNull
     public Integer getCountryId() {
         return (Integer) get(2);
     }

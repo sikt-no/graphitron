@@ -4,6 +4,9 @@
 package no.sikt.graphitron.example.generated.jooq.tables.records;
 
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.time.LocalDateTime;
 
 import no.sikt.graphitron.example.generated.jooq.tables.Address;
@@ -44,6 +47,8 @@ public class AddressRecord extends UpdatableRecordImpl<AddressRecord> {
     /**
      * Getter for <code>public.address.address</code>.
      */
+    @NotNull
+    @Size(max = 50)
     public String getAddress() {
         return (String) get(1);
     }
@@ -58,6 +63,7 @@ public class AddressRecord extends UpdatableRecordImpl<AddressRecord> {
     /**
      * Getter for <code>public.address.address2</code>.
      */
+    @Size(max = 50)
     public String getAddress2() {
         return (String) get(2);
     }
@@ -72,6 +78,8 @@ public class AddressRecord extends UpdatableRecordImpl<AddressRecord> {
     /**
      * Getter for <code>public.address.district</code>.
      */
+    @NotNull
+    @Size(max = 20)
     public String getDistrict() {
         return (String) get(3);
     }
@@ -86,6 +94,7 @@ public class AddressRecord extends UpdatableRecordImpl<AddressRecord> {
     /**
      * Getter for <code>public.address.city_id</code>.
      */
+    @NotNull
     public Integer getCityId() {
         return (Integer) get(4);
     }
@@ -100,6 +109,7 @@ public class AddressRecord extends UpdatableRecordImpl<AddressRecord> {
     /**
      * Getter for <code>public.address.postal_code</code>.
      */
+    @Size(max = 10)
     public String getPostalCode() {
         return (String) get(5);
     }
@@ -114,6 +124,8 @@ public class AddressRecord extends UpdatableRecordImpl<AddressRecord> {
     /**
      * Getter for <code>public.address.phone</code>.
      */
+    @NotNull
+    @Size(max = 20)
     public String getPhone() {
         return (String) get(6);
     }
