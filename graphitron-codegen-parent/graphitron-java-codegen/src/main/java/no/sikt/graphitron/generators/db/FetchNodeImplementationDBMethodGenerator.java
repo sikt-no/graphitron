@@ -1,10 +1,7 @@
 package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
-import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.VirtualSourceField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -13,10 +10,7 @@ import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
@@ -29,42 +23,34 @@ import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAnd
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
- * Generator that creates the data fetching methods for interface implementations, e.g. queries used by the node resolver.
+ * Generator that creates the data fetching methods for the node resolver.
  */
 public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGenerator {
-    private final Set<ObjectField> objectFieldsReturningNode;
-
-    public FetchNodeImplementationDBMethodGenerator(
-            ObjectDefinition localObject,
-            ProcessedSchema processedSchema,
-            Set<ObjectField> objectFieldsReturningNode
-    ) {
-        super(localObject, processedSchema);
-        this.objectFieldsReturningNode = objectFieldsReturningNode;
+    public FetchNodeImplementationDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var implementation = getLocalObject();
-        var implementationTableObject = implementation.getTable();
-        if (implementationTableObject == null) {
+        var implementation = processedSchema.getObject(target.getTypeName());
+        if (implementation == null || implementation.getTable() == null) {
             addErrorMessageAndThrow("Type %s needs to have the @%s directive set to be able to implement interface %s",
-                    implementation.getName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName());
+                    target.getTypeName(), GenerationDirective.TABLE.getName(), NODE_TYPE.getName());
         }
+        var implementationTableObject = implementation.getTable();
 
-        var virtualReference = new VirtualSourceField(getLocalObject(), target.getTypeName());
-        var context = new FetchContext(processedSchema, virtualReference, implementation, false);
+        var context = new FetchContext(processedSchema, target, implementation, false);
         var selectCode = generateSelectRow(context);
 
-        var argument = target.getArguments().get(0);
+        var argument = target.getNonReservedArguments().get(0);
         var argumentName = argument.getName() + "s";
         var querySource = context.renderQuerySource(implementationTableObject);
 
         CodeBlock id;
         CodeBlock whereCondition;
         if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(localObject, context.getTargetAlias()), selectCode);
-            whereCondition = hasIdsBlock(localObject, context.getTargetAlias());
+            id = CodeBlock.of("$L,\n$L", createNodeIdBlock(implementation, context.getTargetAlias()), selectCode);
+            whereCondition = hasIdsBlock(implementation, context.getTargetAlias());
         } else {
             var hasOrIn = argument.isID()
                     ? CodeBlock.of("has$N", StringUtils.capitalize(argumentName))
@@ -99,11 +85,10 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
 
     @Override
     public List<MethodSpec> generateAll() {
-        return objectFieldsReturningNode
-                .stream()
-                .filter(entry -> getLocalObject().implementsInterface(NODE_TYPE.getName()))
-                .sorted(Comparator.comparing(AbstractField::getName))
-                .map(this::generate)
-                .collect(Collectors.toList());
+        if (!(processedSchema.implementsNode(getSource()))) {
+            return List.of();
+        }
+
+        return List.of(generate(getSource()));
     }
 }

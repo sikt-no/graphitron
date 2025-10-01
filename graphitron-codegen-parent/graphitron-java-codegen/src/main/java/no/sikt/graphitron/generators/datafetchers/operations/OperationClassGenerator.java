@@ -1,20 +1,21 @@
 package no.sikt.graphitron.generators.datafetchers.operations;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
+import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherClassGenerator;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.getFormatGeneratedName;
 import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
 
 /**
  * Class generator for any data fetchers classes.
  */
-public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectDefinition> {
+public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectField> {
     public final String SAVE_DIRECTORY_NAME = "operations";
 
     public OperationClassGenerator(ProcessedSchema processedSchema) {
@@ -28,26 +29,24 @@ public class OperationClassGenerator extends DataFetcherClassGenerator<ObjectDef
                 .values()
                 .stream()
                 .filter(ObjectDefinition::isGenerated)
+                .flatMap(it -> it.getFields().stream())
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs().isEmpty())
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
-    public TypeSpec generate(ObjectDefinition target) {
+    public TypeSpec generate(ObjectField target) {
         var generators = List.of(
                 new OperationMethodGenerator(target, processedSchema),
                 new FetchNodeMethodGenerator(target, processedSchema)
         );
-        var spec = getSpec(target.getName(), generators);
-        target
-                .getFields()
-                .stream()
-                .filter(it -> it.getTypeName().equals(NODE_TYPE.getName()) && !GeneratorConfig.shouldMakeNodeStrategy())
-                .findFirst()
-                .flatMap(this::buildNodeMap)
-                .ifPresent(spec::addField);
-        var className = getGeneratedClassName(target.getName() + getFileNameSuffix());
+        var classNameFormat = getFormatGeneratedName(target);
+        var spec = getSpec(classNameFormat, generators);
+        if (target.getTypeName().equals(NODE_TYPE.getName()) && !GeneratorConfig.shouldMakeNodeStrategy()) {
+            buildNodeMap(target).ifPresent(spec::addField);
+        }
+        var className = getGeneratedClassName(classNameFormat);
         generators.forEach(it -> addFetchers(it.getDataFetcherWiring(), className));
         return spec.build();
     }

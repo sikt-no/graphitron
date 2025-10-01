@@ -1,11 +1,11 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.FieldSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import javax.lang.model.element.Modifier;

@@ -36,7 +36,7 @@ public class TypeResolverMethodGenerator extends AbstractSchemaMethodGenerator<T
     }
 
     public List<MethodSpec> generateAll() {
-        return List.of(generate(getLocalObject()));
+        return List.of(generate(getSource()));
     }
 
     @Override

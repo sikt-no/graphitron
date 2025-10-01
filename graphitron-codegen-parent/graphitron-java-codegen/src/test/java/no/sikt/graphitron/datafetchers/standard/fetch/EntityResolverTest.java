@@ -47,8 +47,8 @@ public class EntityResolverTest extends GeneratorTest {
     void twoTypes() {
         assertGeneratedContentContains(
                 "twoTypes",
-                "transformDTO(AddressDBQueries.addressAsEntity(",
-                "transformDTO(CustomerDBQueries.customerAsEntity("
+                "transformDTO(EntityAddressDBQueries.addressAsEntity(",
+                "transformDTO(EntityCustomerDBQueries.customerAsEntity("
         );
     }
 }

@@ -7,11 +7,13 @@ import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.ENTITY_CLASS;
+
 /**
  * Class generator for wrapping the entity resolver.
  */
 public class EntityFetcherClassGenerator extends DataFetcherClassGenerator<ObjectDefinition> {
-    public static final String SAVE_DIRECTORY_NAME = "operations", CLASS_NAME = "Entity";
+    public static final String SAVE_DIRECTORY_NAME = "operations";
 
     public EntityFetcherClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
@@ -28,10 +30,10 @@ public class EntityFetcherClassGenerator extends DataFetcherClassGenerator<Objec
     @Override
     public TypeSpec generate(ObjectDefinition dummy) {
         var query = processedSchema.getQueryType();
-        var name = query.getName() + CLASS_NAME;
+        var name = query.getName() + ENTITY_CLASS;
         var fetcherGenerator = new EntityFetcherMethodGenerator(processedSchema);
         var spec = getSpec(name, fetcherGenerator).build();
-        var className = getGeneratedClassName(name + getFileNameSuffix());
+        var className = getGeneratedClassName(name);
         addFetchers(fetcherGenerator.getDataFetcherWiring(), className);
         return spec;
     }

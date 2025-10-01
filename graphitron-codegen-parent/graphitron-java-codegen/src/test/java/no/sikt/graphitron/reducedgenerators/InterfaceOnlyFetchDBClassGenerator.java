@@ -1,14 +1,15 @@
 package no.sikt.graphitron.reducedgenerators;
 
+import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.generators.db.FetchMultiTableDBMethodGenerator;
-import no.sikt.graphitron.generators.db.FetchNodeImplementationDBMethodGenerator;
 import no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethodGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
+
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.getFormatGeneratedName;
 
 public class InterfaceOnlyFetchDBClassGenerator extends DBClassGenerator {
     public InterfaceOnlyFetchDBClassGenerator(ProcessedSchema processedSchema) {
@@ -16,14 +17,15 @@ public class InterfaceOnlyFetchDBClassGenerator extends DBClassGenerator {
     }
 
     @Override
-    public TypeSpec generate(ObjectDefinition target) {
-        return getSpec(
-                target.getName(),
+    public TypeSpec generate(ObjectField target) {
+        TypeSpec typeSpec = getSpec(
+                getFormatGeneratedName(target),
                 List.of(
-                        new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
                         new FetchMultiTableDBMethodGenerator(target, processedSchema),
                         new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema)
                 )
         ).build();
+        warnOrCrashIfMethodsExceedsBounds(typeSpec);
+        return typeSpec;
     }
 }

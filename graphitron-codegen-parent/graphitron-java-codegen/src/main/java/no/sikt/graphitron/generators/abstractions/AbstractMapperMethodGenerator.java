@@ -72,7 +72,7 @@ abstract public class AbstractMapperMethodGenerator extends AbstractSchemaMethod
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (getLocalObject() == null || getLocalObject().isExplicitlyNotGenerated()) {
+        if (getSource() == null || getSource().isExplicitlyNotGenerated()) {
             return List.of();
         }
 

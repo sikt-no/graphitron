@@ -1,11 +1,10 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.javapoet.MethodSpec;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * An abstract generator that contains simple methods that are independent of the GraphQL schema.

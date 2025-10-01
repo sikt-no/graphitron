@@ -32,7 +32,7 @@ public class TypeResolverClassGenerator extends AbstractSchemaClassGenerator<Typ
         var typeName = (target != null ? target.getName() : FEDERATION_ENTITY_UNION.getName()).replace("_", "");
         var resolverGenerator = new TypeResolverMethodGenerator(target, processedSchema);
         var spec = getSpec(typeName, List.of(resolverGenerator, new TypeNameMethodGenerator(target, processedSchema))).build();
-        var className = getGeneratedClassName(typeName + getFileNameSuffix());
+        var className = getGeneratedClassName(typeName);
         addTypeResolvers(resolverGenerator.getTypeResolverWiring(), className);
         return spec;
     }
@@ -47,6 +47,7 @@ public class TypeResolverClassGenerator extends AbstractSchemaClassGenerator<Typ
         return FILE_NAME_SUFFIX;
     }
 
+    @Override
     public List<TypeSpec> generateAll() {
         var interfaces = processedSchema.getInterfaces().values().stream();
         var unions = processedSchema

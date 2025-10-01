@@ -2,9 +2,7 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -29,12 +27,11 @@ import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
  * Generator that creates methods for counting all available elements for a type.
  */
 public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
-
     public static final String UNION_COUNT_QUERY = "unionCountQuery";
     public static final String COUNT_FIELD_NAME = "$count";
 
-    public FetchCountDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public FetchCountDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     /**
@@ -51,8 +48,8 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .addCode(getCodeForMultitableCountMethod(target))
                     .build();
         }
-        var context = new FetchContext(processedSchema, target, getLocalObject(), true);
-        var targetSource = context.renderQuerySource(getLocalTable());
+        var context = new FetchContext(processedSchema, target, getSourceContainer(), true);
+        var targetSource = context.renderQuerySource(getSourceTable());
         var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
         var nextContext = target.isResolver() ? context.nextContext(target) : context;
         return getSpecBuilder(target, parser)
@@ -84,14 +81,14 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
             implementations
                     .stream()
                     .findFirst()
-                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), getSourceContainer(), false))
                     .map(FetchContext::getAliasSet)
                     .ifPresent(it -> code.add(createAliasDeclarations(it)));
         }
 
         implementations.forEach(implementation -> {
             var virtualTarget = new VirtualSourceField(implementation, target);
-            var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
+            var context = new FetchContext(processedSchema, virtualTarget, getSourceContainer(), true);
             var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
             var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver());
             var countForImplementation = CodeBlock.builder()
@@ -120,7 +117,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
         var resolverKey = implementations.stream()
                 .findFirst()
-                .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, true))
+                .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), getSourceContainer(), true))
                 .map(FetchContext::getResolverKey);
 
         return code
@@ -142,7 +139,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     @NotNull
     private MethodSpec.Builder getSpecBuilder(ObjectField referenceField, InputParser parser) {
         return getDefaultSpecBuilder(
-                asCountMethodName(referenceField.getName(), getLocalObject().getName()),
+                asCountMethodName(referenceField.getName(), getSourceContainer().getName()),
                 isRoot ? INTEGER.className : wrapMap(getKeyRowTypeName(referenceField, processedSchema), INTEGER.className)
         )
                 .addParameterIf(!isRoot, () -> wrapSet(getKeyRowTypeName(referenceField, processedSchema)), resolverKeyParamName)
@@ -152,14 +149,21 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getFields()
-                .stream()
-                .filter(GenerationField::isGeneratedWithResolver)
-                .filter(ObjectField::hasRequiredPaginationFields)
-                .filter(it -> !it.hasServiceReference())
-                .map(this::generate)
-                .filter(it -> !it.code().isEmpty())
-                .collect(Collectors.toList());
+        var source = getSource();
+        if (!source.isGeneratedWithResolver()) {
+            return List.of();
+        }
+        if (!source.hasRequiredPaginationFields()) {
+            return List.of();
+        }
+        if (source.hasServiceReference()) {
+            return List.of();
+        }
+
+        var generated = generate(source);
+        if (generated.code().isEmpty()) {
+            return List.of();
+        }
+        return List.of(generated);
     }
 }

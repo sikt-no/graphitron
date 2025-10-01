@@ -70,7 +70,7 @@ public class OutputTest extends GeneratorTest {
     void implicitSplitQuery() {
         assertFilesAreGenerated(
                 "implicitSplitQuery", Set.of(CUSTOMER_TABLE, SPLIT_QUERY_WRAPPER),
-                "WrapperDBQueries"
+                "WrapperQueryDBQueries"
         );
     }
 

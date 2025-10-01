@@ -81,7 +81,7 @@ class DBClassGeneratorTest extends GeneratorTest {
         assertErrorsContain(
                 () -> generateFiles("thresholdEvaluator"),
                 "Code generation crash point has exceeded for the following methods:\n" +
-                        "Code size in QueryDBQueries.queryForQuery has exceeded its CRASH_POINT (current/limit) 5/1"
+                        "Code size in QueryQueryDBQueries.queryForQuery has exceeded its CRASH_POINT (current/limit) 5/1"
         );
 
     }
@@ -93,7 +93,7 @@ class DBClassGeneratorTest extends GeneratorTest {
         generateFiles("thresholdEvaluator");
         assertWarningsContain(
                 "Code generation upper bound has exceeded for the following methods, this may cause performance issues:\n" +
-                        "Code size in QueryDBQueries.queryForQuery has exceeded its UPPER_BOUND (current/limit) 5/1"
+                        "Code size in QueryQueryDBQueries.queryForQuery has exceeded its UPPER_BOUND (current/limit) 5/1"
         );
     }
 }

@@ -3,7 +3,6 @@ package no.sikt.graphitron.generators.db;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -33,7 +32,6 @@ import static no.sikt.graphitron.validation.ValidationHandler.addErrorMessageAnd
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
 public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
-
     public static final String UNION_KEYS_QUERY = "unionKeysQuery";
     public static final String TYPE_FIELD = "$type";
     public static final String DATA_FIELD = "$data";
@@ -42,11 +40,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     public static final int MAPPED_START_INDEX_IN_SELECT = 1;
     private FetchContext initialContext;
 
-    public FetchMultiTableDBMethodGenerator(
-            ObjectDefinition localObject,
-            ProcessedSchema processedSchema
-    ) {
-        super(localObject, processedSchema);
+    public FetchMultiTableDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     @Override
@@ -73,7 +68,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
             initialContext = implementations
                     .stream()
                     .findFirst()
-                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), getSourceContainer(), false))
                     .orElse(null);
         }
 
@@ -127,7 +122,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(target.isResolver() ? wrapInMultiset(multitableQuery) : multitableQuery)
                 .unindent()
                 .addIf(target.isResolver(), "\n)")
-                .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)", initialContext.renderQuerySource(getLocalTable())))
+                .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)", initialContext.renderQuerySource(getSourceTable())))
                 .addIf(target.isResolver(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.isResolver()))
                 .add(createFetchAndMapping(target, implementations))
                 .build();
@@ -289,7 +284,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
         var virtualTarget = new VirtualSourceField(implementation, target);
-        var context = new FetchContext(processedSchema, virtualTarget, localObject, false);
+        var context = new FetchContext(processedSchema, virtualTarget, getSourceContainer(), false);
         var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
 
         return List.of(getSortFieldsMethod(target, implementation, refContext, methodInputs), getMappedMethod(target, implementation));
@@ -334,7 +329,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getMappedMethodCode(ObjectField target, ObjectDefinition implementation, FetchContext context) {
         var code = CodeBlock.builder();
-        var querySource = context.renderQuerySource(getLocalTable());
+        var querySource = context.renderQuerySource(getSourceTable());
         var selectCode = generateSelectRow(context);
 
         return code
@@ -465,16 +460,23 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getFields()
-                .stream()
-                .filter(processedSchema::isMultiTableField)
-                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
-                .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(GenerationField::isGeneratedWithResolver)
-                .filter(it -> !it.hasServiceReference())
-                .flatMap(it -> generateWithSubselectMethods(it).stream())
-                .filter(it -> !it.code().isEmpty())
-                .toList();
+        var source = getSource();
+        if (!processedSchema.isMultiTableField(source)) {
+            return List.of();
+        }
+        if (source.getName().equals(FEDERATION_ENTITIES_FIELD.getName())) {
+            return List.of();
+        }
+        if (source.getTypeName().equals(NODE_TYPE.getName())) {
+            return List.of();
+        }
+        if (!source.isGeneratedWithResolver()) {
+            return List.of();
+        }
+        if (source.hasServiceReference()) {
+            return List.of();
+        }
+
+        return generateWithSubselectMethods(source).stream().filter(it -> !it.code().isEmpty()).toList();
     }
 }

@@ -94,8 +94,8 @@ public class StrategyNodeResolverTest extends GeneratorTest {
     void doubleInterface() {
         assertGeneratedContentContains(
                 "doubleInterface", Set.of(NODE),
-                "FilmDBQueries.filmForNode(",
-                "QueryDBQueries.titledForQuery("
+                "NodeFilmDBQueries.filmForNode(",
+                "QueryTitledDBQueries.titledForQuery("
         );
     }
 

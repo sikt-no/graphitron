@@ -6,15 +6,16 @@ import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getQueryClassName;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.newDataFetcher;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFetcher;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapFuture;
@@ -27,12 +28,10 @@ import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
  * Generates resolvers for the Node interface.
  */
 public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
-    private final ObjectDefinition localObject;
     private final static String VARIABLE_LOADER = "_loaderName";
 
-    public FetchNodeMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
-        this.localObject = localObject;
+    public FetchNodeMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     @Override
@@ -68,7 +67,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME
         );
 
-        dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
+        dataFetcherWiring.add(new WiringContainer(target.getName(), getSourceContainer().getName(), target.getName()));
 
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(interfaceDefinition.getGraphClassName())))
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
@@ -100,37 +99,43 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
 
     private CodeBlock codeForImplementation(ObjectDefinition implementation, String inputFieldName) {
         var implementationTypeName = implementation.getName();
-        CodeBlock dbFunction = CodeBlock.of(
-                "($L, $L, $L) -> $T.$L($L)",
+        return CodeBlock.statementOf(
+                "case $S: return $N.loadInterface($N, $N, ($L, $L, $L) -> $T.$L($N, $L$N, $N))",
+                GeneratorConfig.shouldMakeNodeStrategy() ? implementation.getTypeId() : implementationTypeName,
+
+                VARIABLE_FETCHER_NAME,
+
+                VARIABLE_LOADER,
+                inputFieldName,
+
                 CONTEXT_NAME,
                 IDS_NAME,
                 SELECTION_SET_NAME,
-                getQueryClassName(asQueryClass(implementationTypeName)),
+
+                getQueryClassName(getFormatGeneratedName(getSourceContainer().getName() + getSource().getTypeName(), implementationTypeName) + DBClassGenerator.FILE_NAME_SUFFIX),
                 asNodeQueryName(implementationTypeName),
-                GeneratorConfig.shouldMakeNodeStrategy() ?
-                        CodeBlock.of("$N, $N, $N, $N", CONTEXT_NAME, NODE_ID_STRATEGY_NAME, IDS_NAME, SELECTION_SET_NAME)
-                        : CodeBlock.of("$N, $N, $N", CONTEXT_NAME, IDS_NAME, SELECTION_SET_NAME)
-            );
 
-        String name;
-        if (GeneratorConfig.shouldMakeNodeStrategy()) {
-            name = implementation.getTypeId();
-        } else {
-            name = implementationTypeName;
-        }
-
-        return CodeBlock.statementOf("case $S: return $N.$L($N, $N, $L)", name, VARIABLE_FETCHER_NAME, "loadInterface", VARIABLE_LOADER, inputFieldName, dbFunction);
+                CONTEXT_NAME,
+                CodeBlock.ofIf(GeneratorConfig.shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
+                IDS_NAME,
+                SELECTION_SET_NAME
+        );
     }
 
     @Override
     public List<MethodSpec> generateAll() {
-        return localObject
-                .getFields()
-                .stream()
-                .filter(ObjectField::isGeneratedWithResolver)
-                .filter(it -> processedSchema.isInterface(it.getTypeName()) && it.getTypeName().equals(NODE_TYPE.getName()))
-                .map(this::generate)
-                .filter(it -> !it.code().isEmpty())
-                .collect(Collectors.toList());
+        var source = getSource();
+        if (!source.isGeneratedWithResolver()) {
+            return List.of();
+        }
+        if (!processedSchema.isInterface(source.getTypeName()) || !source.getTypeName().equals(NODE_TYPE.getName())) {
+            return List.of();
+        }
+
+        var generated = generate(source);
+        if (generated.code().isEmpty()) {
+            return List.of();
+        }
+        return List.of(generated);
     }
 }

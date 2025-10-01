@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.codebuilding;
 
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.generators.mapping.JavaRecordMapperClassGenerator;
 import no.sikt.graphitron.generators.mapping.RecordMapperClassGenerator;
@@ -107,11 +108,26 @@ public class NameFormat {
     }
 
     /**
-     * @return Name formatted as a query class name.
+     * @return Field names formatted as a query class name.
      */
     @NotNull
-    public static String asQueryClass(String s) {
-        return capitalize(s) + DBClassGenerator.FILE_NAME_SUFFIX;
+    public static String getFormatGeneratedQueryName(GenerationField field) {
+        return getFormatGeneratedName(field) + DBClassGenerator.FILE_NAME_SUFFIX;
+    }
+
+    /**
+     * @param field Source field for the generated class.
+     * @return Generated file name based on field information.
+     */
+    public static String getFormatGeneratedName(GenerationField field) {
+        return getFormatGeneratedName(field.getContainerTypeName(), field.getName());
+    }
+
+    /**
+     * @return Generated file name based on field information.
+     */
+    public static String getFormatGeneratedName(String container, String fieldName) {
+        return capitalize(container.replace("_", "")) + capitalize(fieldName.replace("_", ""));
     }
 
     /**

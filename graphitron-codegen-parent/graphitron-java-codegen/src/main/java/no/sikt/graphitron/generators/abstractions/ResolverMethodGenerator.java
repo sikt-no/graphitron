@@ -9,7 +9,6 @@ import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.NameFormat;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -37,11 +36,11 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
 /**
  * This class contains common information and operations shared by resolver method generators.
  */
-abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenerator<ObjectField, ObjectDefinition> {
+abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenerator<ObjectField, ObjectField> {
     private static final String LOOKUP_KEYS_NAME = "keys", RESPONSE_NAME = "response", TRANSFORMER_LAMBDA_NAME = "recordTransform";
 
-    public ResolverMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public ResolverMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     protected TypeName getReturnTypeName(ObjectField referenceField) {
@@ -65,9 +64,9 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         var isService = target.hasServiceReference();
         var hasLookup = !isService && LookupHelpers.lookupExists(target, processedSchema);
 
-        var objectToCall = isService ? uncapitalize(createServiceDependency(target).getName()) : asQueryClass(localObject.getName());
-        var methodName = isService ? target.getExternalMethod().getMethodName() : asQueryMethodName(target.getName(), localObject.getName());
-        var isRoot = localObject.isOperationRoot();
+        var objectToCall = isService ? uncapitalize(createServiceDependency(target).getName()) : getFormatGeneratedQueryName(target);
+        var methodName = isService ? target.getExternalMethod().getMethodName() : asQueryMethodName(target.getName(), target.getContainerTypeName());
+        var isRoot = getSourceContainer().isOperationRoot();
         var queryFunction = queryFunction(objectToCall, methodName, parser.getInputParamString(), !isRoot || hasLookup, !isRoot && !hasLookup, isService);
 
         if (hasLookup) { // Assume all keys are correlated.
@@ -83,7 +82,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                     "return $L.$L($N.$L(), $L)",
                     newDataFetcher(),
                     "loadByResolverKeys",
-                    uncapitalize(localObject.getName()),
+                    uncapitalize(getSourceContainer().getName()),
                     getDTOGetterMethodNameForField(target),
                     queryFunction
             );
@@ -111,7 +110,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
     private CodeBlock callQueryBlock(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
         return CodeBlock
                 .builder()
-                .add(fetcherCodeInit(target, localObject))
+                .add(fetcherCodeInit(target, getSourceContainer()))
                 .add(callQueryBlockInner(target, objectToCall, method, parser, queryFunction))
                 .unindent()
                 .unindent()
@@ -134,7 +133,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
         if (!target.hasRequiredPaginationFields()) {
             return CodeBlock
                     .builder()
-                    .addIf(!localObject.isOperationRoot(), "\n")
+                    .addIf(!getSourceContainer().isOperationRoot(), "\n")
                     .addAll(queryFunction, transformWrap)
                     .build();
         }
@@ -145,7 +144,7 @@ abstract public class ResolverMethodGenerator extends AbstractSchemaMethodGenera
                 .stream()
                 .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
-        var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
+        var inputsWithKeys = getSourceContainer().isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
         var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(NameFormat::asContextFieldName).toList());
         var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
         var countFunction = countFunction(objectToCall, method, allParams, target.hasServiceReference());

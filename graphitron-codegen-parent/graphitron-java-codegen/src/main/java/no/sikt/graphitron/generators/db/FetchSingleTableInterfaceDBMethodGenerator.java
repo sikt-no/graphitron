@@ -17,8 +17,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getSelectKeyColumnRow;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
@@ -35,11 +33,8 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
     public static final String DISCRIMINATOR_VALUE = "_discriminatorValue";
     public static final String TOKEN = "_token", DATA = "_data", INNER_DATA = "_innerData";
 
-    public FetchSingleTableInterfaceDBMethodGenerator(
-            ObjectDefinition localObject,
-            ProcessedSchema processedSchema
-    ) {
-        super(localObject, processedSchema);
+    public FetchSingleTableInterfaceDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     @Override
@@ -55,7 +50,7 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
     }
 
     private CodeBlock getCode(ObjectField target, Set<ObjectDefinition> implementations) {
-        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var context = new FetchContext(processedSchema, target, getSourceContainer(), false);
         var overriddenFields = getFieldsOverriddenByType(processedSchema.getInterface(target), implementations);
         var selectCode = generateSelectRow(context, target, implementations, overriddenFields);
         var querySource = context.getTargetAlias();
@@ -267,16 +262,24 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getFields()
-                .stream()
-                .filter(processedSchema::isInterface)
-                .filter(it -> !it.getTypeName().equals(NODE_TYPE.getName()))
-                .filter(processedSchema::isSingleTableInterface)
-                .filter(GenerationField::isGeneratedWithResolver)
-                .filter(it -> !it.hasServiceReference())
-                .map(this::generate)
-                .filter(it -> !it.code().isEmpty())
-                .collect(Collectors.toList());
+        var source = getSource();
+        if (!processedSchema.isSingleTableInterface(source)) {
+            return List.of();
+        }
+        if (source.getTypeName().equals(NODE_TYPE.getName())) {
+            return List.of();
+        }
+        if (!source.isGeneratedWithResolver()) {
+            return List.of();
+        }
+        if (source.hasServiceReference()) {
+            return List.of();
+        }
+
+        var generated = generate(source);
+        if (generated.code().isEmpty()) {
+            return List.of();
+        }
+        return List.of(generated);
     }
 }

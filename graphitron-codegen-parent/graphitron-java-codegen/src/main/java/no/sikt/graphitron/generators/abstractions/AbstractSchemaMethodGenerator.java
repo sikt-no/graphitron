@@ -22,32 +22,43 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapList
  * An abstract generator that contains methods that are common between both DB-method generators and resolver generators.
  */
 abstract public class AbstractSchemaMethodGenerator<T extends GenerationTarget, U extends GenerationTarget> implements MethodGenerator {
-    protected final U localObject;
+    protected final U source;
+    protected final RecordObjectSpecification<?> sourceContainer;
     protected final ProcessedSchema processedSchema;
     protected Map<String, List<Dependency>> dependencyMap = new HashMap<>();
 
-    public AbstractSchemaMethodGenerator(U localObject, ProcessedSchema processedSchema) {
-        this.localObject = localObject;
+    public AbstractSchemaMethodGenerator(U source, ProcessedSchema processedSchema) {
+        this.source = source;
         this.processedSchema = processedSchema;
+        this.sourceContainer = (source instanceof GenerationField sourceField) ? processedSchema.getRecordType(sourceField.getContainerTypeName()) : null;
     }
 
     /**
-     * @return The object that this generator is attempting to build methods for.
+     * @return The object or field that this generator is attempting to build methods for.
      */
-    public U getLocalObject() {
-        return localObject;
+    public U getSource() {
+        return source;
     }
 
-    protected JOOQMapping getLocalTable() {
-        if (!(getLocalObject() instanceof RecordObjectSpecification<? extends GenerationField> localRecordObject)) {
+    /**
+     * @return The object containing the field that this generator is attempting to build methods for.
+     */
+    public RecordObjectSpecification<?> getSourceContainer() {
+        return sourceContainer;
+    }
+
+    protected JOOQMapping getSourceTable() {
+        var sourceContainer = getSourceContainer();
+        if (sourceContainer == null) {
             return null;
         }
 
-        if (localRecordObject.hasTable()) {
-            return localRecordObject.getTable();
+        if (sourceContainer.hasTable()) {
+            return sourceContainer.getTable();
         }
+
         return Optional
-                .ofNullable(processedSchema.getPreviousTableObjectForObject(localRecordObject))
+                .ofNullable(processedSchema.getPreviousTableObjectForObject(sourceContainer))
                 .map(RecordObjectSpecification::getTable)
                 .orElse(null);
     }

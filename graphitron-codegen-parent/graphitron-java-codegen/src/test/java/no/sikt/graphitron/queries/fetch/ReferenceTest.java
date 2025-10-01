@@ -3,7 +3,6 @@ package no.sikt.graphitron.queries.fetch;
 import no.sikt.graphitron.common.GeneratorTest;
 import no.sikt.graphitron.configuration.externalreferences.ExternalReference;
 import no.sikt.graphitron.generators.abstractions.ClassGenerator;
-import no.sikt.graphitron.reducedgenerators.InterfaceOnlyFetchDBClassGenerator;
 import no.sikt.graphitron.reducedgenerators.MapOnlyFetchDBClassGenerator;
 import no.sikt.graphql.schema.ProcessedSchema;
 

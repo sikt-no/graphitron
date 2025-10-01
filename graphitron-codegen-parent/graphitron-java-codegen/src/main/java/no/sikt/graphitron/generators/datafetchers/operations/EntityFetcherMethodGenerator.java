@@ -5,6 +5,7 @@ import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
+import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -12,8 +13,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import java.util.List;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntityQueryMethodName;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.ENVIRONMENT_HANDLER;
@@ -38,25 +38,23 @@ public class EntityFetcherMethodGenerator extends DataFetcherMethodGenerator {
         var cases = CodeBlock.builder();
         var entities = processedSchema.getEntities().values();
         for (var entity : entities) {
-            var fetchBlock = GeneratorConfig.shouldMakeNodeStrategy() ?
-                    CodeBlock.of(
-                            "$T.$L($N, $N, $N)",
-                            getQueryClassName(asQueryClass(entity.getName())),
-                            asEntityQueryMethodName(entity.getName()),
-                            CONTEXT_NAME,
-                            NODE_ID_STRATEGY_NAME,
-                            VARIABLE_INTERNAL_ITERATION)
-                    : CodeBlock.of(
-                    "$T.$L($N, $N)",
-                    getQueryClassName(asQueryClass(entity.getName())),
+            var fetchBlock = CodeBlock.of(
+                    "$T.$L($N, $L$N)",
+                    getQueryClassName(getFormatGeneratedName(target.getTypeName(), entity.getName()) + DBClassGenerator.FILE_NAME_SUFFIX),
                     asEntityQueryMethodName(entity.getName()),
                     CONTEXT_NAME,
-                    VARIABLE_INTERNAL_ITERATION);
+                    CodeBlock.ofIf(GeneratorConfig.shouldMakeNodeStrategy(), "$N, ", NODE_ID_STRATEGY_NAME),
+                    VARIABLE_INTERNAL_ITERATION
+            );
             cases
                     .add("case $S: ", entity.getName())
-                    .add(returnWrap(CodeBlock.of("($T) $L",
-                                    processedSchema.getUnion(target.getTypeName()).getGraphClassName(),
-                                    transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock))
+                    .add(
+                            returnWrap(
+                                    CodeBlock.of(
+                                            "($T) $L",
+                                            processedSchema.getUnion(target.getTypeName()).getGraphClassName(),
+                                            transformDTOBlock(new VirtualSourceField(entity, target.getTypeName()), fetchBlock)
+                                    )
                             )
                     );
         }
