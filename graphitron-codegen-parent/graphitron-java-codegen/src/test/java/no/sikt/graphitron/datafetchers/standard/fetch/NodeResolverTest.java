@@ -60,9 +60,9 @@ public class NodeResolverTest extends GeneratorTest {
                 "case \"Address\":",
                 "case \"Customer\":",
                 "case \"Film\":",
-                "AddressDBQueries.addressForNode(",
-                "CustomerDBQueries.customerForNode(",
-                "FilmDBQueries.filmForNode("
+                " NodeAddressDBQueries.addressForNode(",
+                " NodeCustomerDBQueries.customerForNode(",
+                " NodeFilmDBQueries.filmForNode("
         );
     }
 
@@ -77,8 +77,8 @@ public class NodeResolverTest extends GeneratorTest {
     void doubleInterface() {
         assertGeneratedContentContains(
                 "doubleInterface", Set.of(NODE),
-                "FilmDBQueries.filmForNode(",
-                "QueryDBQueries.titledForQuery("
+                "NodeFilmDBQueries.filmForNode(",
+                "QueryTitledDBQueries.titledForQuery("
         );
     }
 }

@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -9,6 +8,7 @@ import no.sikt.graphitron.generators.abstractions.MethodGenerator;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.mappings.TableReflection;
+import no.sikt.graphitron.validation.CodeGenerationThresholdEvaluator;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,32 +19,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.getFormatGeneratedName;
 
 /**
  * Class generator that keeps track of all method generators for DB queries.
  */
-public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinition> {
+public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectField> {
     public static final String DEFAULT_SAVE_DIRECTORY_NAME = "queries", FILE_NAME_SUFFIX = "DBQueries";
-    protected final Set<ObjectField> objectFieldsReturningNode;
     static final Logger LOGGER = LoggerFactory.getLogger(DBClassGenerator.class);
 
     public DBClassGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
-
-        objectFieldsReturningNode = processedSchema
-                .getObjects()
-                .values()
-                .stream()
-                .filter(ObjectDefinition::isGeneratedWithResolver)
-                .map(ObjectDefinition::getFields)
-                .flatMap(List::stream)
-                .filter(ObjectField::isGenerated)
-                .filter(processedSchema::isInterface)
-                .filter(it -> processedSchema.getInterface(it).getName().equals(NODE_TYPE.getName()))
-                .collect(Collectors.toSet());
     }
 
     @Override
@@ -54,24 +40,23 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
                 .values()
                 .stream()
                 .filter(Objects::nonNull)
-                .filter(it -> it.isGeneratedWithResolver() || it.isEntity() || (!objectFieldsReturningNode.isEmpty()))
+                .filter(ObjectDefinition::isGeneratedWithResolver)
+                .flatMap(it -> it.getFields().stream())
                 .map(this::generate)
                 .filter(it -> !it.methodSpecs().isEmpty())
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
-    public TypeSpec generate(ObjectDefinition target) {
+    public TypeSpec generate(ObjectField target) {
         TypeSpec typeSpec = getSpec(
-                target.getName(),
+                getFormatGeneratedName(target),
                 List.of(
                         new FetchMappedObjectDBMethodGenerator(target, processedSchema),
                         new FetchCountDBMethodGenerator(target, processedSchema),
-                        new FetchNodeImplementationDBMethodGenerator(target, processedSchema, objectFieldsReturningNode),
                         new FetchMultiTableDBMethodGenerator(target, processedSchema),
                         new FetchSingleTableInterfaceDBMethodGenerator(target, processedSchema),
-                        new UpdateDBMethodGenerator(target, processedSchema),
-                        new EntityDBFetcherMethodGenerator(target, processedSchema)
+                        new UpdateDBMethodGenerator(target, processedSchema)
                 )
         ).build();
         warnOrCrashIfMethodsExceedsBounds(typeSpec);
@@ -123,10 +108,12 @@ public class DBClassGenerator extends AbstractSchemaClassGenerator<ObjectDefinit
     }
 
     protected void warnOrCrashIfMethodsExceedsBounds(TypeSpec typeSpec) {
-        var codeGenerationThresholdEvaluator = new CodeGenerationThresholdEvaluator(
-                GeneratorConfig.getCodeGenerationThresholds(),
-                typeSpec
-        );
+        var thresholds = GeneratorConfig.getCodeGenerationThresholds();
+        if (thresholds == null) {
+            return;
+        }
+
+        var codeGenerationThresholdEvaluator = new CodeGenerationThresholdEvaluator(thresholds, typeSpec);
         var upperBoundMessages = codeGenerationThresholdEvaluator.getUpperBoundMessages();
         var crashPointMessages = codeGenerationThresholdEvaluator.getCrashPointMessages();
 

@@ -6,6 +6,8 @@ import no.sikt.graphitron.generators.codeinterface.CodeInterfaceClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.typeregistry.TypeRegistryClassGenerator;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringClassGenerator;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
+import no.sikt.graphitron.generators.db.EntityDBClassGenerator;
+import no.sikt.graphitron.generators.db.NodeInterfaceDBClassGenerator;
 import no.sikt.graphitron.generators.dto.*;
 import no.sikt.graphitron.generators.exception.ExceptionToErrorMappingProviderGenerator;
 import no.sikt.graphitron.generators.exception.ExceptionStrategyConfigurationGenerator;
@@ -56,6 +58,8 @@ public class GraphQLGenerator {
                 new UnionDTOGenerator(processedSchema),
                 new EnumDTOGenerator(processedSchema),
                 new DBClassGenerator(processedSchema),
+                new NodeInterfaceDBClassGenerator(processedSchema),
+                new EntityDBClassGenerator(processedSchema),
                 new TransformerClassGenerator(processedSchema),
                 new RecordMapperClassGenerator(processedSchema, true),
                 new RecordMapperClassGenerator(processedSchema, false),

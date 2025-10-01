@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.datafetchers.operations;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
@@ -22,16 +21,16 @@ import static no.sikt.graphql.naming.GraphQLReservedName.*;
  * This class generates the data fetchers for default fetch or mutation queries with potential arguments or pagination.
  */
 public class OperationMethodGenerator extends DataFetcherMethodGenerator {
-    public OperationMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public OperationMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     @Override
     public MethodSpec generate(ObjectField target) {
         var parser = new InputParser(target, processedSchema);
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
-        var mutationMethodCall = localObject.getName().equals(SCHEMA_MUTATION.getName()) ? getMethodCall(target, parser, true) : CodeBlock.empty();
-        dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
+        var mutationMethodCall = getSourceContainer().getName().equals(SCHEMA_MUTATION.getName()) ? getMethodCall(target, parser, true) : CodeBlock.empty();
+        dataFetcherWiring.add(new WiringContainer(target.getName(), getSourceContainer().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VARIABLE_ENV)
                 .addCode(extractParams(target))
@@ -61,7 +60,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
             return false;
         }
 
-        if (target.hasServiceReference() && !localObject.getName().equals(SCHEMA_MUTATION.getName())) {
+        if (target.hasServiceReference() && !source.getName().equals(SCHEMA_MUTATION.getName())) {
             return !LookupHelpers.lookupExists((ObjectField) target, processedSchema);
         }
 
@@ -70,17 +69,19 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        var localObject = getLocalObject();
+        var localObject = getSourceContainer();
         if (localObject == null || localObject.isExplicitlyNotGenerated()) {
             return List.of();
         }
+        var source = getSource();
+        if (!generationCondition(source)) {
+            return List.of();
+        }
 
-        return localObject
-                .getFields()
-                .stream()
-                .filter(this::generationCondition)
-                .map(this::generate)
-                .filter(it -> !it.code().isEmpty())
-                .toList();
+        var generated = generate(source);
+        if (generated.code().isEmpty()) {
+            return List.of();
+        }
+        return List.of(generated);
     }
 }

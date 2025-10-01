@@ -186,7 +186,7 @@ public class ResolverTest extends GeneratorTest {
     void multitableInterface() {
         assertGeneratedContentContains("operation/multitableInterface",
                 "CompletableFuture<List<Titled>>",
-                "QueryDBQueries.titledForQuery("
+                "QueryTitledDBQueries.titledForQuery("
         );
     }
 
@@ -195,7 +195,7 @@ public class ResolverTest extends GeneratorTest {
     void singleTableInterface() {
         assertGeneratedContentContains("operation/singleTableInterface",
                 "CompletableFuture<List<Address>>",
-                "QueryDBQueries.addressForQuery("
+                "QueryAddressDBQueries.addressForQuery("
         );
     }
 
