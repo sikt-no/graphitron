@@ -22,8 +22,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.getPrimaryKeyFieldsWithTableAliasBlock;
-import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.db.FetchSingleTableInterfaceDBMethodGenerator.TOKEN;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
@@ -388,10 +387,10 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
         if (isConnection) {
             code.add(".$L", whereBlock.isEmpty() ? "where" : "and")
-                    .add("($N == null ? $T.noCondition() : $T.inline($S).greaterOrEqual($N.typeName()))",
-                            TOKEN, DSL.className, DSL.className, implementation.getName(), TOKEN)
-                    .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $T.noCondition())",
-                            TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(alias), DSL.className, TOKEN, DSL.className);
+                    .add("($N == null ? $L : $T.inline($S).greaterOrEqual($N.typeName()))",
+                            TOKEN, noCondition(), DSL.className, implementation.getName(), TOKEN)
+                    .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $L)",
+                            TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(alias), DSL.className, TOKEN, noCondition());
         }
         return code.add(".orderBy($L)", ORDER_FIELDS_NAME)
                 .addIf(isConnection, "\n.limit($N + 1)", PAGE_SIZE_NAME)

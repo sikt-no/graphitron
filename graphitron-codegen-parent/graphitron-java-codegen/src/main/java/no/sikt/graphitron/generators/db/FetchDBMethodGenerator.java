@@ -657,10 +657,10 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 conditionBuilder.add(formatCondition(inputCondition, renderedSequence, context));
 
                 if (checksNotEmpty) {
-                    conditionBuilder.add(" : $T.$L()",
-                            DSL.className,
-                            field instanceof VirtualInputField ? "falseCondition" : "noCondition"
-                    );
+                    conditionBuilder
+                            .add(" : ")
+                            .addIf(field instanceof VirtualInputField, falseCondition())
+                            .addIf(!(field instanceof VirtualInputField), noCondition());
                 }
                 allConditionCodeBlocks.add(conditionBuilder.build());
             }
@@ -831,7 +831,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .add("\n)")
                 .unindent()
                 .unindent()
-                .add("$L\n) : $T.noCondition()", collectToList(), DSL.className)
+                .add("$L\n) : $L", collectToList(), noCondition())
                 .unindent()
                 .unindent()
                 .build();
