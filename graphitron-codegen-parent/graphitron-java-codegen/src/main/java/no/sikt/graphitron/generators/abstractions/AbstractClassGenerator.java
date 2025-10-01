@@ -1,10 +1,10 @@
 package no.sikt.graphitron.generators.abstractions;
 
+import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
+import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.generators.codebuilding.TypeNameFormat;
-import no.sikt.graphitron.generators.dependencies.ServiceDependency;
 
 import javax.lang.model.element.Modifier;
 import java.io.File;
@@ -87,6 +87,6 @@ abstract public class AbstractClassGenerator implements ClassGenerator {
      * @return ClassName based on the default output package and save directory.
      */
     public ClassName getGeneratedClassName(String name) {
-        return TypeNameFormat.getGeneratedClassName(getDefaultSaveDirectoryName(), capitalize(name));
+        return TypeNameFormat.getGeneratedClassName(getDefaultSaveDirectoryName(), capitalize(name) + getFileNameSuffix());
     }
 }

@@ -53,7 +53,7 @@ public class TypeNameMethodGenerator extends AbstractSchemaMethodGenerator<TypeR
     }
 
     public List<MethodSpec> generateAll() {
-        var localObject = getLocalObject();
+        var localObject = getSource();
         return localObject == null ? List.of() : List.of(generate(localObject));
     }
 }

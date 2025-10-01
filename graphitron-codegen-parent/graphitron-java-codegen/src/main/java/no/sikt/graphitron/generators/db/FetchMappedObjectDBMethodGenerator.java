@@ -1,8 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
-import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -26,8 +24,8 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIE
  */
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
-    public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public FetchMappedObjectDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     /**
@@ -38,7 +36,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
      */
     @Override
     public MethodSpec generate(ObjectField target) {
-        var localObject = getLocalObject();
+        var localObject = getSourceContainer();
         var context = new FetchContext(processedSchema, target, localObject, false);
 
         // Note that this must happen before alias declaration.
@@ -49,7 +47,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 createServiceDependency(alias.getReferenceObjectField());
             }
         }
-        var querySource = context.renderQuerySource(getLocalTable());
+
+        var querySource = context.renderQuerySource(getSourceTable());
         var refContext = target.isResolver() ? context.nextContext(target) : context;
         var actualRefTable = refContext.getTargetAlias();
         var actualRefTableName = refContext.getTargetTableName();
@@ -152,16 +151,27 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
-                .getFields()
-                .stream()
-                .filter(it -> !processedSchema.isInterface(it) && !processedSchema.isUnion(it))
-                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
-                .filter(it -> !processedSchema.isFederationService(it))
-                .filter(GenerationSourceField::isGeneratedWithResolver)
-                .filter(it -> !it.hasServiceReference())
-                .map(this::generate)
-                .filter(it -> !it.code().isEmpty())
-                .toList();
+        var source = getSource();
+        if (processedSchema.isInterface(source) || processedSchema.isUnion(source)) {
+            return List.of();
+        }
+        if (source.getName().equals(FEDERATION_ENTITIES_FIELD.getName())) {
+            return List.of();
+        }
+        if (processedSchema.isFederationService(source)) {
+            return List.of();
+        }
+        if (!source.isGeneratedWithResolver()) {
+            return List.of();
+        }
+        if (source.hasServiceReference()) {
+            return List.of();
+        }
+
+        var generated = generate(source);
+        if (generated.code().isEmpty()) {
+            return List.of();
+        }
+        return List.of(generated);
     }
 }
