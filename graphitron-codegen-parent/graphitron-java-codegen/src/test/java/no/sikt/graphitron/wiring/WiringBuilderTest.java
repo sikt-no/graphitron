@@ -39,18 +39,18 @@ public class WiringBuilderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "node", Set.of(NODE),
                 "getRuntimeWiringBuilder(NodeIdHandler nodeIdHandler)",
-                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdHandler)"
+                ".dataFetcher(\"node\", QueryNodeGeneratedDataFetcher.node(nodeIdHandler)"
         );
     }
 
     @Test
-    @DisplayName("Node data fetcher generator exists")
+    @DisplayName("Node data fetcher generator exists with Node ID strategy")
     void nodeStrategy() {
         GeneratorConfig.setNodeStrategy(true);
         assertGeneratedContentContains(
                 "node", Set.of(NODE),
                 "getRuntimeWiringBuilder(NodeIdStrategy nodeIdStrategy)",
-                ".dataFetcher(\"node\", QueryGeneratedDataFetcher.node(nodeIdStrategy)"
+                ".dataFetcher(\"node\", QueryNodeGeneratedDataFetcher.node(nodeIdStrategy)"
         );
         GeneratorConfig.setNodeStrategy(false);
     }
@@ -67,8 +67,8 @@ public class WiringBuilderTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoFetchers", Set.of(CUSTOMER),
                 "TypeRuntimeWiring.newTypeWiring(\"Query\")" +
-                        ".dataFetcher(\"customer\", QueryGeneratedDataFetcher.customer())" +
-                        ".dataFetcher(\"payment\", QueryGeneratedDataFetcher.payment())"
+                        ".dataFetcher(\"customer\", QueryCustomerGeneratedDataFetcher.customer())" +
+                        ".dataFetcher(\"payment\", QueryPaymentGeneratedDataFetcher.payment())"
         );
     }
 

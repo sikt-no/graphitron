@@ -33,7 +33,7 @@ public class WiringBuilderMutationTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "mutation",
                 Set.of(CUSTOMER_TABLE, CUSTOMER_INPUT_TABLE),
-                ".newTypeWiring(\"Mutation\").dataFetcher(\"mutation\", MutationGeneratedDataFetcher.mutation()"
+                ".newTypeWiring(\"Mutation\").dataFetcher(\"mutation\", MutationMutationGeneratedDataFetcher.mutation()"
         );
     }
 }

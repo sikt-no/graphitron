@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.codebuilding;
 
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class VariableNames {
@@ -39,5 +40,6 @@ public class VariableNames {
             VARIABLE_INTERNAL_ITERATION = "internal_it_", // To avoid conflicts with potential schema names.
             NODE_ID_HANDLER_NAME = "nodeIdHandler",
             NODE_ID_STRATEGY_NAME = "nodeIdStrategy",
-            NODE_MAP_NAME = "TABLE_TO_TYPE";
+            NODE_MAP_NAME = "TABLE_TO_TYPE",
+            ENTITY_CLASS = FEDERATION_ENTITY_UNION.getName().replace("_", "");
 }

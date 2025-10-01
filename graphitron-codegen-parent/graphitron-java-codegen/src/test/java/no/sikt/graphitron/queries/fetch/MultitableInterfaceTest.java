@@ -22,7 +22,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
-    @DisplayName("Default case")
+    @DisplayName("One implementation")
     void defaultCase() {
         assertGeneratedContentMatches("default");
     }
@@ -34,9 +34,9 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
-    @DisplayName("One implementation")
-    void oneImplementation() {
-        assertGeneratedContentMatches("oneImplementation");
+    @DisplayName("Listed query with one implementation")
+    void oneImplementationListed() {
+        assertGeneratedContentMatches("oneImplementationListed");
     }
 
     @Test

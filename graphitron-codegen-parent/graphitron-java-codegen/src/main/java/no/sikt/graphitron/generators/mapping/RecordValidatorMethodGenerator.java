@@ -80,7 +80,7 @@ public class RecordValidatorMethodGenerator extends AbstractMapperMethodGenerato
 
     @Override
     public List<MethodSpec> generateAll() {
-        if (getLocalObject() == null || getLocalObject().isExplicitlyNotGenerated() || !recordValidationEnabled()) {
+        if (getSource() == null || getSource().isExplicitlyNotGenerated() || !recordValidationEnabled()) {
             return List.of();
         }
 

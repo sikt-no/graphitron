@@ -1,6 +1,6 @@
 package fake.code.generated.queries.query;
 
-import fake.code.generated.queries.CustomerDBQueries;
+import fake.code.generated.queries.EntityCustomerDBQueries;
 import fake.graphql.example.model.Customer;
 import fake.graphql.example.model._Entity;
 import graphql.schema.DataFetcher;
@@ -17,7 +17,7 @@ public class QueryEntityGeneratedDataFetcher {
         return env -> ((List<Map<String, Object>>) env.getArgument("representations")).stream().map(internal_it_ -> {
             var ctx = new EnvironmentHandler(env).getCtx();
             switch ((String) internal_it_.get("__typename")) {
-                case "Customer": return (_Entity) ResolverHelpers.transformDTO(CustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
+                case "Customer": return (_Entity) ResolverHelpers.transformDTO(EntityCustomerDBQueries.customerAsEntity(ctx, internal_it_), Customer.class);
                 default: return null;
             }
         } ).toList();
