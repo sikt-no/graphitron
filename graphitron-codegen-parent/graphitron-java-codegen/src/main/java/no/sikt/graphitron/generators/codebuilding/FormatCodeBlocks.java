@@ -47,6 +47,8 @@ public class FormatCodeBlocks {
             ATTACH = CodeBlock.of(".attach($N.configuration())", CONTEXT_NAME),
             ATTACH_RESOLVER = CodeBlock.of(".attach($L.configuration())", asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME)),
             TRUE_CONDITION = CodeBlock.of("$T.trueCondition()", DSL.className),
+            FALSE_CONDITION = CodeBlock.of("$T.falseCondition()", DSL.className),
+            NO_CONDITION = CodeBlock.of("$T.noCondition()", DSL.className),
             FIND_FIRST = CodeBlock.of(".stream().findFirst()"),
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
@@ -651,6 +653,20 @@ public class FormatCodeBlocks {
      */
     public static CodeBlock trueCondition() {
         return TRUE_CONDITION;
+    }
+
+    /**
+     * @return Code block of a false jOOQ condition.
+     */
+    public static CodeBlock falseCondition() {
+        return FALSE_CONDITION;
+    }
+
+    /**
+     * @return Code block of a jOOQ "no condition".
+     */
+    public static CodeBlock noCondition() {
+        return NO_CONDITION;
     }
 
     /**
