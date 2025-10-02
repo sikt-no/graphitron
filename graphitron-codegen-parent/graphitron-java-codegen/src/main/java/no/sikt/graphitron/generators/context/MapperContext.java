@@ -273,7 +273,7 @@ public class MapperContext {
     }
 
     public boolean shouldUseStandardRecordFetch() {
-        return hasRecordReference && !(schema.implementsNode(target.getTypeName()) && !target.isInput() && ((ObjectField) target).isFetchByID());
+        return hasRecordReference && !(schema.implementsNode(target.getTypeName()) && !target.isInput());
     }
 
     public boolean shouldUseException() {
