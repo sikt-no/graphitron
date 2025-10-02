@@ -437,9 +437,9 @@ public class FetchContext {
                         ? updatedJoinSequence.getLast().getTable()
                         : getPreviousTable(); // Wrong if key was reverse.
 
-        if (Objects.equals(lastTable, referenceObjectTable) &&
-            (!referenceObjectField.getFieldReferences().isEmpty() ||
-             processedSchema.isInterface(referenceObjectField.getContainerTypeName()))
+        if (Objects.equals(lastTable, referenceObjectTable)
+            && (!referenceObjectField.getFieldReferences().isEmpty()
+                || processedSchema.isInterface(referenceObjectField.getContainerTypeName()))
         ) {
             if (updatedJoinSequence.isEmpty()) {
                 var alias = new Alias(
@@ -555,18 +555,26 @@ public class FetchContext {
         var previousTable = relation.getFrom();
         var targetTable = relation.getToTable();
 
-        // This indicates that the field we are processing is a field in the root type, Query.
+        // This indicates that the field we are processing is a field in a type referenced from the root type, Query.
         if (previousTable == null) {
-            var alias = new Alias(asInternalName(targetTable.getCodeName()), JoinListSequence.of(targetTable), false, null);
+            var alias = new Alias(
+                    asInternalName(targetTable.getCodeName()), JoinListSequence.of(targetTable), false, null);
             this.aliasSet.add(alias);
             return JoinListSequence.of(alias);
         }
 
         // When field has a @splitQuery directive or field has arguments and are not in the root type Query.
         if (getReferenceObjectField().isResolver() && this.previousContext == null && checkResolver) {
-            var alias = new Alias(asInternalName(previousTable.getCodeName()), JoinListSequence.of(previousTable), false, null);
+            var alias = new Alias(
+                    asInternalName(previousTable.getCodeName()), JoinListSequence.of(previousTable), false, null);
             this.aliasSet.add(alias);
             joinSequence = JoinListSequence.of(alias);
+
+            // Do not add additional joins or aliases for connection objects, as these are handled in the subquery
+            // itself.
+            if (processedSchema.isConnectionObject(getReferenceObjectField())) {
+                return joinSequence;
+            }
         }
 
         var targetOrPrevious = targetTable != null ? targetTable : previousTable;
