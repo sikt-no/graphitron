@@ -59,7 +59,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         var context = new FetchContext(processedSchema, target, getLocalObject(), true);
         var targetSource = context.renderQuerySource(getLocalTable());
         var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), false);
-        var nextContext = isIterableWrappedResolverWithPagination(target) ? context.nextContext(target) : context;
+        var nextContext = isResolverWithPagination(target)
+                          ? context.nextContext(target)
+                          : context;
 
         return getSpecBuilder(target, parser)
                 .addCode(declareAllServiceClassesInAliasSet(nextContext.getAliasSet()))
@@ -100,7 +102,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
         implementations.forEach(implementation -> {
             var virtualTarget = new VirtualSourceField(implementation, target);
             var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-            var refContext = isIterableWrappedResolverWithPagination(virtualTarget)
+            var refContext = isResolverWithPagination(virtualTarget)
                              ? context.nextContext(virtualTarget)
                              : context;
             var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), false);
@@ -108,14 +110,15 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .add("$T.select(", DSL.className)
                     .addIf(!isRoot,() -> CodeBlock.of("$L)",getSelectKeyColumnRow(context)))
                     .addIf(isRoot, "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
-                    .add("\n.from($L)\n", isIterableWrappedResolverWithPagination(virtualTarget)
-                                          ? context.getTargetAlias()
-                                          : context.getSourceAlias())
+                    .add("\n.from($L)\n",
+                         isResolverWithPagination(virtualTarget)
+                         ? context.getTargetAlias()
+                         : context.getSourceAlias())
                     .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            if (!isIterableWrappedResolverWithPagination(target)) {
+            if (!isResolverWithPagination(target)) {
                 aliasSet.addAll(refContext.getAliasSet());
             } else {
                 aliasSet.addAll(context.getAliasSet().stream().findFirst()

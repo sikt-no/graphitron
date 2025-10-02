@@ -555,7 +555,7 @@ public class FetchContext {
         var previousTable = relation.getFrom();
         var targetTable = relation.getToTable();
 
-        // This indicates that the field we are processing is a field in the root type, Query.
+        // This indicates that the field we are processing is a field in a type referenced from the root type, Query.
         if (previousTable == null) {
             return makeAlias(targetTable);
         }
@@ -563,6 +563,12 @@ public class FetchContext {
         // When field has a @splitQuery directive or field has arguments and are not in the root type Query.
         if (getReferenceObjectField().isResolver() && this.previousContext == null && checkResolver) {
             joinSequence = makeAlias(previousTable);
+
+            // Do not add additional joins or aliases for connection objects, as these are handled in the subquery
+            // itself.
+            if (processedSchema.isConnectionObject(getReferenceObjectField())) {
+                return joinSequence;
+            }
         }
 
         var targetOrPrevious = targetTable != null ? targetTable : previousTable;

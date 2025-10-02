@@ -275,7 +275,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
         var virtualTarget = new VirtualSourceField(implementation, target);
         var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
-        var refContext = isIterableWrappedResolverWithPagination(virtualTarget)
+        var refContext = isResolverWithPagination(virtualTarget)
                          ? context.nextContext(virtualTarget)
                          : context;
 

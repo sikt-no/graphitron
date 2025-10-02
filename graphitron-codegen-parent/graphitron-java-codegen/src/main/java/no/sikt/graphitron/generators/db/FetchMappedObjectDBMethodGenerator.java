@@ -59,7 +59,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             }
         }
 
-        var refContext = isIterableWrappedResolverWithPagination(targetField)
+        var refContext = isResolverWithPagination(targetField)
                          ? context.nextContext(targetField)
                          : context;
         var actualRefTable = refContext.getTargetAlias();
@@ -86,7 +86,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", createSelectBlock(targetField, context, actualRefTable, selectRowBlock))
-                .addCodeIf(!querySource.isEmpty() && (context.hasNonSubqueryFields() || context.hasApplicableTable()), ".from($L)\n", querySource)
+                .addCodeIf(!querySource.isEmpty()
+                           && (context.hasNonSubqueryFields() || context.hasApplicableTable()),
+                           ".from($L)\n",
+                           querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)
                 .addCode(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()))
@@ -107,7 +110,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             return generateForField(targetField, context);
         }
 
-        return isIterableWrappedResolverWithPagination(targetField)
+        return isResolverWithPagination(targetField)
                ? generateCorrelatedSubquery(targetField, context.nextContext(targetField))
                : generateSelectRow(context);
     }
@@ -122,7 +125,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 Stream.of(
                         getInitialKey(context),
                         CodeBlock.ofIf(
-                                target.hasForwardPagination(),
+                                target.hasForwardPagination() && !target.isResolver(),
                                 "$T.getOrderByToken($L, $L),\n",
                                 QUERY_HELPER.className,
                                 actualRefTable,
@@ -145,7 +148,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         }
 
         if (referenceField.hasForwardPagination()) {
-            return referenceField.isResolver() ? getPaginationFetchBlockWhenResolver() : getPaginationFetchBlock();
+            return getPaginationFetchBlock();
         }
 
         var lookupExists = LookupHelpers.lookupExists(referenceField, processedSchema);
@@ -245,10 +248,8 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .toList();
     }
 
-    private boolean isIterableWrappedResolverWithPagination(ObjectField field) {
-        return field.isResolver() &&
-               field.isIterableWrapped() &&
-               field.hasForwardPagination();
+    private boolean isResolverWithPagination(ObjectField field) {
+        return field.isResolver() && field.hasForwardPagination();
     }
 
     private JOOQMapping getSourceTable(FetchContext context) {

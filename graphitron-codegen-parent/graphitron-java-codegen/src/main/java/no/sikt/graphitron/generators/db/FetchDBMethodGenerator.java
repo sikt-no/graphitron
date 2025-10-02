@@ -166,7 +166,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         CodeBlock.Builder select = CodeBlock.builder();
         select.addIf(
                 shouldHaveOrderByToken,
-                "\n$T.getOrderByToken($L, $L),\n",
+                "$T.getOrderByToken($L, $L),\n",
                 QUERY_HELPER.className,
                 context.getTargetAlias(),
                 orderByFieldsBlock
@@ -582,8 +582,8 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var renderedSource = field.isInput()
                 ? context.iterateJoinSequenceFor(field).render()
                 : context.renderQuerySource(
-                        hasIterableWrappedResolverWithPagination(context)
-                        ? getLocalTable() // Implies being called from the FetchDBMethodGenerator.generateCorrelatedSubquery-method
+                        hasResolverWithPagination(context)
+                        ? getLocalTable()
                         : context.getCurrentJoinSequence().size() > 1
                           ? context.getCurrentJoinSequence().getLast()
                           : !context.getCurrentJoinSequence().isEmpty()
@@ -696,9 +696,12 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
         }
 
-        // Fields that implement a multi-table interface or are part of a union are handled differently. In these
-        // cases, skip input conditions when there is a resolver root.
-        if (isResolverRoot && !isMultiTable) {
+        // Fields that implement a multi-table interface, are part of a union, or are registered with pagination
+        // are handled differently. In such cases, skip input conditions when there is a resolver root.
+        if (isResolverRoot
+            && !isMultiTable
+            && !((ObjectField) context.getReferenceObjectField()).hasForwardPagination()
+        ) {
             conditionList.addAll(getInputConditions(context, (ObjectField) context.getReferenceObjectField()));
         }
 
@@ -1192,15 +1195,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
     }
 
-    private boolean hasIterableWrappedResolverWithPagination(FetchContext context) {
-        return context.getReferenceObjectField().isResolver() &&
-               context.getReferenceObjectField().isIterableWrapped() &&
-               ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
+    private boolean hasResolverWithPagination(FetchContext context) {
+        return context.getReferenceObjectField().isResolver()
+               && ((ObjectField) context.getReferenceObjectField()).hasForwardPagination();
     }
 
-    protected boolean isIterableWrappedResolverWithPagination(GenerationField field) {
-        return field.isResolver() &&
-               field.isIterableWrapped() &&
-               ((ObjectField) field).hasForwardPagination();
+    protected boolean isResolverWithPagination(GenerationField field) {
+        return field.isResolver()
+               && ((ObjectField) field).hasForwardPagination();
     }
 }
