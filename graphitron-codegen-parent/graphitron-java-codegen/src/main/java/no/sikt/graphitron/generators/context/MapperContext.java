@@ -356,7 +356,7 @@ public class MapperContext {
 
     public CodeBlock getSetMappingBlock(CodeBlock valueToSet) {
         if (schema.isNodeIdField(target) && toRecord && !mapsJavaRecord) {
-            var nodeType = schema.getRecordType(target.getNodeIdTypeName());
+            var nodeType = schema.getNodeType(target);
             var foreignKey = getForeignKeyForNodeIdReference(target, schema);
 
             return CodeBlock.statementOf("$N.$L($N, $L, $S, $L)",

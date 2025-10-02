@@ -1,0 +1,7 @@
+type Query {
+    query(filter: [CustomerFilter]!): [CustomerNode]
+}
+
+input CustomerFilter @table(name: "CUSTOMER") {
+    id: ID!
+}
