@@ -19,7 +19,7 @@ public class JooqRecordReferenceHelpers {
         if (!schema.hasJOOQRecord(target.getContainerTypeName()) || target.getContainerTypeName().equals(SCHEMA_QUERY.getName())) {
             return Optional.empty();
         }
-        var targetTable = schema.getRecordType(target.getNodeIdTypeName()).getTable().getName();
+        var targetTable = schema.getNodeType(target).getTable().getName();
         var previousTable = schema.getRecordType(target.getContainerTypeName()).getTable().getName();
         if (!previousTable.equals(targetTable)) {
             return target.getFieldReferences().stream()

@@ -794,11 +794,49 @@ public class ProcessedSchema {
     }
 
     /**
+     * @param field the {@link GenerationField} to check
      * @return Whether a field implicitly is a node ID field using NodeIdStrategy
      */
     private boolean isImplicitNodeIdField(GenerationField field) {
         return field.isID() && field.getName().equals(NODE_ID.getName())
-                && isRecordType(field.getContainerTypeName()) && getRecordType(field.getContainerTypeName()).hasNodeDirective();
+                && (isRecordType(field.getContainerTypeName()) && getRecordType(field.getContainerTypeName()).hasNodeDirective()
+                || getImplicitNodeTypesForInputField(field).size() == 1);
+    }
+
+    /**
+     * @param field the {@link GenerationField} for which to find the implicit node type
+     * @return the matching {@link RecordObjectSpecification}, or {@code null} if none found
+     */
+    private RecordObjectSpecification<?> getImplicitNodeTypeForInputField(GenerationField field) {
+        var types = getImplicitNodeTypesForInputField(field);
+        if (types.size() != 1) {
+            return null;
+        }
+        return types.stream().findFirst().get();
+    }
+
+    /**
+     * @param field the {@link GenerationField} for which to find the implicit node types
+     * @return a list of matching {@link RecordObjectSpecification} instances, or an empty list if none found
+     */
+    public List< ? extends RecordObjectSpecification<?>> getImplicitNodeTypesForInputField(GenerationField field) {
+        if (!isInputType(field.getContainerTypeName()) || !hasJOOQRecord(field.getContainerTypeName())) {
+            return Collections.emptyList();
+        }
+        InputDefinition inputType = getInputType(field.getContainerTypeName());
+        return getObjects().values().stream()
+                .filter(it -> it.hasTable() && it.getTable().equals(inputType.getTable()) && it.hasNodeDirective())
+                .map(it -> getRecordType(it.getName()))
+                .toList();
+    }
+
+    /**
+     * @param field the {@link GenerationField} to resolve the node type for
+     * @return the corresponding {@link RecordObjectSpecification}, or {@code null} if not found
+     */
+    public RecordObjectSpecification<?> getNodeType(GenerationField field) {
+        return field.hasNodeID() ? getRecordType(field.getNodeIdTypeName())
+                : getImplicitNodeTypeForInputField(field);
     }
 
     /**
