@@ -81,6 +81,13 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
         );
     }
 
+    @Test
+    @DisplayName("In jOOQ record input type without nodeId directive")
+    void implicitInputType() {
+        assertGeneratedContentContains("implicitInputType", Set.of(CUSTOMER_NODE),
+                "nodeIdStrategy.hasId(\"CustomerNode\", filterRecordList.get(internal_it_), _customer.fields(_customer.getPrimaryKey().getFieldsArray()))"
+        );
+    }
 
     @Test
     @DisplayName("In jOOQ record input")

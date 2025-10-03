@@ -1,8 +1,7 @@
 package no.sikt.graphitron.validation;
 
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import no.sikt.graphitron.configuration.GeneratorConfig;
+import org.junit.jupiter.api.*;
 
 import java.util.Set;
 
@@ -13,6 +12,16 @@ public class NodeIdInputTest extends ValidationTest {
     @Override
     protected String getSubpath() {
         return super.getSubpath() + "nodeId/input";
+    }
+
+    @BeforeAll
+    static void setUp() {
+        GeneratorConfig.setNodeStrategy(true);
+    }
+
+    @AfterAll
+    static void tearDown() {
+        GeneratorConfig.setNodeStrategy(false);
     }
 
     @Test
@@ -153,4 +162,20 @@ public class NodeIdInputTest extends ValidationTest {
                 "...."
         );
     }
+
+    @Test
+    @DisplayName("Should log warning when input has ambiguous implicit node " +
+            "type")
+    void ambiguousImplicitNodeType() {
+        getProcessedSchema("ambiguousImplicitNodeType");
+        assertWarningsContain(
+                "Input type 'CustomerFilter' has an 'id' field that may " +
+                        "represent a node ID. However, the node type cannot " +
+                        "be automatically determined because multiple node " +
+                        "types ('Customer', 'AnotherCustomer') have the same " +
+                        "table as the input type. To enable node ID " +
+                        "resolution, specify @nodeId(typeName: \"\") on the field."
+        );
+    }
+
 }
