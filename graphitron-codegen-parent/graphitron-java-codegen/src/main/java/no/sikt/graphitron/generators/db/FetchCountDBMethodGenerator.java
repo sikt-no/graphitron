@@ -3,7 +3,7 @@ package no.sikt.graphitron.generators.db;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
-import no.sikt.graphitron.definitions.mapping.Alias;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -85,14 +85,15 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
 
     private CodeBlock getCodeForMultitableCountMethod(ObjectField target) {
         var initialCode = CodeBlock.builder();
-        var aliases = new LinkedHashSet<Alias>();
+        var aliases = new LinkedHashSet<AliasWrapper>();
         var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
         if (target.isResolver()) {
             implementations
                     .stream()
                     .findFirst()
-                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
+                    .map(it -> new FetchContext(
+                            processedSchema, new VirtualSourceField(it, target), localObject, false))
                     .map(FetchContext::getAliasSet)
                     .ifPresent(aliases::addAll);
         }
@@ -103,27 +104,26 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
             var refContext = isResolverWithPagination(virtualTarget)
                              ? context.nextContext(virtualTarget)
                              : context;
-            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), false);
-            var countForImplementation = CodeBlock.builder()
+            var where = formatWhereContents(context, resolverKeyParamName, isRoot, target.isResolver(), true);
+            var countForImplementation = CodeBlock
+                    .builder()
                     .add("$T.select(", DSL.className)
                     .addIf(!isRoot,() -> CodeBlock.of("$L)",getSelectKeyColumnRow(context)))
                     .addIf(isRoot, "$T.count().as($S))", DSL.className, COUNT_FIELD_NAME)
-                    .add("\n.from($L)\n",
-                         isResolverWithPagination(virtualTarget)
-                         ? context.getTargetAlias()
-                         : context.getSourceAlias())
+                    .add("\n.from($L)\n", context.getSourceAlias())
                     .add(createSelectJoins(refContext.getJoinSet()))
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            if (!isResolverWithPagination(target)) {
-                aliases.addAll(refContext.getAliasSet());
-            } else {
-                aliases.addAll(context.getAliasSet().stream().findFirst()
-                       .map(startAlias -> context.getAliasSet().stream().filter(
-                               it -> !it.equals(startAlias)).collect(Collectors.toSet()))
-                       .orElse(refContext.getAliasSet()));
-            }
+            aliases.addAll(isResolverWithPagination(target)
+                           ? refContext.getAliasSet()
+                           : context.getAliasSet().size() > 1
+                             ? context.getAliasSet().stream()
+                                      .findFirst()
+                                      .map(startAlias -> context.getAliasSet().stream().filter(
+                                            it -> !it.equals(startAlias)).collect(Collectors.toSet()))
+                                      .orElse(refContext.getAliasSet())
+                             : refContext.getAliasSet());
 
             initialCode.declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });

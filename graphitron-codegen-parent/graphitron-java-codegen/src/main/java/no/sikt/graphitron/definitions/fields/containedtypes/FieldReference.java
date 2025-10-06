@@ -120,7 +120,7 @@ public class FieldReference {
        return new SQLJoinStatement(
                joinSequence, // Left side of the join
                hasTable() ? getTable() : tableNameBackup,
-               alias,
+               alias.toAliasWrapper(),
                List.of(new SQLJoinOnCondition(tableCondition)),
                isNullable
        );

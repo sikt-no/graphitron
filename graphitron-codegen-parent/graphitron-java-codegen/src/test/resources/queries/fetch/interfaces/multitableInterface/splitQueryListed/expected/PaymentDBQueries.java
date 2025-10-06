@@ -26,9 +26,11 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, List<PersonWithEmail>> staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
+    public static Map<Row1<Long>, List<PersonWithEmail>> staffAndCustomersForPayment(DSLContext ctx,
+            Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
         var _payment = PAYMENT.as("payment_425747824");
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_payment).unionAll(customerSortFieldsForStaffAndCustomers(_payment));
+        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_payment)
+                .unionAll(customerSortFieldsForStaffAndCustomers(_payment));
 
         var mappedCustomer = customerForStaffAndCustomers();
         var mappedStaff = staffForStaffAndCustomers();

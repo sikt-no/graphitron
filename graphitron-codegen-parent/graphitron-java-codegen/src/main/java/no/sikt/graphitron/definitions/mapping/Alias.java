@@ -16,15 +16,15 @@ public class Alias implements JoinElement {
     private final JOOQMapping type;
 
     /**
-     * @param shortNameTable Set to the table that should be used as a short name for the alias.
+     * @param shortnameTable Set to the table that should be used as a short name for the alias.
      *                       If null, default short name will be used.
      */
-    public Alias(String prefix, JOOQMapping table, boolean isLeft, JOOQMapping shortNameTable) {
+    public Alias(String prefix, JOOQMapping table, boolean isLeft, JOOQMapping shortnameTable) {
         var name = prefix + "_" + table.getMappingName() + (isLeft ? "_left" : "");
         this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
         this.shortName = prefixStringIfFirstCharIsDigit(createShortAliasName(
-                shortNameTable != null
-                ? shortNameTable.getCodeName()
+                shortnameTable != null
+                ? shortnameTable.getCodeName()
                 : Arrays.stream(prefix.split("_")).findFirst().orElse(prefix),
                 name));
         this.type = table;
@@ -32,16 +32,16 @@ public class Alias implements JoinElement {
     }
 
     /**
-     * @param shortNameTable Set to the table that should be used as a short name for the alias.
+     * @param shortnameTable Set to the table that should be used as a short name for the alias.
      *                       If null, default short name will be used.
      */
-    public Alias(String prefix, JoinListSequence joinSequence, boolean isLeft, JOOQMapping shortNameTable) {
+    public Alias(String prefix, JoinListSequence joinSequence, boolean isLeft, JOOQMapping shortnameTable) {
         this.type = joinSequence.getLast().getTable();
         var name = prefix + (isLeft ? "_left" : "");
         this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
         this.shortName = prefixStringIfFirstCharIsDigit(createShortAliasName(
-                shortNameTable != null
-                ? shortNameTable.getCodeName()
+                shortnameTable != null
+                ? shortnameTable.getCodeName()
                 : StringUtils.substringAfterLast(prefix, "_"),
                 name));
         this.variableValue = joinSequence.render().toString();

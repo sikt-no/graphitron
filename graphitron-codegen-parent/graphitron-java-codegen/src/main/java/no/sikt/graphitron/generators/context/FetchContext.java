@@ -461,19 +461,9 @@ public class FetchContext {
 
         if (!finalSequence.isEmpty()) {
             return finalSequence;
-        } else {
-            return makeAlias(referenceObjectTable);
         }
 
-        var alias = new Alias(
-                asInternalName(referenceObjectTable.getCodeName()),
-                JoinListSequence.of(referenceObjectTable),
-                false,
-                null
-        );
-        aliasSet.add(alias);
-
-        return JoinListSequence.of(alias);
+        return makeAlias(referenceObjectTable);
     }
 
     /**
@@ -666,11 +656,26 @@ public class FetchContext {
      * @return A join statement based on a key reference using path
      */
 
-    public SQLJoinStatement createJoinOnExplicitPathFor(FieldReference fRef, JOOQMapping keyOverride, JoinListSequence joinSequence, JOOQMapping tableNameBackup, boolean isNullable) {
-
+    public SQLJoinStatement createJoinOnExplicitPathFor(
+            FieldReference fRef,
+            JOOQMapping keyOverride,
+            JoinListSequence joinSequence,
+            JOOQMapping tableNameBackup,
+            boolean isNullable
+    ) {
         var targetTable = fRef.hasTable() ? fRef.getTable() : tableNameBackup;
-        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_") ? joinSequence.getSecondLast().getMappingName() : joinSequence.getSecondLast().getCodeName();
-        var alias = new AliasWrapper(new Alias(prefix + "_" + keyOverride.getCodeName(), joinSequence, isNullable), referenceObjectField, targetTable.equals(referenceTable), processedSchema);
+        var prefix = joinSequence.getSecondLast().getCodeName().startsWith("_")
+                     ? joinSequence.getSecondLast().getMappingName()
+                     : joinSequence.getSecondLast().getCodeName();
+        var alias = new AliasWrapper(
+                new Alias(
+                        prefix + "_" + keyOverride.getCodeName(),
+                        joinSequence,
+                        isNullable,
+                        null),
+                referenceObjectField,
+                targetTable.equals(referenceTable),
+                processedSchema);
 
         return new SQLJoinStatement(
                 joinSequence,
@@ -681,10 +686,21 @@ public class FetchContext {
         );
     }
 
-    private JoinListSequence makeAlias(JOOQMapping mapping) {
-        AliasWrapper alias = new AliasWrapper(new Alias(asInternalName(mapping.getCodeName()), JoinListSequence.of(mapping), false), referenceObjectField, processedSchema);
+    private JoinListSequence makeAlias(JOOQMapping mapping, JOOQMapping shortnameTable) {
+        AliasWrapper alias = new AliasWrapper(
+                new Alias(
+                        asInternalName(mapping.getCodeName()),
+                        JoinListSequence.of(mapping),
+                        false,
+                        shortnameTable),
+                referenceObjectField,
+                processedSchema);
         aliasSet.add(alias);
         return JoinListSequence.of(alias.getAlias());
+    }
+
+    private JoinListSequence makeAlias(JOOQMapping mapping) {
+        return makeAlias(mapping, null);
     }
 
     public CodeBlock renderQuerySource(JoinElement localTable) {
