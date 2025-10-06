@@ -138,6 +138,7 @@ type Language implements Node @table @node(keyColumns: ["LANGUAGE_ID"]){
     id: ID!
     name: String
     films(releaseYear: Int @field(name: "RELEASE_YEAR")): [Film] @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]) @asConnection
+    filmsWithoutPagination: [Film] @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
 }
 
 type Film implements Node @node @table {
