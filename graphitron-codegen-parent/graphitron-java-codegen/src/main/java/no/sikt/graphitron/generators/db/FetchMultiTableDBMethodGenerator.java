@@ -59,7 +59,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         LinkedHashSet<ObjectDefinition> implementations = new LinkedHashSet<>(processedSchema.getTypesFromInterfaceOrUnion(unionOrInterfaceDefinition.getName()));
 
         return getSpecBuilder(target, unionOrInterfaceDefinition.getGraphClassName(), inputParser)
-                .addCode(implementations.isEmpty() ? CodeBlock.of("return null;") : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
+                .addCode(implementations.isEmpty()
+                         ? CodeBlock.of("return null;")
+                         : getCode(target, implementations, inputParser.getMethodInputs().keySet()))
                 .build();
     }
 
@@ -165,7 +167,9 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(FetchContext::getAliasSet)
                 .stream()
                 .findFirst()
-                .ifPresent(it -> it.stream().map(AliasWrapper::getAlias).map(Alias::getMappingName).forEach(additionalInputs::add));
+                .flatMap(it -> it
+                        .stream().map(AliasWrapper::getAlias).map(Alias::getMappingName).findFirst())
+                .ifPresent(additionalInputs::add);
 
         if (isConnection) {
             additionalInputs.add(VAR_PAGE_SIZE);

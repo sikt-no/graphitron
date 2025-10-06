@@ -45,7 +45,7 @@ public class Alias implements JoinElement {
     }
 
     /**
-     * @param shortNameTable Set to the table that should be used as a short name for the alias.
+     * @param shortnameTable Set to the table that should be used as a short name for the alias.
      *                       If null, default short name will be used.
      */
 //    public Alias(String prefix, JOOQMapping table, boolean isLeft, JOOQMapping shortNameTable) {
