@@ -9,7 +9,6 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.selectionSetLookup;
-import static no.sikt.graphitron.generators.codebuilding.MappingCodeBlocks.idFetchAllowingDuplicates;
 
 public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
     public JavaRecordMapperMethodGenerator(GenerationField localField, ProcessedSchema processedSchema, boolean toRecord) {
@@ -48,13 +47,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
             if (!innerContext.getTarget().isResolver()) {
                 if (!innerContext.targetIsType()) {
                     innerCode.add(innerContext.getFieldSetMappingBlock());
-                }  else if (innerContext.shouldUseStandardRecordFetch()) {
-                    innerCode.add(innerContext.getRecordSetMappingBlock());
                 } else if (innerContext.hasRecordReference()) {
-                    innerCode.add(idFetchAllowingDuplicates(innerContext, innerField, varName, false));
-                }//else if (innerContext.hasRecordReference()) {
-                  //  innerCode.add(innerContext.getRecordSetMappingBlock());
-                 else {
+                    innerCode.add(innerContext.getRecordSetMappingBlock());
+                } else {
                     innerCode.add(iterateRecords(innerContext));
                 }
             } else {

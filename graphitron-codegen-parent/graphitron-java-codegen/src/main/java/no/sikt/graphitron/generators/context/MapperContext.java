@@ -1,7 +1,6 @@
 package no.sikt.graphitron.generators.context;
 
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.RecordObjectDefinition;
@@ -272,14 +271,6 @@ public class MapperContext {
         return asIterableIf(previousContext.sourceName, previousContext.isIterable).equals(asIterableIf(secondLastContext.sourceName, secondLastContext.isIterable));
     }
 
-    public boolean shouldUseStandardRecordFetch() {
-        return hasRecordReference && !(schema.implementsNode(target.getTypeName()) && !target.isInput());
-    }
-
-    public boolean shouldUseException() {
-        return schema.isExceptionOrExceptionUnion(target) && previousContext.isTopLevelContext();
-    }
-
     public CodeBlock getSourceGetCallBlock() {
         if (isSimpleIDMode) {
             return CodeBlock.of(asRecordName(previousContext.targetName));
@@ -412,14 +403,6 @@ public class MapperContext {
 
     public CodeBlock getRecordSetMappingBlock() {
         return getSetMappingBlock(transformRecord());
-    }
-
-    public CodeBlock getRecordSetMappingBlock(String variableName) {
-        return getSetMappingBlock(transformOutputRecord(variableName));
-    }
-
-    public CodeBlock transformOutputRecord(String variableName) {
-        return CodeBlock.of("$L$S)", recordTransformPart(variableName, targetName), path);
     }
 
     public CodeBlock applyEnumConversion(String typeName, CodeBlock getCall) {
