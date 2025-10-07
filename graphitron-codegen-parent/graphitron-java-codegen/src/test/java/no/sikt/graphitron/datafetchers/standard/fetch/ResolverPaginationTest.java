@@ -91,7 +91,7 @@ public class ResolverPaginationTest extends GeneratorTest {
         assertGeneratedContentContains("operation/singleTableInterface",
                 "CompletableFuture<AddressConnection>",
                 "loadPaginated",
-                "QueryDBQueries.addressForQuery("
+                "QueryAddressDBQueries.addressForQuery("
         );
     }
 
