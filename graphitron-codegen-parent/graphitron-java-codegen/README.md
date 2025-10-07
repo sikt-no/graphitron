@@ -4,7 +4,7 @@ schemas to underlying database models. Graphitron creates complete or partial da
 using Java and [jOOQ](https://www.jooq.org/).
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc (https://github.com/thlorenz/doctoc) TO UPDATE -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc (see here for instructions on how to rerun doctoc https://github.com/thlorenz/doctoc) TO UPDATE -->
 **Table of Contents**
 
 - [Features](#features)
