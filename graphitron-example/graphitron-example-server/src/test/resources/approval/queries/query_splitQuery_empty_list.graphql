@@ -1,0 +1,14 @@
+{
+    languages(first: 1, after: "WzFd") {
+        nodes {
+            films {
+                nodes {
+                    id
+                }
+            }
+            filmsWithoutPagination {
+                id
+            }
+        }
+    }
+}
