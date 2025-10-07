@@ -2,7 +2,8 @@ package no.sikt.graphitron.generators.dto;
 
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
-import no.sikt.graphitron.generators.abstractions.AbstractClassGenerator;
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.generators.abstractions.AbstractSchemaClassGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.*;
 import no.sikt.graphql.schema.ProcessedSchema;
@@ -20,12 +21,11 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.RESOLVER_KEY
 import static no.sikt.graphitron.mappings.JavaPoetClassName.LIST;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
-public abstract class DTOGenerator extends AbstractClassGenerator {
+public abstract class DTOGenerator<T extends GenerationTarget> extends AbstractSchemaClassGenerator<T> {
     public static final String HASH_CODE = "hashCode", OBJ = "obj", EQUALS = "equals";
-    protected final ProcessedSchema processedSchema;
 
     public DTOGenerator(ProcessedSchema processedSchema) {
-        this.processedSchema = processedSchema;
+        super(processedSchema);
     }
 
     protected TypeSpec.Builder getTypeSpecBuilder(String targetName, List<? extends GenerationSourceField<?>> fields) {
@@ -70,7 +70,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
 
                     allVariableNames.add(variableName);
 
-                    addClassFieldVariable(typeName, variableName, classBuilder, field.isResolver());
+                    addClassFieldVariable(typeName, variableName, classBuilder);
                     boolean shouldWrapAsList = processedSchema.isOrderedMultiKeyQuery(field);
                     addConstructorFieldVariable(typeName, variableName, constructorBuilder, setValue, false, field.isResolver(), shouldWrapAsList);
                     if (hasErrors) {
@@ -115,7 +115,7 @@ public abstract class DTOGenerator extends AbstractClassGenerator {
                 .addParameter(fieldType, name);
     }
 
-    private void addClassFieldVariable(TypeName fieldType, String name, TypeSpec.Builder classBuilder, boolean isResolver) {
+    private void addClassFieldVariable(TypeName fieldType, String name, TypeSpec.Builder classBuilder) {
         classBuilder
                 .addField(fieldType, name, Modifier.PRIVATE)
                 .addMethod(getGetterMethod(fieldType, name))

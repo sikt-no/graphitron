@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.generators.dependencies.Dependency;
+import no.sikt.graphitron.javapoet.MethodSpec;
 
 import java.util.List;
 import java.util.Map;

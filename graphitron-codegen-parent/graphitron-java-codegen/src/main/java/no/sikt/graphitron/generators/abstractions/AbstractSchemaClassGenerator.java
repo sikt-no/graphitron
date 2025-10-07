@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 abstract public class AbstractSchemaClassGenerator<T extends GenerationTarget> extends AbstractClassGenerator {

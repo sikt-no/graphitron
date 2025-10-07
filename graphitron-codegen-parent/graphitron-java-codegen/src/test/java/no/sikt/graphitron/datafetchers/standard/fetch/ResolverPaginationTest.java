@@ -89,7 +89,7 @@ public class ResolverPaginationTest extends GeneratorTest {
     @DisplayName("Root resolver returning a single table interface")
     void singleTableInterface() {
         assertGeneratedContentContains("operation/singleTableInterface",
-                "CompletableFuture<AddressConnection>",
+                "CompletableFuture<ConnectionImpl<Address>>",
                 "loadPaginated",
                 "QueryDBQueries.addressForQuery("
         );

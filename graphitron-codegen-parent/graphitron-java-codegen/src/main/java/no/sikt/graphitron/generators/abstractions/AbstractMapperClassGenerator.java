@@ -1,7 +1,7 @@
 package no.sikt.graphitron.generators.abstractions;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
