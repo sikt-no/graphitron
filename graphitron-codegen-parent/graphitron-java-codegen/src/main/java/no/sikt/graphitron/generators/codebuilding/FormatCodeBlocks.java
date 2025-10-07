@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.codebuilding;
 
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
-import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.ConnectionObjectDefinition;
@@ -442,25 +441,6 @@ public class FormatCodeBlocks {
                 )
                 .endControlFlow()
                 .build();
-    }
-
-    /**
-     * @return CodeBlock consisting of a function for an ID fetch DB call.
-     */
-    @NotNull
-    public static CodeBlock getNodeQueryCallBlock(GenerationField field, String variableName, CodeBlock path, boolean atResolver) {
-        var typeName = field.getTypeName();
-        var idCall = CodeBlock.of(".getId()");
-        return CodeBlock.of(
-                "$T.$L($L, $L, $L.withPrefix($L))$L",
-                getQueryClassName(asQueryClass(typeName)),
-                asNodeQueryName(typeName),
-                asMethodCall(TRANSFORMER_NAME, METHOD_CONTEXT_NAME),
-                field.isIterableWrapped() ? CodeBlock.of("$N.stream().map(it -> it$L).collect($T.toSet())", variableName, idCall, COLLECTORS.className) : setOf(CodeBlock.of("$N$L", variableName, idCall)),
-                atResolver ? asMethodCall(TRANSFORMER_NAME, METHOD_SELECT_NAME) : CodeBlock.of("$N", VARIABLE_SELECT),
-                path,
-                CodeBlock.ofIf(!field.isIterableWrapped(), ".values()$L.orElse(null)", findFirst())
-        );
     }
 
     /**
