@@ -21,7 +21,7 @@ import org.jooq.impl.DSL;
 
 public class WrapperDBQueries {
     public static Map<Row1<Long>, List<Pair<String, CustomerTable>>> queryForWrapper(DSLContext ctx,
-                                                                                 Set<Row1<Long>> wrapperResolverKeys, Integer pageSize, String after, SelectionSet select) {
+            Set<Row1<Long>> wrapperResolverKeys, Integer pageSize, String after, SelectionSet select) {
         var _address = ADDRESS.as("address_2030472956");
         var address_2030472956_customer = _address.customer().as("customer_2337142794");
         var orderFields = address_2030472956_customer.fields(address_2030472956_customer.getPrimaryKey().getFieldsArray());

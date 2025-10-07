@@ -26,9 +26,11 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, List<PersonWithEmail>> staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
+    public static Map<Row1<Long>, List<PersonWithEmail>> staffAndCustomersForPayment(DSLContext ctx,
+            Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
         var _payment = PAYMENT.as("payment_425747824");
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_payment).unionAll(customerSortFieldsForStaffAndCustomers(_payment));
+        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_payment)
+                .unionAll(customerSortFieldsForStaffAndCustomers(_payment));
 
         var mappedCustomer = customerForStaffAndCustomers();
         var mappedStaff = staffForStaffAndCustomers();
@@ -67,8 +69,8 @@ public class PaymentDBQueries {
                 );
     }
 
-    private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(Payment
-                                                                                                                   _payment) {
+    private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(
+            Payment _payment) {
         var payment_425747824_customer = _payment.customer().as("customer_1716701867");
         var orderFields = payment_425747824_customer.fields(payment_425747824_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
@@ -89,8 +91,8 @@ public class PaymentDBQueries {
                 .from(_customer);
     }
 
-    private static SelectSeekStepN<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(Payment
-                                                                                                                _payment) {
+    private static SelectSeekStepN<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(
+            Payment _payment) {
         var payment_425747824_staff = _payment.staff().as("staff_3287974561");
         var orderFields = payment_425747824_staff.fields(payment_425747824_staff.getPrimaryKey().getFieldsArray());
         return DSL.select(
@@ -101,9 +103,7 @@ public class PaymentDBQueries {
                 .orderBy(orderFields);
     }
 
-    private static SelectJoinStep<Record2<JSONB, Staff>> staffForStaffAndCustomers
-            (
-            ) {
+    private static SelectJoinStep<Record2<JSONB, Staff>> staffForStaffAndCustomers() {
         var _staff = STAFF.as("staff_3361087246");
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Staff"), _staff.STAFF_ID).as("$pkFields"),
