@@ -29,3 +29,7 @@ run = [
   "mvn --also-make-dependents --projects :{{arg(index=0)}},-:graphitron-example-server install",
   "touch $(git rev-parse --show-toplevel)/graphitron-example/graphitron-example-server/src/main/resources/META-INF/resources/index.html",
 ]
+
+[tasks.debug-generate]
+description = "Debug generate for graphitron-example"
+run = "mvnDebug install -pl :graphitron-example-spec"
