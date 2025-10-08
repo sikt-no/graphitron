@@ -393,7 +393,7 @@ public class FetchContext {
         var newJoinSequence = processFieldReferences(previousSequence, getReferenceOrPreviousTable(), referencesFromField, false, true);
         var updatedSequence = !newJoinSequence.isEmpty() ? newJoinSequence : previousSequence;
 
-        if (refTable == null) {
+        if (refTable == null || (!referencesFromField.isEmpty() && inputTable != null)) {
             return updatedSequence;
         }
 

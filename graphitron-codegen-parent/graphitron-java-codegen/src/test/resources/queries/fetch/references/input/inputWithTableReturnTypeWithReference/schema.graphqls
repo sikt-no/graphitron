@@ -1,0 +1,13 @@
+type Query {
+  cityByName(in: CityNameInput!): City
+}
+
+type City @table {
+    id: ID!
+    countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}])
+}
+
+input CityNameInput @table(name: "CITY") {
+    name: String! @field(name: "CITY_")
+}
+
