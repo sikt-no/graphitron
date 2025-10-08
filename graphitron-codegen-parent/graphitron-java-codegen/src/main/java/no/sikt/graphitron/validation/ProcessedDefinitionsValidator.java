@@ -641,11 +641,18 @@ public class ProcessedDefinitionsValidator {
 
     private void validateMultitableFieldsOutsideRoot() {
         allFields.stream()
-                .filter(GenerationSourceField::isGeneratedWithResolver)
+                .filter(GenerationSourceField::isGenerated)
                 .filter(it -> !it.isRootField())
                 .filter(it -> schema.isObjectWithPreviousTableObject(it.getContainerTypeName()))
                 .filter(schema::isMultiTableField)
                 .forEach(field -> {
+                    if (!field.isResolver()) {
+                        addErrorMessage("'%s.%s' is a multitable field outside root, but is missing the %s directive. " +
+                                        "Multitable queries outside root is only supported for resolver fields.",
+                                field.getContainerTypeName(), field.getName(), SPLIT_QUERY.getName()
+                        );
+                    }
+
                     if (field.hasFieldReferences()) {
                         addErrorMessage(
                                 String.format("'%s.%s' has the %s directive which is not supported on multitable queries outside root.",
