@@ -1,0 +1,9 @@
+type PersonWithEmailConnection {
+    edges: [PersonWithEmailConnectionEdge]
+    nodes: [PersonWithEmail!]!
+}
+
+type PersonWithEmailConnectionEdge {
+    cursor: String
+    node: PersonWithEmail
+}

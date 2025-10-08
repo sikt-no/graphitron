@@ -1,12 +1,13 @@
 package no.sikt.graphitron.queries.fetch;
 
+import no.sikt.graphitron.common.configuration.SchemaComponent;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 public class MultitableInterfaceTest extends InterfaceTest {
 
@@ -155,19 +156,19 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @Test
     @DisplayName("Listed multitable interface in splitQuery field")
     void listedInSplitQuery() {
-        assertGeneratedContentMatches("splitQueryListed");
+        assertGeneratedContentMatches("splitQueryListed", PERSON_WITH_EMAIL);
     }
 
     @Test
     @DisplayName("Paginated multitable interface in splitQuery field")
     void paginatedInSplitQuery() {
-        assertGeneratedContentMatches("splitQueryPaginated");
+        assertGeneratedContentMatches("splitQueryPaginated", PERSON_WITH_EMAIL_CONNECTION);
     }
 
     @Test
     @DisplayName("Multitable interface in splitQuery field with input")
     void splitQueryWithInput() {
-        assertGeneratedContentContains("splitQueryWithInput",
+        assertGeneratedContentContains("splitQueryWithInput", Set.of(PERSON_WITH_EMAIL_CONNECTION),
                 ".from(payment_425747824_customer).where(payment_425747824_customer.EMAIL.eq(email))",
                 ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys)).fetch"
                 );
