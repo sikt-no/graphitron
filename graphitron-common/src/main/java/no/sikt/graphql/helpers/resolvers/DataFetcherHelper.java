@@ -45,24 +45,21 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
-     * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <T> Type that the resolver fetches.
      */
-    public <T, U> CompletableFuture<U> loadPaginated(
+    public <T> CompletableFuture<ConnectionImpl<T>> loadPaginated(
             int pageSize,
             int maxNodes,
             DBQueryRoot<List<Pair<String, T>>> dbFunction,
-            DBCount<String> countFunction,
-            Function<ConnectionImpl<T>, U> connectionFunction
+            DBCount<String> countFunction
     ) {
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
                         dbFunction.callDBMethod(dslContext, connectionSelect),
                         pageSize,
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? (Integer) countFunction.callDBMethod(dslContext, Set.of()) : null,
-                        maxNodes,
-                        connectionFunction
+                        maxNodes
                 )
         );
     }
@@ -85,19 +82,16 @@ public class DataFetcherHelper extends AbstractFetcher {
      * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
-     * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
-     * @param <C> Connection type that the resolver fetches.
      */
-    public <K, V, C> CompletableFuture<C> loadPaginated(
+    public <K, V> CompletableFuture<ConnectionImpl<V>> loadPaginated(
             K key,
             int pageSize,
             int maxNodes,
             DBQuery<K, List<Pair<String, V>>> dbFunction,
-            DBCount<K> countFunction,
-            Function<ConnectionImpl<V>, C> connectionFunction
+            DBCount<K> countFunction
     ) {
-        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction, connectionFunction))
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction))
                 .load(asKeyPath(key), env);
     }
 
@@ -203,14 +197,13 @@ public class DataFetcherHelper extends AbstractFetcher {
         return CompletableFuture.completedFuture(idFilteringFunction.apply(dbFunction.callDBMethod(dslContext, select)));
     }
 
-    private <K, V, C> CompletableFuture<Map<KeyWithPath<K>, C>> getMappedDataLoader(
+    private <K, V> CompletableFuture<Map<KeyWithPath<K>, ConnectionImpl<V>>> getMappedDataLoader(
             Set<KeyWithPath<K>> keys,
             SelectionSet selectionSet,
             int maxNodes,
             int pageSize,
             DBQuery<K, List<Pair<String, V>>> dbFunction,
-            DBCount<K> countFunction,
-            Function<ConnectionImpl<V>, C> connectionFunction
+            DBCount<K> countFunction
     ) {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
@@ -222,8 +215,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                         resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : null,
-                        maxNodes,
-                        connectionFunction
+                        maxNodes
                 )
         );
     }

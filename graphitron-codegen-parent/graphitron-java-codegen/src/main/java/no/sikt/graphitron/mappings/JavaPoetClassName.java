@@ -20,6 +20,7 @@ import no.sikt.graphql.helpers.resolvers.ResolverHelpers;
 import no.sikt.graphql.helpers.resolvers.ServiceDataFetcherHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
+import no.sikt.graphql.relay.ConnectionImpl;
 import no.sikt.graphql.schema.SchemaReadingHelper;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -104,7 +105,8 @@ public enum JavaPoetClassName {
     SELECT_JOIN_STEP(SelectJoinStep.class),
     SELECT_FIELD(SelectField.class),
     SELECT_SELECT_STEP(SelectSelectStep.class),
-    INT_STREAM(IntStream.class);
+    INT_STREAM(IntStream.class),
+    CONNECTION_IMPL(ConnectionImpl.class);
 
     public final ClassName className;
 

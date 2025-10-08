@@ -187,10 +187,6 @@ public class MapperContext {
         return targetType;
     }
 
-    public ProcessedSchema getSchema() {
-        return schema;
-    }
-
     public boolean hasRecordReference() {
         return hasRecordReference;
     }

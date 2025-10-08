@@ -3,6 +3,7 @@ package no.sikt.graphitron.definitions.objects;
 import graphql.language.EnumTypeDefinition;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
 import no.sikt.graphitron.definitions.fields.EnumField;
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphql.directives.GenerationDirectiveParam;
 
 import java.util.List;
@@ -13,7 +14,7 @@ import static no.sikt.graphql.directives.GenerationDirective.ENUM;
 /**
  * Representation of a GraphQL enum type.
  */
-public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumField> {
+public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition, EnumField> implements GenerationTarget {
     private final CodeReference enumReference;
 
     public EnumDefinition(EnumTypeDefinition enumTypeDefinition) {
@@ -51,5 +52,20 @@ public class EnumDefinition extends AbstractObjectDefinition<EnumTypeDefinition,
                 .stream()
                 .map(EnumDefinition::new)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean isGenerated() {
+        return true;
+    }
+
+    @Override
+    public boolean isGeneratedWithResolver() {
+        return false;
+    }
+
+    @Override
+    public boolean isExplicitlyNotGenerated() {
+        return false;
     }
 }

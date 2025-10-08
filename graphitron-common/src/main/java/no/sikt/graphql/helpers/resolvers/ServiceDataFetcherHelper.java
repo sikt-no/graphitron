@@ -66,26 +66,22 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @param dbTransform Function that maps the query output to the resolver output.
-     * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <T> Type that the query returns.
-     * @param <C> Connection type that the resolver fetches.
      */
-    public <T, U, C> CompletableFuture<C> loadPaginated(
+    public <T, U> CompletableFuture<ConnectionImpl<U>> loadPaginated(
             int pageSize,
             int maxNodes,
             Supplier<List<Pair<String, T>>> dbFunction,
             Function<Set<String>, Integer> countFunction,
-            TransformCall<A, List<Pair<String, T>>, List<Pair<String, U>>> dbTransform,
-            Function<ConnectionImpl<U>, C> connectionFunction
+            TransformCall<A, List<Pair<String, T>>, List<Pair<String, U>>> dbTransform
     ) {
         return CompletableFuture.completedFuture(
                 getPaginatedConnection(
                         dbTransform.transform(abstractTransformer, dbFunction.get()),
                         pageSize,
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(Set.of()) : null,
-                        maxNodes,
-                        connectionFunction
+                        maxNodes
                 )
         );
     }
@@ -111,21 +107,18 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @param dbTransform Function that maps the query output to the resolver output.
-     * @param connectionFunction Function that converts the result of the query to a GraphQL connection structure.
      * @return A paginated resolver result.
      * @param <V0> Type that the query returns.
-     * @param <C> Connection type that the resolver fetches.
      */
-    public <K, V0, V1, C> CompletableFuture<C> loadPaginated(
+    public <K, V0, V1> CompletableFuture<ConnectionImpl<V1>> loadPaginated(
             K key,
             int pageSize,
             int maxNodes,
             Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
             Function<Set<K>, Map<K,Integer>> countFunction,
-            TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform,
-            Function<ConnectionImpl<V1>, C> connectionFunction
+            TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform
     ) {
-        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, maxNodes, pageSize, dbFunction, countFunction, dbTransform, connectionFunction))
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, maxNodes, pageSize, dbFunction, countFunction, dbTransform))
                 .load(asKeyPath(key), env);
     }
 
@@ -143,14 +136,13 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                 .thenApply(data -> Optional.ofNullable(data).orElse(List.of()));
     }
 
-    private <K, V0, V1, C> CompletableFuture<Map<KeyWithPath<K>, C>> getMappedDataLoader(
+    private <K, V0, V1> CompletableFuture<Map<KeyWithPath<K>, ConnectionImpl<V1>>> getMappedDataLoader(
             Set<KeyWithPath<K>> keys,
             int maxNodes,
             int pageSize,
             Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
-            Function<Set<K>, Map<K,Integer>> countFunction,
-            TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform,
-            Function<ConnectionImpl<V1>, C> connectionFunction
+            Function<Set<K>, Map<K, Integer>> countFunction,
+            TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform
     ) {
         if (keys.isEmpty()) {
             return CompletableFuture.completedFuture(Map.of());
@@ -166,8 +158,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue()))) : Map.of(),
                         pageSize,
                         connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null,
-                        maxNodes,
-                        connectionFunction
+                        maxNodes
                 )
         );
     }

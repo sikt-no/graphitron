@@ -7,7 +7,7 @@ import graphql.relay.PageInfo;
 import java.util.List;
 
 /**
- * Helper class for handling connection types as defined in the <a href="https://relay.dev/graphql/connections.htm">cursor connection specification</a>.
+ * Helper class for handling extended connection types based on the <a href="https://relay.dev/graphql/connections.htm">cursor connection specification</a>.
  */
 public class ConnectionImpl<T> extends DefaultConnection<T> {
     private final List<T> nodes;
@@ -33,9 +33,9 @@ public class ConnectionImpl<T> extends DefaultConnection<T> {
 
     public static class Builder<T> {
         private List<Edge<T>> edges;
-        private List<T> nodes;
+        private List<T> nodes = List.of();
         private PageInfo pageInfo;
-        private Integer totalCount;
+        private Integer totalCount = 0;
 
         public Builder() {
         }

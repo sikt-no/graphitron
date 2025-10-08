@@ -1,20 +1,21 @@
 package no.sikt.graphitron.generators.dto;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.naming.GraphQLReservedName;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.generatedModelsPackage;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 
-public class TypeDTOGenerator extends DTOGenerator {
+public class TypeDTOGenerator extends DTOGenerator<ObjectDefinition> {
     private final static LinkedList<String> PAGE_INFO_FIELD_ORDER = new LinkedList<>(
             Stream.of(HAS_PREVIOUS_PAGE_FIELD, HAS_NEXT_PAGE_FIELD, START_CURSOR_FIELD, END_CURSOR_FIELD)
             .map(GraphQLReservedName::getName).toList());
@@ -27,7 +28,8 @@ public class TypeDTOGenerator extends DTOGenerator {
         super(processedSchema);
     }
 
-    protected TypeSpec generate(ObjectDefinition target) {
+    @Override
+    public TypeSpec generate(ObjectDefinition target) {
         var fields = target.getFields();
 
         // Ensure constructors for PageInfo and Connection type are in the order data fetchers expect
@@ -62,9 +64,14 @@ public class TypeDTOGenerator extends DTOGenerator {
     public List<TypeSpec> generateAll() {
         return processedSchema
                 .getObjects()
-                .values()
-                .stream().filter(it ->
-                        !it.getName().equals(SCHEMA_QUERY.getName()) && !it.getName().equals(SCHEMA_MUTATION.getName()))
+                .entrySet()
+                .stream()
+                .filter(it -> !it.getKey().equals(SCHEMA_QUERY.getName()))
+                .filter(it -> !it.getKey().equals(SCHEMA_MUTATION.getName()))
+                .filter(it -> !it.getKey().equals(CONNECTION_PAGE_INFO_NODE.getName()))
+                .filter(it -> !processedSchema.isConnectionObject(it.getKey()))
+                .filter(it -> !processedSchema.isEdgeObject(it.getKey()))
+                .map(Map.Entry::getValue)
                 .map(this::generate)
                 .toList();
     }

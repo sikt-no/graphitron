@@ -5,7 +5,6 @@ import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphql.schema.ProcessedSchema;
-import org.jooq.UniqueKey;
 
 import javax.lang.model.element.Modifier;
 import java.util.HashMap;
@@ -15,26 +14,26 @@ import java.util.List;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyMapForResolverFields;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
-public class InterfaceDTOGenerator extends DTOGenerator {
+public class InterfaceDTOGenerator extends DTOGenerator<InterfaceDefinition> {
 
     public InterfaceDTOGenerator(ProcessedSchema processedSchema) {
         super(processedSchema);
     }
 
-    protected TypeSpec generate(InterfaceDefinition target) {
+    @Override
+    public TypeSpec generate(InterfaceDefinition target) {
         var interfaceBuilder = TypeSpec.interfaceBuilder(target.getName()).addModifiers(Modifier.PUBLIC);
 
         var keyMap = target.hasTable() ? getKeyMapForResolverFields(target.getFields(), processedSchema) : new HashMap<String, KeyWrapper>();
 
-        (new LinkedHashSet<>(keyMap.values()))
-                .forEach(( key) -> {
-                    interfaceBuilder.addMethod(
-                            MethodSpec.methodBuilder(key.getDTOGetterName())
-                                    .returns(key.getRowTypeName())
-                                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                                    .build()
-                    );
-                });
+        new LinkedHashSet<>(keyMap.values()).forEach(( key) ->
+                interfaceBuilder.addMethod(
+                        MethodSpec.methodBuilder(key.getDTOGetterName())
+                                .returns(key.getRowTypeName())
+                                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                                .build()
+                )
+        );
 
         var implementations = processedSchema.getImplementationsForInterface(target);
 

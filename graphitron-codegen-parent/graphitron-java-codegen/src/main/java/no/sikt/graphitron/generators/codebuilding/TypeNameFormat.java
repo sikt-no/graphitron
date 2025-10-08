@@ -86,6 +86,13 @@ public class TypeNameFormat {
     }
 
     /**
+     * @return The type wrapped in a ConnectionImpl ParameterizedTypeName.
+     */
+    public static ParameterizedTypeName wrapConnection(TypeName type) {
+        return ParameterizedTypeName.get(CONNECTION_IMPL.className, type);
+    }
+
+    /**
      * @return The ParameterizedTypeName for a Set of Strings.
      */
     public static ParameterizedTypeName getStringSetTypeName() {

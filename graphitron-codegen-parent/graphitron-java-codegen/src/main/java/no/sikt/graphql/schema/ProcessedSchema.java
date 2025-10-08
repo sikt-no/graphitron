@@ -40,6 +40,7 @@ public class ProcessedSchema {
     private final Map<String, RecordObjectSpecification<? extends GenerationField>> recordTypes;
     private final Map<String, InterfaceDefinition> interfaces;
     private final Map<String, ConnectionObjectDefinition> connectionObjects;
+    private final Map<String, EdgeObjectDefinition> edgeObjects;
     private final Map<String, UnionDefinition> unions;
     private final Set<String> tableTypesWithTable, scalarTypes, typeNames, validFieldTypes;
     private final ObjectDefinition queryType, mutationType;
@@ -122,6 +123,12 @@ public class ProcessedSchema {
                 .filter(f -> f.getName().endsWith(GraphQLReservedName.SCHEMA_CONNECTION_SUFFIX.getName()))
                 .map(this::getSearchObjectDefinitionFor)
                 .collect(Collectors.toMap(ConnectionObjectDefinition::getName, Function.identity()));
+
+        edgeObjects = connectionObjects
+                .values()
+                .stream()
+                .map(ConnectionObjectDefinition::getEdgeObject)
+                .collect(Collectors.toMap(EdgeObjectDefinition::getName, Function.identity()));
 
         unions = UnionDefinition.processUnionDefinitions(typeRegistry.getTypes(UnionTypeDefinition.class))
                 .stream()
@@ -531,6 +538,13 @@ public class ProcessedSchema {
      */
     public ConnectionObjectDefinition getConnectionObject(GenerationField field) {
         return connectionObjects.get(field.getTypeName());
+    }
+
+    /**
+     * @return Does this name belong to an edge object type in the schema?
+     */
+    public boolean isEdgeObject(String name) {
+        return edgeObjects.containsKey(name);
     }
 
     /**
