@@ -1,0 +1,28 @@
+{
+    "data": {
+        "payments": {
+            "nodes": [
+                {
+                    "mostImportantCustomers": [
+                        {
+                            "email": "Jon.Stephens@sakilastaff.com",
+                            "__typename": "StaffWithEmail"
+                        }
+                    ]
+                },
+                {
+                    "mostImportantCustomers": [
+                        {
+                            "email": "BARBARA.JONES@sakilacustomer.org",
+                            "__typename": "CustomerWithEmail"
+                        },
+                        {
+                            "email": "Jon.Stephens@sakilastaff.com",
+                            "__typename": "StaffWithEmail"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}
