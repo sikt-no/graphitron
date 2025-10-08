@@ -66,4 +66,14 @@ public class MultitableTest extends ValidationTest {
     void splitQueryReferenceInNestedQuery() {
         getProcessedSchema("splitQueryReferenceInNestedQuery");
     }
+
+    @Test
+    @DisplayName("Multitable query outside root without splitquery should produce validation error")
+    void splitQueryRequiredOnMultitableFieldOutsideRoot() {
+        assertErrorsContain(
+                () -> getProcessedSchema("splitQueryRequiredOnMultitableFieldOutsideRoot"),
+                "'Payment.staffAndCustomers' is a multitable field outside root, but is missing the splitQuery directive. " +
+                        "Multitable queries outside root is only supported for resolver fields"
+        );
+    }
 }
