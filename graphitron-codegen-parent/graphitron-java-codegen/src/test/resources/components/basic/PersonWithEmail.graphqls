@@ -1,0 +1,11 @@
+interface PersonWithEmail {
+    email: String
+}
+
+type Staff implements PersonWithEmail @table(name: "STAFF") {
+    email: String
+}
+
+type Customer implements PersonWithEmail @table(name: "CUSTOMER") {
+    email: String
+}

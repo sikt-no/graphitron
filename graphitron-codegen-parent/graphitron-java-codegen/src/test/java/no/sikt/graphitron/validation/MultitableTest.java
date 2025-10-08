@@ -1,8 +1,12 @@
 package no.sikt.graphitron.validation;
 
+import no.sikt.graphitron.common.configuration.SchemaComponent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+
+import static no.sikt.graphitron.common.configuration.SchemaComponent.PERSON_WITH_EMAIL;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("Multitable query validation (interfaces and unions)")
@@ -24,7 +28,7 @@ public class MultitableTest extends ValidationTest {
     @Test
     @DisplayName("Multitable interface outside root should not have validation errors")
     void interfaceOutsideRoot() {
-        getProcessedSchema("interfaceOutsideRoot");
+        getProcessedSchema("interfaceOutsideRoot", PERSON_WITH_EMAIL);
     }
 
     @Test
@@ -37,7 +41,7 @@ public class MultitableTest extends ValidationTest {
     @DisplayName("Multitable fields outside root returning a single object is not currently supported")
     void notListedOutsideRoot() {
         assertErrorsContain(
-                () -> getProcessedSchema("notListedOutsideRoot"),
+                () -> getProcessedSchema("notListedOutsideRoot", PERSON_WITH_EMAIL),
                 "Multitable queries returning a single object outside root is not currently supported. " +
                         "'Payment.staffAndCustomers' is not a list."
         );
@@ -47,7 +51,7 @@ public class MultitableTest extends ValidationTest {
     @DisplayName("Multitable fields outside root with reference directive")
     void withReferenceDirective() {
         assertErrorsContain(
-                () -> getProcessedSchema("withReferenceDirective"),
+                () -> getProcessedSchema("withReferenceDirective", PERSON_WITH_EMAIL),
                 "'Payment.staffAndCustomers' has the reference directive which is not supported on multitable queries outside root."
         );
     }
@@ -71,7 +75,7 @@ public class MultitableTest extends ValidationTest {
     @DisplayName("Multitable query outside root without splitquery should produce validation error")
     void splitQueryRequiredOnMultitableFieldOutsideRoot() {
         assertErrorsContain(
-                () -> getProcessedSchema("splitQueryRequiredOnMultitableFieldOutsideRoot"),
+                () -> getProcessedSchema("splitQueryRequiredOnMultitableFieldOutsideRoot", PERSON_WITH_EMAIL),
                 "'Payment.staffAndCustomers' is a multitable field outside root, but is missing the splitQuery directive. " +
                         "Multitable queries outside root is only supported for resolver fields"
         );

@@ -45,6 +45,10 @@ public enum SchemaComponent {
     ADDRESS_BY_DISTRICT("basic/AddressByDistrict"),
     ADDRESS_BY_DISTRICT_CONNECTION("basic/AddressByDistrictConnection"),
 
+    PERSON_WITH_EMAIL("basic/PersonWithEmail"), // Multitable interface
+    PERSON_WITH_EMAIL_CONNECTION_ONLY("basic/PersonWithEmailConnection"),
+    PERSON_WITH_EMAIL_CONNECTION(PERSON_WITH_EMAIL, PERSON_WITH_EMAIL_CONNECTION_ONLY),
+
     SOMEUNION_CONNECTION("basic/SomeUnionConnection"),
 
     MUTATION_RESPONSE("basic/MutationResponse"),

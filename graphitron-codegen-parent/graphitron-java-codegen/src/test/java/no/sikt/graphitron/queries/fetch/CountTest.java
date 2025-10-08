@@ -11,8 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_CONNECTION;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.SOMEUNION_CONNECTION;
+import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
 @DisplayName("Query pagination - Count methods for paginated queries")
 public class CountTest extends GeneratorTest {
@@ -64,7 +63,7 @@ public class CountTest extends GeneratorTest {
     @Test
     @DisplayName("Multitable connection outside query")
     void multiTableInterfaceSplitQuery() {
-        assertGeneratedContentMatches("multiTableInterfaceSplitQuery");
+        assertGeneratedContentMatches("multiTableInterfaceSplitQuery", PERSON_WITH_EMAIL_CONNECTION);
     }
 
     @Test

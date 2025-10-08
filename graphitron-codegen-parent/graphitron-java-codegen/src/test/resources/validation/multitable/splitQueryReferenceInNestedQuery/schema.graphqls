@@ -3,18 +3,18 @@ type Query {
 }
 
 type Payment @table {
-    staffAndCustomers: [PersonWithEmail] @splitQuery
+    staffAndCustomers: [PersonWithAddress] @splitQuery
 }
 
-interface PersonWithEmail {
+interface PersonWithAddress {
     address: Address @splitQuery
 }
 
-type StaffWithEmail implements PersonWithEmail @table(name: "STAFF") {
+type StaffWithEmail implements PersonWithAddress @table(name: "STAFF") {
     address: Address @splitQuery
 }
 
-type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
+type CustomerWithEmail implements PersonWithAddress @table(name: "CUSTOMER") {
     address: Address @splitQuery
 }
 
