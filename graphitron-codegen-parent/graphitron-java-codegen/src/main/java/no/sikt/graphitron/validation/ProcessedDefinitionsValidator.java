@@ -1285,10 +1285,10 @@ public class ProcessedDefinitionsValidator {
     }
 
     private void validateImplicitNodeTypeForInputFields() {
+        if (!GeneratorConfig.shouldMakeNodeStrategy()) return;
         schema.getInputTypes().values()
                 .stream().flatMap(it -> it.getFields().stream())
-                .filter(it -> GeneratorConfig.shouldMakeNodeStrategy()
-                        && it.isID() && it.getName().equals(GraphQLReservedName.NODE_ID.getName()))
+                .filter(it -> it.isID() && !it.hasNodeID() && it.getName().equals(GraphQLReservedName.NODE_ID.getName()))
                 .forEach(it -> {
                     var implicitNodeTypes =
                             schema.getImplicitNodeTypesForInputField(it);
@@ -1305,7 +1305,8 @@ public class ProcessedDefinitionsValidator {
                                 it.getContainerTypeName(),
                                 it.getName(),
                                 implicitNodeTypes.stream()
-                                        .map(type -> String.format("'%s'", type.getName()))
+                                        .map(type -> String.format("'%s'",
+                                                type.getName()))
                                         .collect(Collectors.joining(", ")));
                     }
                 });
