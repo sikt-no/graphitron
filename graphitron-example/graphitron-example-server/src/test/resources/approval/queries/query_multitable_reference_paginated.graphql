@@ -1,0 +1,16 @@
+{
+    rentals(first: 2) {
+        nodes {
+            allContactPersonsPaginated(first: 3) {
+                totalCount
+                nodes {
+                    __typename
+                    email
+                }
+                pageInfo {
+                    hasNextPage
+                }
+            }
+        }
+    }
+}

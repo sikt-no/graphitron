@@ -1,0 +1,48 @@
+{
+    "data": {
+        "rentals": {
+            "nodes": [
+                {
+                    "allContactPersonsPaginated": {
+                        "totalCount": 10,
+                        "nodes": [
+                            {
+                                "__typename": "CustomerWithEmail",
+                                "email": "SANDRA.MARTIN@sakilacustomer.org"
+                            },
+                            {
+                                "__typename": "CustomerWithEmail",
+                                "email": "CHARLOTTE.HUNTER@sakilacustomer.org"
+                            },
+                            {
+                                "__typename": "CustomerWithEmail",
+                                "email": "LENA.JENSEN@sakilacustomer.org"
+                            }
+                        ],
+                        "pageInfo": {
+                            "hasNextPage": true
+                        }
+                    }
+                },
+                {
+                    "allContactPersonsPaginated": {
+                        "totalCount": 2,
+                        "nodes": [
+                            {
+                                "__typename": "CustomerWithEmail",
+                                "email": "TOMMY.COLLAZO@sakilacustomer.org"
+                            },
+                            {
+                                "__typename": "StaffWithEmail",
+                                "email": "Jon.Stephens@sakilastaff.com"
+                            }
+                        ],
+                        "pageInfo": {
+                            "hasNextPage": false
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}
