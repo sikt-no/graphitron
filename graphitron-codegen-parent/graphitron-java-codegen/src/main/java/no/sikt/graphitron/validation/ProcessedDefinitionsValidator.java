@@ -93,6 +93,7 @@ public class ProcessedDefinitionsValidator {
         validateNodeId();
         validateNodeIdReferenceInJooqRecordInput();
         validateSplitQueryFieldsInJavaRecords();
+        validateImplicitNodeTypeForInputFields();
 
         logWarnings();
         throwIfErrors();
@@ -1279,6 +1280,34 @@ public class ProcessedDefinitionsValidator {
 
                     if (field.hasForwardPagination()) {
                         addErrorMessage(errorMessageStart + " is paginated. This is not supported.");
+                    }
+                });
+    }
+
+    private void validateImplicitNodeTypeForInputFields() {
+        if (!GeneratorConfig.shouldMakeNodeStrategy()) return;
+        schema.getInputTypes().values()
+                .stream().flatMap(it -> it.getFields().stream())
+                .filter(it -> it.isID() && !it.hasNodeID() && it.getName().equals(GraphQLReservedName.NODE_ID.getName()))
+                .forEach(it -> {
+                    var implicitNodeTypes =
+                            schema.getImplicitNodeTypesForInputField(it);
+                    if (implicitNodeTypes != null && implicitNodeTypes.size() > 1) {
+                        addWarningMessage("Input type '%s' has an '%s' field " +
+                                        "that may represent a node ID. " +
+                                        "However, the node type cannot be " +
+                                        "automatically determined because " +
+                                        "multiple node types " +
+                                        "(%s) have the same table as the " +
+                                        "input type. To enable node ID " +
+                                        "resolution, specify @nodeId" +
+                                        "(typeName: \"\") on the field.",
+                                it.getContainerTypeName(),
+                                it.getName(),
+                                implicitNodeTypes.stream()
+                                        .map(type -> String.format("'%s'",
+                                                type.getName()))
+                                        .collect(Collectors.joining(", ")));
                     }
                 });
     }
