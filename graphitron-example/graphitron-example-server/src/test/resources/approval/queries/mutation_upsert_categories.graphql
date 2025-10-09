@@ -1,0 +1,8 @@
+mutation {
+    upsertCategories(
+        in: [{categoryId: "Q2F0ZWdvcnk6MTk", name: "INSERTED"}, {categoryId: "Q2F0ZWdvcnk6Mg", name: "UPDATED"}]
+    ) {
+        id
+        name
+    }
+}

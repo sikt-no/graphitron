@@ -1,0 +1,14 @@
+{
+    "data": {
+        "upsertCategories": [
+            {
+                "id": "Q2F0ZWdvcnk6Mg",
+                "name": "UPDATED"
+            },
+            {
+                "id": "Q2F0ZWdvcnk6MTk",
+                "name": "INSERTED"
+            }
+        ]
+    }
+}

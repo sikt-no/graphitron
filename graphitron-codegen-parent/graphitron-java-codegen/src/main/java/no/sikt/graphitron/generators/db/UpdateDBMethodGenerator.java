@@ -1,7 +1,9 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
+import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -9,14 +11,15 @@ import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.mappings.TableReflection;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.returnWrap;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.VARIABLE_ITERATE_PREFIX;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 
@@ -73,6 +76,31 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
             code.declareNew(VARIABLE_RECORD_LIST, ARRAY_LIST.className);
             recordInputs.forEach((name, type) -> code.addStatement("$N.$L($N)", VARIABLE_RECORD_LIST, type.isIterableWrapped() ? "addAll" : "add", name));
         }
+
+        if (target.hasMutationType() && target.getMutationType() == MutationType.UPSERT) {
+            recordInputs.entrySet().stream()
+                    .map(it -> findNodeIdInJooqRecordInputTypes(it.getKey(), it.getValue()))
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .findFirst()
+                    .ifPresent(it -> {
+                        var recordInputName = it.getKey();
+                        var inputType = it.getValue();
+                        var nodeType = processedSchema.getNodeType(inputType);
+                        if (nodeType != null) {
+                            String tableName = nodeType.getTable().getName();
+                            var columnNames = getNodeIdKeyColumnNames(nodeType.getKeyColumns(), tableName);
+                            if (!columnNames.isEmpty()) {
+                                var isIterable = recordInputs.get(it.getKey()).isIterableWrapped();
+                                code.addIf(isIterable, "$N.forEach($N -> {\n", recordInputName, VARIABLE_ITERATE_PREFIX);
+                                var variableName = isIterable ? VARIABLE_ITERATE_PREFIX : recordInputName;
+                                columnNames.forEach(columnName -> code.addStatement("$N.changed($N.$N, true)", variableName, tableName, columnName));
+                                code.addIf(isIterable, "});\n");
+                            }
+                        }
+                    });
+        }
+
         code.addStatement(
                 "return $N.transactionResult(config -> $T.stream($T.using(config).$L($N).execute()).sum())",
                 VariableNames.CONTEXT_NAME,
@@ -101,5 +129,23 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .collect(Collectors.toList());
+    }
+
+    private List<String> getNodeIdKeyColumnNames(List<String> keyColumns, String tableName) {
+        if (keyColumns.isEmpty()) {
+            return TableReflection.getPrimaryKeyForTable(tableName)
+                    .map(it -> TableReflection.getJavaFieldNamesForKey(tableName, it))
+                    .orElse(Collections.emptyList());
+        } else  {
+            return keyColumns;
+        }
+    }
+
+    private Optional<Map.Entry<String, GenerationField>> findNodeIdInJooqRecordInputTypes(String key, InputField field) {
+        return processedSchema.getInputType(field.getTypeName())
+                .getFields().stream()
+                .filter(processedSchema::isNodeIdField)
+                .findFirst()
+                .map(it -> Map.entry(key, it));
     }
 }
