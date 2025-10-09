@@ -24,8 +24,8 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.toCamelCase;
 import static no.sikt.graphql.directives.DirectiveHelpers.getDirectiveArgumentString;
 import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalObjectFieldByName;
 import static no.sikt.graphql.directives.GenerationDirective.*;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.KEY;
-import static no.sikt.graphql.directives.GenerationDirectiveParam.PATH;
+import static no.sikt.graphql.directives.GenerationDirective.SERVICE;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.*;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_MUTATION;
 import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 
@@ -35,13 +35,14 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesContainer<T>> extends AbstractField<T> implements GenerationField {
     private final boolean isGenerated, isResolver, isGeneratedAsResolver, isExternalField,
             hasFieldDirective, hasNodeID, hasTableMethod, hasService;
-    private final List<FieldReference> fieldReferences;
+    private final ArrayList<FieldReference> fieldReferences;
+    private final Map<String, List<FieldReference>> multitableReferences;
+
     private final SQLCondition condition;
     private final MethodMapping mappingForRecordFieldOverride;
     private final ServiceWrapper serviceWrapper;
     private final String nodeIdTypeName;
     private final Map<String, TypeName> contextFields;
-
     public GenerationSourceField(T field, FieldType fieldType, String container) {
         super(field, fieldType, container);
         fieldReferences = new ArrayList<>();
@@ -50,7 +51,16 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
 
             Optional.ofNullable(referenceDirective.getArgument(PATH.getName()))
                     .map(Argument::getValue)
-                    .ifPresent(this::addFieldReferences);
+                    .ifPresent(it -> addFieldReferences(it, fieldReferences));
+        }
+
+        multitableReferences = new HashMap<>();
+        if (field.hasDirective(MULTITABLE_REFERENCE.getName())) {
+            var referenceDirective = field.getDirectives(MULTITABLE_REFERENCE.getName()).get(0);
+
+            Optional.ofNullable(referenceDirective.getArgument(ROUTES.getName()))
+                    .map(Argument::getValue)
+                    .ifPresent(this::addMultitableReferences);
         }
 
         condition = field.hasDirective(GenerationDirective.CONDITION.getName()) && fieldType != null ? new SQLCondition(field) : null;
@@ -79,7 +89,7 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     /**
      * Construct references from the {@link GenerationDirectiveParam#PATH references} parameter.
      */
-    private void addFieldReferences(Value<?> referencesValue) {
+    private void addFieldReferences(Value<?> referencesValue, List<FieldReference> listToAddTo) {
         var values = referencesValue instanceof ArrayValue ? ((ArrayValue) referencesValue).getValues() : List.of(((ObjectValue) referencesValue));
 
         values.stream()
@@ -94,13 +104,39 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                             .map(ObjectValue::getObjectFields)
                             .map(fields -> new SQLCondition(new CodeReference(fields, getName()))).orElse(null);
 
-                    fieldReferences.add(
+                    listToAddTo.add(
                             new FieldReference(
                                     table.map(DirectiveHelpers::stringValueOf).map(JOOQMapping::fromTable).orElse(null),
                                     key.map(DirectiveHelpers::stringValueOf).map(JOOQMapping::fromKey).orElse(null),
                                     referencedCondition
                             )
                     );
+                });
+    }
+
+    private void addMultitableReferences(Value<?> referencesValue) {
+        var values = referencesValue instanceof ArrayValue ? ((ArrayValue) referencesValue).getValues() : List.of(((ObjectValue) referencesValue));
+
+        values.stream()
+                .filter(value -> value instanceof ObjectValue)
+                .forEach(value -> {
+                    var objectFields = ((ObjectValue) value).getObjectFields();
+                    var typeName = objectFields.stream()
+                            .filter(it -> it.getName().equals(TYPE_NAME.getName())).findFirst()
+                            .map(it -> ((StringValue) it.getValue()).getValue())
+                            .stream()
+                            .findFirst()
+                            .orElseThrow(() -> // Should never be thrown because typeName is not nullable
+                                    new RuntimeException(String.format("%s directive is missing %s parameter.",MULTITABLE_REFERENCE.getName(), TYPE_NAME.getName())));
+
+                    var fieldReferencesForType = new ArrayList<FieldReference>();
+
+                    objectFields.stream()
+                            .filter(it -> it.getName().equals(PATH.getName()))
+                            .findFirst()
+                            .ifPresent(it -> addFieldReferences(it.getValue(), fieldReferencesForType));
+
+                    multitableReferences.put(typeName, fieldReferencesForType);
                 });
     }
 
@@ -157,6 +193,14 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
     @Override
     public boolean hasFieldReferences() {
         return !fieldReferences.isEmpty();
+    }
+
+    public Map<String, List<FieldReference>> getMultitableReferences() {
+        return multitableReferences;
+    }
+
+    public boolean hasMultitableReferences() {
+        return !multitableReferences.isEmpty();
     }
 
     @Override
