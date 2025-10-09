@@ -1,0 +1,11 @@
+type Mutation {
+  mutation(in: VacationDestionationInput): VacationDestination @mutation(typeName: UPSERT)
+}
+
+type VacationDestination implements Node @node(keyColumns: ["KEY_COLUMN1", "KEY_COLUMN2"]) @table(name: "VACATION_DESTINATION") {
+    id: ID!
+}
+
+input VacationDestionationInput @table(name: "VACATION_DESTINATION") {
+    id: ID! @nodeId(typeName: "VacationDestination")
+}
