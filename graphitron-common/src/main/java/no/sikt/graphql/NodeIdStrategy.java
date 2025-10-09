@@ -93,7 +93,7 @@ public class NodeIdStrategy {
         setFields(record, id, typeId, idFields);
     }
 
-    private void setFields(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
+    protected void setFields(UpdatableRecordImpl<?> record, String id, String typeId, Field<?>... keyColumnFields) {
         var values = new String[keyColumnFields.length];
         if (id != null) {
             values = unpack(typeId, keyColumnFields, id);
