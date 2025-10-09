@@ -1,0 +1,7 @@
+type Query {
+    query: Payment @notGenerated
+}
+
+type Payment @table {
+    staffAndCustomers: [PersonWithEmail] @splitQuery @multitableReference
+}

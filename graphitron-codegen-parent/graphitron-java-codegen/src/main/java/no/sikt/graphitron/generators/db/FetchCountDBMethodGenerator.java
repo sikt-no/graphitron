@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.db;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.VirtualSourceField;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
@@ -13,6 +14,7 @@ import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -77,17 +79,10 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock getCodeForMultitableCountMethod(ObjectField target) {
-        var code = CodeBlock.builder();
         var implementations = processedSchema.getTypesFromInterfaceOrUnion(target.getTypeName());
 
-        if (target.isResolver()) {
-            implementations
-                    .stream()
-                    .findFirst()
-                    .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, false))
-                    .map(FetchContext::getAliasSet)
-                    .ifPresent(it -> code.add(createAliasDeclarations(it)));
-        }
+        var aliasSet = new LinkedHashSet<AliasWrapper>();
+        var codeForImplementations = CodeBlock.builder();
 
         implementations.forEach(implementation -> {
             var virtualTarget = new VirtualSourceField(implementation, target);
@@ -103,25 +98,23 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                     .add(where)
                     .add(createSelectConditions(context.getConditionList(), !where.isEmpty()));
 
-            var aliasesToDeclare = !target.isResolver() ? refContext.getAliasSet() :
-                    context.getAliasSet().stream().findFirst()
-                            .map(startAlias -> context.getAliasSet().stream().filter(it -> !it.equals(startAlias)).collect(Collectors.toSet()))
-                            .orElse(refContext.getAliasSet());
-
-            code
-                    .add(createAliasDeclarations(aliasesToDeclare))
-                    .declare(getCountVariableName(implementation.getName()), countForImplementation.build());
+            aliasSet.addAll(refContext.getAliasSet());
+            codeForImplementations.declare(getCountVariableName(implementation.getName()), countForImplementation.build());
         });
 
-        var unionQuery = implementations.stream()
-                .map(AbstractObjectDefinition::getName)
-                .reduce("", (currString, element) ->
-                        String.format(currString.isEmpty() ? "%s" : "%s\n.unionAll(%s)", getCountVariableName(element), currString));
+        var code = CodeBlock.builder()
+                .add(createAliasDeclarations(aliasSet))
+                .add(codeForImplementations.build());
 
         var resolverKey = implementations.stream()
                 .findFirst()
                 .map(it -> new FetchContext(processedSchema, new VirtualSourceField(it, target), localObject, true))
                 .map(FetchContext::getResolverKey);
+
+        var unionQuery = implementations.stream()
+                .map(AbstractObjectDefinition::getName)
+                .reduce("", (currString, element) ->
+                        String.format(currString.isEmpty() ? "%s" : "%s\n.unionAll(%s)", getCountVariableName(element), currString));
 
         return code
                 .declare(UNION_COUNT_QUERY, "$L\n.asTable()", unionQuery)

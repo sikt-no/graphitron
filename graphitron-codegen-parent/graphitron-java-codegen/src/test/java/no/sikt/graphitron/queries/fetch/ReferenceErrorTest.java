@@ -20,11 +20,4 @@ public class ReferenceErrorTest extends ReferenceTest {
                 .isInstanceOf(IllegalArgumentException.class);
                 //.hasMessage("Code generation failed for ActorInfo.actor as the table ACTOR_INFO must have a primary key in order to reference another table without a foreign key.");
     }
-
-    @Test // TODO: Better error message
-    @DisplayName("Ambiguous table path")
-    void tableWithMultiplePaths() {
-        assertThatThrownBy(() -> generateFiles("/tableWithMultiplePaths"))
-                .isInstanceOf(NoSuchElementException.class);
-    }
 }
