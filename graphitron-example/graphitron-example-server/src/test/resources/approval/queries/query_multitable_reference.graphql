@@ -1,0 +1,11 @@
+# With reference via tables for multitable query
+{
+    rentals(first: 2, after: "WzJd") {
+        nodes {
+            allContactPersons {
+                __typename
+                email
+            }
+        }
+    }
+}

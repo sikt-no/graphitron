@@ -14,6 +14,7 @@ public enum GenerationDirective {
     INDEX("index", EnumSet.of(GenerationDirectiveParam.NAME)),
     SERVICE("service", EnumSet.of(GenerationDirectiveParam.SERVICE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
     TABLE_METHOD("tableMethod", EnumSet.of(GenerationDirectiveParam.TABLE_METHOD_REFERENCE, GenerationDirectiveParam.CONTEXT_ARGUMENTS)),
+    MULTITABLE_REFERENCE("multitableReference", EnumSet.of(GenerationDirectiveParam.ROUTES)),
     RECORD("record", EnumSet.of(GenerationDirectiveParam.RECORD)),
     ERROR("error", EnumSet.of(GenerationDirectiveParam.HANDLERS)),
     MUTATION("mutation", EnumSet.of(GenerationDirectiveParam.TYPE)),

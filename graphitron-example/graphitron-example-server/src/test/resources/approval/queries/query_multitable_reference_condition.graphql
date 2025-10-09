@@ -1,0 +1,11 @@
+# Test for nested multitable queries with condition references (with and without using FK)
+{
+    payments(first: 2, after: "Wzg0XQ") {
+        nodes {
+            mostImportantCustomers {
+                email
+                __typename
+            }
+        }
+    }
+}

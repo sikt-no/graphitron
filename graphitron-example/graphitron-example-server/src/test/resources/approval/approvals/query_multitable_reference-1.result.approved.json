@@ -1,0 +1,32 @@
+{
+    "data": {
+        "rentals": {
+            "nodes": [
+                {
+                    "allContactPersons": [
+                        {
+                            "__typename": "CustomerWithEmail",
+                            "email": "MANUEL.MURRELL@sakilacustomer.org"
+                        },
+                        {
+                            "__typename": "StaffWithEmail",
+                            "email": "Jon.Stephens@sakilastaff.com"
+                        }
+                    ]
+                },
+                {
+                    "allContactPersons": [
+                        {
+                            "__typename": "CustomerWithEmail",
+                            "email": "ANDREW.PURDY@sakilacustomer.org"
+                        },
+                        {
+                            "__typename": "StaffWithEmail",
+                            "email": "Mike.Hillyer@sakilastaff.com"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}
