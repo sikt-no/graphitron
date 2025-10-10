@@ -118,14 +118,41 @@ public class QueryTest extends ValidationTest {
     }
 
     @Test
+    @DisplayName("Subtype should not be validated as reference")
+    void sharedSubtypeShouldNotBeValidatedAsReference() {
+        getProcessedSchema("sharedSubtypeShouldNotBeValidatedAsReference");
+        assertNoWarnings();
+    }
+    @Test
     @DisplayName("reference directive is needed when there are multiple foreign keys between tables. ")
     void multipleFKToTable() {
         assertErrorsContain("multipleForeignKeysNoRef", "Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\"");
     }
+
     @Test
     @DisplayName("Correct reference to table with multiple foreign keys.")
     void multipleFKToTableWithRef() {
         getProcessedSchema("multipleForeignKeysWithRef");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Scalar field with multiple paths not specifying which key to use")
+    void scalarFieldWithMultiplePossiblePaths() {
+        assertErrorsContain("scalarFieldWithMultiplePossiblePaths", "Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\"");
+    }
+
+    @Test
+    @DisplayName("Scalar field specifying target with both key and table")
+    void scalarFieldWithMultiplePossiblePathsWithKeyAndTable() {
+        getProcessedSchema("scalarFieldWithMultiplePossiblePathsWithKeyAndTable");
+        assertNoWarnings();
+    }
+
+    @Test
+    @DisplayName("Scalar field specifying target with key only")
+    void scalarFieldWithMultiplePossiblePathsWithKey() {
+        getProcessedSchema("scalarFieldWithMultiplePossiblePathsWithKey");
         assertNoWarnings();
     }
 

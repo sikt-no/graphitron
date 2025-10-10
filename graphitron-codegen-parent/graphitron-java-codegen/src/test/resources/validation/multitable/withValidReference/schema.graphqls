@@ -1,0 +1,19 @@
+type Query {
+  query: Film @notGenerated
+}
+
+type Film @table {
+  languages: [LanguageUnion] @splitQuery @multitableReference(routes: [
+      {typeName: "Language", path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}]},
+      {typeName: "OriginalLanguage", path: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}]}])
+}
+
+union LanguageUnion = Language | OriginalLanguage
+
+type Language @table {
+  id: ID
+}
+
+type OriginalLanguage @table(name: "LANGUAGE") {
+    id: ID
+}
