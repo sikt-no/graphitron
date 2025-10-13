@@ -124,8 +124,6 @@ public abstract class GenerationSourceField<T extends NamedNode<T> & DirectivesC
                     var typeName = objectFields.stream()
                             .filter(it -> it.getName().equals(TYPE_NAME.getName())).findFirst()
                             .map(it -> ((StringValue) it.getValue()).getValue())
-                            .stream()
-                            .findFirst()
                             .orElseThrow(() -> // Should never be thrown because typeName is not nullable
                                     new RuntimeException(String.format("%s directive is missing %s parameter.",MULTITABLE_REFERENCE.getName(), TYPE_NAME.getName())));
 

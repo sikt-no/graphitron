@@ -30,9 +30,9 @@ public class MultitableReferenceTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Default case on interface with all implicit references")
-    void defaultCase() {
-        assertGeneratedContentContains("default",
+    @DisplayName("On multitable interface with all implicit references")
+    void multitableInterface() {
+        assertGeneratedContentContains("multitableInterface",
                 ".from(payment_425747824_customer).orderBy",
                 ".from(payment_425747824_staff).orderBy"
         );
