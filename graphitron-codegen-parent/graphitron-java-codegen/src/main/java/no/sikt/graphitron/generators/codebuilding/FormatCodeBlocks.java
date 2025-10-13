@@ -30,6 +30,8 @@ import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapArra
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.NODE_TYPE;
+import static no.sikt.graphql.naming.GraphQLReservedName.OPERATION_QUERY;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 

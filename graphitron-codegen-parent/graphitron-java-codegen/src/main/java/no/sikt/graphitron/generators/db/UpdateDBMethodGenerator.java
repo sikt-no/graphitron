@@ -2,7 +2,6 @@ package no.sikt.graphitron.generators.db;
 
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.InputParser;
@@ -33,8 +32,8 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
     private static final String VARIABLE_RECORD_LIST = "recordList";
 
-    public UpdateDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
-        super(localObject, processedSchema);
+    public UpdateDBMethodGenerator(ObjectField source, ProcessedSchema processedSchema) {
+        super(source, processedSchema);
     }
 
     /**
@@ -51,7 +50,7 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
         }
 
         var parser = new InputParser(target, processedSchema);
-        var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getLocalObject().getName()), TypeName.INT)
+        var spec = getDefaultSpecBuilder(asQueryMethodName(target.getName(), getSourceContainer().getName()), TypeName.INT)
                 .addParameters(getMethodParametersWithOrderField(parser));
 
         var recordInputs = parser
@@ -89,17 +88,24 @@ public class UpdateDBMethodGenerator extends DBMethodGenerator<ObjectField> {
 
     @Override
     public List<MethodSpec> generateAll() {
-        var localObject = getLocalObject();
-        if (localObject.isExplicitlyNotGenerated()) {
+        var container = getSourceContainer();
+        if (container == null || container.isExplicitlyNotGenerated()) {
             return List.of();
         }
-        return localObject
-                .getFields()
-                .stream()
-                .filter(ObjectField::isGeneratedWithResolver)
-                .filter(ObjectField::hasMutationType)
-                .map(this::generate)
-                .filter(it -> !it.code().isEmpty())
-                .collect(Collectors.toList());
+
+        var source = getSource();
+        if (!source.isGeneratedWithResolver()) {
+            return List.of();
+        }
+
+        if (!source.hasMutationType()) {
+            return List.of();
+        }
+
+        var generated = generate(source);
+        if (generated.code().isEmpty()) {
+            return List.of();
+        }
+        return List.of(generated);
     }
 }
