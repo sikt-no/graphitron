@@ -4,9 +4,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
-import no.sikt.graphitron.definitions.objects.ConnectionObjectDefinition;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
-import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.db.DBClassGenerator;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -52,7 +50,6 @@ public class FormatCodeBlocks {
             EMPTY_LIST = CodeBlock.of("$T.of()", LIST.className),
             EMPTY_SET = CodeBlock.of("$T.of()", SET.className),
             EMPTY_MAP = CodeBlock.of("$T.of()", MAP.className);
-    private final static String CONNECTION_NAME = "connection", PAGE_NAME = "page", EDGES_NAME = "edges", GRAPH_PAGE_NAME = "graphPage";
 
     /**
      * @param name Name of a field that should be declared as a record. This will be the name of the variable.
@@ -400,47 +397,6 @@ public class FormatCodeBlocks {
 
     public static CodeBlock invokeExternalMethod(CodeBlock source, String methodName, String parameters) {
         return CodeBlock.of("$L.$L($L)",source, methodName, String.join(", ", parameters));
-    }
-
-    /**
-     * @return CodeBlock for a function that maps relay connection types.
-     */
-    public static CodeBlock connectionFunction(ConnectionObjectDefinition connectionType, ObjectDefinition pageInfoType) {
-        return CodeBlock
-                .builder()
-                .beginControlFlow("($L) -> ", CONNECTION_NAME)
-                .declare(
-                        EDGES_NAME,
-                        "$N.getEdges().stream().map(it -> new $T($L.getValue(), it.getNode()))$L",
-                        CONNECTION_NAME,
-                        connectionType.getEdgeObject().getGraphClassName(),
-                        nullIfNullElseThis(CodeBlock.of("it.getCursor()")),
-                        collectToList()
-                )
-                .declare(PAGE_NAME, "$N.getPageInfo()", CONNECTION_NAME)
-                .declare(
-                        GRAPH_PAGE_NAME,
-                        "new $T($N.isHasPreviousPage(), $N.isHasNextPage(), $L.getValue(), $L.getValue())",
-                        pageInfoType.getGraphClassName(),
-                        PAGE_NAME,
-                        PAGE_NAME,
-                        nullIfNullElseThis(CodeBlock.of("$N.getStartCursor()", PAGE_NAME)),
-                        nullIfNullElseThis(CodeBlock.of("$N.getEndCursor()", PAGE_NAME))
-                )
-                .add(
-                        returnWrap(
-                                CodeBlock.of(
-                                        "new $T($N, $N, $N.getNodes(), $N.getTotalCount())",
-                                        connectionType.getGraphClassName(),
-                                        EDGES_NAME,
-                                        GRAPH_PAGE_NAME,
-                                        CONNECTION_NAME,
-                                        CONNECTION_NAME
-                                )
-                        )
-                )
-                .endControlFlow()
-                .build();
     }
 
     /**

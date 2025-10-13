@@ -73,20 +73,6 @@ public class TypeDTOGeneratorTest extends DTOGeneratorTest {
                 "CustomerTable implements SomeUnion");
     }
 
-    @Test
-    @DisplayName("Ensure constructor parameter order for PageInfo is unaffected by field order in schema")
-    void unorderedPageInfo() {
-        assertGeneratedContentContains("unorderedPageInfo",
-                "PageInfo(Boolean hasPreviousPage, Boolean hasNextPage, String startCursor, String endCursor)");
-    }
-
-    @Test
-    @DisplayName("Ensure constructor parameter order for connection type is unaffected by field order in schema")
-    void unorderedConnectionType() {
-        assertGeneratedContentContains("unorderedConnectionType", Set.of(DUMMY_TYPE, PAGE_INFO),
-                "DummyConnection(List<DummyConnectionEdge> edges, PageInfo pageInfo, List<DummyType> nodes, Integer totalCount)");
-    }
-
     @Test // New constructor that skips error fields so queries can use them without making up new empty fields.
     @DisplayName("Contains an errors field")
     void withErrors() {

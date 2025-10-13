@@ -70,16 +70,15 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
                 );
     }
 
-    protected static <T, C> C getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes, Function<ConnectionImpl<T>, C> connectionFunction) {
-        return connectionFunction.apply(createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null));
+    protected static <T> ConnectionImpl<T> getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes) {
+        return createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null);
     }
 
-    protected static <K, V, C> Map<KeyWithPath<K>, C> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Object countFunctionResult, int maxNodes, Function<ConnectionImpl<V>, C> connectionFunction) {
-
+    protected static <K, V> Map<KeyWithPath<K>, ConnectionImpl<V>> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Object countFunctionResult, int maxNodes) {
         if (countFunctionResult == null) {
             return dbResult.entrySet().stream().collect(Collectors.toMap(
                     Map.Entry::getKey,
-                    entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, null))
+                    entry -> createPagedResult(entry.getValue(), pageSize, null)
             ));
         }
 
@@ -87,7 +86,7 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
             int limitedCount = Math.min(maxNodes, singleCount);
             return dbResult.entrySet().stream().collect(Collectors.toMap(
                     Map.Entry::getKey,
-                    entry -> connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, limitedCount))
+                    entry -> createPagedResult(entry.getValue(), pageSize, limitedCount)
             ));
         } else if (countFunctionResult instanceof Map<?, ?> countMap) {
             @SuppressWarnings("unchecked")
@@ -97,7 +96,7 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
                     entry -> {
                         Integer count = typedCountMap.get(entry.getKey().key());
                         int limitedCount = Math.min(maxNodes, count != null ? count : 0);
-                        return connectionFunction.apply(createPagedResult(entry.getValue(), pageSize, limitedCount));
+                        return createPagedResult(entry.getValue(), pageSize, limitedCount);
                     }
             ));
         } else {
@@ -110,7 +109,6 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
 
     protected static <T> ConnectionImpl<T> createPagedResult(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount) {
         var items = dbResult.subList(0, Math.min(dbResult.size(), pageSize));
-        var pageInfo = getDefaultPageInfo(dbResult, pageSize, items);
 
         List<Edge<T>> edges = items
                 .stream()
@@ -119,16 +117,16 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
 
         return ConnectionImpl
                 .<T>builder()
-                .setPageInfo(pageInfo)
+                .setPageInfo(getDefaultPageInfo(dbResult.size() > pageSize, items))
                 .setNodes(items.stream().map(Pair::getRight).toList())
                 .setEdges(edges)
                 .setTotalCount(totalCount)
                 .build();
     }
 
-    private static <T> DefaultPageInfo getDefaultPageInfo(List<Pair<String, T>> dbResult, int pageSize, List<Pair<String, T>> items) {
+    private static <T> DefaultPageInfo getDefaultPageInfo(boolean hasNextPage, List<Pair<String, T>> items) {
         if (items.isEmpty()) {
-            return new DefaultPageInfo(null, null, false, dbResult.size() > pageSize);
+            return new DefaultPageInfo(null, null, false, hasNextPage);
         }
 
         var itemStart = items.get(0);
@@ -137,7 +135,7 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
                 new DefaultConnectionCursor(itemStart != null ? itemStart.getLeft() : null),
                 new DefaultConnectionCursor(itemEnd != null ? itemEnd.getLeft() : null),
                 false,
-                dbResult.size() > pageSize
+                hasNextPage
         );
     }
 }
