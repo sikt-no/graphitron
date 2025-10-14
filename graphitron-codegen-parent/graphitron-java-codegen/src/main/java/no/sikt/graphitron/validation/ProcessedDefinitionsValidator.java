@@ -364,22 +364,26 @@ public class ProcessedDefinitionsValidator {
                 .filter(it -> !keyExists(it))
                 .forEach(it -> addErrorMessage("No key with name \"%s\" found.", it));
 
-
         recordTypes
                 .values()
                 .stream()
+                .filter(schema::hasTableObjectForObject)
+                .filter(it -> !schema.isMultiTableInterface(it.getName())) // Don't validate fields on the interface definition since the interface itself has no table
                 .flatMap(it -> it.getFields().stream())
-                .filter(field -> recordTypes.containsKey(field.getTypeName()))
-                .filter(field -> recordTypes.get(field.getTypeName()).hasTable() || field.hasFieldReferences() || field.isResolver())
-                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getContainerTypeName())))
-                .filter(field -> schema.hasTableObjectForObject(recordTypes.get(field.getTypeName())))
-                .filter(it -> !schema.isMultiTableField(it) && !schema.isMultiTableInterface(it.getContainerTypeName())) // TODO: fix reference validation for multitable (GG-229)
-                .forEach((field) -> {
-                            var targetTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getTypeName())).getTable().getName();
-                            var sourceTable = schema.getPreviousTableObjectForObject(recordTypes.get(field.getContainerTypeName())).getTable().getName();
-                            validateReferencePath(field, sourceTable, targetTable);
-                        }
-                );
+                .flatMap(it -> schema.isMultiTableField(it)
+                        ? schema.getTypesFromInterfaceOrUnion(it.getTypeName()).stream().map(o -> new VirtualSourceField(o.getName(), (ObjectField) it))
+                        : Stream.of(it))
+                .filter(field -> schema.isRecordType(field.getTypeName()) || field.hasFieldReferences() || field.isResolver())
+                .forEach(this::validateReferencePath);
+    }
+
+    private void validateReferencePath(GenerationField field) {
+        var targetTable = getTargetTableForField(field);
+
+        if (targetTable == null) return; // Not a reference
+
+        var sourceTable = schema.getPreviousTableObjectForObject(schema.getRecordTypes().get(field.getContainerTypeName())).getTable().getName();
+        validateReferencePath(field, sourceTable, targetTable);
     }
 
     private void validateReferencePath(GenerationField field, String sourceTable, String targetTable) {
@@ -405,20 +409,7 @@ public class ProcessedDefinitionsValidator {
                 }
             } else if (fieldReference.hasTable()) {
                 String nextTable = fieldReference.getTable().getName();
-                if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) > 1) {
-                    addErrorMessage(
-                            "Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use in the @reference directive instead."
-                            , field.getName(), field.getContainerTypeName(), sourceTable, nextTable
-                    );
-                    return;
-                }
-                if (getNumberOfForeignKeysBetweenTables(sourceTable, nextTable) == 0) {
-                    addErrorMessage(
-                            "\"Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify a valid path with the @reference directive."
-                            , field.getName(), field.getContainerTypeName(), sourceTable, nextTable
-                    );
-                    return;
-                }
+                addErrorMessageAndThrowIfNoImplicitPath(field, sourceTable, nextTable);
                 if (nextTable.equals(targetTable)) {
                     return;
                 } else {
@@ -427,11 +418,56 @@ public class ProcessedDefinitionsValidator {
             }
         }
 
-        if (getNumberOfForeignKeysBetweenTables(sourceTable, targetTable) > 1) {
-            addErrorMessage("Error on field \"%s\" in type \"%s\": Multiple foreign keys found between tables \"%s\" and \"%s\". Please specify which key to use with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable);
-        } else if (getNumberOfForeignKeysBetweenTables(sourceTable, targetTable) == 0) {
-            addErrorMessage("Error on field \"%s\" in type \"%s\": No foreign key found between tables \"%s\" and \"%s\". Please specify path with the @reference directive.", field.getName(), field.getContainerTypeName(), sourceTable, targetTable);
+        // Because scalar fields have the whole reference path in the reference directive, validation has completed at this point
+        if (schema.isScalar(field)) {
+            return;
         }
+
+        addErrorMessageAndThrowIfNoImplicitPath(field, sourceTable, targetTable);
+    }
+
+    private void addErrorMessageAndThrowIfNoImplicitPath(GenerationField field, String leftTable, String rightTable) {
+        var possibleKeys = getNumberOfForeignKeysBetweenTables(leftTable, rightTable);
+        if (possibleKeys == 1) return;
+
+        var isMultitableField = field instanceof VirtualSourceField;
+
+        addErrorMessageAndThrow("Error on field \"%s\" in type \"%s\": " +
+                        "%s found between tables \"%s\" and \"%s\"%s. Please specify path with the @%s directive.",
+                isMultitableField ? ((VirtualSourceField) field).getOriginalFieldName() : field.getName(),
+                field.getContainerTypeName(),
+                possibleKeys == 0 ? "No foreign key" : "Multiple foreign keys",
+                leftTable,
+                rightTable,
+                isMultitableField ? String.format(" in reference path for type '%s'", field.getTypeName()) : "",
+                isMultitableField ? MULTITABLE_REFERENCE.getName() : REFERENCE.getName()
+        );
+    }
+
+    /**
+     * Returns target table for field determined by target type's table, nodeId directive or 'table' in last item provided in reference directive.
+     * Does not find target table from key only.
+     * @return Name of the target table
+     */
+    private String getTargetTableForField(GenerationField field) {
+        if (schema.isNodeIdField(field)) {
+            return schema.getNodeType(field).getTable().getName();
+        }
+        if (schema.hasTableObject(field)) {
+            return schema.getObjectOrConnectionNode(field).getTable().getName();
+        }
+
+        if (schema.isScalar(field)) {
+            if (!field.hasFieldReferences()) {
+                return null;
+            }
+            var references = field.getFieldReferences();
+
+            return Optional.ofNullable(references.get(references.size() - 1))
+                    .filter(FieldReference::hasTable)
+                    .map(it -> it.getTable().getName()).orElse(null);
+        }
+        return null;
     }
 
     private void validateRequiredMethodCalls() {
@@ -654,34 +690,16 @@ public class ProcessedDefinitionsValidator {
                     }
 
                     if (field.hasFieldReferences()) {
-                        addErrorMessage(
-                                String.format("'%s.%s' has the %s directive which is not supported on multitable queries outside root.",
-                                        field.getContainerTypeName(), field.getName(), REFERENCE.getName())
+                        addErrorMessage("'%s.%s' has the %s directive which is not supported on multitable queries. Use %s directive instead.",
+                                field.getContainerTypeName(), field.getName(), REFERENCE.getName(), MULTITABLE_REFERENCE.getName()
                         );
                     }
 
                     if (!field.isIterableWrapped() && !field.hasForwardPagination()) {
-                        addErrorMessage(
-                                String.format("Multitable queries returning a single object outside root is not currently supported. '%s.%s' is not a list.",
-                                        field.getContainerTypeName(), field.getName())
+                        addErrorMessage("Multitable queries returning a single object outside root is not currently supported. '%s.%s' is not a list.",
+                                field.getContainerTypeName(), field.getName()
                         );
                     }
-
-                    var containingType = schema.getObject(field.getContainerTypeName());
-                    var previousTable = schema.getPreviousTableObjectForObject(containingType).getTable().getName();
-
-                    schema.getTypesFromInterfaceOrUnion(field.getTypeName())
-                            .stream()
-                            .filter(RecordObjectDefinition::hasTable)
-                            .map(it -> it.getTable().getName())
-                            .filter(it -> findImplicitKey(it, previousTable).isEmpty())
-                            .forEach(targetTable ->
-                                    addErrorMessage(
-                                            String.format("'%s.%s' returns a multitable query, but there is no implicit key between %s and %s. " +
-                                                            "Multitable queries outside root is currently only supported between tables with one path.",
-                                                    field.getContainerTypeName(), field.getName(), previousTable, targetTable)
-                                    )
-                            );
                 });
     }
 

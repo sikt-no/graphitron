@@ -23,6 +23,7 @@ using Java and [jOOQ](https://www.jooq.org/).
   - [Tables, joins and records](#tables-joins-and-records)
     - [table directive](#table-directive)
     - [reference directive](#reference-directive)
+    - [multitableReference directive](#multitablereference-directive)
   - [Query conditions](#query-conditions)
     - [Example: Setup](#example-setup)
     - [Example: No _override_ on input parameter](#example-no-_override_-on-input-parameter)

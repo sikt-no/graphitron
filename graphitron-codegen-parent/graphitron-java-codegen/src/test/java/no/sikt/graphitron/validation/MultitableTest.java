@@ -48,21 +48,38 @@ public class MultitableTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Multitable fields outside root with reference directive")
+    @DisplayName("Multitable field with reference directive")
     void withReferenceDirective() {
         assertErrorsContain(
                 () -> getProcessedSchema("withReferenceDirective", PERSON_WITH_EMAIL),
-                "'Payment.staffAndCustomers' has the reference directive which is not supported on multitable queries outside root."
+                "'Payment.staffAndCustomers' has the reference directive which is not supported on multitable queries. Use multitableReference directive instead."
         );
     }
 
     @Test
     @DisplayName("Multitable fields outside root with multiple key paths")
-    void withMultiplePaths() {
+    void multiplePathsWithoutMultitableReferenceDirective() {
         assertErrorsContain(
-                () -> getProcessedSchema("withMultiplePaths"),
-                "'Film.languages' returns a multitable query, but there is no implicit key between FILM and LANGUAGE. Multitable queries outside root is currently only supported between tables with one path."
+                () -> getProcessedSchema("multiplePathsWithoutMultitableReferenceDirective"),
+                "Error on field \"languages\" in type \"Film\": Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\" in reference path for type 'Language'. " +
+                        "Please specify path with the @multitableReference directive."
         );
+    }
+
+    @Test
+    @DisplayName("Multitable fields with invalid reference path in multitable reference directive")
+    void withInvalidReference() {
+        assertErrorsContain(
+                () -> getProcessedSchema("withInvalidReference"),
+                "\"languages\" in type \"Film\": Multiple foreign keys found between tables \"FILM\" and \"LANGUAGE\" in reference path for type 'Language'"
+        );
+    }
+
+    @Test
+    @DisplayName("Multitable field with valid reference paths")
+    void withValidReference() {
+        getProcessedSchema("withValidReference");
+        assertNoWarnings();
     }
 
     @Test

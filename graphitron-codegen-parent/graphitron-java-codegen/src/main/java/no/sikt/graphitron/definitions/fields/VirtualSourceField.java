@@ -18,6 +18,7 @@ public class VirtualSourceField extends ObjectField {
     private final SQLCondition condition;
     private final boolean isResolver;
     private final List<FieldReference> fieldReferences;
+    private String originalFieldName;
 
     public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver, List<FieldReference> fieldReferences) {
         super(new FieldDefinition("for_" + targetTypeName,new TypeName(targetTypeName)), container);
@@ -34,6 +35,7 @@ public class VirtualSourceField extends ObjectField {
                 target.getCondition(),
                 target.isResolver(),
                 target.getMultitableReferences().getOrDefault(targetTypeName, List.of()));
+        this.originalFieldName = target.getName();
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType, ObjectField target) {
@@ -92,5 +94,9 @@ public class VirtualSourceField extends ObjectField {
     @Override
     public boolean hasFieldReferences() {
         return !fieldReferences.isEmpty();
+    }
+
+    public String getOriginalFieldName() {
+        return originalFieldName;
     }
 }

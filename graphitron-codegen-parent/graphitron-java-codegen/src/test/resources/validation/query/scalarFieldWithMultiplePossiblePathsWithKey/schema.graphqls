@@ -1,0 +1,8 @@
+type Query {
+    film: Film
+}
+
+type Film @table {
+    film_id: Int
+    languageId: Int @field(name: "Language_ID") @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+}

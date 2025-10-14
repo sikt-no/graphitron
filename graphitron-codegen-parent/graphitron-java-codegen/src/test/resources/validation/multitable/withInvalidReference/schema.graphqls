@@ -1,0 +1,13 @@
+type Query {
+  query: Film @notGenerated
+}
+
+type Film @table {
+  languages: [LanguageUnion] @splitQuery @multitableReference(routes: {typeName: "Language", path: [{table: "LANGUAGE"}]})
+}
+
+union LanguageUnion = Language
+
+type Language @table {
+  id: ID
+}
