@@ -93,8 +93,7 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
             return dbResult.entrySet().stream().collect(Collectors.toMap(
                     Map.Entry::getKey,
                     entry -> {
-                        Integer count = typedCountMap.get(entry.getKey().key());
-                        count = null == count ? 0 : count;
+                        Integer count = typedCountMap.getOrDefault(entry.getKey().key(), 0);
                         return createPagedResult(entry.getValue(), pageSize, count);
                     }
             ));

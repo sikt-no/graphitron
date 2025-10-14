@@ -42,7 +42,6 @@ public class DataFetcherHelper extends AbstractFetcher {
     /**
      * Load the data for a root resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
-     * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @return A paginated resolver result.
@@ -77,7 +76,6 @@ public class DataFetcherHelper extends AbstractFetcher {
     /**
      * Load the data for a resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
-     * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @return A paginated resolver result.

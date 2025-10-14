@@ -62,7 +62,6 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
     /**
      * Load the data for a root resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
-     * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @param dbTransform Function that maps the query output to the resolver output.
@@ -71,7 +70,6 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
      */
     public <T, U> CompletableFuture<ConnectionImpl<U>> loadPaginated(
             int pageSize,
-            int maxNodes,
             Supplier<List<Pair<String, T>>> dbFunction,
             Function<Set<String>, Integer> countFunction,
             TransformCall<A, List<Pair<String, T>>, List<Pair<String, U>>> dbTransform
@@ -102,7 +100,6 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
     /**
      * Load the data for a resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
-     * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @param dbTransform Function that maps the query output to the resolver output.
@@ -112,12 +109,11 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
     public <K, V0, V1> CompletableFuture<ConnectionImpl<V1>> loadPaginated(
             K key,
             int pageSize,
-            int maxNodes,
             Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
             Function<Set<K>, Map<K,Integer>> countFunction,
             TransformCall<A, List<Pair<String, V0>>, List<Pair<String, V1>>> dbTransform
     ) {
-        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, maxNodes, pageSize, dbFunction, countFunction, dbTransform))
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, pageSize, dbFunction, countFunction, dbTransform))
                 .load(asKeyPath(key), env);
     }
 
@@ -137,7 +133,6 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
 
     private <K, V0, V1> CompletableFuture<Map<KeyWithPath<K>, ConnectionImpl<V1>>> getMappedDataLoader(
             Set<KeyWithPath<K>> keys,
-            int maxNodes,
             int pageSize,
             Function<Set<K>, Map<K, List<Pair<String, V0>>>> dbFunction,
             Function<Set<K>, Map<K, Integer>> countFunction,
