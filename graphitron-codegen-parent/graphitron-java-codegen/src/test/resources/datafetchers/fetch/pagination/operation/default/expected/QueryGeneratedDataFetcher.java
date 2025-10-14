@@ -18,7 +18,7 @@ public class QueryGeneratedDataFetcher {
             String after = env.getArgument("after");
             int pageSize = ResolverHelpers.getPageSize(first, 1000, 100);
             return new DataFetcherHelper(env).loadPaginated(
-                    pageSize, 1000,
+                    pageSize,
                     (ctx, selectionSet) -> QueryDBQueries.queryForQuery(ctx, pageSize,after, selectionSet),
                     (ctx, resolverKeys) -> QueryDBQueries.countQueryForQuery(ctx)
             );

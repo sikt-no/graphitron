@@ -80,8 +80,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                 getPaginatedConnection(
                         dbTransform.transform(abstractTransformer, dbFunction.get()),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(Set.of()) : null,
-                        maxNodes
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(Set.of()) : null
                 )
         );
     }
@@ -157,8 +156,7 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
                                 .stream()
                                 .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue()))) : Map.of(),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null,
-                        maxNodes
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.apply(idSet) : null
                 )
         );
     }

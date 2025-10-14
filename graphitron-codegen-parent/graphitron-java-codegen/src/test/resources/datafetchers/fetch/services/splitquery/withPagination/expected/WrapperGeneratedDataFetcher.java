@@ -23,7 +23,7 @@ public class WrapperGeneratedDataFetcher {
             var transform = new RecordTransformer(env);
             var resolverFetchService = new ResolverFetchService(transform.getCtx());
             return new ServiceDataFetcherHelper<>(transform).loadPaginated(
-                    wrapper.getQueryKey(), pageSize, 1000,
+                    wrapper.getQueryKey(), pageSize,
                     (resolverKeys) -> resolverFetchService.queryMap(resolverKeys, pageSize, after),
                     (resolverKeys) -> resolverFetchService.countQueryMap(resolverKeys),
                     (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, "")
