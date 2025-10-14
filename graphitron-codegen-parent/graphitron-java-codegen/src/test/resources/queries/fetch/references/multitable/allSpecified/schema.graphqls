@@ -1,0 +1,10 @@
+type Query {
+    query: Payment @notGenerated
+}
+
+type Payment @table {
+    staffAndCustomers: [PersonWithEmail] @splitQuery @multitableReference(routes: [
+        {typeName: "Staff", path: [{key: "PAYMENT__PAYMENT_STAFF_ID_FKEY"}]},
+        {typeName: "Customer", path: [{table: "CUSTOMER"}]}
+    ])
+}

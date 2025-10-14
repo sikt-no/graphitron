@@ -223,6 +223,10 @@ public class FetchContext {
         return getTargetTable() == null ? "" : getTargetTable().getName();
     }
 
+    public String getSourceAlias() {
+        return !currentJoinSequence.isEmpty() ? currentJoinSequence.getFirst().getMappingName() : null;
+    }
+
     /**
      * @return The target table alias of this context.
      */

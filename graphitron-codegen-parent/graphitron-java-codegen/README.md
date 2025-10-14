@@ -436,6 +436,31 @@ select(select.optional("title", payment_rental_inventory_film.TITLE))
 .join(payment_rental_inventory_film)
 ```
 
+#### multitableReference directive
+
+The **multitableReference** directive specifies type-specific reference paths for fields that return multitable union or interface types.
+This directive defines the reference path from the source table to target table for each type.
+
+**Parameters:**
+* _routes_ - A list of reference routes, one for each implementing type or union type
+  * _typeName_ - The implementation type name. Note that this is case-sensitive.
+  * _path_ - An ordered list of reference elements (same structure as **reference** directive)
+
+**Example:**
+```graphql
+type Payment @table {
+    staffAndCustomers: [PersonWithEmail] @splitQuery @multitableReference(routes: [
+        {typeName: "Staff", path: [{key: "PAYMENT__PAYMENT_STAFF_ID_FKEY"}]},
+        {typeName: "Customer", path: [{table: "CUSTOMER"}]}
+    ])
+}
+```
+
+**Notes:**
+- Cannot be combined with **@reference** directive
+- Only applies to multitable unions/interfaces
+- If routes are omitted for some types, Graphitron will attempt to infer the reference path
+
 ### Query conditions
 To either apply additional conditions or override the conditions added by default, use the **condition** directive.
 It can be applied to both input parameters and data fetcher fields, and the scope of the condition will match the element it is put on.

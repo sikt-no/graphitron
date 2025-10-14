@@ -1,5 +1,6 @@
 extend type Query {
     reachableByEmail: [PersonWithEmail] @asConnection
+    rentals: [Rental] @asConnection
 }
 
 interface PersonWithEmail {
@@ -22,6 +23,11 @@ type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
 extend type Payment {
     staffAndCustomers(email: String): [PersonWithEmail] @splitQuery
     staffAndCustomersPaginated: [PersonWithEmail] @asConnection @splitQuery
+
+    mostImportantCustomers: [PersonWithEmail] @multitableReference(routes: [
+        {typeName: "StaffWithEmail", path: [{condition: {method: "mostImportantCustomersForPayment", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]},
+        {typeName: "CustomerWithEmail", path: [{key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY", condition: {method: "mostImportantCustomersForPayment", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]}
+    ]) @splitQuery
 }
 
 extend type Film {
@@ -29,3 +35,17 @@ extend type Film {
 }
 
 union FilmActorAndFilmCategoryUnion = FilmActor | FilmCategory
+
+type Rental @table {
+    rentalId: Int @field(name: "RENTAL_ID")
+
+    allContactPersons: [PersonWithEmail] @multitableReference(routes: [
+        {typeName: "StaffWithEmail", path: [{table: "PAYMENT"}]},
+        {typeName: "CustomerWithEmail", path: [{table: "PAYMENT"}, {key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY"}]}
+    ]) @splitQuery
+
+    allContactPersonsPaginated: [PersonWithEmail] @multitableReference(routes: [
+        {typeName: "StaffWithEmail", path: [{key: "PAYMENT__PAYMENT_RENTAL_ID_FKEY"}, {table: "STAFF"}]},
+        {typeName: "CustomerWithEmail", path: [{table: "PAYMENT"}]}
+    ]) @asConnection
+}

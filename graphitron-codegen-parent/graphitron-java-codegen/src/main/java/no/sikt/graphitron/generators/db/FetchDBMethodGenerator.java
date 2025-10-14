@@ -7,7 +7,6 @@ import no.sikt.graphitron.definitions.helpers.InputConditions;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
-import no.sikt.graphitron.definitions.mapping.Alias;
 import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
@@ -88,8 +87,20 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
      * @return Code block containing all the join statements and their conditions.
      */
     protected CodeBlock createSelectJoins(Set<SQLJoinStatement> joinList) {
+        return createSelectJoins(joinList, false);
+    }
+
+    /**
+     * @param joinList List of join statements that should be applied to a select query.
+     * @param skipFirstJoin Whether to skip the first join statement. Used in multitable resolver queries where
+     *                      the first join is implicit via .from(keyPath), unless it's a condition reference.
+     * @return Code block containing all the join statements and their conditions.
+     */
+    protected CodeBlock createSelectJoins(Set<SQLJoinStatement> joinList, boolean skipFirstJoin) {
         var codeBuilder = CodeBlock.builder();
-        joinList.forEach(join -> codeBuilder.add(join.toJoinString()));
+        var iterator = joinList.iterator();
+        if (skipFirstJoin && iterator.hasNext()) iterator.next();
+        iterator.forEachRemaining(join -> codeBuilder.add(join.toJoinString()));
         return codeBuilder.build();
     }
 
@@ -106,14 +117,26 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         return code.build();
     }
 
-
     /**
-     * @param aliasSet  Set of aliases to be defined.
+     * @param aliasSet Set of aliases to be defined.
      * @return Code block which declares all the aliases that will be used in a select query.
      */
     protected static CodeBlock createAliasDeclarations(Set<AliasWrapper> aliasSet) {
+        return createAliasDeclarations(aliasSet, false);
+    }
+
+    /**
+     * @param aliasSet Set of aliases to be defined.
+     * @param skipFirstAlias Whether to skip the first alias declaration. Used in multitable resolver queries where
+     *                       the source table alias is already declared in the main method and passed to the helper methods.
+     * @return Code block which declares all the aliases that will be used in a select query.
+     */
+    protected static CodeBlock createAliasDeclarations(Set<AliasWrapper> aliasSet, boolean skipFirstAlias) {
         var codeBuilder = CodeBlock.builder();
-        for (var aliasWrapper : aliasSet) {
+        var aliasIterator = aliasSet.iterator();
+        if (skipFirstAlias && aliasIterator.hasNext()) aliasIterator.next();
+
+        aliasIterator.forEachRemaining(aliasWrapper -> {
             var alias = aliasWrapper.getAlias();
             codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
             if (aliasWrapper.hasTableMethod()) {
@@ -125,7 +148,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 codeBuilder.addStatement(
                         reassignFromServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
             }
-        }
+        });
         return codeBuilder.build();
     }
 
@@ -150,10 +173,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var where = formatWhereContents(context, "", getLocalObject().isOperationRoot(), false);
         var joins = createSelectJoins(context.getJoinSet());
 
-        var sequence = context.getCurrentJoinSequence();
         var contents = CodeBlock.builder()
                 .add("$T.select($L)", DSL.className, indentIfMultiline(select.build()))
-                .add("\n.from($L)\n", sequence.getFirst().getMappingName())
+                .add("\n.from($L)\n", context.getSourceAlias())
                 .add(joins)
                 .add(where)
                 .add(createSelectConditions(context.getConditionList(), !where.isEmpty()))

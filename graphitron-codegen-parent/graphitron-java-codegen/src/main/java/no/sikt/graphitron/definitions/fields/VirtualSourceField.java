@@ -2,6 +2,7 @@ package no.sikt.graphitron.definitions.fields;
 
 import graphql.language.FieldDefinition;
 import graphql.language.TypeName;
+import no.sikt.graphitron.definitions.fields.containedtypes.FieldReference;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.sql.SQLCondition;
 
@@ -13,20 +14,26 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * Virtual field for when we want to have a virtual source for code generation.
  */
 public class VirtualSourceField extends ObjectField {
-    public static final String VIRTUAL_FIELD_NAME = "_";
     private final List<ArgumentField> nonReservedArguments;
     private final SQLCondition condition;
     private final boolean isResolver;
+    private final List<FieldReference> fieldReferences;
 
-    public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver) {
-        super(new FieldDefinition(VIRTUAL_FIELD_NAME, new TypeName(targetTypeName)), container);
+    public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver, List<FieldReference> fieldReferences) {
+        super(new FieldDefinition("for_" + targetTypeName,new TypeName(targetTypeName)), container);
         this.nonReservedArguments = nonReservedArguments;
         this.condition = condition;
         this.isResolver = isResolver;
+        this.fieldReferences = fieldReferences;
     }
 
     public VirtualSourceField(String targetTypeName, ObjectField target) {
-        this(targetTypeName, target.getContainerTypeName(), target.getNonReservedArguments(), target.getCondition(), target.isResolver());
+        this(targetTypeName,
+                target.getContainerTypeName(),
+                target.getNonReservedArguments(),
+                target.getCondition(),
+                target.isResolver(),
+                target.getMultitableReferences().getOrDefault(targetTypeName, List.of()));
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType, ObjectField target) {
@@ -34,11 +41,11 @@ public class VirtualSourceField extends ObjectField {
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType, String container) {
-        this(targetType.getName(), container, List.of(), null, false);
+        this(targetType.getName(), container, List.of(), null, false, List.of());
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType) {
-        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), null, false);
+        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), null, false, List.of());
     }
 
     /**
@@ -75,5 +82,15 @@ public class VirtualSourceField extends ObjectField {
     @Override
     public boolean isResolver() {
         return isResolver;
+    }
+
+    @Override
+    public List<FieldReference> getFieldReferences() {
+        return fieldReferences;
+    }
+
+    @Override
+    public boolean hasFieldReferences() {
+        return !fieldReferences.isEmpty();
     }
 }

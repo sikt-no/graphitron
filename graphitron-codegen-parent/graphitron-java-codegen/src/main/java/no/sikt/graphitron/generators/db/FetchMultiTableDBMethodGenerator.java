@@ -20,7 +20,6 @@ import org.jooq.SelectSeekStepN;
 
 import javax.lang.model.element.Modifier;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
@@ -127,7 +126,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(target.isResolver() ? wrapInMultiset(multitableQuery) : multitableQuery)
                 .unindent()
                 .addIf(target.isResolver(), "\n)")
-                .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)", initialContext.renderQuerySource(getLocalTable())))
+                .addIf(target.isResolver(), () -> CodeBlock.of("\n.from($L)\n", initialContext.renderQuerySource(getLocalTable())))
                 .addIf(target.isResolver(), () -> formatWhereContents(initialContext, resolverKeyParamName, isRoot, target.isResolver()))
                 .add(createFetchAndMapping(target, implementations))
                 .build();
@@ -289,7 +288,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
 
     private List<MethodSpec> getMethodsForImplementation(ObjectField target, ObjectDefinition implementation, List<ParameterSpec> methodInputs) {
         var virtualTarget = new VirtualSourceField(implementation, target);
-        var context = new FetchContext(processedSchema, virtualTarget, localObject, false);
+        var context = new FetchContext(processedSchema, virtualTarget, localObject, true);
         var refContext = virtualTarget.isResolver() ? context.nextContext(virtualTarget) : context;
 
         return List.of(getSortFieldsMethod(target, implementation, refContext, methodInputs), getMappedMethod(target, implementation));
@@ -362,39 +361,41 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock getSortFieldsMethodCode(ObjectDefinition implementation, FetchContext context, ObjectField queryTarget) {
-        var isConnection = queryTarget.hasForwardPagination();
-        var code = CodeBlock.builder();
-        var alias = context.getTargetAlias();
+        var targetAlias = context.getTargetAlias();
         var whereBlock = formatWhereContents(context, resolverKeyParamName, isRoot, false);
         String implName = implementation.getName();
 
-        var aliasesExcludingStartAlias = Optional.ofNullable(initialContext)
-                .flatMap(it -> it.getAliasSet().stream().findFirst())
-                .map(startAlias -> context.getAliasSet().stream().filter(it -> !it.equals(startAlias)).collect(Collectors.toSet()))
-                .orElse(context.getAliasSet());
+        // When first reference step is a condition reference without key, we need to join explicitly
+        // Otherwise, the first join is implicit via the jOOQ key path and can be skipped for cleaner code.
+        var firstReferenceStep = context.getReferenceObjectField().getFieldReferences().stream().findFirst();
+        var hasConditionReferenceAsFirstStep = queryTarget.isResolver()
+                && firstReferenceStep.map(it -> it.hasTableCondition() && !it.hasKey()).orElse(false);
 
-        code.add(createAliasDeclarations(aliasesExcludingStartAlias))
-                .declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsWithTableAliasBlock(alias))
+        var code = CodeBlock.builder()
+                // Skip first alias declaration for resolvers - it's already declared in main method and passed to helpers
+                .add(createAliasDeclarations(context.getAliasSet(), queryTarget.isResolver()))
+                .declare(ORDER_FIELDS_NAME, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias))
                 .add("return $T.select(\n", DSL.className)
                 .indent()
                 .add("$T.inline($S).as($S),\n", DSL.className, implName, TYPE_FIELD)
                 .add("$T.rowNumber().over($T.orderBy($L", DSL.className, DSL.className, ORDER_FIELDS_NAME)
                 .add(")).as($S),\n", INNER_ROW_NUM)
-                .add(getPrimaryKeyFieldsArray(implName, alias, context.getTargetTable().getName()))
+                .add(getPrimaryKeyFieldsArray(implName, targetAlias, context.getTargetTable().getName()))
                 .add(".as($S))", PK_FIELDS)
-                .add("\n.from($N)\n", alias)
+                .add("\n.from($N)\n", context.getSourceAlias())
+                .add(createSelectJoins(context.getJoinSet(), !hasConditionReferenceAsFirstStep))
                 .add(whereBlock)
                 .add(createSelectConditions(context.getConditionList(), !whereBlock.isEmpty()));
 
-        if (isConnection) {
+        if (queryTarget.hasForwardPagination()) {
             code.add(".$L", whereBlock.isEmpty() ? "where" : "and")
                     .add("($N == null ? $L : $T.inline($S).greaterOrEqual($N.typeName()))",
                             TOKEN, noCondition(), DSL.className, implementation.getName(), TOKEN)
                     .add("\n.and($N != null && $N.matches($S) ? $T.row($L).gt($T.row($N.fields())) : $L)",
-                            TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(alias), DSL.className, TOKEN, noCondition());
+                            TOKEN, TOKEN, implementation.getName(), DSL.className, getPrimaryKeyFieldsWithTableAliasBlock(targetAlias), DSL.className, TOKEN, noCondition());
         }
         return code.add(".orderBy($L)", ORDER_FIELDS_NAME)
-                .addIf(isConnection, "\n.limit($N + 1)", PAGE_SIZE_NAME)
+                .addIf(queryTarget.hasForwardPagination(), "\n.limit($N + 1)", PAGE_SIZE_NAME)
                 .add(";")
                 .unindent()
                 .build();

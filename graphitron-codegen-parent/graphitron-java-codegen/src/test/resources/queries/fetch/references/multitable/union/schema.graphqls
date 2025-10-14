@@ -1,0 +1,9 @@
+type Query {
+    query: Payment @notGenerated
+}
+
+type Payment @table {
+    staffAndCustomers: [PersonUnion] @splitQuery @multitableReference
+}
+
+union PersonUnion = Customer | Staff
