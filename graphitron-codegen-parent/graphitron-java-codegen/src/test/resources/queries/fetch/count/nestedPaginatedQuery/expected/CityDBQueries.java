@@ -12,14 +12,14 @@ import org.jooq.impl.DSL;
 public class CityDBQueries {
     public static Map<Row1<Long>, Integer> countAddressesPaginatedForCity(DSLContext ctx,
                                                                              Set<Row1<Long>> cityResolverKeys) {
-        var _city = CITY.as("city_1887334959");
-        var city_1887334959_address = _city.address().as("address_1356285680");
+        var _a_city = CITY.as("city_760939060");
+        var _a_city_760939060_address = _a_city.address().as("address_609487378");
         return ctx
-                .select(DSL.row(_city.CITY_ID), DSL.count())
-                .from(_city)
-                .join(city_1887334959_address)
-                .where(DSL.row(_city.CITY_ID).in(cityResolverKeys))
-                .groupBy(_city.CITY_ID)
+                .select(DSL.row(_a_city.CITY_ID), DSL.count())
+                .from(_a_city)
+                .join(_a_city_760939060_address)
+                .where(DSL.row(_a_city.CITY_ID).in(cityResolverKeys))
+                .groupBy(_a_city.CITY_ID)
                 .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
     }
 }

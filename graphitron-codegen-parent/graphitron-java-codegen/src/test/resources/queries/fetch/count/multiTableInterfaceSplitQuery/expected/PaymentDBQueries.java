@@ -16,19 +16,19 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
     public static Map<Row1<Long>, Integer> countStaffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys) {
-        var _payment = PAYMENT.as("payment_425747824");
-        var payment_425747824_customer = _payment.customer().as("customer_1716701867");
-        var payment_425747824_staff = _payment.staff().as("staff_3287974561");
+        var _a_payment = PAYMENT.as("payment_1831371789");
+        var _a_payment_1831371789_customer = _a_payment.customer().as("customer_1463568749");
+        var _a_payment_1831371789_staff = _a_payment.staff().as("staff_2269035563");
 
-        var countCustomer = DSL.select(DSL.row(_payment.PAYMENT_ID))
-                .from(_payment)
-                .join(payment_425747824_customer)
-                .where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys));
+        var countCustomer = DSL.select(DSL.row(_a_payment.PAYMENT_ID))
+                .from(_a_payment)
+                .join(_a_payment_1831371789_customer)
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys));
 
-        var countStaff = DSL.select(DSL.row(_payment.PAYMENT_ID))
-                .from(_payment)
-                .join(payment_425747824_staff)
-                .where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys));
+        var countStaff = DSL.select(DSL.row(_a_payment.PAYMENT_ID))
+                .from(_a_payment)
+                .join(_a_payment_1831371789_staff)
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys));
 
         var unionCountQuery = countStaff
                 .unionAll(countCustomer)

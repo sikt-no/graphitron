@@ -12,11 +12,11 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static List<CustomerTable> queryForQuery(DSLContext ctx, SelectionSet select) {
-        var _customer = CUSTOMER.as("customer_2952383337");
-        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return ctx
-                .select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
-                .from(_customer)
+                .select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .from(_a_customer)
                 .orderBy(orderFields)
                 .fetch(it -> it.into(CustomerTable.class));
     }

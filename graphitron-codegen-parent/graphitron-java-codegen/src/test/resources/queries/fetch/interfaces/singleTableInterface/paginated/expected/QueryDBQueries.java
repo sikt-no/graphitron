@@ -17,22 +17,22 @@ import org.jooq.DSLContext;
 public class QueryDBQueries {
 
     public static List<Pair<String, Address>> addressForQuery(DSLContext ctx, Integer pageSize, String after, SelectionSet select) {
-        var _address = ADDRESS.as("address_2030472956");
-        var orderFields = _address.fields(_address.getPrimaryKey().getFieldsArray());
+        var _a_address = ADDRESS.as("address_223244161");
+        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return ctx.select(
-                        _address.DISTRICT.as("_discriminator"),
-                        QueryHelper.getOrderByToken(_address, orderFields).as("_token"),
-                        _address.POSTAL_CODE.as("postalCode"),
-                        _address.getId().as("id")
+                        _a_address.DISTRICT.as("_discriminator"),
+                        QueryHelper.getOrderByToken(_a_address, orderFields).as("_token"),
+                        _a_address.POSTAL_CODE.as("postalCode"),
+                        _a_address.getId().as("id")
                 )
-                .from(_address)
-                .where(_address.DISTRICT.in("ONE", "TWO"))
+                .from(_a_address)
+                .where(_a_address.DISTRICT.in("ONE", "TWO"))
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)
                 .fetch(
                         internal_it_ -> {
-                            var _discriminatorValue = internal_it_.get("_discriminator", _address.DISTRICT.getConverter());
+                            var _discriminatorValue = internal_it_.get("_discriminator", _a_address.DISTRICT.getConverter());
                             var _token = internal_it_.get("_token", String.class);
                             Address _data;
                             if (_discriminatorValue.equals("ONE")) {

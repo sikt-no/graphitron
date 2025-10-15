@@ -1,0 +1,99 @@
+package no.sikt.graphitron.generators.codebuilding;
+
+import static org.apache.commons.lang3.StringUtils.uncapitalize;
+
+/**
+ * This class handles the naming conventions for internal variables. When generating code, we need to name parameters and variables.
+ * When two variables hail from different namespaces (or contexts), they inevitably risk colliding in the generated code without proper countermeasures.
+ * <p>
+ * An example of this may be an input field (which will become a method parameter) which has the same name as a jOOQ table.
+ * In the query Graphitron may create an alias for this table, while also having a method parameter that inherits the name of the input field.
+ * Such code may result in uncompilable code at best or produce incorrect query results at worst.
+ * <p>
+ * To prevent such issues, we use variable prefixes for all variables in the generated code.
+ * These make it impossible to accidentally or intentionally produce naming collisions, given that the prefixes are not substrings of each other.
+ * <p>
+ * <p>
+ * Here is a more rigorous explanation and proof:<br>
+ * Assume two variable names N and M (which are based on user-defined configuration beyond our control or other factors such as DB-schema).
+ * These two variables exist in their corresponding namespaces with their own prefixes P and Q where P ≠ Q and where there exists no string S such that P = S + Q or Q = S + P.
+ * <p>
+ * Let us take a look at the possibilities:<br>
+ * 1. No prefixes are applied. Here, a conflict immediately emerges in the case N = M. As such, this solution is unacceptable.
+ * <p>
+ * 2. Prefixes are applied to only one namespace, P. This means that the resulting variable X in the code will be X = P + N.<br>
+ *  One can easily engineer a problem case by assuming that M consists of two substrings concatenated such that M = P + N.<br>
+ *  Since prefixes in the name space Q are not applied (are empty), we get that the generated variable Y will be Y = M = P + N = X, and so we have another collision.
+ *  Thus, this solution is also unacceptable.
+ * <p>
+ * 3. Prefixes are applied for all namespaces. This time the generated variables will be X = P + N and Y = Q + M.<br>
+ *  Let us disprove that there exist a case where X = Y. If X = Y, then P + N = Q + M. We have three possibilities:<br>
+ *  * N = M results in P + N = Q + N and P = Q which is a contradiction with our premise P ≠ Q. So we have that N ≠ M.<br>
+ *  * The next possibility is that the prefixes have the same length |P| = |Q|.<br>
+ *    For this to be true and for the strings to still be equal, every character in P must match the one at the same index in Q, thus resulting in P = Q, contradicting P ≠ Q.<br>
+ *  * Lastly, for |P| ≠ |Q| one of them must be shorter, so let us use |P| < |Q|. This would be equivalent for |Q| < |P|. Since P + N = Q + M, Q must use P as a prefix.<br>
+ *    This means that Q = P + S where S is a non-empty string. This contradicts our second premise that there must not exist a string S such that P = S + Q or Q = S + P.<br>
+ *  With this solution there can not exist a case where X = Y and variable naming collisions are impossible.
+ */
+public class VariablePrefix {
+    // Note that all names are fine, so long as none of these prefixes are the same for multiple name spaces.
+    // There should also not exist any pair of prefixes that are substrings of each other.
+    public static final String
+            INTERNAL = "i",
+            ALIAS = "a",
+            CONTEXT_FIELD = "c",
+            MAPPER_INPUT = "mi",
+            MAPPER_OUTPUT = "mo",
+            SEPARATOR = "_";
+
+    /**
+     * @return This name formatted as an internal variable to avoid namespace collisions.
+     */
+    public static String internalPrefix(String name) {
+        return prefixName(INTERNAL, name);
+    }
+
+    /**
+     * @return This name formatted as an alias variable to avoid namespace collisions.
+     */
+    public static String aliasPrefix(String name) {
+        return prefixName(ALIAS, name);
+    }
+
+    /**
+     * @return This name formatted as a context variable to avoid namespace collisions.
+     */
+    public static String contextFieldPrefix(String name) {
+        return prefixName(CONTEXT_FIELD, name);
+    }
+
+    /**
+     * @return This name formatted as a mapper input variable to avoid namespace collisions.
+     */
+    public static String mapperInputPrefix(String name) {
+        return prefixName(MAPPER_INPUT, name);
+    }
+
+    /**
+     * @return This name formatted as a mapper output variable to avoid namespace collisions.
+     */
+    public static String mapperOutputPrefix(String name) {
+        return prefixName(MAPPER_OUTPUT, name);
+    }
+
+    /**
+     * @return This name prefixed with the provided prefix.
+     */
+    private static String prefixName(String prefix, String name) {
+        var actualPrefix = prefixFormat(prefix);
+        return name.startsWith(actualPrefix) ? name : actualPrefix + uncapitalize(name);
+    }
+
+    /**
+     * This adds the separator symbol before and after the prefix.
+     * @return The correct format for prefixes.
+     */
+    private static String prefixFormat(String prefix) {
+        return SEPARATOR + prefix + SEPARATOR;
+    }
+}

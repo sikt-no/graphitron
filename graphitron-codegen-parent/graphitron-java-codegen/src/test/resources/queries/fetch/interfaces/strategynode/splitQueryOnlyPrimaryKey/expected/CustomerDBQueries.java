@@ -16,21 +16,23 @@ import org.jooq.impl.DSL;
 
 
 public class CustomerDBQueries {
-    public static Map<Row1<Long>, Address> addressForCustomer(DSLContext ctx, NodeIdStrategy nodeIdStrategy,
-                                                          Set<Row1<Long>> customerResolverKeys, SelectionSet select) {
-        var _customer = CUSTOMER.as("customer_2952383337");
-        var customer_2952383337_address = _customer.address().as("address_1214171484");
-        var orderFields = customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray());
+    public static Map<Row1<Long>, Address> addressForCustomer(DSLContext ctx,
+            NodeIdStrategy nodeIdStrategy, Set<Row1<Long>> customerResolverKeys,
+            SelectionSet select) {
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        var _a_customer_2168032777_address = _a_customer.address().as("address_2138977089");
+        var orderFields = _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(
-                        DSL.row(_customer.CUSTOMER_ID),
+                        DSL.row(_a_customer.CUSTOMER_ID),
                         DSL.field(
-                                DSL.select(DSL.row(nodeIdStrategy.createId("Address", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
-                                        .from(customer_2952383337_address)
+                                DSL.select(DSL.row(nodeIdStrategy.createId("Address", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new)))
+                                .from(_a_customer_2168032777_address)
+
                         )
                 )
-                .from(_customer)
-                .where(DSL.row(_customer.CUSTOMER_ID).in(customerResolverKeys))
+                .from(_a_customer)
+                .where(DSL.row(_a_customer.CUSTOMER_ID).in(customerResolverKeys))
                 .fetchMap(r -> r.value1().valuesRow(), Record2::value2);
     }
 }

@@ -51,8 +51,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Selv om vi bruker JBoss EAP nå så ønsker vi å binde oss mot
-                 Jakarta EE heller enn JBoss direkte der dette er mulig. -->
             <dependency>
                 <groupId>jakarta.platform</groupId>
                 <artifactId>jakarta.jakartaee-api</artifactId>

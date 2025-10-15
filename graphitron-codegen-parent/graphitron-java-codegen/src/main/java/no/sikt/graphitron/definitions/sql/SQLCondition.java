@@ -3,7 +3,7 @@ package no.sikt.graphitron.definitions.sql;
 import graphql.language.DirectivesContainer;
 import graphql.language.NamedNode;
 import no.sikt.graphitron.definitions.helpers.CodeReferenceWrapper;
-import no.sikt.graphitron.generators.codebuilding.NameFormat;
+import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.CodeReference;
@@ -69,7 +69,7 @@ public class SQLCondition extends CodeReferenceWrapper {
                 .add("$N.$L(", declaringName, methodName)
                 .add(StringUtils.repeat("$L", ", ", methodInputs.size()), methodInputs.toArray())
                 .addIf(!contextFields.isEmpty(), ", ")
-                .add(StringUtils.repeat("$L", ", ", contextFields.size()), contextFields.keySet().stream().map(NameFormat::asContextFieldName).toList().toArray())
+                .add(StringUtils.repeat("$L", ", ", contextFields.size()), contextFields.keySet().stream().map(VariablePrefix::contextFieldPrefix).toList().toArray())
                 .add(")")
                 .build();
     }

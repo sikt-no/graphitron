@@ -12,10 +12,10 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static Customer queryForQuery(DSLContext ctx, SelectionSet select) {
-        var _customer = CUSTOMER.as("customer_2952383337");
+        var _a_customer = CUSTOMER.as("customer_2168032777");
         return ctx
-                .select(DSL.row(DSL.row(_customer.EMAIL).mapping(Functions.nullOnAllNull(CustomerUnion::new))).mapping((a0_0) -> new Customer(a0_0)))
-                .from(_customer)
+                .select(DSL.row(DSL.row(_a_customer.EMAIL).mapping(Functions.nullOnAllNull(CustomerUnion::new))).mapping((a0_0) -> new Customer(a0_0)))
+                .from(_a_customer)
                 .fetchOne(it -> it.into(Customer.class));
     }
 }

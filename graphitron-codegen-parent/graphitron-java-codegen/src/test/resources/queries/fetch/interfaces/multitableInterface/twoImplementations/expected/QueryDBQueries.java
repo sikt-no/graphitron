@@ -59,49 +59,49 @@ public class QueryDBQueries {
     }
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> addressSortFieldsForSomeInterface() {
-        var _address = ADDRESS.as("address_2030472956");
-        var orderFields = _address.fields(_address.getPrimaryKey().getFieldsArray());
+        var _a_address = ADDRESS.as("address_223244161");
+        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Address").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonbArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"))
-                .from(_address)
+                        DSL.jsonbArray(DSL.inline("Address"), _a_address.ADDRESS_ID).as("$pkFields"))
+                .from(_a_address)
                 .orderBy(orderFields);
     }
 
     private static SelectJoinStep<Record2<JSONB, Address>> addressForSomeInterface() {
-        var _address = ADDRESS.as("address_2030472956");
+        var _a_address = ADDRESS.as("address_223244161");
         return DSL.select(
-                        DSL.jsonbArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("Address"), _a_address.ADDRESS_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.select(DSL.row(_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                DSL.select(DSL.row(_a_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
                         ).as("$data"))
-                .from(_address);
+                .from(_a_address);
     }
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForSomeInterface() {
-        var _customer = CUSTOMER.as("customer_2952383337");
-        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"))
-                .from(_customer)
+                        DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"))
+                .from(_a_customer)
                 .orderBy(orderFields);
     }
 
     private static SelectJoinStep<Record2<JSONB, Customer>> customerForSomeInterface() {
-        var _customer = CUSTOMER.as("customer_2952383337");
+        var _a_customer = CUSTOMER.as("customer_2168032777");
         return DSL.select(
-                        DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
                                 DSL.select(
                                         DSL.row(
-                                                _customer.getId(),
-                                                _customer.LAST_NAME
+                                                _a_customer.getId(),
+                                                _a_customer.LAST_NAME
                                         ).mapping(Functions.nullOnAllNull(Customer::new))
                                 )
                         ).as("$data"))
-                .from(_customer);
+                .from(_a_customer);
     }
 }

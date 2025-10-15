@@ -18,7 +18,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("Default case")
     void defaultCase() {
         assertGeneratedContentContains("default", Set.of(CUSTOMER_QUERY),
-                "row(nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping"
+                "row(nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping"
         );
     }
 
@@ -26,7 +26,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference")
     void reference() {
         assertGeneratedContentContains("reference", Set.of(CUSTOMER_QUERY),
-                "field(DSL.select(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.fields"
+                "field(DSL.select(nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.fields"
         );
     }
 
@@ -34,7 +34,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference and where statement")
     void referenceAndInput() {
         assertGeneratedContentContains("referenceAndInput", Set.of(CUSTOMER_NODE),
-                "_customer.getPrimaryKey().getFieldsArray()))).from(_customer).where(_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
+                "customer.getPrimaryKey().getFieldsArray()))).from(_a_customer).where(_a_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
                 "CustomerNoTable::new))).fetchOne("
         );
     }
@@ -43,7 +43,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With reference via table")
     void referenceViaTable() {
         assertGeneratedContentContains("referenceViaTable", Set.of(CUSTOMER_QUERY),
-                "field(DSL.select(nodeIdStrategy.createId(\"City\", address_1214171484_city.fields"
+                "field(DSL.select(nodeIdStrategy.createId(\"City\", _a_address_2138977089_city.fields"
         );
     }
 
@@ -51,7 +51,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With implicit reference from typeName in @nodeId")
     void implicitReference() {
         assertGeneratedContentContains("implicitReference", Set.of(CUSTOMER_QUERY),
-                "field(DSL.select(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.fields"
+                "field(DSL.select(nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.fields"
         );
     }
 
@@ -59,8 +59,8 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With condition reference")
     void conditionReference() {
         assertGeneratedContentContains("conditionReference", Set.of(CUSTOMER_QUERY),
-                ".from(customer_addressid).join(customer_addressid_addressid_address).on(no.",
-                "createId(\"Address\", customer_addressid_addressid_address.fields"
+                ".from(_a_customer_addressid).join(_a_customer_addressid_addressid_address).on(no.",
+                "createId(\"Address\", _a_customer_addressid_addressid_address.fields"
         );
     }
 
@@ -68,7 +68,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With condition reference and key")
     void conditionReferenceWithKey() {
         assertGeneratedContentContains("conditionReferenceWithKey", Set.of(CUSTOMER_QUERY),
-                "createId(\"Address\", customer_2952383337_address.fields"
+                "createId(\"Address\", _a_customer_2168032777_address.fields"
         );
     }
 
@@ -76,7 +76,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("With self-reference")
     void selfReference() {
         assertGeneratedContentContains("selfReference",
-                "createId(\"Film\", film_3747728953_film.fields"
+                "createId(\"Film\", _a_film_2185543202_film.fields"
         );
     }
 
@@ -96,8 +96,8 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("Node IDs in single table interface queries")
     void inSingleTableInterfaceQuery() {
         assertGeneratedContentContains("singleTableInterface",
-                "nodeIdStrategy.createId(\"A1\", _address.ADDRESS_ID).as(\"ONE_id\")",
-                "nodeIdStrategy.createId(\"A2\", _address.fields(_address.getPrimaryKey().getFieldsArray())).as(\"TWO_id\")",
+                "nodeIdStrategy.createId(\"A1\", _a_address.ADDRESS_ID).as(\"ONE_id\")",
+                "nodeIdStrategy.createId(\"A2\", _a_address.fields(_a_address.getPrimaryKey().getFieldsArray())).as(\"TWO_id\")",
                 "var _data = internal_it_.into(AddressInDistrictOne.class);" +
                         "_data.setId(internal_it_.get(\"ONE_id\", String.class));" +
                         "return _data;",

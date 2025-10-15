@@ -41,7 +41,7 @@ public class OptionalInputTest extends GeneratorTest {
     @Test
     @DisplayName("Listed field")
     void list() {
-        assertGeneratedContentContains("list", "email != null && email.size() > 0 ? _customer.EMAIL.in(email) :DSL.noCondition()");
+        assertGeneratedContentContains("list", "email != null && email.size() > 0 ? _a_customer.EMAIL.in(email) :DSL.noCondition()");
     }
 
     @Test
@@ -49,7 +49,7 @@ public class OptionalInputTest extends GeneratorTest {
     void input() {
         assertGeneratedContentContains(
                 "input", Set.of(DUMMY_INPUT),
-                "in != null && in.getId() != null ? _customer.hasId(in.getId()) : DSL.noCondition()"
+                "in != null && in.getId() != null ? _a_customer.hasId(in.getId()) : DSL.noCondition()"
         );
     }
 
@@ -58,7 +58,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedInput() {
         assertGeneratedContentContains(
                 "nestedInput", Set.of(DUMMY_INPUT),
-                "in != null && in.getIn() != null && in.getIn().getId() != null ? _customer.hasId(in.getIn().getId()) : DSL.noCondition()"
+                "in != null && in.getIn() != null && in.getIn().getId() != null ? _a_customer.hasId(in.getIn().getId()) : DSL.noCondition()"
         );
     }
 
@@ -67,7 +67,7 @@ public class OptionalInputTest extends GeneratorTest {
     void listedNestedInput() {
         assertGeneratedContentContains(
                 "listedNestedInput", Set.of(DUMMY_INPUT),
-                "_customer.hasId(in0.get(internal_it_).getIn1().getId())"
+                "customer.hasId(in0.get(internal_it_).getIn1().getId())"
                 );
     }
 
@@ -76,7 +76,7 @@ public class OptionalInputTest extends GeneratorTest {
     void nestedListedInput() {
         assertGeneratedContentContains(
                 "nestedListedInput", Set.of(DUMMY_INPUT),
-                "_customer.hasId(in.getIn().get(internal_it_).getId())"
+                "customer.hasId(in.getIn().get(internal_it_).getId())"
         );
     }
 }

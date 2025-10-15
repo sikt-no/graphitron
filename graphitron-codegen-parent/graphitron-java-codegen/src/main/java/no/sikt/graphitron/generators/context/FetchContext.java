@@ -20,7 +20,6 @@ import java.util.stream.Stream;
 
 import static no.sikt.graphitron.definitions.mapping.JOOQMapping.fromTable;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.findKeyForResolverField;
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asInternalName;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 
 /**
@@ -536,7 +535,7 @@ public class FetchContext {
     }
 
     private JoinListSequence makeAlias(JOOQMapping mapping) {
-        AliasWrapper alias = new AliasWrapper(new Alias(asInternalName(mapping.getCodeName()), JoinListSequence.of(mapping), false), referenceObjectField, processedSchema);
+        AliasWrapper alias = new AliasWrapper(new Alias(mapping.getCodeName(), JoinListSequence.of(mapping), false), referenceObjectField, processedSchema);
         aliasSet.add(alias);
         return JoinListSequence.of(alias.getAlias());
     }

@@ -31,7 +31,7 @@ public class EnumTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "input/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
                 ", DummyEnumConverted e,",
-                "e != null ? _film.RATING.convert(DummyEnumConverted.class,",
+                "e != null ? _a_film.RATING.convert(DummyEnumConverted.class,",
                 ".eq(e) : DSL.noCondition()"
         );
     }
@@ -42,7 +42,7 @@ public class EnumTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "input/string", Set.of(DUMMY_ENUM),
                 ", DummyEnum e,",
-                "e != null ? _film.RATING.convert(DummyEnum.class,",
+                "e != null ? _a_film.RATING.convert(DummyEnum.class,",
                 ".eq(e) : DSL.noCondition()"
         );
     }
@@ -52,7 +52,7 @@ public class EnumTest extends GeneratorTest {
     void jOOQRecord() {
         assertGeneratedContentContains(
                 "input/jOOQRecord", Set.of(DUMMY_ENUM_CONVERTED),
-                "inRecord.getRating() != null ? _film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
+                "inRecord.getRating() != null ? _a_film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
         );
     }
 
@@ -61,7 +61,7 @@ public class EnumTest extends GeneratorTest {
     void jOOQRecordString() {
         assertGeneratedContentContains(
                 "input/jOOQRecordString", Set.of(DUMMY_ENUM),
-                "inRecord.getRating() != null ? _film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
+                "inRecord.getRating() != null ? _a_film.RATING.eq(inRecord.getRating()) : DSL.noCondition()"
         );
     }
 
@@ -70,7 +70,7 @@ public class EnumTest extends GeneratorTest {
     void listedJOOQRecord() {
         assertGeneratedContentContains(
                 "input/listedJOOQRecord", Set.of(DUMMY_ENUM_CONVERTED),
-                "inRecordList.get(internal_it_).getRating()) : _film.RATING)"
+                "inRecordList.get(internal_it_).getRating()) : _a_film.RATING)"
         );
     }
 
@@ -79,7 +79,7 @@ public class EnumTest extends GeneratorTest {
     void listedJOOQRecordNested() {
         assertGeneratedContentContains(
                 "input/listedJOOQRecordNested", Set.of(DUMMY_ENUM_CONVERTED),
-                "DSL.val(inRecordList.get(internal_it_).getRating()) : _film.RATING)"
+                "DSL.val(inRecordList.get(internal_it_).getRating()) : _a_film.RATING)"
         );
     }
 
@@ -88,7 +88,7 @@ public class EnumTest extends GeneratorTest {
     void outputJOOQ() {
         assertGeneratedContentContains(
                 "output/jOOQ", Set.of(DUMMY_ENUM_CONVERTED),
-                "_film.RATING.convert(DummyEnumConverted.class,"
+                "_a_film.RATING.convert(DummyEnumConverted.class,"
         );
     }
 
@@ -97,7 +97,7 @@ public class EnumTest extends GeneratorTest {
     void outputString() {
         assertGeneratedContentContains(
                 "output/string", Set.of(DUMMY_ENUM),
-                "_film.RATING.convert(DummyEnum.class,"
+                "_a_film.RATING.convert(DummyEnum.class,"
         );
     }
 
@@ -106,7 +106,7 @@ public class EnumTest extends GeneratorTest {
     void outputJOOQSubquery() {
         assertGeneratedContentContains(
                 "output/jOOQSubquery", Set.of(DUMMY_ENUM_CONVERTED),
-                "inventory_4239518507_film.RATING.convert("
+                "inventory_2972535350_film.RATING.convert("
         );
     }
 }

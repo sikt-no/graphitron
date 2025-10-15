@@ -35,49 +35,55 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("No extra arguments")
     void noExtraArguments() {
         assertGeneratedContentContains("noExtraArguments",
-                "var customerTableMethod = new CustomerTableMethod();",
-                        "_customer = customerTableMethod.customerTable(_customer)",
-                        ".from(_customer)");
+                "customerTableMethod = new CustomerTableMethod()",
+                "customer = customerTableMethod.customerTable(_a_customer)",
+                ".from(_a_customer)"
+        );
     }
 
     @Test
     @DisplayName("One argument")
     void withOneArgument() {
         assertGeneratedContentContains("withOneArgument" ,
-                "var customerTableMethod = new CustomerTableMethod();",
-                "_customer = customerTableMethod.customerTable(_customer, first_name)",
-                ".from(_customer)");
+                "customerTableMethod = new CustomerTableMethod()",
+                "customer = customerTableMethod.customerTable(_a_customer, first_name)",
+                ".from(_a_customer)"
+        );
     }
 
     @Test
     @DisplayName("With pagination")
     void paginated() {
         assertGeneratedContentContains("paginated" , Set.of(CUSTOMER_CONNECTION),
-                "_customer = customerTableMethod.customerTable(_customer, first_name);");
+                "customer = customerTableMethod.customerTable(_a_customer, first_name)"
+        );
     }
     @Test
     @DisplayName("On splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery" , Set.of(CUSTOMER_CONNECTION),
-                "_customer = customerTableMethod.customerTable(_customer);");
+                "customer = customerTableMethod.customerTable(_a_customer)"
+        );
     }
 
     @Test
     @DisplayName("With reference")
     void reference() {
         assertGeneratedContentContains("reference",
-                "var _customer = CUSTOMER.as(\"customer_2952383337\");"
-                , "_customer = customerTableMethod.customerTable(_customer, first_name);"
-                ,"var address_1214171484_staff = customer_2952383337_address.staff().as(\"staff_2623539941\")"
-                ,"address_1214171484_staff = staffTableMethod.staffTable(address_1214171484_staff)");
+                "customer = CUSTOMER.as(",
+                "customer = customerTableMethod.customerTable(_a_customer, first_name)",
+                "address_2138977089_staff = _a_customer_2168032777_address.staff().as(",
+                "address_2138977089_staff = staffTableMethod.staffTable(_a_address_2138977089_staff)"
+        );
     }
 
     @Test
     @DisplayName("With ContextArgument")
     void withContextArgument() {
         assertGeneratedContentContains("withContextArgument",
-                "_customer = customerTableMethod.customerTable(_customer, _c_ctxField);",
-                "public static Customer customerForQuery(DSLContext ctx, String _c_ctxField");
+                "customer = customerTableMethod.customerTable(_a_customer, _c_ctxField)",
+                "Customer customerForQuery(DSLContext ctx, String _c_ctxField"
+        );
 
     }
 }

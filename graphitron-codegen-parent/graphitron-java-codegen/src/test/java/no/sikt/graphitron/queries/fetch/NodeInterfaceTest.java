@@ -43,7 +43,7 @@ public class NodeInterfaceTest extends GeneratorTest {
     @Test
     @DisplayName("Multiple fields")
     void manyFields() {
-        assertGeneratedContentContains("manyFields", "_customer.FIRST_NAME", "_customer.LAST_NAME");
+        assertGeneratedContentContains("manyFields", "customer.FIRST_NAME", "customer.LAST_NAME");
     }
 
     @Test
@@ -53,7 +53,7 @@ public class NodeInterfaceTest extends GeneratorTest {
                 "twoInterfaces",
                 "customerForNode",
                 ",Set<String> ids,",
-                ".where(_customer.hasIds(ids))"
+                ".where(_a_customer.hasIds(ids))"
         );
     }
 

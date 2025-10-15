@@ -2,11 +2,11 @@ package no.sikt.graphitron.definitions.mapping;
 
 import no.sikt.graphitron.definitions.interfaces.JoinElement;
 import no.sikt.graphitron.generators.context.JoinListSequence;
-import org.apache.commons.lang3.StringUtils;
 
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.zip.CRC32;
+
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.aliasPrefix;
 
 /**
  * Holds an alias.
@@ -16,21 +16,31 @@ public class Alias implements JoinElement {
     private final JOOQMapping type;
 
     public Alias(String prefix, JOOQMapping table, boolean isLeft) {
-        var name = prefix + "_" + table.getMappingName() + (isLeft ? "_left" : "");
-        this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
-        this.shortName = prefixStringIfFirstCharIsDigit(
-                createShortAliasName(Arrays.stream(prefix.split("_")).findFirst().orElse(prefix), name));
-        this.type = table;
-        this.variableValue = table.getMappingName();
+        this(
+                prefix + "_" + table.getMappingName(),
+                table,
+                table.getMappingName(),
+                table.getMappingName(),
+                isLeft
+        );
     }
 
     public Alias(String prefix, JoinListSequence joinSequence, boolean isLeft) {
-        this.type = joinSequence.getLast().getTable();
-        var name = prefix + (isLeft ? "_left" : "");
-        this.name = prefixStringIfFirstCharIsDigit(name.toLowerCase());
-        this.shortName = prefixStringIfFirstCharIsDigit(
-                createShortAliasName(StringUtils.substringAfterLast(prefix, "_"), name));
-        this.variableValue = joinSequence.render().toString();
+        this(
+                prefix,
+                joinSequence.getLast().getTable(),
+                joinSequence.getLast().getTable().getMappingName(),
+                joinSequence.render().toString(),
+                isLeft
+        );
+    }
+
+    private Alias(String name, JOOQMapping type, String aliasName, String variableValue, boolean isLeft) {
+        this.name = aliasPrefix(name + (isLeft ? "_left" : "")).toLowerCase();
+        var withoutNamespace = name.replaceFirst(aliasPrefix(""), "");
+        this.type = type;
+        this.shortName = createShortAliasName(withoutNamespace.replace("_", ""), aliasName.replace("_", "").toLowerCase());
+        this.variableValue = variableValue;
     }
 
     /**
@@ -41,16 +51,9 @@ public class Alias implements JoinElement {
         return name;
     }
 
-    /**
-     * @return Shortened version of the alias name.
-     */
-    public String getShortName() {
-        return shortName;
-    }
-
     @Override
     public String getCodeName() {
-        return getShortName();
+        return shortName;
     }
 
     @Override
@@ -69,8 +72,8 @@ public class Alias implements JoinElement {
     private String createShortAliasName(String from, String to) {
         var crc32 = new CRC32();
         crc32.reset();
-        crc32.update(to.getBytes());
-        return from + "_" + crc32.getValue();
+        crc32.update(from.getBytes());
+        return to + "_" + crc32.getValue();
     }
 
     @Override
@@ -85,15 +88,11 @@ public class Alias implements JoinElement {
         return Objects.hash(name);
     }
 
-/*
-* Content for alias variable declaration
-* */
+    /**
+    * Content for alias variable declaration
+    */
     public String getVariableValue() {
         return variableValue;
-    }
-
-    private String prefixStringIfFirstCharIsDigit(String string) {
-        return (Character.isDigit(string.charAt(0)) ? "_" : "") + string;
     }
 
     public AliasWrapper toAliasWrapper() {

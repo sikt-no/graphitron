@@ -12,62 +12,62 @@ import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
     public static Film queryForQuery(DSLContext ctx, SelectionSet select) {
-        var _film = FILM.as("film_3747728953");
+        var _a_film = FILM.as("film_2185543202");
         return ctx
                 .select(
                         DSL.row(
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE,
-                                _film.TITLE
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE,
+                                _a_film.TITLE
                         ).mapping(Film.class, r ->
                                 Arrays.stream(r).allMatch(Objects::isNull) ? null : new Film(
-                                        _film.TITLE.getDataType().convert(r[0]),
-                                        _film.TITLE.getDataType().convert(r[1]),
-                                        _film.TITLE.getDataType().convert(r[2]),
-                                        _film.TITLE.getDataType().convert(r[3]),
-                                        _film.TITLE.getDataType().convert(r[4]),
-                                        _film.TITLE.getDataType().convert(r[5]),
-                                        _film.TITLE.getDataType().convert(r[6]),
-                                        _film.TITLE.getDataType().convert(r[7]),
-                                        _film.TITLE.getDataType().convert(r[8]),
-                                        _film.TITLE.getDataType().convert(r[9]),
-                                        _film.TITLE.getDataType().convert(r[10]),
-                                        _film.TITLE.getDataType().convert(r[11]),
-                                        _film.TITLE.getDataType().convert(r[12]),
-                                        _film.TITLE.getDataType().convert(r[13]),
-                                        _film.TITLE.getDataType().convert(r[14]),
-                                        _film.TITLE.getDataType().convert(r[15]),
-                                        _film.TITLE.getDataType().convert(r[16]),
-                                        _film.TITLE.getDataType().convert(r[17]),
-                                        _film.TITLE.getDataType().convert(r[18]),
-                                        _film.TITLE.getDataType().convert(r[19]),
-                                        _film.TITLE.getDataType().convert(r[20]),
-                                        _film.TITLE.getDataType().convert(r[21]),
-                                        _film.TITLE.getDataType().convert(r[22])
+                                        _a_film.TITLE.getDataType().convert(r[0]),
+                                        _a_film.TITLE.getDataType().convert(r[1]),
+                                        _a_film.TITLE.getDataType().convert(r[2]),
+                                        _a_film.TITLE.getDataType().convert(r[3]),
+                                        _a_film.TITLE.getDataType().convert(r[4]),
+                                        _a_film.TITLE.getDataType().convert(r[5]),
+                                        _a_film.TITLE.getDataType().convert(r[6]),
+                                        _a_film.TITLE.getDataType().convert(r[7]),
+                                        _a_film.TITLE.getDataType().convert(r[8]),
+                                        _a_film.TITLE.getDataType().convert(r[9]),
+                                        _a_film.TITLE.getDataType().convert(r[10]),
+                                        _a_film.TITLE.getDataType().convert(r[11]),
+                                        _a_film.TITLE.getDataType().convert(r[12]),
+                                        _a_film.TITLE.getDataType().convert(r[13]),
+                                        _a_film.TITLE.getDataType().convert(r[14]),
+                                        _a_film.TITLE.getDataType().convert(r[15]),
+                                        _a_film.TITLE.getDataType().convert(r[16]),
+                                        _a_film.TITLE.getDataType().convert(r[17]),
+                                        _a_film.TITLE.getDataType().convert(r[18]),
+                                        _a_film.TITLE.getDataType().convert(r[19]),
+                                        _a_film.TITLE.getDataType().convert(r[20]),
+                                        _a_film.TITLE.getDataType().convert(r[21]),
+                                        _a_film.TITLE.getDataType().convert(r[22])
                                 )
                         )
                 )
-                .from(_film)
+                .from(_a_film)
                 .fetchOne(it -> it.into(Film.class));
     }
 }
