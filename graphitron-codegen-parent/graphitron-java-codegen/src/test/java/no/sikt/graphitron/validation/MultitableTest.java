@@ -38,16 +38,6 @@ public class MultitableTest extends ValidationTest {
     }
 
     @Test
-    @DisplayName("Multitable fields outside root returning a single object is not currently supported")
-    void notListedOutsideRoot() {
-        assertErrorsContain(
-                () -> getProcessedSchema("notListedOutsideRoot", PERSON_WITH_EMAIL),
-                "Multitable queries returning a single object outside root is not currently supported. " +
-                        "'Payment.staffAndCustomers' is not a list."
-        );
-    }
-
-    @Test
     @DisplayName("Multitable field with reference directive")
     void withReferenceDirective() {
         assertErrorsContain(

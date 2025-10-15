@@ -1,0 +1,13 @@
+{
+    "data": {
+        "payments": {
+            "nodes": [
+                {
+                    "managerForStaff": {
+                        "email": "Mike.Hillyer@sakilastaff.com"
+                    }
+                }
+            ]
+        }
+    }
+}

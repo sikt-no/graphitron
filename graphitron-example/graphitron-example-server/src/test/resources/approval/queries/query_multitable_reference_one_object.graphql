@@ -1,0 +1,9 @@
+{
+    payments(first: 1) {
+        nodes {
+            managerForStaff {
+                email
+            }
+        }
+    }
+}
