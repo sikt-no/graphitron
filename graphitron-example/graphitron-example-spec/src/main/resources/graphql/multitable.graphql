@@ -1,6 +1,7 @@
 extend type Query {
     reachableByEmail: [PersonWithEmail] @asConnection
     rentals: [Rental] @asConnection
+    oneStaffOrCustomerByEmail(email: String!): PersonWithEmail
 }
 
 interface PersonWithEmail {

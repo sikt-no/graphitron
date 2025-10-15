@@ -1,0 +1,11 @@
+{
+    "data": {
+        "oneStaffOrCustomerByEmail": {
+            "__typename": "CustomerWithEmail",
+            "email": "MARY.SMITH@sakilacustomer.org",
+            "address": {
+                "id": "QWRkcmVzczo1"
+            }
+        }
+    }
+}

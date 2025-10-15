@@ -20,7 +20,8 @@
                             }
                         ],
                         "pageInfo": {
-                            "hasNextPage": true
+                            "hasNextPage": true,
+                            "endCursor": "eyJmaWVsZHMiOlsyNTldLCJ0eXBlTmFtZSI6IkN1c3RvbWVyV2l0aEVtYWlsIn0"
                         }
                     }
                 },
@@ -38,7 +39,8 @@
                             }
                         ],
                         "pageInfo": {
-                            "hasNextPage": false
+                            "hasNextPage": false,
+                            "endCursor": "eyJmaWVsZHMiOlsyXSwidHlwZU5hbWUiOiJTdGFmZldpdGhFbWFpbCJ9"
                         }
                     }
                 }
