@@ -9,7 +9,6 @@ import java.lang.Integer;
 import java.lang.Long;
 import java.lang.RuntimeException;
 import java.lang.String;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Payment;
@@ -18,7 +17,6 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.JSONB;
 import org.jooq.Row1;
-import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.SelectJoinStep;
@@ -27,7 +25,7 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, List<PersonWithEmail>> staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
+    public static Map<Row1<Long>, PersonWithEmail> staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
         var _a_payment = PAYMENT.as("payment_1831371789");
         var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment));
 
@@ -36,7 +34,7 @@ public class PaymentDBQueries {
 
         return ctx.select(
                         DSL.row(_a_payment.PAYMENT_ID),
-                        DSL.multiset(
+                        DSL.field(
                                 DSL.select(
                                                 DSL.row(
                                                         unionKeysQuery.field("$type", String.class),
@@ -61,7 +59,7 @@ public class PaymentDBQueries {
                 .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys))
                 .fetchMap(
                         r -> r.value1().valuesRow(),
-                        r -> r.value2().map(Record1::value1)
+                        Record2::value2
                 );
     }
 

@@ -25,6 +25,11 @@ extend type Payment {
     staffAndCustomers(email: String): [PersonWithEmail] @splitQuery
     staffAndCustomersPaginated: [PersonWithEmail] @asConnection @splitQuery
 
+    managerForStaff: PersonWithEmail @splitQuery @multitableReference(routes: [
+        {typeName: "StaffWithEmail", path: [{condition: {method: "managerForStaff", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]},
+        {typeName: "CustomerWithEmail", path: [{condition: {method: "managerForStaff", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]}
+    ])
+
     mostImportantCustomers: [PersonWithEmail] @multitableReference(routes: [
         {typeName: "StaffWithEmail", path: [{condition: {method: "mostImportantCustomersForPayment", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]},
         {typeName: "CustomerWithEmail", path: [{key: "PAYMENT__PAYMENT_CUSTOMER_ID_FKEY", condition: {method: "mostImportantCustomersForPayment", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]}
