@@ -153,7 +153,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(NameFormat::asContextFieldName).toList());
         var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
         var countFunction = countFunction(objectToCall, method, allParams, target.hasServiceReference());
-        return CodeBlock.of(" $N, $L,\n$L,\n$L$L", PAGE_SIZE_NAME, GeneratorConfig.getMaxAllowedPageSize(), queryFunction, countFunction, transformWrap);
+        return CodeBlock.of(" $N,\n$L,\n$L$L", PAGE_SIZE_NAME, queryFunction, countFunction, transformWrap);
     }
 
     /**

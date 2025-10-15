@@ -21,7 +21,7 @@ public class QueryGeneratedDataFetcher {
             var transform = new RecordTransformer(env);
             var resolverFetchService = new ResolverFetchService(transform.getCtx());
             return new ServiceDataFetcherHelper<>(transform).loadPaginated(
-                    pageSize, 1000,
+                    pageSize,
                     () -> resolverFetchService.queryList(pageSize, after),
                     (resolverKeys) -> resolverFetchService.countQueryList(),
                     (recordTransform, response) -> recordTransform.customerTableRecordToGraphType(response, "")

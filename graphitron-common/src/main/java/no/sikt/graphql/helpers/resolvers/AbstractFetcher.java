@@ -70,11 +70,11 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
                 );
     }
 
-    protected static <T> ConnectionImpl<T> getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount, int maxNodes) {
-        return createPagedResult(dbResult, pageSize, totalCount != null ? Math.min(maxNodes, totalCount) : null);
+    protected static <T> ConnectionImpl<T> getPaginatedConnection(List<Pair<String, T>> dbResult, int pageSize, Integer totalCount) {
+        return createPagedResult(dbResult, pageSize, totalCount);
     }
 
-    protected static <K, V> Map<KeyWithPath<K>, ConnectionImpl<V>> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Object countFunctionResult, int maxNodes) {
+    protected static <K, V> Map<KeyWithPath<K>, ConnectionImpl<V>> getPaginatedConnection(Map<KeyWithPath<K>, List<Pair<String, V>>> dbResult, int pageSize, Object countFunctionResult) {
         if (countFunctionResult == null) {
             return dbResult.entrySet().stream().collect(Collectors.toMap(
                     Map.Entry::getKey,
@@ -83,10 +83,9 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
         }
 
         if (countFunctionResult instanceof Integer singleCount) {
-            int limitedCount = Math.min(maxNodes, singleCount);
             return dbResult.entrySet().stream().collect(Collectors.toMap(
                     Map.Entry::getKey,
-                    entry -> createPagedResult(entry.getValue(), pageSize, limitedCount)
+                    entry -> createPagedResult(entry.getValue(), pageSize, singleCount)
             ));
         } else if (countFunctionResult instanceof Map<?, ?> countMap) {
             @SuppressWarnings("unchecked")
@@ -94,9 +93,8 @@ public abstract class AbstractFetcher extends EnvironmentHandler {
             return dbResult.entrySet().stream().collect(Collectors.toMap(
                     Map.Entry::getKey,
                     entry -> {
-                        Integer count = typedCountMap.get(entry.getKey().key());
-                        int limitedCount = Math.min(maxNodes, count != null ? count : 0);
-                        return createPagedResult(entry.getValue(), pageSize, limitedCount);
+                        Integer count = typedCountMap.getOrDefault(entry.getKey().key(), 0);
+                        return createPagedResult(entry.getValue(), pageSize, count);
                     }
             ));
         } else {

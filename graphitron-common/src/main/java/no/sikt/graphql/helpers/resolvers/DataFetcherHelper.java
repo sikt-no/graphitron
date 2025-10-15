@@ -42,7 +42,6 @@ public class DataFetcherHelper extends AbstractFetcher {
     /**
      * Load the data for a root resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
-     * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @return A paginated resolver result.
@@ -50,7 +49,6 @@ public class DataFetcherHelper extends AbstractFetcher {
      */
     public <T> CompletableFuture<ConnectionImpl<T>> loadPaginated(
             int pageSize,
-            int maxNodes,
             DBQueryRoot<List<Pair<String, T>>> dbFunction,
             DBCount<String> countFunction
     ) {
@@ -58,8 +56,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                 getPaginatedConnection(
                         dbFunction.callDBMethod(dslContext, connectionSelect),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? (Integer) countFunction.callDBMethod(dslContext, Set.of()) : null,
-                        maxNodes
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? (Integer) countFunction.callDBMethod(dslContext, Set.of()) : null
                 )
         );
     }
@@ -79,7 +76,6 @@ public class DataFetcherHelper extends AbstractFetcher {
     /**
      * Load the data for a resolver. The result is paginated.
      * @param pageSize Size of the pages for pagination.
-     * @param maxNodes Limit on how many elements may be fetched at once.
      * @param dbFunction Function to call to retrieve the query data.
      * @param countFunction Function to call to retrieve the total count of elements that could be potentially retrieved.
      * @return A paginated resolver result.
@@ -87,11 +83,10 @@ public class DataFetcherHelper extends AbstractFetcher {
     public <K, V> CompletableFuture<ConnectionImpl<V>> loadPaginated(
             K key,
             int pageSize,
-            int maxNodes,
             DBQuery<K, List<Pair<String, V>>> dbFunction,
             DBCount<K> countFunction
     ) {
-        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, maxNodes, pageSize, dbFunction, countFunction))
+        return getConnectionLoader((Set<KeyWithPath<K>> keys, SelectionSet set) -> getMappedDataLoader(keys, set, pageSize, dbFunction, countFunction))
                 .load(asKeyPath(key), env);
     }
 
@@ -200,7 +195,6 @@ public class DataFetcherHelper extends AbstractFetcher {
     private <K, V> CompletableFuture<Map<KeyWithPath<K>, ConnectionImpl<V>>> getMappedDataLoader(
             Set<KeyWithPath<K>> keys,
             SelectionSet selectionSet,
-            int maxNodes,
             int pageSize,
             DBQuery<K, List<Pair<String, V>>> dbFunction,
             DBCount<K> countFunction
@@ -214,8 +208,7 @@ public class DataFetcherHelper extends AbstractFetcher {
                 getPaginatedConnection(
                         resultAsMap(keys, dbFunction.callDBMethod(dslContext, idSet, selectionSet)),
                         pageSize,
-                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : null,
-                        maxNodes
+                        connectionSelect.contains(CONNECTION_TOTAL_COUNT.getName()) ? countFunction.callDBMethod(dslContext, idSet) : null
                 )
         );
     }
