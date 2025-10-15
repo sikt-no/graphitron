@@ -14,6 +14,7 @@ import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.JSONB;
+import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.SelectJoinStep;
@@ -25,26 +26,24 @@ public class QueryDBQueries {
     public static SomeInterface someInterfaceForQuery(DSLContext ctx, SelectionSet select) {
         var unionKeysQuery = customerSortFieldsForSomeInterface();
         var mappedCustomer = customerForSomeInterface();
-        var _result = ctx
+
+        return ctx
                 .select(
-                        unionKeysQuery.field("$type"),
-                        mappedCustomer.field("$data").as("$dataForCustomer"))
+                        DSL.row(
+
+                                unionKeysQuery.field("$type", String.class),
+                                mappedCustomer.field("$data")
+                        ).mapping((a0, a1) -> switch (a0) {
+                            case "Customer" -> (SomeInterface) a1;
+                            default ->
+                                    throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", a0));
+                        })
+                )
                 .from(unionKeysQuery)
                 .leftJoin(mappedCustomer)
                 .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
                 .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
-                .fetchOne();
-
-        return _result == null ? null : _result.map(
-                internal_it_ -> {
-                    switch (internal_it_.get(0, String.class)) {
-                        case "Customer":
-                            return internal_it_.get("$dataForCustomer", SomeInterface.class);
-                        default:
-                            throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "SomeInterface", internal_it_.get(0, String.class)));
-                    }
-                }
-        );
+                .fetchOne(Record1::value1);
     }
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> customerSortFieldsForSomeInterface() {
