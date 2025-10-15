@@ -44,9 +44,21 @@ public class QueryDBQueries {
         var mappedCustomer = customerForSomeInterface();
 
         return ctx.select(
-                        unionKeysQuery.field("$type"),
-                        mappedAddress.field(1),
-                        mappedCustomer.field(1))
+                        DSL.row(
+                                unionKeysQuery.field("$type", String.class),
+                                mappedAddress.field("$data"),
+                                mappedCustomer.field("$data")
+                        ).mapping((a0, a1, a2) -> {
+                                    Record2 _result = switch (a0) {
+                                        case "Address" -> (Record2) a1;
+                                        case "Customer" -> (Record2) a2;
+                                        default ->
+                                                throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "SomeInterface", a0));
+                                    };
+                                    return Pair.of(_result.get(0, String.class), _result.get(1, SomeInterface.class));
+                                }
+                        )
+                )
                 .from(unionKeysQuery)
                 .leftJoin(mappedAddress)
                 .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedAddress.field("$pkFields", JSONB.class)))
@@ -54,22 +66,7 @@ public class QueryDBQueries {
                 .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
                 .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
                 .limit(pageSize + 1)
-                .fetch()
-                .map(internal_it_ -> {
-                            Record2 _result;
-                            switch (internal_it_.get(0, String.class)) {
-                                case "Address":
-                                    _result = internal_it_.get(1, Record2.class);
-                                    break;
-                                case "Customer":
-                                    _result = internal_it_.get(2, Record2.class);
-                                    break;
-                                default:
-                                    throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "SomeInterface", internal_it_.get(0, String.class)));
-                            }
-                            return Pair.of(_result.get(0, String.class), _result.get(1, SomeInterface.class));
-                        }
-                );
+                .fetch(Record1::value1);
     }
 
     private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> addressSortFieldsForSomeInterface(Integer pageSize, AfterTokenWithTypeName _token) {
