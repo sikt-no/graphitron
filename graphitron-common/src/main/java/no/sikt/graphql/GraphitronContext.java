@@ -1,15 +1,12 @@
 package no.sikt.graphql;
 
+import graphql.schema.DataFetchingEnvironment;
 import org.jooq.DSLContext;
 
-public class GraphitronContext {
-    private final DSLContext ctx;
+public interface GraphitronContext {
+    DSLContext getDslContext(DataFetchingEnvironment env);
 
-    public GraphitronContext(DSLContext ctx) {
-        this.ctx = ctx;
-    }
+    <T> T getContextArgument(DataFetchingEnvironment env, String name);
 
-    public DSLContext getDslContext() {
-        return ctx;
-    }
+    String getDataLoaderName(DataFetchingEnvironment env);
 }
