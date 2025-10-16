@@ -60,7 +60,8 @@ public enum ReferencedEntry {
     QUERY_FETCH_ADDRESS_INTERFACE_CONDITION("QUERY_FETCH_ADDRESS_INTERFACE_CONDITION", QueryAddressInterfaceCondition.class),
     QUERY_FETCH_PAYMENT_INTERFACE_CONDITION("QUERY_FETCH_PAYMENT_INTERFACE_CONDITION", QueryPaymentInterfaceCondition.class),
     REFERENCE_PG_USER_MAPPING_CONDITION("REFERENCE_PG_USER_MAPPING_CONDITION", PgUserMappingCondition.class),
-    CONTEXT_CONDITION("CONTEXT_CONDITION", ContextCondition.class);
+    CONTEXT_CONDITION("CONTEXT_CONDITION", ContextCondition.class),
+    PAYMENT_CONDITION("PAYMENT_CONDITION", PaymentCondition.class);
 
     private final ExternalReference reference;
 

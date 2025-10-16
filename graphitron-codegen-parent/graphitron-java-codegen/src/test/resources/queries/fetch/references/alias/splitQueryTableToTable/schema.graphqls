@@ -1,0 +1,7 @@
+type Address implements Node @table {
+    citySplitQuery: City! @splitQuery
+}
+
+type City @table {
+    countryName: String! @field(name: "COUNTRY_") @reference(path: [{table: "COUNTRY"}])
+}

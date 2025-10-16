@@ -49,7 +49,9 @@ public class NodeDirectiveTest extends GeneratorTest {
     void defaultCase() {
         assertGeneratedContentContains(
                 "root/default", Set.of(CUSTOMER_QUERY),
-                "row(_iv_nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping"
+                "queryForQuery_customer(_iv_nodeIdStrategy)",
+                "row(_iv_nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping",
+                "SelectField<Customer> queryForQuery_customer(NodeIdStrategy _iv_nodeIdStrategy)"
         );
     }
 
@@ -95,7 +97,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/default",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Customer\", _a_address_2"
+                "DSL.row(_iv_nodeIdStrategy.createId(\"Customer\", _a_address_2"
         );
     }
 
@@ -104,7 +106,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customTypeId",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_address_2"
+                "DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_address_2"
         );
     }
 
@@ -113,7 +115,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customKeyColumns",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
+                "DSL.row(_iv_nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
         );
     }
 

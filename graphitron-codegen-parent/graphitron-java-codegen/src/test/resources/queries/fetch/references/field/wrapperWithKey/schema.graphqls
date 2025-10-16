@@ -1,0 +1,16 @@
+type Query {
+    query: Film
+}
+
+type Film @table {
+    languageWrapper: LanguageWrapper
+}
+
+type LanguageWrapper {
+    language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+}
+
+type Language @table {
+    name: String
+}
+

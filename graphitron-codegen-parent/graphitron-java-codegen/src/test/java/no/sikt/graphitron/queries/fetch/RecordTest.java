@@ -137,7 +137,8 @@ public class RecordTest extends GeneratorTest {
                 ".row(DSL.row(DSL.multiset(" +
                         "DSL.select(_a_customer.getId())" +
                         ".from(_a_customer).where(inRecordList",
-                ".mapping(Functions.nullOnAllNull((_iv_it) -> new CustomerNoTable(_iv_it)))).fetchOne(_iv_it -> _iv_it.into(CustomerNoTable"
+                ".mapping(Functions.nullOnAllNull((_iv_it) -> new CustomerNoTable(_iv_it))",
+                ".fetchOne(_iv_it -> _iv_it.into(CustomerNoTable"
         );
     }
 
@@ -147,9 +148,11 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "returningListedTypeWithoutTableWithTableField", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
                 ".row(DSL.row(DSL.multiset(" +
-                        "DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                        "DSL.select(queryForQuery_customerNoTable_d1_customers())",
+                        "DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))",
                         ".from(_a_customer).where(inRecordList",
-                "new CustomerNoTable(_iv_it)))).fetchOne(_iv_it -> _iv_it.into(CustomerNoTable"
+                "new CustomerNoTable(_iv_it)))",
+                ".fetchOne(_iv_it -> _iv_it.into(CustomerNoTable"
         );
     }
 

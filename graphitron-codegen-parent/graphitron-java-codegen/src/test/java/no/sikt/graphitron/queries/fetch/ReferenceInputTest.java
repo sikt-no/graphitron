@@ -161,4 +161,14 @@ public class ReferenceInputTest extends ReferenceTest {
 
         doesNotContain(generated, "city()");
     }
+
+    @Test
+    @DisplayName("Split query with input parameters - helper methods exclude input parameters")
+    void keyWithMultiplePathsAndNestedSplitQuery() {
+        assertGeneratedContentContains(
+                "keyWithMultiplePathsAndNestedSplitQuery",
+                "DSL.select(filmsForLanguage_film())",
+                "private static SelectField<Film> filmsForLanguage_film()"
+        );
+    }
 }

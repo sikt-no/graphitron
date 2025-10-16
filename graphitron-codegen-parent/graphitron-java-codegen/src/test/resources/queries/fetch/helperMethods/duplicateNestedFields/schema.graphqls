@@ -1,0 +1,29 @@
+type Query {
+    query: [Customer]
+}
+
+type Customer @table {
+    customerId: Int @field(name: "CUSTOMER_ID")
+    firstName: String @field(name: "FIRST_NAME")
+    # Customer has store info with both primary and secondary stores
+    storeInfo: StoreInfo
+}
+
+# Table type with its own table that will get a helper method
+type StoreInfo @table(name: "STORE") {
+    storeId: Int @field(name: "STORE_ID")
+    # Two wrapper fields that both lead to Staff table
+    # This creates duplicate helper method names without the fix
+    primaryStaff: StaffWrapper
+    secondaryStaff: StaffWrapper
+}
+
+# Wrapper type without a table - will be traversed, not extracted
+type StaffWrapper {
+    staff: Staff
+}
+
+type Staff @table {
+    staffId: Int @field(name: "STAFF_ID")
+    firstName: String @field(name: "FIRST_NAME")
+}
