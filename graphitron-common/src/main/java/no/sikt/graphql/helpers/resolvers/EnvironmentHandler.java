@@ -3,7 +3,6 @@ package no.sikt.graphql.helpers.resolvers;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
 import no.sikt.graphql.GraphitronContext;
-import no.sikt.graphql.MultitenantGraphitronContext;
 import no.sikt.graphql.helpers.selection.ConnectionSelectionSet;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.dataloader.BatchLoaderEnvironment;
@@ -25,42 +24,26 @@ public class EnvironmentHandler {
     protected final DSLContext dslContext;
     protected final SelectionSet select, connectionSelect;
     protected final Set<String> arguments;
-    protected final Map<String, Map<String, Row>> nextKeys;
+    protected final Map<String, Map<String, Row>> nextKeys;;
     protected final String dataloaderName;
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
-        String tenantPrefix = "";
-
-        if (env.getGraphQlContext().hasKey("graphitronContext")) {
-            Object graphitronContext = env.getGraphQlContext().get("graphitronContext");
-            if (graphitronContext instanceof GraphitronContext c) {
-                localContext = new HashMap<>();
-                dslContext = c.getDslContext();
-                nextKeys = Map.of();
-            } else if (graphitronContext instanceof MultitenantGraphitronContext c) {
-                Object lc = env.getLocalContext();
-                tenantPrefix = c.getTenantId(lc) + ":";
-                dslContext = c.getDslContext(lc);
-                localContext = new HashMap<>();
-                nextKeys = Map.of();
-            } else {
-                throw new IllegalStateException("Unsupported type of graphitronContext: " + graphitronContext.getClass().getName());
-            }
-        } else if (env.getLocalContext() instanceof DSLContext ctx) {
-            localContext = new HashMap<>();
-            dslContext = ctx;
-            nextKeys = Map.of();
-        } else {
-            throw new IllegalStateException("Can't find DSLContext");
+        GraphitronContext graphitronContext = env.getGraphQlContext().get("graphitronContext");
+        if (graphitronContext == null) {
+            throw new IllegalStateException("You have to register a graphitronContext in ExecutionInput.graphQLContext");
         }
+
+        dslContext = graphitronContext.getDslContext(env);
+        dataloaderName = graphitronContext.getDataLoaderName(env);
 
         arguments = flattenArgumentKeys(env.getArguments());
         select = new SelectionSet(getSelectionSetsFromEnvironment(env));
         select.setArgumentSet(flattenIndexedArgumentKeys(env.getArguments(), ""));
         connectionSelect = new ConnectionSelectionSet(getSelectionSetsFromEnvironment(env));
         executionPath = env.getExecutionStepInfo().getPath().toString();
-        dataloaderName = String.format("%s%sFor%s", tenantPrefix, capitalize(env.getField().getName()), env.getExecutionStepInfo().getObjectType().getName());
+        localContext = Map.of();
+        nextKeys = Map.of();
     }
 
     public DataFetchingEnvironment getEnv() {
