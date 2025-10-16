@@ -86,7 +86,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/innerTable",
                 "customer_2168032777_address = _a_customer.address().as(",
-                "customer_2168032777_address.getId()"
+                "address.getId()"
         );
     }
 
@@ -106,7 +106,7 @@ public class ReferenceAliasTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "alias/innerTableReverse", Set.of(CUSTOMER_TABLE),
                 "address_223244161_customer = _a_address.customer().as(",
-                "address_223244161_customer.getId()"
+                "customer.getId()"
         );
     }
 
@@ -188,48 +188,44 @@ public class ReferenceAliasTest extends ReferenceTest {
     }
 
     @Test
-    @DisplayName("Path from a table to a key")
-    void tableToKey() {
+    @DisplayName("SplitQuery table path")
+    void splitQueryTableToTable() {
         assertGeneratedContentContains(
-                "alias/tableToKey", Set.of(CUSTOMER_QUERY),
-                "customer.address().as(",
-                "customer_2168032777_address.city().as(",
-                "address_2138977089_city.CITY"
+                "alias/splitQueryTableToTable",
+                """
+                            private static SelectField<City> citySplitQueryForAddress_city(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.City _a_address_223244161_city) {
+                                var _a_city_621065670_country = _a_address_223244161_city.country().as("country_3426431562");
+                                return DSL.row(
+                                        DSL.field(
+                                                DSL.select(_a_city_621065670_country.COUNTRY_)
+                                                .from(_a_city_621065670_country)
+                                        )
+                                ).mapping(Functions.nullOnAllNull(City::new));
+                            }
+                        """
         );
     }
 
     @Test
-    @DisplayName("Path from a table to a condition")
-    void tableToCondition() {
-        assertGeneratedContentContains(
-                "alias/tableToCondition", Set.of(CUSTOMER_QUERY),
-                "customer.address().as(",
-                "CITY.as(",
-                "customer_2168032777_address_cityaddress_city.CITY",
-                ".cityAddress(_a_customer_2168032777_address, _a_customer_2168032777_address_cityaddress_city)"
-        );
+    @DisplayName("Prevent circular reference loops in nested helper method generation")
+    void preventCircularHelperMethodGeneration() {
+        assertGeneratedContentMatches(
+                "alias/circular-prevention");
     }
 
     @Test
-    @DisplayName("Reverse path from a table to another table")
-    void tableToTableReverse() {
-        assertGeneratedContentContains(
-                "alias/tableToTableReverse", Set.of(CITY_QUERY),
-                "city.address().as(",
-                "city_760939060_address.customer().as(",
-                "address_609487378_customer.EMAIL"
-        );
+    @DisplayName("Skip nested helper generation for fields with existing split query resolvers")
+    void preventNestedHelpersForExistingSplitQueryResolvers() {
+        assertGeneratedContentMatches(
+                "alias/split-query-skip");
     }
 
     @Test
-    @DisplayName("Reverse path from a table to a key")
-    void tableToKeyReverse() {
-        assertGeneratedContentContains(
-                "alias/tableToKeyReverse", Set.of(CITY_QUERY),
-                "city.address().as(",
-                "city_760939060_address.customer().as(",
-                "address_609487378_customer.EMAIL"
-        );
+    @DisplayName("Nested complex reference fields use target table parameters")
+    void nestedComplexReferenceInSplitQuery() {
+        assertGeneratedContentMatches(
+                "alias/complex-reference-params");
     }
 
     @Test

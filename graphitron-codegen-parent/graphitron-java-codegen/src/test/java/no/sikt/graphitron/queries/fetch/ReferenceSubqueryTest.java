@@ -109,9 +109,54 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void nestedLists() {
         assertGeneratedContentContains(
                 "nestedLists", Set.of(CUSTOMER_QUERY),
-                ".from(_a_address_2138977089_store)",
-                ".from(_a_customer_2168032777_address)"
+                """
+                            public static Customer queryForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
+                                var _a_customer = CUSTOMER.as("customer_2168032777");
+                                var _a_customer_2168032777_address = _a_customer.address().as("address_2138977089");
+                                return _iv_ctx
+                                        .select(queryForQuery_customer())
+                                        .from(_a_customer)
+                                        .fetchOne(_iv_it -> _iv_it.into(Customer.class));
+                            }
+                            private static SelectField<Customer> queryForQuery_customer() {
+                                var _a_customer = CUSTOMER.as("customer_2168032777");
+                                var _a_customer_2168032777_address = _a_customer.address().as("address_2138977089");
+                                return DSL.row(
+                                        DSL.row(
+                                                DSL.multiset(
+                                                        DSL.select(queryForQuery_customer_address(_a_customer_2168032777_address))
+                                                        .from(_a_customer_2168032777_address)
+                                                        .orderBy(_a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray()))
+                                                )
+                                        ).mapping(_iv_e -> _iv_e.map(Record1::value1))
+                                ).mapping(Functions.nullOnAllNull(Customer::new));
+                            }
+                            private static SelectField<Address> queryForQuery_customer_address(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Address _a_address) {
+                                var _a_address_223244161_store = _a_address.store().as("store_2901185776");
+                                return DSL.row(
+                                        _a_address.getId(),
+                                        DSL.row(
+                                                DSL.multiset(
+                                                        DSL.select(queryForQuery_customer_address_stores(_a_address_223244161_store))
+                                                        .from(_a_address_223244161_store)
+                                                        .orderBy(_a_address_223244161_store.fields(_a_address_223244161_store.getPrimaryKey().getFieldsArray()))
+                                                )
+                                        ).mapping(_iv_e -> _iv_e.map(Record1::value1))
+                                ).mapping(Functions.nullOnAllNull(Address::new));
+                            }
+                            private static SelectField<Store> queryForQuery_customer_address_stores(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Store _a_store) {
+                                return DSL.row(_a_store.getId()).mapping(Functions.nullOnAllNull(Store::new));
+                            }
+                        """
         );
+
+//        assertGeneratedContentContains(
+//                "nestedLists", Set.of(CUSTOMER_QUERY),
+//                ".from(_a_address_2138977089_store)",
+//                ".from(_a_customer_2168032777_address)"
+//        );
     }
 
 }

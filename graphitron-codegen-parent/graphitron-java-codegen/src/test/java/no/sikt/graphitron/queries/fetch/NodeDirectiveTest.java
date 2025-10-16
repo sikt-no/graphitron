@@ -49,7 +49,20 @@ public class NodeDirectiveTest extends GeneratorTest {
     void defaultCase() {
         assertGeneratedContentContains(
                 "root/default", Set.of(CUSTOMER_QUERY),
-                "row(_iv_nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping"
+                """
+                        public static Customer queryForQuery(DSLContext _iv_ctx, NodeIdStrategy _iv_nodeIdStrategy,
+                                SelectionSet _iv_select) {
+                            var _a_customer = CUSTOMER.as("customer_2168032777");
+                            return _iv_ctx
+                                    .select(queryForQuery_customer(_iv_nodeIdStrategy))
+                                    .from(_a_customer)
+                                    .fetchOne(_iv_it -> _iv_it.into(Customer.class));
+                        }
+                        private static SelectField<Customer> queryForQuery_customer(NodeIdStrategy _iv_nodeIdStrategy) {
+                            var _a_customer = CUSTOMER.as("customer_2168032777");
+                            return DSL.row(_iv_nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new));
+                        }
+                        """
         );
     }
 
@@ -58,8 +71,12 @@ public class NodeDirectiveTest extends GeneratorTest {
     void nested() {
         assertGeneratedContentContains(
                 "root/nested", Set.of(CUSTOMER_QUERY),
-                "createId(\"Address\", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray())))" +
-                        ".mapping(Functions.nullOnAllNull(Address"
+                """
+                            private static SelectField<Address> queryForQuery_customer_address(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Address _a_address, NodeIdStrategy _iv_nodeIdStrategy) {
+                                return DSL.row(_iv_nodeIdStrategy.createId("Address", _a_address.fields(_a_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Address::new));
+                            }
+                        """
         );
     }
 
@@ -95,7 +112,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/default",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Customer\", _a_address_2"
+                "DSL.row(_iv_nodeIdStrategy.createId(\"Customer\", _a_address_2"
         );
     }
 
@@ -104,7 +121,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customTypeId",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_address_2"
+                "DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_address_2"
         );
     }
 
@@ -113,7 +130,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customKeyColumns",
-                "DSL.select(DSL.row(_iv_nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
+                "DSL.row(_iv_nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
         );
     }
 

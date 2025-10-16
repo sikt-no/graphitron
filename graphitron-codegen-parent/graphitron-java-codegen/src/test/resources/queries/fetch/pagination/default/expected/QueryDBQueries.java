@@ -1,7 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.lang.Integer;
@@ -13,6 +13,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
+import org.jooq.SelectField;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
@@ -23,7 +24,7 @@ public class QueryDBQueries {
         return _iv_ctx
                 .select(
                         QueryHelper.getOrderByToken(_a_customer, _iv_orderFields),
-                        DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        queryForQuery_customerTable()
                 )
                 .from(_a_customer)
                 .orderBy(_iv_orderFields)
@@ -31,5 +32,10 @@ public class QueryDBQueries {
                 .limit(_iv_pageSize + 1)
                 .fetch()
                 .map(_iv_it -> new ImmutablePair<>(_iv_it.value1(), _iv_it.value2()));
+    }
+
+    private static SelectField<CustomerTable> queryForQuery_customerTable() {
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }
 }

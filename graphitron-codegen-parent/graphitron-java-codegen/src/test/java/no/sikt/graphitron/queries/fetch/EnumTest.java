@@ -102,11 +102,11 @@ public class EnumTest extends GeneratorTest {
     }
 
     @Test
-    @DisplayName("Output JOOQ enum in subquery")
+    @DisplayName("Output JOOQ enum in subquery") //TODO alias name
     void outputJOOQSubquery() {
         assertGeneratedContentContains(
                 "output/jOOQSubquery", Set.of(DUMMY_ENUM_CONVERTED),
-                "inventory_2972535350_film.RATING.convert("
+                "_a_film.RATING.convert("
         );
     }
 }

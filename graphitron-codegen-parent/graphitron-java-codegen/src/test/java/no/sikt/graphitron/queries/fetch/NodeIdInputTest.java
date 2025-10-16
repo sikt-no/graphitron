@@ -34,7 +34,7 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
     @DisplayName("As lookup key")
     void lookupKey() {
         assertGeneratedContentContains("lookupKey",
-                "nodeIdStrategy.createId(\"C\", _a_customer.CUSTOMER_ID), DSL.row(",
+                "nodeIdStrategy.createId(\"C\", _a_customer.CUSTOMER_ID), queryForQuery_customer(",
                 ".where(customerId.size() > 0 ? _iv_nodeIdStrategy.hasIds"
         );
     }
@@ -173,7 +173,8 @@ public class NodeIdInputTest extends NodeIdDirectiveTest {
                 "customer.getPrimaryKey().getFieldsArray())))" +
                         ".from(_a_customer)" +
                         ".where(_iv_nodeIdStrategy.hasId(\"CustomerNode\"",
-                "CustomerNoTable::new))).fetchOne("
+                "CustomerNoTable::new))",
+                ".fetchOne("
         );
     }
 

@@ -161,4 +161,15 @@ public class ReferenceInputTest extends ReferenceTest {
 
         doesNotContain(generated, "city()");
     }
+
+    @Test
+    @DisplayName("Split query with input parameters - helper methods exclude input parameters")
+    void keyWithMultiplePathsAndNestedSplitQuery() {
+        assertGeneratedContentContains(
+                "keyWithMultiplePathsAndNestedSplitQuery",
+                "DSL.select(filmsForLanguage_film(_a_language_3571151285_filmlanguageidfkey))",
+                "private static SelectField<Film> filmsForLanguage_film(" +
+                        "no.sikt.graphitron.jooq.generated.testdata.public_.tables.Film _a_language_3571151285_filmlanguageidfkey)"
+        );
+    }
 }

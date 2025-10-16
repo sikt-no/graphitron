@@ -62,7 +62,22 @@ public class TableMethodTest extends GeneratorTest {
     @DisplayName("On splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery" , Set.of(CUSTOMER_CONNECTION),
-                "customer = customerTableMethod.customerTable(_a_customer)"
+                """
+                        public class QueryDBQueries {
+                            public static Customer customerForQuery(DSLContext _iv_ctx, SelectionSet _iv_select) {
+                                var customerTableMethod = new CustomerTableMethod();
+                                var _a_customer = CUSTOMER.as("customer_2168032777");
+                                _a_customer = customerTableMethod.customerTable(_a_customer);
+                                return _iv_ctx
+                                        .select(customerForQuery_customer(_a_customer))
+                                        .from(_a_customer)
+                                        .fetchOne(_iv_it -> _iv_it.into(Customer.class));
+                            }
+                            private static SelectField<Customer> customerForQuery_customer(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer _a_customer) {
+                                return DSL.row(DSL.row(_a_customer.CUSTOMER_ID)).mapping(Functions.nullOnAllNull(Customer::new));
+                            }
+                        }"""
         );
     }
 

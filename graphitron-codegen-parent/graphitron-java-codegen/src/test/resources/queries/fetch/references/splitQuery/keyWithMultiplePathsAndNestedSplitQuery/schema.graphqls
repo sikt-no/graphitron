@@ -1,0 +1,13 @@
+type Query {
+  query: [Film]
+}
+
+type Film @table {
+    language: Language @reference(path: {key: "FILM__FILM_LANGUAGE_ID_FKEY"})
+}
+
+type Language @table {
+  id: ID!
+  title: String!
+  filmsWithoutPagination: [Film] @splitQuery @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+}

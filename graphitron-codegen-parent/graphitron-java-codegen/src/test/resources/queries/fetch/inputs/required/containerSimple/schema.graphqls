@@ -1,0 +1,23 @@
+type Query {
+    filmWrapped(filmId: String @field(name: "FILM_ID")): FilmContainer
+   category(in: CategoryInput!): Category
+
+}
+
+type FilmContainer {
+    films: Film
+}
+
+type Film implements Node @table {
+    id: ID!
+}
+
+
+type Category implements Node @node @table {
+    id: ID!
+    name: String
+}
+
+input CategoryInput @table(name: "CATEGORY") {
+    categoryId: ID! @nodeId(typeName: "Category")
+}

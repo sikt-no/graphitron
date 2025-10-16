@@ -79,10 +79,10 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Test
     @DisplayName("Primary key columns should be selected in previous query in nested type")
-    void previousQueryNestedOnlySplitQuery() {
+    void previousQueryNestedOnlySplitQuery() { //TODO alias
         assertGeneratedContentContains(
                 "previousQueryNested", Set.of(CUSTOMER_QUERY),
-                "row(_a_customer_2168032777_address.ADDRESS_ID), _a_customer_2168032777_address.getId())" +
+                "row(_a_address.ADDRESS_ID), _a_address.getId())" +
                         ".mapping(Functions.nullOnAllNull(Address::"
         );
     }
@@ -147,6 +147,24 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
                 ".from(_a_film_2185543202_filmoriginallanguageidfkey"
+        );
+    }
+
+    @Test
+    @DisplayName("Key path with multiple possible paths between the tables in a nested setting")
+    void keyWithMultiplePathsAndNestedSplitQuery() {
+        assertGeneratedContentContains(
+                "keyWithMultiplePathsAndNestedSplitQuery",
+                """
+                            private static SelectField<Language> filmsWithoutPaginationForLanguage_film_language(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Language _a_language_filmlanguageidfkey) {
+                                return DSL.row(
+                                        DSL.row(_a_language_filmlanguageidfkey.LANGUAGE_ID),
+                                        _a_language_filmlanguageidfkey.getId(),
+                                        _a_language_filmlanguageidfkey.TITLE
+                                ).mapping(Functions.nullOnAllNull(Language::new));
+                            }
+                        """
         );
     }
 
@@ -302,7 +320,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
                 "DSL.row(_a_payment.PAYMENT_ID), DSL.field(",
-                "CustomerTable::new))).from(_a_payment_1831371789_customer)",
+                "CustomerTable::new))",
+                ".from(_a_payment_1831371789_customer)",
                 ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment"
         );
     }
@@ -322,8 +341,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaService() {
         assertGeneratedContentContains(
                 "afterJavaService", Set.of(CUSTOMER_TABLE),
-                "Set<Row1<Long>> _rk_customer",
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address",
+                "Set<Row1<Long>> _rk_customer", // TODO: improve resolver keys variable name
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address(",
                 ".from(_a_address)" +
                         ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_customer))" +
                         ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2)"
@@ -336,7 +355,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "afterJavaServiceListed", Set.of(CUSTOMER_TABLE),
                 "Map<Row1<Long>, Address> addressForCustomer(DSLContext _iv_ctx, Set<Row1<Long>> _rk_customer",
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address("
         );
     }
 
@@ -345,7 +364,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaServiceNested() {
         assertGeneratedContentContains(
                 "afterJavaServiceNested", Set.of(CUSTOMER_TABLE),
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForWrapper_address("
         );
     }
 }

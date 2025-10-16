@@ -1,7 +1,7 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.lang.Integer;
@@ -10,6 +10,7 @@ import java.lang.String;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer;
 import no.sikt.graphql.helpers.query.QueryHelper;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -17,6 +18,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.Row1;
+import org.jooq.SelectField;
 import org.jooq.impl.DSL;
 
 public class WrapperDBQueries {
@@ -31,18 +33,23 @@ public class WrapperDBQueries {
                         DSL.multiset(
                                 DSL.select(
                                                 QueryHelper.getOrderByToken(_a_address_223244161_customer, _iv_orderFields),
-                                                DSL.row(_a_address_223244161_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                                                queryForWrapper_customerTable(_a_address_223244161_customer)
+                                        )
                                         .from(_a_address_223244161_customer)
-                                        .orderBy(_iv_orderFields)
-                                        .seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
+                                        .orderBy(_iv_orderFields).seek(QueryHelper.getOrderByValues(_iv_ctx, _iv_orderFields, after))
                                         .limit(_iv_pageSize + 1)
+
                         )
                 )
                 .from(_a_address)
                 .where(DSL.row(_a_address.ADDRESS_ID).in(_rk_wrapper))
                 .fetchMap(
                         _iv_r -> _iv_r.value1().valuesRow(),
-                        _iv_it ->  _iv_it.value2().map(_iv_r -> _iv_r.value2() == null ? null : new ImmutablePair<>(_iv_r.value1(), _iv_r.value2()))
-                );
+                        _iv_it -> _iv_it.value2().map(_iv_r -> _iv_r.value2() == null ? null : new ImmutablePair<>(_iv_r.value1(), _iv_r.value2())));
+    }
+
+    private static SelectField<CustomerTable> queryForWrapper_customerTable(
+            Customer _a_address_223244161_customer) {
+        return DSL.row(_a_address_223244161_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }
 }

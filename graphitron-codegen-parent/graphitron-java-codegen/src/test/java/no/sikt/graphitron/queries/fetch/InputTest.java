@@ -144,18 +144,18 @@ public class InputTest extends GeneratorTest {
         );
     }
 
-   @Test
-   @DisplayName("Three-level input type containing two other input types on the same level")
-   void multiLevelInput() {
+    @Test
+    @DisplayName("Three-level input type containing two other input types on the same level")
+    void multiLevelInput() {
         assertGeneratedContentContains(
                 "multiLevelInput", Set.of(STAFF, NAME_INPUT),
                 ".where(_a_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
-                ".and(_a_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
-                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
-                ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
-                ".orderBy"
+                        ".and(_a_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
+                        ".and(staff.getInfo().getJobEmail().getEmail() != null ? _a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
+                        ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
+                        ".orderBy"
         );
-   }
+    }
 
     @Test
     @DisplayName("On field returning single table interface")
@@ -171,6 +171,80 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains("onSplitQueryField",
                 ".from(_a_address_223244161_customer).where(_a_address_223244161_customer.EMAIL.eq(email))",
                 ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(_rk_address)).fetch" // Make sure conditon is not applied on outer query
+        );
+    }
+
+    @Test
+    @DisplayName("Container type with input field parameter") //TODO delete? Should be covered elsewhere. Failed due to checking if ANY field on the root Query had input table arguments.
+    void filmWrappedWithInputFieldAndTableField() {
+        assertGeneratedContentContains(
+                "containerSimple",
+                """
+                            public static FilmContainer filmWrappedForQuery(DSLContext _iv_ctx,
+                                    String filmId, SelectionSet _iv_select) {
+                                var _a_film = FILM.as("film_2185543202");
+                                return _iv_ctx
+                                        .select(filmWrappedForQuery_filmContainer(filmId))
+                                        .fetchOne(_iv_it -> _iv_it.into(FilmContainer.class));
+                            }""",
+                            """
+                            private static SelectField<FilmContainer> filmWrappedForQuery_filmContainer(String filmId) {
+                                var _a_film = FILM.as("film_2185543202");
+                                return DSL.row(
+                                        DSL.field(
+                                                DSL.select(filmWrappedForQuery_filmContainer_films(_a_film))
+                                                .from(_a_film)
+                                                .where(filmId != null ? _a_film.FILM_ID.eq(filmId) : DSL.noCondition())
+                                        )
+                                ).mapping(Functions.nullOnAllNull(FilmContainer::new));
+                            }"""
+                           ,"""
+                            private static SelectField<Film> filmWrappedForQuery_filmContainer_films(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Film _a_film) {
+                                return DSL.row(_a_film.getId()).mapping(Functions.nullOnAllNull(Film::new));
+                            }"""
+        );
+    }
+
+    @Test
+    @DisplayName("Container type with input table parameter")
+    void filmWrappedWithInputTableAndTableField() {
+        assertGeneratedContentContains(
+                "container",
+                """
+                        public class QueryDBQueries {
+                            public static FilmContainer filmWrappedWithInputTableAndTableFieldForQuery(DSLContext _iv_ctx,
+                                    FilmRecord inputRecord, SelectionSet _iv_select) {
+                                var _a_film = FILM.as("film_2185543202");
+                                var _a_film_2185543202_film = _a_film.film().as("film_3535906766");
+                                var _a_film_3535906766_filmlanguageidfkey = _a_film_2185543202_film.filmLanguageIdFkey().as("language_716544853");
+                                return _iv_ctx
+                                        .select(filmWrappedWithInputTableAndTableFieldForQuery_filmContainer(inputRecord))
+                                        .from(_a_film)
+                                        .where(_a_film.DESCRIPTION.eq(inputRecord.getDescription()))
+                                        .fetchOne(_iv_it -> _iv_it.into(FilmContainer.class));
+                            }
+                            private static SelectField<FilmContainer> filmWrappedWithInputTableAndTableFieldForQuery_filmContainer(
+                                    FilmRecord inputRecord) {
+                                var _a_film = FILM.as("film_2185543202");
+                                var _a_film_2185543202_film = _a_film.film().as("film_3535906766");
+                                var _a_film_3535906766_filmlanguageidfkey = _a_film_2185543202_film.filmLanguageIdFkey().as("language_716544853");
+                                return DSL.row(
+                                        DSL.row(
+                                                _a_film_2185543202_film.getId(),
+                                                DSL.field(
+                                                        DSL.select(filmWrappedWithInputTableAndTableFieldForQuery_filmContainer_language(_a_film_3535906766_filmlanguageidfkey))
+                                                        .from(_a_film_3535906766_filmlanguageidfkey)
+                                                )
+                                        ).mapping(Functions.nullOnAllNull(Film::new))
+                                ).mapping(Functions.nullOnAllNull(FilmContainer::new));
+                            }
+
+                            private static SelectField<Language> filmWrappedWithInputTableAndTableFieldForQuery_filmContainer_language(
+                                    no.sikt.graphitron.jooq.generated.testdata.public_.tables.Language _a_language) {
+                                return DSL.row(_a_language.NAME).mapping(Functions.nullOnAllNull(Language::new));
+                            }
+                        }"""
         );
     }
 }
