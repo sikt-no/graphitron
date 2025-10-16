@@ -45,6 +45,7 @@ type Query {
     addressTableMethodConnection(input: String @field(name: "POSTAL_CODE")): [Address] @asConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.example.service.AddressTableMethod", method: "addressTableMethod"} )
 
     categories: [Category]
+    category(in: CategoryInput!): Category
 }
 
 type Mutation {
@@ -58,6 +59,7 @@ type Mutation {
 
     upsertCategory(in: CategoryNameInput): Category @mutation(typeName: UPSERT)
     upsertCategories(in: [CategoryNameInput]): [Category] @mutation(typeName: UPSERT)
+    deleteCategories(in: [CategoryInput!]!): [ID] @nodeId(typeName: "Category") @mutation(typeName: DELETE)
 }
 
 type Category implements Node @node @table {
@@ -68,6 +70,10 @@ type Category implements Node @node @table {
 input CategoryNameInput @table(name: "CATEGORY") {
     categoryId: ID! @nodeId(typeName: "Category")
     name: String
+}
+
+input CategoryInput @table(name: "CATEGORY") {
+    categoryId: ID! @nodeId(typeName: "Category")
 }
 
 interface Node {

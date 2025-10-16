@@ -4,12 +4,20 @@ import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
 @QuarkusTest
 @DisplayName("Test basic retrieval of data from the GraphQL API")
 public class QueryMatchTest extends MatchTestBase {
+
+    @Override
+    protected Path getFileDirectory() {
+        return Paths.get("src", "test", "resources", "match", "queries");
+    }
 
     @Test
     @DisplayName("Data on nested types can be retrieved")

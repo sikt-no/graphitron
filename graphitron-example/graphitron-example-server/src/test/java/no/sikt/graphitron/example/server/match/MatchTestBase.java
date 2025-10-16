@@ -6,7 +6,6 @@ import io.restassured.response.ValidatableResponse;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -17,12 +16,12 @@ import static io.restassured.RestAssured.given;
  * and returns ValidatableResponse that can be used for further assertions.
  */
 public abstract class MatchTestBase {
-    private static final Path QUERY_FILE_DIRECTORY = Paths.get("src", "test", "resources", "match", "queries");
+    protected abstract Path getFileDirectory();
 
-    protected static ValidatableResponse getValidatableResponse(String fileName) {
+    protected ValidatableResponse getValidatableResponse(String fileName) {
         String query;
         try {
-            query = Files.readString(QUERY_FILE_DIRECTORY.resolve(fileName));
+            query = Files.readString(getFileDirectory().resolve(fileName));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
