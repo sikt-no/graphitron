@@ -1,0 +1,19 @@
+type Query {
+    rental: Rental
+}
+
+type Rental @table {
+    # rental -> staff -> store
+    staff: Staff @reference(path: {key: "RENTAL__RENTAL_STAFF_ID_FKEY"})
+    # rental -> staff_store (direct)
+    # Creates potential collision: both could generate "rentalForQuery_rental_staff_store"
+    staff_store: Store @reference(path: [{table: "STAFF"}, {key: "STAFF__STAFF_STORE_ID_FKEY"}])
+}
+
+type Staff @table {
+    store: Store @reference(path: {key: "STAFF__STAFF_STORE_ID_FKEY"})
+}
+
+type Store @table {
+    storeId: Int @field(name: "STORE_ID")
+}

@@ -26,7 +26,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
 
     @Override
     protected Set<ExternalReference> getExternalReferences() {
-        return makeReferences(REFERENCE_CUSTOMER_CONDITION, REFERENCE_FILM_CONDITION, JAVA_RECORD_CUSTOMER);
+        return makeReferences(REFERENCE_CUSTOMER_CONDITION, REFERENCE_FILM_CONDITION, JAVA_RECORD_CUSTOMER, PAYMENT_CONDITION);
     }
 
     @Test
@@ -147,6 +147,26 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
                 ".from(_a_film_2185543202_filmoriginallanguageidfkey"
+        );
+    }
+
+    @Test
+    @DisplayName("Key path with multiple possible paths between the tables in a nested setting")
+    void keyWithMultiplePathsAndNestedSplitQuery() {
+        assertGeneratedContentContains(
+                "keyWithMultiplePathsAndNestedSplitQuery",
+                """
+                        private static SelectField<Language> filmsWithoutPaginationForLanguage_film_d1_language() {
+                            var _a_language = LANGUAGE.as("language_3571151285");
+                            var _a_language_3571151285_filmlanguageidfkey = _a_language.filmLanguageIdFkey().as("film_4095514247");
+                            var _a_film_4095514247_filmlanguageidfkey = _a_language_3571151285_filmlanguageidfkey.filmLanguageIdFkey().as("language_4281699989");
+                            return DSL.row(
+                                    DSL.row(_a_film_4095514247_filmlanguageidfkey.LANGUAGE_ID),
+                                    _a_film_4095514247_filmlanguageidfkey.getId(),
+                                    _a_film_4095514247_filmlanguageidfkey.NAME
+                            ).mapping(Functions.nullOnAllNull(Language::new));
+                        }
+                        """
         );
     }
 
@@ -302,7 +322,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
                 "DSL.row(_a_payment.PAYMENT_ID), DSL.field(",
-                "CustomerTable::new))).from(_a_payment_1831371789_customer)",
+                "customerForPayment_customerTable()).from(_a_payment_1831371789_customer)",
                 ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(_rk_payment"
         );
     }
@@ -323,7 +343,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "afterJavaService", Set.of(CUSTOMER_TABLE),
                 "Set<Row1<Long>> _rk_customer",
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address",
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address(",
                 ".from(_a_address)" +
                         ".where(DSL.row(_a_address.ADDRESS_ID).in(_rk_customer))" +
                         ".fetchMap(_iv_r -> _iv_r.value1().valuesRow(), Record2::value2)"
@@ -336,7 +356,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "afterJavaServiceListed", Set.of(CUSTOMER_TABLE),
                 "Map<Row1<Long>, Address> addressForCustomer(DSLContext _iv_ctx, Set<Row1<Long>> _rk_customer",
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address("
         );
     }
 
@@ -345,7 +365,97 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaServiceNested() {
         assertGeneratedContentContains(
                 "afterJavaServiceNested", Set.of(CUSTOMER_TABLE),
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForWrapper_address("
+        );
+    }
+
+    @Test
+    @DisplayName("Split query helpers with complex paths declare only valid alias chains")
+    void splitQueryComplexReferencePathAliasFiltering() {
+        assertGeneratedContentContains(
+                "viaTables", Set.of(CUSTOMER_TABLE),
+                """
+                            private static SelectField<Store> storesThatHaveThisFilmForFilm_store() {
+                                var _a_film = FILM.as("film_2185543202");
+                                var _a_film_2185543202_inventory = _a_film.inventory().as("inventory_744357058");
+                                var _a_inventory_744357058_store = _a_film_2185543202_inventory.store().as("store_3638207731");
+                                return DSL.row(_a_inventory_744357058_store.getId()).mapping(Functions.nullOnAllNull(Store::new));
+                            }"""
+                ,
+                            """
+                            private static SelectField<City> citiesWhereFilmIsStockedForFilm_city() {
+                                var _a_film = FILM.as("film_2185543202");
+                                var _a_film_2185543202_inventory = _a_film.inventory().as("inventory_744357058");
+                                var _a_inventory_744357058_store = _a_film_2185543202_inventory.store().as("store_3638207731");
+                                var _a_store_3638207731_address = _a_inventory_744357058_store.address().as("address_2813127756");
+                                var _a_address_2813127756_city = _a_store_3638207731_address.city().as("city_3468131846");
+                                var _a_city_3468131846_address = _a_address_2813127756_city.address().as("address_2618309002");
+                                var _a_address_2618309002_customer = _a_city_3468131846_address.customer().as("customer_672486254");
+                                var _a_customer_672486254_payment = _a_address_2618309002_customer.payment().as("payment_3112599430");
+                                return DSL.row(
+                                        _a_address_2813127756_city.getId(),
+                                        DSL.row(
+                                                DSL.multiset(
+                                                        DSL.select(citiesWhereFilmIsStockedForFilm_city_d1_payments())
+                                                        .from(_a_city_3468131846_address)
+                                                        .join(_a_address_2618309002_customer)
+                                                        .join(_a_customer_672486254_payment)
+                                                        .orderBy(_a_customer_672486254_payment.fields(_a_customer_672486254_payment.getPrimaryKey().getFieldsArray()))
+                                                )
+                                        ).mapping(_iv_e -> _iv_e.map(Record1::value1))
+                                ).mapping(Functions.nullOnAllNull(City::new));
+                            }""",
+                            """
+                            private static SelectField<Payment> citiesWhereFilmIsStockedForFilm_city_d1_payments() {
+                                var _a_film = FILM.as("film_2185543202");
+                                var _a_film_2185543202_inventory = _a_film.inventory().as("inventory_744357058");
+                                var _a_inventory_744357058_store = _a_film_2185543202_inventory.store().as("store_3638207731");
+                                var _a_store_3638207731_address = _a_inventory_744357058_store.address().as("address_2813127756");
+                                var _a_address_2813127756_city = _a_store_3638207731_address.city().as("city_3468131846");
+                                var _a_city_3468131846_address = _a_address_2813127756_city.address().as("address_2618309002");
+                                var _a_address_2618309002_customer = _a_city_3468131846_address.customer().as("customer_672486254");
+                                var _a_customer_672486254_payment = _a_address_2618309002_customer.payment().as("payment_3112599430");
+                                return DSL.row(_a_customer_672486254_payment.getId()).mapping(Functions.nullOnAllNull(Payment::new));
+                            }
+                            """
+        );
+    }
+
+    @Test
+    @DisplayName("Helper methods declare condition-based join aliases for @reference fields")
+    void nestedFieldWithoutParentConditions() {
+        // This test uses Customer -> Payment (splitQuery) -> Staff (with condition)
+        // The Payment.staff field has a condition-based @reference that uses PAYMENT_CONDITION.paymentStaff()
+        // The helper method must declare the intermediate aliases (_a_payment_staff, _a_payment_staff_paymentstaff_staff)
+        // that are used in the condition join, even though they use table constants (not derived from parameters)
+        assertGeneratedContentContains(
+                "nestedFieldWithoutParentConditions", Set.of(CUSTOMER_TABLE),
+                // Helper method should declare both condition-based join aliases
+                """
+                        private static SelectField<Payment> paymentsForCustomer_payment() {
+                            var _a_customer = CUSTOMER.as("customer_2168032777");
+                            var _a_customer_2168032777_payment = _a_customer.payment().as("payment_521722061");
+                            var _a_payment_staff = PAYMENT.as("payment_1053299965");
+                            var _a_payment_staff_paymentstaff_staff = STAFF.as("staff_3518249830");
+                            return DSL.row(
+                                    _a_customer_2168032777_payment.PAYMENT_ID,
+                                    _a_customer_2168032777_payment.AMOUNT,
+                                    DSL.field(
+                                            DSL.select(paymentsForCustomer_payment_d1_staff())
+                                            .from(_a_payment_staff)
+                                            .join(_a_payment_staff_paymentstaff_staff)
+                                            .on(no.sikt.graphitron.codereferences.conditions.PaymentCondition.paymentStaff(_a_payment_staff, _a_payment_staff_paymentstaff_staff))
+                                            .where(_a_customer_2168032777_payment.PAYMENT_ID.eq(_a_payment_staff.PAYMENT_ID))
+                                    )
+                            ).mapping(Functions.nullOnAllNull(Payment::new));
+                        }
+                        private static SelectField<Staff> paymentsForCustomer_payment_d1_staff() {
+                            var _a_payment_staff_paymentstaff_staff = STAFF.as("staff_3518249830");
+                            return DSL.row(
+                                    _a_payment_staff_paymentstaff_staff.STAFF_ID,
+                                    _a_payment_staff_paymentstaff_staff.FIRST_NAME
+                            ).mapping(Staff::new);
+                        }"""
         );
     }
 }

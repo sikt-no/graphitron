@@ -1,0 +1,30 @@
+type Query {
+    query: [Customer]
+}
+
+type Customer @table {
+    paymentDetails: [PaymentDetail] @splitQuery
+}
+
+type PaymentDetail @table(name: "PAYMENT") {
+    rental: Rental! @splitQuery
+}
+
+# Table reached via nested splitQuery
+type Rental @table {
+    # Condition-based reference that needs to correlate back to PaymentDetail's composite key
+    staff: Staff @reference(path: [{condition: {name: "PAYMENT_CONDITION", method: "rentalStaff"}}])
+}
+
+type Staff @table {
+    store: Store
+}
+
+type Store @table {
+    storeId: Int @field(name: "STORE_ID")
+    managerName: StaffName
+}
+
+type StaffName {
+    lastName: String @field(name: "LAST_NAME") @reference(path: [{key: "STORE__STORE_MANAGER_STAFF_ID_FKEY"}])
+}

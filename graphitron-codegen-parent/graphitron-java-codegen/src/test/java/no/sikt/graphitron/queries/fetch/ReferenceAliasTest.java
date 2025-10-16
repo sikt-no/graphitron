@@ -233,6 +233,48 @@ public class ReferenceAliasTest extends ReferenceTest {
     }
 
     @Test
+    @DisplayName("SplitQuery table path")
+    void splitQueryTableToTable() {
+        assertGeneratedContentContains(
+                "alias/splitQueryTableToTable",
+                """
+                            private static SelectField<City> citySplitQueryForAddress_city() {
+                                var _a_address = ADDRESS.as("address_223244161");
+                                var _a_address_223244161_city = _a_address.city().as("city_621065670");
+                                var _a_city_621065670_country = _a_address_223244161_city.country().as("country_3426431562");
+                                return DSL.row(
+                                        DSL.field(
+                                                DSL.select(_a_city_621065670_country.COUNTRY_)
+                                                .from(_a_city_621065670_country)
+                                        )
+                                ).mapping(Functions.nullOnAllNull(City::new));
+                            }
+                        """
+        );
+    }
+
+    @Test
+    @DisplayName("Prevent circular reference loops in nested helper method generation")
+    void preventCircularHelperMethodGeneration() {
+        assertGeneratedContentMatches(
+                "alias/circular-prevention");
+    }
+
+    @Test
+    @DisplayName("Skip nested helper generation for fields with existing split query resolvers")
+    void preventNestedHelpersForExistingSplitQueryResolvers() {
+        assertGeneratedContentMatches(
+                "alias/split-query-skip");
+    }
+
+    @Test
+    @DisplayName("Nested complex reference fields use target table parameters")
+    void nestedComplexReferenceInSplitQuery() {
+        assertGeneratedContentMatches(
+                "alias/complex-reference-params");
+    }
+
+    @Test
     @DisplayName("Reverse path from a table to a condition")
     void tableToConditionReverse() {
         assertGeneratedContentContains(

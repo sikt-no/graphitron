@@ -35,7 +35,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     void referenceAndInput() {
         assertGeneratedContentContains("referenceAndInput", Set.of(CUSTOMER_NODE),
                 "customer.getPrimaryKey().getFieldsArray()))).from(_a_customer).where(_a_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
-                "CustomerNoTable::new))).fetchOne("
+                "queryForQuery_customerNoTable(inRecord, _iv_nodeIdStrategy)).fetchOne("
         );
     }
 
@@ -109,7 +109,7 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     @DisplayName("Node ID in another table object with same table as node type")
     void inAnotherTableObjectWithSameTable() {
         assertGeneratedContentContains("inAnotherTableObjectWithSameTable",
-                "ctx.select(DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_customer" // Don't select as a reference
+                "return DSL.row(_iv_nodeIdStrategy.createId(\"C\", _a_customer" // Don't select as a reference
         );
     }
 }

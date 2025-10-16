@@ -1,16 +1,16 @@
 package fake.code.generated.queries.query;
 
-import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 import static no.sikt.graphitron.jooq.generated.testdata.pg_catalog.Tables.*;
+import static no.sikt.graphitron.jooq.generated.testdata.public_.Tables.*;
 
 import fake.graphql.example.model.CustomerTable;
 import java.util.List;
 import java.util.stream.IntStream;
-
 import no.sikt.graphitron.codereferences.dummyreferences.DummyRecord;
 import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
+import org.jooq.SelectField;
 import org.jooq.impl.DSL;
 
 public class QueryDBQueries {
@@ -18,7 +18,7 @@ public class QueryDBQueries {
                                                  SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
-                .select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .select(customerForQuery_customerTable(inRecord))
                 .from(_a_customer)
                 .where(inRecord != null ? _a_customer.hasId(inRecord.getId()) : DSL.noCondition())
                 .and(inRecord != null ? _a_customer.FIRST.eq(inRecord.getFirst()) : DSL.noCondition())
@@ -31,7 +31,7 @@ public class QueryDBQueries {
                                                        List<DummyRecord> inRecordList, SelectionSet _iv_select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return _iv_ctx
-                .select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                .select(customerListedForQuery_customerTable(inRecordList))
                 .from(_a_customer)
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
@@ -51,5 +51,16 @@ public class QueryDBQueries {
                 )
                 .and(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecordList(_a_customer, inRecordList))
                 .fetchOne(_iv_it -> _iv_it.into(CustomerTable.class));
+    }
+
+    private static SelectField<CustomerTable> customerForQuery_customerTable(DummyRecord inRecord) {
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
+    }
+
+    private static SelectField<CustomerTable> customerListedForQuery_customerTable(
+            List<DummyRecord> inRecordList) {
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }
 }
