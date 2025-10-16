@@ -7,8 +7,11 @@ import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
@@ -20,6 +23,8 @@ import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIE
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
+import static javax.lang.model.element.Modifier.PRIVATE;
+import static javax.lang.model.element.Modifier.STATIC;
 
 /**
  * Generator that creates the default data fetching methods
@@ -62,6 +67,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 ? processedSchema.getRecordType(target).getGraphClassName()
                 : inferFieldTypeName(context.getReferenceObjectField(), true);
 
+        // For record types that are NOT split queries, extract the row mapping into a helper method
+        // Split queries need to preserve their correlated subquery structure
+        var isSplitQuery = target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName());
+        var selectBlock = processedSchema.isRecordType(target) && !isSplitQuery
+                ? createSelectBlockWithHelperMethod(target, context, actualRefTable)
+                : createSelectBlock(target, context, actualRefTable, selectRowBlock);
+        
         return getSpecBuilder(target, returnType, new InputParser(target, processedSchema))
                 .addCode(declareAllServiceClassesInAliasSet(context.getAliasSet()))
                 .addCode(selectAliasesBlock)
@@ -69,7 +81,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode("return $N\n", VariableNames.CONTEXT_NAME)
                 .indent()
                 .indent()
-                .addCode(".select($L)\n", createSelectBlock(target, context, actualRefTable, selectRowBlock))
+                .addCode(".select($L)\n", selectBlock)
                 .addCodeIf(!querySource.isEmpty() && (context.hasNonSubqueryFields() || context.hasApplicableTable()), ".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)
@@ -99,6 +111,67 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                         selectRowBlock
                 ).collect(CodeBlock.joining())
         );
+    }
+    
+    private CodeBlock createSelectBlockWithHelperMethod(ObjectField target, FetchContext context, String actualRefTable) {
+        var keyBlock = getInitialKey(context);
+        var tokenBlock = CodeBlock.ofIf(target.hasForwardPagination() && !target.isResolver(), "$T.getOrderByToken($L, $L),\n", QUERY_HELPER.className, actualRefTable, ORDER_FIELDS_NAME);
+        var helperMethodName = generateHelperMethodName(target);
+        
+        // Collect input parameters from InputParser
+        var parser = new InputParser(target, processedSchema);
+        var inputParameters = new java.util.ArrayList<String>();
+        
+        // Add method input parameters
+        for (var entry : parser.getMethodInputsWithOrderField().entrySet()) {
+            inputParameters.add(entry.getKey());
+        }
+        
+        // Collect all aliases that need to be passed to the helper method
+        var refContext = target.isResolver() ? context.nextContext(target) : context;
+        var aliasSet = refContext.getAliasSet();
+        var tableParameters = new java.util.ArrayList<String>();
+        
+        for (var alias : aliasSet) {
+            if (!alias.hasTableMethod()) {
+                tableParameters.add(alias.getAlias().getMappingName());
+            }
+        }
+        
+        // Combine all parameters
+        var allParameters = new java.util.ArrayList<String>();
+        allParameters.addAll(inputParameters);
+        allParameters.addAll(tableParameters);
+        
+        var parameterList = String.join(", ", allParameters);
+        var helperCall = CodeBlock.of("$L($L)", helperMethodName, parameterList);
+        
+        return indentIfMultiline(
+                Stream.of(keyBlock, tokenBlock, helperCall)
+                        .collect(CodeBlock.joining())
+        );
+    }
+
+    @Override
+    protected CodeBlock getHelperMethodCallForCorrelatedSubquery(ObjectField field, FetchContext context) {
+        // Use helper methods for record types in correlated subqueries
+        if (processedSchema.isRecordType(field)) {
+            var helperMethodName = generateHelperMethodName(field);
+            
+            // For nested fields, only pass the target table alias, not all aliases
+            var targetAlias = context.getTargetAlias();
+            return CodeBlock.of("$L($L)", helperMethodName, targetAlias);
+        }
+        return null;
+    }
+    
+    private String generateHelperMethodName(ObjectField target) {
+        // Generate method name like: queryForQuery_customerTable
+        // where Query is the container type and customerTable is the return type (camelCase)
+        var returnTypeName = processedSchema.getRecordType(target).getName();
+        // Make first letter lowercase for camelCase
+        returnTypeName = returnTypeName.substring(0, 1).toLowerCase() + returnTypeName.substring(1);
+        return "queryFor" + target.getContainerTypeName() + "_" + returnTypeName;
     }
 
     private CodeBlock setFetch(ObjectField referenceField) {
@@ -152,7 +225,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     public List<MethodSpec> generateAll() {
-        return getLocalObject()
+        var mainMethods = getLocalObject()
                 .getFields()
                 .stream()
                 .filter(it -> !processedSchema.isInterface(it) && !processedSchema.isUnion(it))
@@ -163,5 +236,161 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .map(this::generate)
                 .filter(it -> !it.code().isEmpty())
                 .toList();
+                
+        var topLevelFields = getLocalObject()
+                .getFields()
+                .stream()
+                .filter(it -> !processedSchema.isInterface(it) && !processedSchema.isUnion(it))
+                .filter(it -> !it.getName().equals(FEDERATION_ENTITIES_FIELD.getName()))
+                .filter(it -> !processedSchema.isFederationService(it))
+                .filter(GenerationSourceField::isGeneratedWithResolver)
+                .filter(it -> !it.hasServiceReference())
+                .filter(it -> processedSchema.isRecordType(it))  // Only generate helpers for record types
+                .toList();
+        
+        var helperMethods = new java.util.ArrayList<MethodSpec>();
+        
+        // Generate helper methods for top-level fields
+        for (var field : topLevelFields) {
+            var helperMethod = generateHelperMethod(field);
+            if (!helperMethod.code().isEmpty()) {
+                helperMethods.add(helperMethod);
+            }
+            
+            // Generate nested helper methods
+            helperMethods.addAll(generateNestedHelperMethods(field));
+        }
+                
+        var allMethods = new java.util.ArrayList<MethodSpec>();
+        allMethods.addAll(mainMethods);
+        allMethods.addAll(helperMethods);
+        return allMethods;
+    }
+    
+    private MethodSpec generateHelperMethod(ObjectField target) {
+        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+        var refContext = target.isResolver() ? context.nextContext(target) : context;
+
+        var returnType = processedSchema.getRecordType(target).getGraphClassName();
+        var selectRowBlock = generateSelectRow(refContext);  // Use refContext to get the correct table context
+        var helperMethodName = generateHelperMethodName(target);
+
+        var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
+                .addModifiers(PRIVATE, STATIC)
+                .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
+        
+        // Add input parameters from the original method
+        var parser = new InputParser(target, processedSchema);
+        methodBuilder.addParameters(getMethodParametersWithOrderField(parser));
+        
+        // For split queries, only use the target table parameter
+        if (target.isResolver() && processedSchema.isObjectOrConnectionNodeWithPreviousTableObject(target.getContainerTypeName())) {
+            var targetAlias = refContext.getTargetAlias();
+            var targetTable = refContext.getTargetTable();
+            methodBuilder.addParameter(targetTable.getTableClass(), targetAlias);
+        } else {
+            // For non-split queries, add parameters for all table aliases used
+            var aliasSet = refContext.getAliasSet();
+            for (var alias : aliasSet) {
+                if (alias.hasTableMethod()) {
+                    // Skip service dependencies - they don't need table parameters
+                    continue;
+                }
+                var tableMapping = alias.getAlias().getTable();
+                var underlyingTable = tableMapping.getTable();
+                methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
+            }
+        }
+        
+        return methodBuilder
+                .addCode("return $L;\n", selectRowBlock)
+                .build();
+    }
+    
+    private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField) {
+        return generateNestedHelperMethods(parentField, new java.util.HashSet<>());
+    }
+    
+    private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField, java.util.Set<String> visitedTypes) {
+        var nestedMethods = new java.util.ArrayList<MethodSpec>();
+        
+        if (!processedSchema.isRecordType(parentField)) {
+            return nestedMethods;
+        }
+        
+        var recordType = processedSchema.getRecordType(parentField);
+        if (recordType == null) {
+            return nestedMethods;
+        }
+        
+        // Prevent infinite recursion by tracking visited types
+        var currentTypeName = recordType.getName();
+        if (visitedTypes.contains(currentTypeName)) {
+            return nestedMethods;
+        }
+        visitedTypes.add(currentTypeName);
+        
+        // Find nested record fields
+        for (var field : recordType.getFields()) {
+            if (field instanceof ObjectField objectField &&
+                !objectField.isExplicitlyNotGenerated() &&  // Skip fields with @notGenerated directive
+                processedSchema.isRecordType(objectField) && 
+                processedSchema.getRecordType(objectField) != null) {
+                
+                // Generate helper method for this nested field
+                var nestedHelperMethod = generateNestedHelperMethod(parentField, objectField);
+                if (!nestedHelperMethod.code().isEmpty()) {
+                    nestedMethods.add(nestedHelperMethod);
+                }
+                
+                // Recursively generate methods for deeper nesting with cycle detection
+                nestedMethods.addAll(generateNestedHelperMethods(objectField, new java.util.HashSet<>(visitedTypes)));
+            }
+        }
+        
+        return nestedMethods;
+    }
+    
+    private MethodSpec generateNestedHelperMethod(ObjectField parentField, ObjectField nestedField) {
+        var returnType = processedSchema.getRecordType(nestedField).getGraphClassName();
+        
+        // Generate method name based on the nested field's container type (e.g., queryForCustomer_address)
+        var containerTypeName = nestedField.getContainerTypeName();
+        var helperMethodName = "queryFor" + containerTypeName + "_" + nestedField.getName();
+        
+        var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
+                .addModifiers(PRIVATE, STATIC)
+                .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
+        
+        // Check if the nested field's record type has a table
+        var nestedRecordType = processedSchema.getRecordType(nestedField);
+        if (nestedRecordType != null && nestedRecordType.hasTable()) {
+            // Create a context for the nested field
+            var context = new FetchContext(processedSchema, nestedField, getLocalObject(), false);
+            var refContext = nestedField.isResolver() ? context.nextContext(nestedField) : context;
+            
+            var selectRowBlock = generateSelectRow(refContext);
+            
+            // Add parameter for the nested table alias using the mapping name
+            var nestedAliasSet = refContext.getAliasSet();
+            for (var alias : nestedAliasSet) {
+                if (!alias.hasTableMethod()) {
+                    var tableMapping = alias.getAlias().getTable();
+                    var underlyingTable = tableMapping.getTable();
+                    methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
+                    break; // Only add one parameter for the target table
+                }
+            }
+            
+            return methodBuilder
+                    .addCode("return $L;\n", selectRowBlock)
+                    .build();
+        } else {
+            // For record types without tables, just generate the simple mapping
+            // This handles cases like Wrapper type without @table directive
+            return methodBuilder
+                    .addCode("return DSL.row().mapping($T::new);\n", returnType)
+                    .build();
+        }
     }
 }
