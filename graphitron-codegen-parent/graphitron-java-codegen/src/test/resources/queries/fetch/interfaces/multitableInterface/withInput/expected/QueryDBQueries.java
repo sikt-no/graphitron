@@ -56,46 +56,46 @@ public class QueryDBQueries {
     }
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypeoneSortFieldsForPayments(String customerId) {
-        var _paymentp2007_01 = PAYMENT_P2007_01.as("_01_1056813272");
-        var orderFields = _paymentp2007_01.fields(_paymentp2007_01.getPrimaryKey().getFieldsArray());
+        var _a_paymentp2007_01 = PAYMENT_P2007_01.as("paymentp200701_3585501569");
+        var orderFields = _a_paymentp2007_01.fields(_a_paymentp2007_01.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("PaymentTypeOne").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonbArray(DSL.inline("PaymentTypeOne"), _paymentp2007_01.PAYMENT_ID).as("$pkFields"))
-                .from(_paymentp2007_01)
-                .where(customerId != null ? _paymentp2007_01.CUSTOMER_ID.eq(customerId) : DSL.noCondition())
+                        DSL.jsonbArray(DSL.inline("PaymentTypeOne"), _a_paymentp2007_01.PAYMENT_ID).as("$pkFields"))
+                .from(_a_paymentp2007_01)
+                .where(customerId != null ? _a_paymentp2007_01.CUSTOMER_ID.eq(customerId) : DSL.noCondition())
                 .orderBy(orderFields);
     }
 
     private static SelectJoinStep<Record2<JSONB, PaymentTypeOne>> paymenttypeoneForPayments() {
-        var _paymentp2007_01 = PAYMENT_P2007_01.as("_01_1056813272");
+        var _a_paymentp2007_01 = PAYMENT_P2007_01.as("paymentp200701_3585501569");
         return DSL.select(
-                        DSL.jsonbArray(DSL.inline("PaymentTypeOne"), _paymentp2007_01.PAYMENT_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("PaymentTypeOne"), _a_paymentp2007_01.PAYMENT_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.select(DSL.row(_paymentp2007_01.AMOUNT).mapping(Functions.nullOnAllNull(PaymentTypeOne::new)))
+                                DSL.select(DSL.row(_a_paymentp2007_01.AMOUNT).mapping(Functions.nullOnAllNull(PaymentTypeOne::new)))
                         ).as("$data"))
-                .from(_paymentp2007_01);
+                .from(_a_paymentp2007_01);
     }
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypetwoSortFieldsForPayments(String customerId) {
-        var _paymentp2007_02 = PAYMENT_P2007_02.as("_02_2817843554");
-        var orderFields = _paymentp2007_02.fields(_paymentp2007_02.getPrimaryKey().getFieldsArray());
+        var _a_paymentp2007_02 = PAYMENT_P2007_02.as("paymentp200702_1287600187");
+        var orderFields = _a_paymentp2007_02.fields(_a_paymentp2007_02.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("PaymentTypeTwo").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonbArray(DSL.inline("PaymentTypeTwo"), _paymentp2007_02.PAYMENT_ID).as("$pkFields"))
-                .from(_paymentp2007_02)
-                .where(customerId != null ? _paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition())
+                        DSL.jsonbArray(DSL.inline("PaymentTypeTwo"), _a_paymentp2007_02.PAYMENT_ID).as("$pkFields"))
+                .from(_a_paymentp2007_02)
+                .where(customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition())
                 .orderBy(orderFields);
     }
 
     private static SelectJoinStep<Record2<JSONB, PaymentTypeTwo>> paymenttypetwoForPayments() {
-        var _paymentp2007_02 = PAYMENT_P2007_02.as("_02_2817843554");
+        var _a_paymentp2007_02 = PAYMENT_P2007_02.as("paymentp200702_1287600187");
         return DSL.select(
-                        DSL.jsonbArray(DSL.inline("PaymentTypeTwo"), _paymentp2007_02.PAYMENT_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("PaymentTypeTwo"), _a_paymentp2007_02.PAYMENT_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.select(DSL.row(_paymentp2007_02.AMOUNT).mapping(Functions.nullOnAllNull(PaymentTypeTwo::new)))
+                                DSL.select(DSL.row(_a_paymentp2007_02.AMOUNT).mapping(Functions.nullOnAllNull(PaymentTypeTwo::new)))
                         ).as("$data"))
-                .from(_paymentp2007_02);
+                .from(_a_paymentp2007_02);
     }
 }

@@ -49,7 +49,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void defaultCase() {
         assertGeneratedContentContains(
                 "root/default", Set.of(CUSTOMER_QUERY),
-                "row(nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).mapping"
+                "row(nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping"
         );
     }
 
@@ -58,7 +58,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void nested() {
         assertGeneratedContentContains(
                 "root/nested", Set.of(CUSTOMER_QUERY),
-                "createId(\"Address\", customer_2952383337_address.fields(customer_2952383337_address.getPrimaryKey().getFieldsArray())))" +
+                "createId(\"Address\", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray())))" +
                         ".mapping(Functions.nullOnAllNull(Address"
         );
     }
@@ -68,7 +68,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeId() {
         assertGeneratedContentContains(
                 "root/customTypeId", Set.of(CUSTOMER_QUERY),
-                ".createId(\"C\", _customer.fields("
+                ".createId(\"C\", _a_customer.fields("
         );
     }
 
@@ -77,7 +77,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumns() {
         assertGeneratedContentContains(
                 "root/customKeyColumns", Set.of(CUSTOMER_QUERY),
-                ".createId(\"Customer\", _customer.CUSTOMER_ID, _customer.EMAIL)).mapping"
+                ".createId(\"Customer\", _a_customer.CUSTOMER_ID, _a_customer.EMAIL)).mapping"
         );
     }
 
@@ -86,7 +86,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsWrongCase() {
         assertGeneratedContentContains(
                 "root/customKeyColumnsWrongCase", Set.of(CUSTOMER_QUERY),
-                ".createId(\"Customer\", _customer.CUSTOMER_ID, _customer.EMAIL)).mapping"
+                ".createId(\"Customer\", _a_customer.CUSTOMER_ID, _a_customer.EMAIL)).mapping"
         );
     }
 
@@ -95,7 +95,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/default",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"Customer\", address_2030472956"
+                "DSL.select(DSL.row(nodeIdStrategy.createId(\"Customer\", _a_address_2"
         );
     }
 
@@ -104,7 +104,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customTypeId",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"C\", address_2"
+                "DSL.select(DSL.row(nodeIdStrategy.createId(\"C\", _a_address_2"
         );
     }
 
@@ -113,7 +113,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customKeyColumns",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"Address\", customer_2952383337_address.ADDRESS_ID)).mapping"
+                "DSL.select(DSL.row(nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
         );
     }
 
@@ -122,8 +122,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void nodeQuery() {
         assertGeneratedContentContains(
                 "nodeQuery/default", Set.of(NODE_QUERY),
-                "nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray())), DSL.row(",
-                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray())))"
+                "nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())), DSL.row(",
+                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))"
         );
     }
 
@@ -132,8 +132,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInNodeQuery() {
         assertGeneratedContentContains(
                 "nodeQuery/customTypeId", Set.of(NODE_QUERY),
-                "createId(\"C\", _customer.fields(",
-                ".where(nodeIdStrategy.hasIds(\"C\", ids, _customer.fields("
+                "createId(\"C\", _a_customer.fields(",
+                ".where(nodeIdStrategy.hasIds(\"C\", ids, _a_customer.fields("
         );
     }
 
@@ -142,8 +142,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInNodeQuery() {
         assertGeneratedContentContains(
                 "nodeQuery/customKeyColumns", Set.of(NODE_QUERY),
-                "nodeIdStrategy.createId(\"Customer\", _customer.CUSTOMER_ID, _customer.EMAIL), DSL.row(",
-                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _customer.CUSTOMER_ID, _customer.EMAIL))"
+                "nodeIdStrategy.createId(\"Customer\", _a_customer.CUSTOMER_ID, _a_customer.EMAIL), DSL.row(",
+                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _a_customer.CUSTOMER_ID, _a_customer.EMAIL))"
         );
     }
 
@@ -152,8 +152,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void entity() {
         assertGeneratedContentContains(
                 "entity/default", Set.of(FEDERATION_QUERY),
-                ".objectRow(\"id\", nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray())))).",
-                ".where(nodeIdStrategy.hasId(\"Customer\", (String) _inputMap.get(\"id\"), _customer.fields(_customer.getPrimaryKey().getFieldsArray()))).fetch"
+                ".objectRow(\"id\", nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())))).",
+                ".where(nodeIdStrategy.hasId(\"Customer\", (String) _inputMap.get(\"id\"), _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).fetch"
         );
     }
 
@@ -162,8 +162,8 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customIdInEntityQuery() {
         assertGeneratedContentContains(
                 "entity/custom", Set.of(FEDERATION_QUERY),
-                "objectRow(\"id\", nodeIdStrategy.createId(\"C\", _customer.CUSTOMER_ID)",
-                ".where(nodeIdStrategy.hasId(\"C\", (String) _inputMap.get(\"id\"), _customer.CUSTOMER_ID"
+                "objectRow(\"id\", nodeIdStrategy.createId(\"C\", _a_customer.CUSTOMER_ID)",
+                ".where(nodeIdStrategy.hasId(\"C\", (String) _inputMap.get(\"id\"), _a_customer.CUSTOMER_ID"
         );
     }
 }

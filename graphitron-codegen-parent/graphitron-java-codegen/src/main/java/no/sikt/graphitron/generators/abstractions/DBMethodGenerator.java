@@ -14,7 +14,7 @@ import no.sikt.graphql.schema.ProcessedSchema;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 
-import static no.sikt.graphitron.generators.codebuilding.NameFormat.asContextFieldName;
+import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.contextFieldPrefix;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapListIf;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.DSL_CONTEXT;
@@ -52,7 +52,7 @@ abstract public class DBMethodGenerator<T extends ObjectField> extends AbstractS
                 .getAllContextFields(referenceField)
                 .entrySet()
                 .stream()
-                .map((it) -> ParameterSpec.of(it.getValue(), asContextFieldName(it.getKey())))
+                .map((it) -> ParameterSpec.of(it.getValue(), contextFieldPrefix(it.getKey())))
                 .toList();
     }
 

@@ -16,7 +16,7 @@ import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
-import no.sikt.graphitron.generators.codebuilding.NameFormat;
+import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -138,13 +138,13 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
         aliasIterator.forEachRemaining(aliasWrapper -> {
             var alias = aliasWrapper.getAlias();
-            codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getShortName()));
+            codeBuilder.declare(alias.getMappingName(), CodeBlock.of("$N.as($S)", alias.getVariableValue(), alias.getCodeName()));
             if (aliasWrapper.hasTableMethod()) {
                 var args = alias.getMappingName();
                 if (!aliasWrapper.getInputNames().isEmpty())
                     args += ", " + String.join(", ", aliasWrapper.getInputNames());
                 if (!aliasWrapper.getReferenceObjectField().getContextFields().isEmpty())
-                    args += ", " + String.join(", ", aliasWrapper.getReferenceObjectField().getContextFields().keySet().stream().map(NameFormat::asContextFieldName).toList());
+                    args += ", " + String.join(", ", aliasWrapper.getReferenceObjectField().getContextFields().keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
                 codeBuilder.addStatement(
                         reassignFromServiceBlock(aliasWrapper.getTableMethod().getClassName().simpleName(), aliasWrapper.getTableMethod().getMethodName(), alias.getMappingName(), args));
             }

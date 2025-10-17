@@ -1,6 +1,5 @@
 package no.sikt.graphitron.generators.datafetchers.operations;
 
-import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.AbstractField;
 import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
@@ -11,7 +10,7 @@ import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.abstractions.DataFetcherMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
-import no.sikt.graphitron.generators.codebuilding.NameFormat;
+import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphitron.generators.codeinterface.wiring.WiringContainer;
 import no.sikt.graphitron.generators.context.InputParser;
 import no.sikt.graphitron.generators.context.MapperContext;
@@ -150,7 +149,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
                 .filter(it -> target.getOrderField().map(orderByField -> !orderByField.getName().equals(it)).orElse(true))
                 .collect(Collectors.joining(", "));
         var inputsWithKeys = localObject.isOperationRoot() ? filteredInputs : (filteredInputs.isEmpty() ? RESOLVER_KEYS_NAME : RESOLVER_KEYS_NAME + ", " + filteredInputs);
-        var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(NameFormat::asContextFieldName).toList());
+        var contextParams = String.join(", ", processedSchema.getAllContextFields(target).keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
         var allParams = inputsWithKeys.isEmpty() ? contextParams : (contextParams.isEmpty() ? inputsWithKeys : inputsWithKeys + ", " + contextParams);
         var countFunction = countFunction(objectToCall, method, allParams, target.hasServiceReference());
         return CodeBlock.of(" $N,\n$L,\n$L$L", PAGE_SIZE_NAME, queryFunction, countFunction, transformWrap);
@@ -389,7 +388,7 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
         var code = CodeBlock
                 .builder()
                 .declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT));
-        contextFields.forEach((name, type) -> code.declare(asContextFieldName(name), asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name))));
+        contextFields.forEach((name, type) -> code.declare(VariablePrefix.contextFieldPrefix(name), asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name))));
         return code.build();
     }
 

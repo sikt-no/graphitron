@@ -42,15 +42,15 @@ public class PaymentDBQueries {
                         "Staff", STAFF.fields(STAFF.getPrimaryKey().getFieldsArray())),
                 after);
 
-        var _payment = PAYMENT.as("payment_425747824");
+        var _a_payment = PAYMENT.as("payment_1831371789");
 
-        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_payment, pageSize, _token).unionAll(customerSortFieldsForStaffAndCustomers(_payment, pageSize, _token));
+        var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_a_payment, pageSize, _token).unionAll(customerSortFieldsForStaffAndCustomers(_a_payment, pageSize, _token));
 
         var mappedCustomer = customerForStaffAndCustomers();
         var mappedStaff = staffForStaffAndCustomers();
 
         return ctx.select(
-                        DSL.row(_payment.PAYMENT_ID),
+                        DSL.row(_a_payment.PAYMENT_ID),
                         DSL.multiset(
                                 DSL.select(
                                                 unionKeysQuery.field("$type"),
@@ -65,8 +65,8 @@ public class PaymentDBQueries {
                                         .limit(pageSize + 1)
                         )
                 )
-                .from(_payment)
-                .where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys))
+                .from(_a_payment)
+                .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys))
                 .fetchMap(
                         r -> r.value1().valuesRow(),
                         r -> r.value2().map(
@@ -88,58 +88,57 @@ public class PaymentDBQueries {
                 );
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(Payment _payment, Integer pageSize, AfterTokenWithTypeName _token) {
-        var payment_425747824_customer = _payment.customer().as("customer_1716701867");
-        var orderFields = payment_425747824_customer.fields(payment_425747824_customer.getPrimaryKey().getFieldsArray());
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> customerSortFieldsForStaffAndCustomers(Payment _a_payment, Integer pageSize, AfterTokenWithTypeName _token) {
+        var _a_payment_1831371789_customer = _a_payment.customer().as("customer_1463568749");
+        var orderFields = _a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Customer").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonbArray(DSL.inline("Customer"), payment_425747824_customer.CUSTOMER_ID).as("$pkFields"))
-                .from(payment_425747824_customer)
+                        DSL.jsonbArray(DSL.inline("Customer"), _a_payment_1831371789_customer.CUSTOMER_ID).as("$pkFields"))
+                .from(_a_payment_1831371789_customer)
                 .where(_token == null ? DSL.noCondition() : DSL.inline("Customer").greaterOrEqual(_token.typeName()))
-                .and(_token != null && _token.matches("Customer") ? DSL.row(payment_425747824_customer.fields(payment_425747824_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
+                .and(_token != null && _token.matches("Customer") ? DSL.row(_a_payment_1831371789_customer.fields(_a_payment_1831371789_customer.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
                 .orderBy(orderFields)
                 .limit(pageSize + 1);
     }
 
     private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Customer>>>>> customerForStaffAndCustomers() {
-        var _customer = CUSTOMER.as("customer_2952383337");
+        var _a_customer = CUSTOMER.as("customer_2168032777");
         return DSL.select(
-                        DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
                                 DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_customer, _customer.fields(_customer.getPrimaryKey().getFieldsArray()), "Customer"),
-                                        DSL.select(DSL.row(_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
+                                        DSL.select(DSL.row(_a_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
                                 )
                         ).as("$data"))
-                .from(_customer);
+                .from(_a_customer);
     }
 
-    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(Payment _payment, Integer pageSize, AfterTokenWithTypeName _token) {
-        var payment_425747824_staff = _payment.staff().as("staff_3287974561");
-        var orderFields = payment_425747824_staff.fields(payment_425747824_staff.getPrimaryKey().getFieldsArray());
+    private static SelectLimitPercentStep<Record3<String, Integer, JSONB>> staffSortFieldsForStaffAndCustomers(Payment _a_payment, Integer pageSize, AfterTokenWithTypeName _token) {
+        var _a_payment_1831371789_staff = _a_payment.staff().as("staff_2269035563");
+        var orderFields = _a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray());
         return DSL.select(
                         DSL.inline("Staff").as("$type"),
                         DSL.rowNumber().over(DSL.orderBy(orderFields)).as("$innerRowNum"),
-                        DSL.jsonbArray(DSL.inline("Staff"), payment_425747824_staff.STAFF_ID).as("$pkFields"))
-                .from(payment_425747824_staff)
+                        DSL.jsonbArray(DSL.inline("Staff"), _a_payment_1831371789_staff.STAFF_ID).as("$pkFields"))
+                .from(_a_payment_1831371789_staff)
                 .where(_token == null ? DSL.noCondition() : DSL.inline("Staff").greaterOrEqual(_token.typeName()))
-                .and(_token != null && _token.matches("Staff") ? DSL.row(payment_425747824_staff.fields(payment_425747824_staff.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
+                .and(_token != null && _token.matches("Staff") ? DSL.row(_a_payment_1831371789_staff.fields(_a_payment_1831371789_staff.getPrimaryKey().getFieldsArray())).gt(DSL.row(_token.fields())) : DSL.noCondition())
                 .orderBy(orderFields)
                 .limit(pageSize + 1);
     }
 
-    private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Staff>>>>> staffForStaffAndCustomers(
-    ) {
-        var _staff = STAFF.as("staff_3361087246");
+    private static SelectJoinStep<Record2<JSONB, Record2<SelectField<String>, SelectSelectStep<Record1<Staff>>>>> staffForStaffAndCustomers() {
+        var _a_staff = STAFF.as("staff_1114567570");
         return DSL.select(
-                        DSL.jsonbArray(DSL.inline("Staff"), _staff.STAFF_ID).as("$pkFields"),
+                        DSL.jsonbArray(DSL.inline("Staff"), _a_staff.STAFF_ID).as("$pkFields"),
                         DSL.field(
                                 DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_staff, _staff.fields(_staff.getPrimaryKey().getFieldsArray()), "Staff"),
-                                        DSL.select(DSL.row(_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_staff, _a_staff.fields(_a_staff.getPrimaryKey().getFieldsArray()), "Staff"),
+                                        DSL.select(DSL.row(_a_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
                                 )
                         ).as("$data"))
-                .from(_staff);
+                .from(_a_staff);
     }
 }

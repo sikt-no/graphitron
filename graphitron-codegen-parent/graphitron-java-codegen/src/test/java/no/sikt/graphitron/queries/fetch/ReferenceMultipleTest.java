@@ -10,9 +10,9 @@ public class ReferenceMultipleTest extends ReferenceTest {
     void multipleToSameTable() {
         assertGeneratedContentContains(
                 "multipleToSameTable",
-                "customer_2952383337_address.DISTRICT",
-                ".leftJoin(customer_2952383337_address_left",
-                ".where(customer_2952383337_address_left.DISTRICT.eq(district"
+                "customer_2168032777_address.DISTRICT",
+                ".leftJoin(_a_customer_2168032777_address_left",
+                ".where(_a_customer_2168032777_address_left.DISTRICT.eq(district"
         );
     }
 

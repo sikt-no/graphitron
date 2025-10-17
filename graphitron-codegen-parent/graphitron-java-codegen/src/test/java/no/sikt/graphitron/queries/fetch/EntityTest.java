@@ -53,8 +53,8 @@ public class EntityTest extends GeneratorTest {
     void twoKeys() {
         assertGeneratedContentContains(
                 "twoKeys",
-                "objectRow(List.of(\"id\",\"first\"), List.of(_customer.getId(),_customer.FIRST_NAME))",
-                "where(_customer.hasId((String) _inputMap.get(\"id\"))).or(_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))"
+                "objectRow(List.of(\"id\",\"first\"), List.of(_a_customer.getId(),_a_customer.FIRST_NAME))",
+                "where(_a_customer.hasId((String) _inputMap.get(\"id\"))).or(_a_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))"
         );
     }
 
@@ -63,8 +63,8 @@ public class EntityTest extends GeneratorTest {
     void compoundKey() {
         assertGeneratedContentContains(
                 "compoundKey",
-                "objectRow(List.of(\"id\",\"first\"), List.of(_customer.getId(),_customer.FIRST_NAME))",
-                "where(DSL.and(List.of(_customer.hasId((String) _inputMap.get(\"id\")),_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))))"
+                "objectRow(List.of(\"id\",\"first\"), List.of(_a_customer.getId(),_a_customer.FIRST_NAME))",
+                "where(DSL.and(List.of(_a_customer.hasId((String) _inputMap.get(\"id\")),_a_customer.FIRST_NAME.eq((String) _inputMap.get(\"first\"))))"
         );
     }
 
@@ -73,9 +73,9 @@ public class EntityTest extends GeneratorTest {
     void nested() {
         assertGeneratedContentContains(
                 "nested",
-                ".of(\"id\",\"address\"), List.of(_customer.getId(),DSL.field(" +
-                        "DSL.select(QueryHelper.objectRow(\"id\", customer_2952383337_address.getId()))" +
-                        ".from(customer_2952383337_address)))"
+                ".of(\"id\",\"address\"), List.of(_a_customer.getId(),DSL.field(" +
+                        "DSL.select(QueryHelper.objectRow(\"id\", _a_customer_2168032777_address.getId()))" +
+                        ".from(_a_customer_2168032777_address)))"
         );
     }
 

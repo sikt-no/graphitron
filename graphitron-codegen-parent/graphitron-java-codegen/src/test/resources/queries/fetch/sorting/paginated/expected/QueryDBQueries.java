@@ -20,17 +20,17 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Pair<String, CustomerTable>> queryForQuery(DSLContext ctx, Order orderBy, Integer pageSize,
                                                     String after, SelectionSet select) {
-        var _customer = CUSTOMER.as("customer_2952383337");
+        var _a_customer = CUSTOMER.as("customer_2168032777");
         var orderFields = orderBy == null
-                ? _customer.fields(_customer.getPrimaryKey().getFieldsArray())
-                : QueryHelper.getSortFields(_customer.getIndexes(), Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
+                ? _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray())
+                : QueryHelper.getSortFields(_a_customer.getIndexes(), Map.ofEntries(Map.entry("NAME", "IDX_LAST_NAME"))
                 .get(orderBy.getOrderByField().toString()), orderBy.getDirection().toString());
         return ctx
                 .select(
-                        QueryHelper.getOrderByToken(_customer, orderFields),
-                        DSL.row(_customer.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        QueryHelper.getOrderByToken(_a_customer, orderFields),
+                        DSL.row(_a_customer.LAST_NAME).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
-                .from(_customer)
+                .from(_a_customer)
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)

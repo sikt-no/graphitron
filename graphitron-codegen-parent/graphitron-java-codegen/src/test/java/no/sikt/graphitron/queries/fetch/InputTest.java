@@ -46,37 +46,37 @@ public class InputTest extends GeneratorTest {
     @Test
     @DisplayName("Scalar field found in extended scalars")
     void scalar() {
-        assertGeneratedContentContains("scalar", ", LocalDate createdDate,", "_customer.CREATE_DATE.eq(createdDate)");
+        assertGeneratedContentContains("scalar", ", LocalDate createdDate,", "customer.CREATE_DATE.eq(createdDate)");
     }
 
     @Test
     @DisplayName("ID field")
     void id() {
-        assertGeneratedContentContains("id", ", String id,", "_customer.hasId(id)");
+        assertGeneratedContentContains("id", ", String id,", "customer.hasId(id)");
     }
 
     @Test
     @DisplayName("ID field that is not the primary ID")
     void idOther() {
-        assertGeneratedContentContains("idOther", "_customer.hasAddressId(id)");
+        assertGeneratedContentContains("idOther", "customer.hasAddressId(id)");
     }
 
     @Test
     @DisplayName("Boolean field")
     void booleanCase() {
-        assertGeneratedContentContains("boolean", ", Boolean bool,", "_customer.ACTIVE.eq(bool)");
+        assertGeneratedContentContains("boolean", ", Boolean bool,", "customer.ACTIVE.eq(bool)");
     }
 
     @Test
     @DisplayName("Integer field")
     void integer() {
-        assertGeneratedContentContains("integer", ", Integer length,", "_film.LENGTH.eq(length)");
+        assertGeneratedContentContains("integer", ", Integer length,", "film.LENGTH.eq(length)");
     }
 
     @Test
     @DisplayName("Field with @field directive")
     void fieldOverride() {
-        assertGeneratedContentContains("fieldOverride", ", String name,", "_customer.FIRST_NAME.eq(name)");
+        assertGeneratedContentContains("fieldOverride", ", String name,", "customer.FIRST_NAME.eq(name)");
     }
 
     @Test
@@ -85,8 +85,8 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "twoFields",
                 ", String firstName, String lastName,",
-                "_customer.FIRST_NAME.eq(firstName)",
-                "_customer.LAST_NAME.eq(lastName)"
+                "customer.FIRST_NAME.eq(firstName)",
+                "customer.LAST_NAME.eq(lastName)"
         );
     }
 
@@ -96,20 +96,20 @@ public class InputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "list",
                 ", List<String> email,",
-                "email.size() > 0 ? _customer.EMAIL.in(email) : DSL.noCondition()"
+                "email.size() > 0 ? _a_customer.EMAIL.in(email) : DSL.noCondition()"
         );
     }
 
     @Test  // Special case methods for IDs.
     @DisplayName("ID list field")
     void idList() {
-        assertGeneratedContentContains("idList", ", List<String> id,", "_customer.hasIds(id.stream().collect(Collectors.toSet()))");
+        assertGeneratedContentContains("idList", ", List<String> id,", "customer.hasIds(id.stream().collect(Collectors.toSet()))");
     }
 
     @Test
     @DisplayName("ID list field that is not the primary ID")
     void idOtherList() {
-        assertGeneratedContentContains("idOtherList", "_customer.hasAddressIds(id.stream().collect(Collectors.toSet()))");
+        assertGeneratedContentContains("idOtherList", "customer.hasAddressIds(id.stream().collect(Collectors.toSet()))");
     }
 
     @Test
@@ -119,7 +119,7 @@ public class InputTest extends GeneratorTest {
                 "input",
                 Set.of(DUMMY_INPUT),
                 ", DummyInput in,",
-                "in.getId() != null ? _customer.hasId(in.getId()) : DSL.noCondition()"
+                "in.getId() != null ? _a_customer.hasId(in.getId()) : DSL.noCondition()"
         );
     }
 
@@ -130,7 +130,7 @@ public class InputTest extends GeneratorTest {
                 "nestedInput",
                 Set.of(DUMMY_INPUT),
                 ", Wrapper in,",
-                "in.getIn().getId() != null ? _customer.hasId(in.getIn().getId()) : DSL.noCondition()"
+                "in.getIn().getId() != null ? _a_customer.hasId(in.getIn().getId()) : DSL.noCondition()"
         );
     }
 
@@ -139,9 +139,9 @@ public class InputTest extends GeneratorTest {
     void nestedListedInputTwoFields() {
         assertGeneratedContentContains(
                 "nestedListedInputTwoFields",
-                "_customer.FIRST_NAME, _customer.LAST_NAME",
+                "customer.FIRST_NAME, _a_customer.LAST_NAME",
                 "DSL.val(in.getIn().get(internal_it_).getFirst()), DSL.val(in.getIn().get(internal_it_).getLast())"
-                );
+        );
     }
 
    @Test
@@ -149,10 +149,10 @@ public class InputTest extends GeneratorTest {
    void multiLevelInput() {
         assertGeneratedContentContains(
                 "multiLevelInput", Set.of(STAFF, NAME_INPUT),
-                ".where(_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
-                ".and(_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
-                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
-                ".and(_staff.ACTIVE.eq(staff.getActive()))" +
+                ".where(_a_staff.FIRST_NAME.eq(staff.getInfo().getName().getFirstname()))" +
+                ".and(_a_staff.LAST_NAME.eq(staff.getInfo().getName().getLastname()))" +
+                ".and(staff.getInfo().getJobEmail().getEmail() != null ? _a_staff.EMAIL.eq(staff.getInfo().getJobEmail().getEmail()) : DSL.noCondition())" +
+                ".and(_a_staff.ACTIVE.eq(staff.getActive()))" +
                 ".orderBy"
         );
    }
@@ -162,15 +162,15 @@ public class InputTest extends GeneratorTest {
     void onSingleTableInterface() {
         assertGeneratedContentContains("onSingleTableInterface",
                 ", AddressInput filter",
-                ".and(_address.POSTAL_CODE.eq(filter.getPostalCode()))");
+                ".and(_a_address.POSTAL_CODE.eq(filter.getPostalCode()))");
     }
 
     @Test
     @DisplayName("SplitQuery field")
     void onSplitQueryField() {
         assertGeneratedContentContains("onSplitQueryField",
-                ".from(address_2030472956_customer).where(address_2030472956_customer.EMAIL.eq(email))",
-                ".from(_address).where(DSL.row(_address.ADDRESS_ID).in(addressResolverKeys)).fetch" // Make sure conditon is not applied on outer query
+                ".from(_a_address_223244161_customer).where(_a_address_223244161_customer.EMAIL.eq(email))",
+                ".from(_a_address).where(DSL.row(_a_address.ADDRESS_ID).in(addressResolverKeys)).fetch" // Make sure conditon is not applied on outer query
         );
     }
 }

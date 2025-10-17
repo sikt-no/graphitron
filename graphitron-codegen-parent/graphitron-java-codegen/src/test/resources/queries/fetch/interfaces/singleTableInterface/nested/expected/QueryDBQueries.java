@@ -19,32 +19,32 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
 
     public static List<Address> addressForQuery(DSLContext ctx, SelectionSet select) {
-        var _address = ADDRESS.as("address_2030472956");
-        var address_2030472956_city = _address.city().as("city_4105557412");
-        var address_2030472956_customer = _address.customer().as("customer_2337142794");
+        var _a_address = ADDRESS.as("address_223244161");
+        var _a_address_223244161_city = _a_address.city().as("city_621065670");
+        var _a_address_223244161_customer = _a_address.customer().as("customer_1589604633");
 
-        var orderFields = _address.fields(_address.getPrimaryKey().getFieldsArray());
+        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return ctx.select(
-                        _address.DISTRICT.as("_discriminator"),
-                        _address.POSTAL_CODE.as("postalCode"),
+                        _a_address.DISTRICT.as("_discriminator"),
+                        _a_address.POSTAL_CODE.as("postalCode"),
                         DSL.field(
-                                DSL.select(DSL.row(address_2030472956_city.getId()).mapping(Functions.nullOnAllNull(City::new)))
-                                        .from(address_2030472956_city)
+                                DSL.select(DSL.row(_a_address_223244161_city.getId()).mapping(Functions.nullOnAllNull(City::new)))
+                                        .from(_a_address_223244161_city)
                         ).as("city"),
                         DSL.row(
                                 DSL.multiset(
-                                        DSL.select(DSL.row(address_2030472956_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
-                                                .from(address_2030472956_customer)
-                                                .orderBy(address_2030472956_customer.fields(address_2030472956_customer.getPrimaryKey().getFieldsArray()))
+                                        DSL.select(DSL.row(_a_address_223244161_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
+                                                .from(_a_address_223244161_customer)
+                                                .orderBy(_a_address_223244161_customer.fields(_a_address_223244161_customer.getPrimaryKey().getFieldsArray()))
                                 )
                         ).mapping(a0 -> a0.map(Record1::value1)).as("customers")
                 )
-                .from(_address)
-                .where(_address.DISTRICT.in("ONE", "TWO"))
+                .from(_a_address)
+                .where(_a_address.DISTRICT.in("ONE", "TWO"))
                 .orderBy(orderFields)
                 .fetch(
                         internal_it_ -> {
-                            var _discriminatorValue = internal_it_.get("_discriminator", _address.DISTRICT.getConverter());
+                            var _discriminatorValue = internal_it_.get("_discriminator", _a_address.DISTRICT.getConverter());
                             if (_discriminatorValue.equals("ONE")) {
                                 return internal_it_.into(AddressInDistrictOne.class);
                             } else if (_discriminatorValue.equals("TWO")) {

@@ -45,8 +45,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "inputJavaRecord",
                 "customerForQuery(DSLContext ctx, DummyRecord inRecord,",
-                "inRecord != null ? _customer.hasId(inRecord.getId()) : DSL.noCondition()",
-                "inRecord != null ? _customer.hasId(inRecord.getOtherID()) : DSL.noCondition()"
+                "inRecord != null ? _a_customer.hasId(inRecord.getId()) : DSL.noCondition()",
+                "inRecord != null ? _a_customer.hasId(inRecord.getOtherID()) : DSL.noCondition()"
         );
     }
 
@@ -57,8 +57,8 @@ public class RecordTest extends GeneratorTest {
                 "listedInputJavaRecord",
                 "customerForQuery(DSLContext ctx, List<DummyRecord> inRecordList,",
                 "DSL.row(DSL.trueCondition(), DSL.trueCondition()).in(",
-                "IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> DSL.row(_customer.hasId(inRecordList.get(internal_it_).getId()),",
-                "_customer.hasId(inRecordList.get(internal_it_).getOtherID())",
+                "IntStream.range(0, inRecordList.size()).mapToObj(internal_it_ -> DSL.row(_a_customer.hasId(inRecordList.get(internal_it_).getId()),",
+                "customer.hasId(inRecordList.get(internal_it_).getOtherID())",
                 ") : DSL.noCondition()"
         );
     }
@@ -69,8 +69,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "inputJOOQRecord",
                 "customerForQuery(DSLContext ctx, CustomerRecord inRecord,",
-                "inRecord != null ? _customer.hasId(inRecord.getId()) : DSL.noCondition()",
-                "inRecord != null ? _customer.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition()"
+                "inRecord != null ? _a_customer.hasId(inRecord.getId()) : DSL.noCondition()",
+                "inRecord != null ? _a_customer.FIRST_NAME.eq(inRecord.getFirstName()) : DSL.noCondition()"
         );
     }
 
@@ -80,9 +80,9 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "listedInputJOOQRecord",
                 "customerForQuery(DSLContext ctx, List<CustomerRecord> inRecordList,",
-                "DSL.row(DSL.trueCondition(), _customer.FIRST_NAME).in(",
-                "_customer.hasId(inRecordList.get(internal_it_).getId()),",
-                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/first\") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _customer.FIRST_NAME"
+                "DSL.row(DSL.trueCondition(), _a_customer.FIRST_NAME).in(",
+                "customer.hasId(inRecordList.get(internal_it_).getId()),",
+                "select.getArgumentSet().contains(\"in[\" + internal_it_ + \"]/first\") ? DSL.val(inRecordList.get(internal_it_).getFirstName()) : _a_customer.FIRST_NAME"
         );
     }
 
@@ -95,15 +95,15 @@ public class RecordTest extends GeneratorTest {
     @Test
     @DisplayName("Listed input jOOQ records with a CLOB field")
     void listedInputJOOQRecordWithCLOB() {
-        assertGeneratedContentContains("listedInputJOOQRecordWithCLOB", "_film.DESCRIPTION.cast(String.class)");
+        assertGeneratedContentContains("listedInputJOOQRecordWithCLOB", "_a_film.DESCRIPTION.cast(String.class)");
     }
 
     @Test // Not sure if this is allowed.
     @DisplayName("Input type with an ID field annotated with @field without @nodeId")
     void fieldOverrideID() {
         assertGeneratedContentContains("fieldOverrideID",
-                "_payment.hasCustomerId(inRecordList.get(internal_it_).getCustomerId()) : DSL.trueCondition()",
-                "_payment.hasPaymentId(inRecordList.get(internal_it_).getPaymentId()) : DSL.trueCondition()");
+                "payment.hasCustomerId(inRecordList.get(internal_it_).getCustomerId()) : DSL.trueCondition()",
+                "payment.hasPaymentId(inRecordList.get(internal_it_).getPaymentId()) : DSL.trueCondition()");
     }
 
     @Test // In these cases the table must be selected based on the input record, otherwise this is not resolvable.
@@ -111,10 +111,10 @@ public class RecordTest extends GeneratorTest {
     void returningTypeWithoutTable() {
         assertGeneratedContentContains(
                 "returningTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE),
-                ".row(_customer.getId(),_customer.FIRST_NAME",
+                ".row(_a_customer.getId(),_a_customer.FIRST_NAME",
                 "CustomerNoTable::new",
-                ".from(_customer)",
-                "_customer.hasId(inRecord.getId()",
+                ".from(_a_customer)",
+                "customer.hasId(inRecord.getId()",
                 ".into(CustomerNoTable.class"
         );
     }
@@ -124,8 +124,8 @@ public class RecordTest extends GeneratorTest {
     void returningTypeWithoutTableWithTableField() {
         assertGeneratedContentContains(
                 "returningTypeWithoutTableWithTableField", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
-                ".row(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).mapping(",
-                ".where(_customer.hasId(inRecord.getId())).fetchOne(" // Makes sure there is no duplicated condition.
+                ".row(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))).mapping(",
+                ".where(_a_customer.hasId(inRecord.getId())).fetchOne(" // Makes sure there is no duplicated condition.
         );
     }
 
@@ -135,8 +135,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "returningListedTypeWithoutTable", Set.of(CUSTOMER_INPUT_TABLE),
                 ".row(DSL.row(DSL.multiset(" +
-                        "DSL.select(_customer.getId())" +
-                        ".from(_customer).where(inRecordList",
+                        "DSL.select(_a_customer.getId())" +
+                        ".from(_a_customer).where(inRecordList",
                 ".mapping(Functions.nullOnAllNull((internal_it_) -> new CustomerNoTable(internal_it_)))).fetchOne(it -> it.into(CustomerNoTable"
         );
     }
@@ -147,8 +147,8 @@ public class RecordTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "returningListedTypeWithoutTableWithTableField", Set.of(CUSTOMER_INPUT_TABLE, CUSTOMER_TABLE),
                 ".row(DSL.row(DSL.multiset(" +
-                        "DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
-                        ".from(_customer).where(inRecordList",
+                        "DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))" +
+                        ".from(_a_customer).where(inRecordList",
                 "new CustomerNoTable(internal_it_)))).fetchOne(it -> it.into(CustomerNoTable"
         );
     }
@@ -158,7 +158,7 @@ public class RecordTest extends GeneratorTest {
     void returningListedTypeWithoutTableWithNestedTableField() {
         assertGeneratedContentContains(
                 "returningListedTypeWithoutTableWithNestedTableField", Set.of(CUSTOMER_INPUT_TABLE),
-                ".select(customer_2952383337_address.DISTRICT).from(customer_2952383337_address))).mapping"
+                ".select(_a_customer_2168032777_address.DISTRICT).from(_a_customer_2168032777_address))).mapping"
         );
     }
 
@@ -166,15 +166,17 @@ public class RecordTest extends GeneratorTest {
     @DisplayName("TableMethod with Java Record")
     void tableMethodWithJavaRecord() {
         assertGeneratedContentContains("javaRecordWithTableMethod",
-                "var _customer = CUSTOMER.as(\"customer_2952383337\")",
-                "_customer = customerTableMethod.customerTable(_customer, inRecord)");
+                "customer = CUSTOMER.as(\"customer_2168032777\")",
+                "customer = customerTableMethod.customerTable(_a_customer, inRecord)"
+        );
     }
 
     @Test
     @DisplayName("TableMethod with jOOQ Record")
     void tableMethodWithJOOQRecord() {
         assertGeneratedContentContains("jOOQRecordWithTableMethod",
-                "var _customer = CUSTOMER.as(\"customer_2952383337\")",
-                "_customer = customerTableMethod.customerTable(_customer, inRecord)");
+                "customer = CUSTOMER.as(\"customer_2168032777\")",
+                "customer = customerTableMethod.customerTable(_a_customer, inRecord)"
+        );
     }
 }

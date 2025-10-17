@@ -12,6 +12,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.PERSON_WITH_EMAIL;
 
+@DisplayName("Multi-table references - Queries")
 public class MultitableReferenceTest extends ReferenceTest {
 
     @Override
@@ -33,8 +34,8 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("On multitable interface with all implicit references")
     void multitableInterface() {
         assertGeneratedContentContains("multitableInterface",
-                ".from(payment_425747824_customer).orderBy",
-                ".from(payment_425747824_staff).orderBy"
+                ".from(_a_payment_1831371789_customer).orderBy",
+                ".from(_a_payment_1831371789_staff).orderBy"
         );
     }
 
@@ -42,8 +43,8 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("On union with all implicit references")
     void union() {
         assertGeneratedContentContains("union",
-                ".from(payment_425747824_customer).orderBy",
-                ".from(payment_425747824_staff).orderBy"
+                ".from(_a_payment_1831371789_customer).orderBy",
+                ".from(_a_payment_1831371789_staff).orderBy"
         );
     }
 
@@ -51,8 +52,8 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("All implementations have their reference path specified")
     void allSpecified() {
         assertGeneratedContentContains("allSpecified",
-                ".from(payment_425747824_customer).orderBy",
-                ".from(payment_425747824_staff).orderBy"
+                ".from(_a_payment_1831371789_customer).orderBy",
+                ".from(_a_payment_1831371789_staff).orderBy"
         );
     }
 
@@ -60,8 +61,8 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("One implicit reference in multitable reference directive")
     void oneImplicit() {
         assertGeneratedContentContains("oneImplicit",
-                ".from(payment_425747824_customer).orderBy",
-                ".from(payment_425747824_staff).orderBy"
+                ".from(_a_payment_1831371789_customer).orderBy",
+                ".from(_a_payment_1831371789_staff).orderBy"
         );
     }
 
@@ -69,11 +70,11 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("Reference path starting with condition and no key")
     void conditionReference() {
         assertGeneratedContentContains("conditionReference",
-                "_payment = PAYMENT.as(\"p", // Outer alias
-                "payment_for_staff = PAYMENT.as(\"S", // Inner alias (in sort fields method)
-                ".from(payment_for_staff).join(payment_for_staff_paymentstaff_staff).on(no",
-                "paymentStaff(payment_for_staff, payment_for_staff_paymentstaff_staff))" +
-                        ".where(_payment.PAYMENT_ID.eq(payment_for_staff.PAYMENT_ID))"
+                "payment = PAYMENT.as(\"p", // Outer alias
+                "payment_for_staff = PAYMENT.as(\"p", // Inner alias (in sort fields method)
+                ".from(_a_payment_for_staff).join(_a_payment_for_staff_paymentstaff_staff).on(no",
+                "paymentStaff(_a_payment_for_staff, _a_payment_for_staff_paymentstaff_staff))" +
+                        ".where(_a_payment.PAYMENT_ID.eq(_a_payment_for_staff.PAYMENT_ID))"
         );
     }
 
@@ -81,8 +82,8 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("Reference path starting with key and condition")
     void conditionReferenceWithKey() {
         assertGeneratedContentContains("conditionReferenceWithKey",
-                ".from(payment_425747824_staff).where(no.",
-                "paymentStaff(_payment, payment_425747824_staff)"
+                ".from(_a_payment_1831371789_staff).where(no.",
+                "paymentStaff(_a_payment, _a_payment_1831371789_staff)"
         );
     }
 
@@ -90,9 +91,9 @@ public class MultitableReferenceTest extends ReferenceTest {
     @DisplayName("With condition reference after key")
     void conditionReferenceAfterKey() {
         assertGeneratedContentContains("conditionReferenceAfterKey",
-                "rental_4012516862_payment_paymentstaff_staff = STAFF",
-                ".from(rental_4012516862_payment).join(rental_4012516862_payment_paymentstaff_staff).on(no.",
-                "paymentStaff(rental_4012516862_payment, rental_4012516862_payment_paymentstaff_staff)"
+                "rental_370786941_payment_paymentstaff_staff = STAFF",
+                ".from(_a_rental_370786941_payment).join(_a_rental_370786941_payment_paymentstaff_staff).on(no.",
+                "paymentStaff(_a_rental_370786941_payment, _a_rental_370786941_payment_paymentstaff_staff)"
         );
     }
 }

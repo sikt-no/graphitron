@@ -1,6 +1,5 @@
 package no.sikt.graphitron.queries.fetch;
 
-import no.sikt.graphitron.common.configuration.SchemaComponent;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,6 +8,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.*;
 
+@DisplayName("Multi-table interfaces - Queries")
 public class MultitableInterfaceTest extends InterfaceTest {
 
     // Disabled until GGG-104
@@ -67,8 +67,8 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains(
                 "interfaceWithType",
                 Set.of(CUSTOMER_TABLE),
-                " payment_425747824_customer = _payment.customer()",
-                ".from(payment_425747824_customer",
+                "payment_1831371789_customer = _a_payment.customer()",
+                ".from(_a_payment_1831371789_customer",
                 "CustomerTable::new"
         );
     }
@@ -80,7 +80,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains(
                 "interfaceWithTypeSplitQuery",
                 Set.of(CUSTOMER_TABLE),
-                "row(DSL.row(_payment.CUSTOMER_ID), _payment.getId()).mapping"
+                "row(DSL.row(_a_payment.CUSTOMER_ID), _a_payment.getId()).mapping"
         );
     }
 
@@ -90,7 +90,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains(
                 "interfaceWithTypeSplitQuery",
                 Set.of(CUSTOMER_TABLE),
-                "row(DSL.row(_payment.PAYMENT_ID), _payment.getId()).mapping"
+                "row(DSL.row(_a_payment.PAYMENT_ID), _a_payment.getId()).mapping"
         );
     }
 
@@ -99,7 +99,6 @@ public class MultitableInterfaceTest extends InterfaceTest {
     void listed() {
         assertGeneratedContentMatches("listed");
     }
-
 
     @Test
     @DisplayName("Input on multitable interface")
@@ -118,7 +117,7 @@ public class MultitableInterfaceTest extends InterfaceTest {
     void paginatedWithInput() {
         assertGeneratedContentContains("paginatedWithInput",
                 "SortFieldsForPayments(pageSize, _token, customerId).union",
-                ".where(customerId != null ? _paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition()).and(_token"
+                ".where(customerId != null ? _a_paymentp2007_02.CUSTOMER_ID.eq(customerId) : DSL.noCondition()).and(_token"
         );
     }
 
@@ -129,17 +128,17 @@ public class MultitableInterfaceTest extends InterfaceTest {
                 "paymenttypetwoSortFieldsForPayments(customerId, staff)" +
                         ".unionAll(paymenttypeoneSortFieldsForPayments(customerId, staff))",
                 "SortFieldsForPayments(String customerId, PaymentStaffInput staff)",
-                ".where(customerId != null ? _paymentp2007_01.",
-                ".and(_paymentp2007_01.STAFF_ID.eq(staff.getStaffId()))"
-                );
+                ".where(customerId != null ? _a_paymentp2007_01.",
+                ".and(_a_paymentp2007_01.STAFF_ID.eq(staff.getStaffId()))"
+        );
     }
 
     @Test
     @DisplayName("Condition on multi table interface")
     void withQueryCondition() {
         assertGeneratedContentContains("withQueryCondition",
-                ".from(_paymentp2007_01).where(no.sikt.",
-                ".from(_paymentp2007_02).where(no.sikt."
+                ".from(_a_paymentp2007_01).where(no.sikt.",
+                ".from(_a_paymentp2007_02).where(no.sikt."
         );
     }
 
@@ -147,9 +146,9 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Condition on input on multi table interface")
     void withInputCondition() {
         assertGeneratedContentContains("withInputCondition",
-                ".from(_paymentp2007_01).where(customerId",
+                ".from(_a_paymentp2007_01).where(customerId",
                 ": DSL.noCondition()).and(no.sikt",
-                "QueryPaymentInterfaceCondition.payments(_paymentp2007_01, customerId)"
+                "QueryPaymentInterfaceCondition.payments(_a_paymentp2007_01, customerId)"
         );
     }
 
@@ -169,8 +168,8 @@ public class MultitableInterfaceTest extends InterfaceTest {
     @DisplayName("Multitable interface in splitQuery field with input")
     void splitQueryWithInput() {
         assertGeneratedContentContains("splitQueryWithInput", Set.of(PERSON_WITH_EMAIL_CONNECTION),
-                ".from(payment_425747824_customer).where(payment_425747824_customer.EMAIL.eq(email))",
-                ".from(_payment).where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys)).fetch"
-                );
+                ".from(_a_payment_1831371789_customer).where(_a_payment_1831371789_customer.EMAIL.eq(email))",
+                ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys)).fetch"
+        );
     }
 }

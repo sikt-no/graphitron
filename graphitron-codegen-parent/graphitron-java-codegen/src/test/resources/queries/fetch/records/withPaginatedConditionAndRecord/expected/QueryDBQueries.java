@@ -20,15 +20,15 @@ import org.jooq.impl.DSL;
 public class QueryDBQueries {
     public static List<Pair<String, CustomerTable>> customerForQuery(DSLContext ctx, CustomerRecord inRecord,
                                                    Integer pageSize, String after, SelectionSet select) {
-        var _customer = CUSTOMER.as("customer_2952383337");
-        var orderFields = _customer.fields(_customer.getPrimaryKey().getFieldsArray());
+        var _a_customer = CUSTOMER.as("customer_2168032777");
+        var orderFields = _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray());
         return ctx
                 .select(
-                        QueryHelper.getOrderByToken(_customer, orderFields),
-                        DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
+                        QueryHelper.getOrderByToken(_a_customer, orderFields),
+                        DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new))
                 )
-                .from(_customer)
-                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
+                .from(_a_customer)
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, inRecord))
                 .orderBy(orderFields)
                 .seek(QueryHelper.getOrderByValues(ctx, orderFields, after))
                 .limit(pageSize + 1)
@@ -37,11 +37,11 @@ public class QueryDBQueries {
     }
 
     public static Integer countCustomerForQuery(DSLContext ctx, CustomerRecord inRecord) {
-        var _customer = CUSTOMER.as("customer_2952383337");
+        var _a_customer = CUSTOMER.as("customer_2168032777");
         return ctx
                 .select(DSL.count())
-                .from(_customer)
-                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_customer, inRecord))
+                .from(_a_customer)
+                .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJavaRecord(_a_customer, inRecord))
                 .fetchOne(0, Integer.class);
     }
 }

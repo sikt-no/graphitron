@@ -3,7 +3,7 @@ package no.sikt.graphitron.generators.context;
 import no.sikt.graphitron.definitions.fields.InputField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ExceptionDefinition;
-import no.sikt.graphitron.generators.codebuilding.NameFormat;
+import no.sikt.graphitron.generators.codebuilding.VariablePrefix;
 import no.sikt.graphql.schema.ProcessedSchema;
 import org.jetbrains.annotations.NotNull;
 
@@ -42,7 +42,7 @@ public class InputParser {
                 .filter(it -> schema.hasJOOQRecord(it.getValue()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new));
         var inputsJoined = String.join(", ", methodInputsWithOrderField.keySet());
-        var contextParams = String.join(", ", schema.getAllContextFields(target).keySet().stream().map(NameFormat::asContextFieldName).toList());
+        var contextParams = String.join(", ", schema.getAllContextFields(target).keySet().stream().map(VariablePrefix::contextFieldPrefix).toList());
         if (target.hasForwardPagination()) {
             var contextParamsOrEmpty = contextParams.isEmpty() ? "" : ", " + contextParams;
             serviceInputString = (!inputsJoined.isEmpty() ? inputsJoined + ", " : inputsJoined) + PAGE_SIZE_NAME + ", " + PAGINATION_AFTER.getName() + contextParamsOrEmpty;

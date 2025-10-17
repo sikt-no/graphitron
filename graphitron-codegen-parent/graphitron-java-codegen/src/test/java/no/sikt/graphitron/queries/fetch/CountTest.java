@@ -45,7 +45,7 @@ public class CountTest extends GeneratorTest {
     @Test
     @DisplayName("Connection with an extra field")
     void withOtherField() {
-        assertGeneratedContentContains("withOtherField", ", String email)", ".where(_customer.EMAIL.eq(email)");
+        assertGeneratedContentContains("withOtherField", ", String email)", ".where(_a_customer.EMAIL.eq(email)");
     }
 
     @Test
@@ -71,7 +71,7 @@ public class CountTest extends GeneratorTest {
     void multiTableInterfaceWithOtherField() {
         assertGeneratedContentContains("multiTableInterfaceWithOtherField",
                 ", String customerId){",
-                ".from(_paymentp2007_01).where(_paymentp2007_01.CUSTOMER_ID.eq(customerId))"
+                ".from(_a_paymentp2007_01).where(_a_paymentp2007_01.CUSTOMER_ID.eq(customerId))"
         );
     }
 
@@ -80,7 +80,7 @@ public class CountTest extends GeneratorTest {
     void unionCountTest() {
         assertGeneratedContentContains("unionConnection",
                 Set.of(SOMEUNION_CONNECTION),
-                ".from(_paymentp2007_01)",
-                "from(_paymentp2007_02)");
+                ".from(_a_paymentp2007_01)",
+                "from(_a_paymentp2007_02)");
     }
 }

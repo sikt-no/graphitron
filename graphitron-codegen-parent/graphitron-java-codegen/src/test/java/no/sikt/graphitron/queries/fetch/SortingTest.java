@@ -46,28 +46,22 @@ public class SortingTest extends GeneratorTest {
     @Test
     @DisplayName("No sorting when table has no primary key")
     void noPrimaryKey() {
-        resultDoesNotContain("noPrimaryKey",
-                "orderFields",
-                ".orderBy("
-        );
+        resultDoesNotContain("noPrimaryKey", "orderFields", ".orderBy(");
     }
 
     @Test
     @DisplayName("Default sorting on list with splitQuery")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
-                "orderFields = address_2030472956_customer",
-                "_customer).orderBy(orderFields"
+                "orderFields = _a_address_223244161_customer",
+                "customer).orderBy(orderFields"
         );
     }
 
     @Test
     @DisplayName("No sorting on list with splitQuery when table has no primary key")
     void splitQueryNoPrimaryKey() {
-        resultDoesNotContain("splitQueryNoPrimaryKey",
-                "orderFields",
-                ".orderBy("
-        );
+        resultDoesNotContain("splitQueryNoPrimaryKey", "orderFields", ".orderBy(");
     }
 
     @Test
@@ -76,7 +70,7 @@ public class SortingTest extends GeneratorTest {
         var generatedFiles = generateFiles("multiset", Set.of());
         contains(generatedFiles,
                 "ctx.select(DSL",
-                ".from(address_2030472956_customer).orderBy(address_2030472956_customer.fields(address_2030472956_customer.getPrimaryKey().getFieldsArray()))"
+                ".from(_a_address_223244161_customer).orderBy(_a_address_223244161_customer.fields(_a_address_223244161_customer.getPrimaryKey().getFieldsArray()))"
         );
         doesNotContain(generatedFiles, "orderFields");
     }
@@ -84,19 +78,17 @@ public class SortingTest extends GeneratorTest {
     @Test
     @DisplayName("No sorting on table in multiset when it has no primary key")
     void multisetNoPrimaryKey() {
-        resultDoesNotContain("multisetNoPrimaryKey",
-                "orderFields",
-                "orderBy");
+        resultDoesNotContain("multisetNoPrimaryKey", "orderFields", "orderBy");
     }
 
     @Test
     @DisplayName("Sorting on nested lists (nested multisets)")
     void nestedLists() {
         assertGeneratedContentContains("nestedLists",
-                "orderFields = _city.",
-                "(_city).orderBy(orderFields)",
-                ".from(city_1887334959_address).orderBy(city_",
-                ".from(address_1356285680_customer).orderBy(address_"
+                "orderFields = _a_city.",
+                "(_a_city).orderBy(orderFields)",
+                ".from(_a_city_760939060_address).orderBy(",
+                ".from(_a_address_609487378_customer).orderBy("
         );
     }
 
@@ -109,8 +101,6 @@ public class SortingTest extends GeneratorTest {
     @Test
     @DisplayName("No sorting on lookup")
     void lookup() {
-        resultDoesNotContain("lookup",
-                "orderFields",
-                "orderBy");
+        resultDoesNotContain("lookup", "orderFields", "orderBy");
     }
 }

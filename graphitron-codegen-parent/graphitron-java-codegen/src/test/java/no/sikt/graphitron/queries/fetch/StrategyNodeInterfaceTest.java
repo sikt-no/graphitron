@@ -56,14 +56,14 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @Test
     @DisplayName("ID field which is not node ID")
     void regularIdField() {
-        assertGeneratedContentContains("regularIdField", "_customer.CUSTOMER_ID");
+        assertGeneratedContentContains("regularIdField", "customer.CUSTOMER_ID");
     }
 
     @Test
     @DisplayName("Input ID field which is not node ID")
     void regularIdInputField() {
         assertGeneratedContentContains("regularIdInputField", Set.of(CUSTOMER_TABLE),
-                "_customer.CUSTOMER_ID.eq(id)"
+                "customer.CUSTOMER_ID.eq(id)"
         );
     }
 
@@ -71,14 +71,14 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @DisplayName("Querying a list of regular ID fields after mutation")
     void listedIdFieldAfterMutation() {
         assertGeneratedContentContains("listedIdFieldAfterMutation", Set.of(CUSTOMER_NODE),
-                "DSL.multiset(DSL.select(_customer.CUSTOMER_ID)"
+                "DSL.multiset(DSL.select(_a_customer.CUSTOMER_ID)"
         );
     }
 
     @Test
     @DisplayName("Multiple fields")
     void manyFields() {
-        assertGeneratedContentContains("manyFields", "_customer.FIRST_NAME", "_customer.LAST_NAME");
+        assertGeneratedContentContains("manyFields", "customer.FIRST_NAME", "customer.LAST_NAME");
     }
 
     @Test
@@ -88,7 +88,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
                 "twoInterfaces",
                 "customerForNode",
                 ",Set<String> ids,",
-                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _customer.fields(_customer.getPrimaryKey().getFieldsArray()))"
+                ".where(nodeIdStrategy.hasIds(\"Customer\", ids, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))"
         );
     }
 
@@ -97,9 +97,9 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
     @DisplayName("Split query")
     void splitQuery() {
         assertGeneratedContentContains("splitQuery",
-                "nodeIdStrategy.createId(\"Customer\", _customer.fields(_customer.getPrimaryKey().getFieldsArray()))," +
+                "nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))," +
                         "DSL.field(",
-                ".where(nodeIdStrategy.hasIds(\"Customer\", customerIds, _customer.fields"
+                ".where(nodeIdStrategy.hasIds(\"Customer\", customerIds, _a_customer.fields"
         );
     }
 
@@ -130,7 +130,7 @@ public class StrategyNodeInterfaceTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "multitable", Set.of(CUSTOMER_TABLE),
                 "customertableForQuery(nodeIdStrategy)",
-                "customertableForQuery( NodeIdStrategy nodeIdStrategy)",
+                "customertableForQuery(NodeIdStrategy nodeIdStrategy)",
                 "customertableSortFieldsForQuery()"
         );
     }

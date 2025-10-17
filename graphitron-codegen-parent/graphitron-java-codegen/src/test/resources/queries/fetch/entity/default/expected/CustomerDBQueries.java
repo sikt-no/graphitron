@@ -11,11 +11,11 @@ import org.jooq.DSLContext;
 
 public class CustomerDBQueries {
     public static Map<String, Object> customerAsEntity(DSLContext ctx, Map<String, Object> _inputMap) {
-        var _customer = CUSTOMER.as("customer_2952383337");
+        var _a_customer = CUSTOMER.as("customer_2168032777");
         var _result = ctx
-                .select(QueryHelper.objectRow("id", _customer.getId()))
-                .from(_customer)
-                .where(_customer.hasId((String) _inputMap.get("id")))
+                .select(QueryHelper.objectRow("id", _a_customer.getId()))
+                .from(_a_customer)
+                .where(_a_customer.hasId((String) _inputMap.get("id")))
                 .fetchOneMap();
         return _result != null ? (Map<String, Object>) _result.get("nested") : Map.of();
     }

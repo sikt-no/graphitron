@@ -21,7 +21,7 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void table() {
         assertGeneratedContentContains(
                 "table", Set.of(CUSTOMER_QUERY),
-                ".from(customer_2952383337_address"
+                ".from(_a_customer_2168032777_address"
         );
     }
 
@@ -30,7 +30,7 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void keyWithSinglePath() {
         assertGeneratedContentContains(
                 "keyWithSinglePath", Set.of(CUSTOMER_QUERY),
-                ".from(customer_2952383337_address"
+                ".from(_a_customer_2168032777_address"
         );
     }
 
@@ -39,7 +39,7 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void keyWithMultiplePaths() {
         assertGeneratedContentContains(
                 "keyWithMultiplePaths",
-                ".from(film_3747728953_filmoriginallanguageidfkey"
+                ".from(_a_film_2185543202_filmoriginallanguageidfkey"
         );
     }
 
@@ -48,9 +48,9 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void condition() {
         assertGeneratedContentContains(
                 "condition", Set.of(CUSTOMER_QUERY),
-                "join(customer_address_addresscustomer_address).on(",
-                ".addressCustomer(customer_address, customer_address_addresscustomer_address)",
-                ".where(_customer.CUSTOMER_ID.eq(customer_address.CUSTOMER_ID"
+                "join(_a_customer_address_addresscustomer_address).on(",
+                ".addressCustomer(_a_customer_address, _a_customer_address_addresscustomer_address)",
+                ".where(_a_customer.CUSTOMER_ID.eq(_a_customer_address.CUSTOMER_ID"
         );
     }
 
@@ -59,8 +59,8 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void throughTable() {
         assertGeneratedContentContains(
                 "throughTable", Set.of(CUSTOMER_QUERY),
-                ".from(customer_2952383337_address",
-                ".join(address_1214171484_city"
+                ".from(_a_customer_2168032777_address",
+                ".join(_a_address_2138977089_city"
         );
     }
 
@@ -69,8 +69,8 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void throughKey() {
         assertGeneratedContentContains(
                 "throughKey", Set.of(CUSTOMER_QUERY),
-                ".from(customer_2952383337_address",
-                ".join(address_1214171484_city"
+                ".from(_a_customer_2168032777_address",
+                ".join(_a_address_2138977089_city"
         );
     }
 
@@ -79,9 +79,9 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void throughCondition() {
         assertGeneratedContentContains(
                 "throughCondition", Set.of(CUSTOMER_QUERY),
-                ".join(customer_city_citycustomer_city).on(",
-                ".cityCustomer(customer_city, customer_city_citycustomer_city)",
-                ".where(_customer.CUSTOMER_ID.eq(customer_city.CUSTOMER_ID"
+                ".join(_a_customer_city_citycustomer_city).on(",
+                ".cityCustomer(_a_customer_city, _a_customer_city_citycustomer_city)",
+                ".where(_a_customer.CUSTOMER_ID.eq(_a_customer_city.CUSTOMER_ID"
         );
     }
 
@@ -90,8 +90,8 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void throughTableBackwards() {
         assertGeneratedContentContains(
                 "throughTableBackwards", Set.of(CUSTOMER_TABLE),
-                ".from(city_1887334959_address",
-                ".join(address_1356285680_customer"
+                ".from(_a_city_760939060_address",
+                ".join(_a_address_609487378_customer"
         );
     }
 
@@ -100,7 +100,7 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void list() {
         assertGeneratedContentContains(
                 "list", Set.of(CUSTOMER_TABLE, CUSTOMER_QUERY),
-                ".from(customer_2952383337_address)"
+                ".from(_a_customer_2168032777_address)"
         );
     }
 
@@ -109,8 +109,8 @@ public class ReferenceSubqueryTest extends ReferenceTest {
     void nestedLists() {
         assertGeneratedContentContains(
                 "nestedLists", Set.of(CUSTOMER_QUERY),
-                ".from(address_1214171484_store)",
-                ".from(customer_2952383337_address)"
+                ".from(_a_address_2138977089_store)",
+                ".from(_a_customer_2168032777_address)"
         );
     }
 

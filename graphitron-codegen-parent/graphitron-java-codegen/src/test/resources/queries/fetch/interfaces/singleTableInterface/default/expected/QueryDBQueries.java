@@ -13,20 +13,20 @@ import org.jooq.DSLContext;
 public class QueryDBQueries {
 
     public static Address addressForQuery(DSLContext ctx, SelectionSet select) {
-        var _address = ADDRESS.as("address_2030472956");
-        var orderFields = _address.fields(_address.getPrimaryKey().getFieldsArray());
+        var _a_address = ADDRESS.as("address_223244161");
+        var orderFields = _a_address.fields(_a_address.getPrimaryKey().getFieldsArray());
         return ctx.select(
-                        _address.DISTRICT.as("_discriminator"),
-                        _address.POSTAL_CODE.as("postalCode"),
-                        _address.getId().as("id"),
-                        _address.POSTAL_CODE.as("postalCodeDuplicate")
+                        _a_address.DISTRICT.as("_discriminator"),
+                        _a_address.POSTAL_CODE.as("postalCode"),
+                        _a_address.getId().as("id"),
+                        _a_address.POSTAL_CODE.as("postalCodeDuplicate")
                 )
-                .from(_address)
-                .where(_address.DISTRICT.in("ONE", "TWO"))
+                .from(_a_address)
+                .where(_a_address.DISTRICT.in("ONE", "TWO"))
                 .orderBy(orderFields)
                 .fetchOne(
                         internal_it_ -> {
-                            var _discriminatorValue = internal_it_.get("_discriminator", _address.DISTRICT.getConverter());
+                            var _discriminatorValue = internal_it_.get("_discriminator", _a_address.DISTRICT.getConverter());
                             if (_discriminatorValue.equals("ONE")) {
                                 return internal_it_.into(AddressInDistrictOne.class);
                             } else if (_discriminatorValue.equals("TWO")) {

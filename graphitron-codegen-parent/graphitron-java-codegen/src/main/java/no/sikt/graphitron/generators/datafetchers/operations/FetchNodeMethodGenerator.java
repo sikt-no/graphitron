@@ -77,7 +77,7 @@ public class FetchNodeMethodGenerator extends DataFetcherMethodGenerator {
                 .beginControlFlow("if ($N == null)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
                 .addCode(illegalBlock)
                 .endControlFlow()
-                .declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, asInternalName(target.getName())))
+                .declare(VARIABLE_LOADER, CodeBlock.of("$N + $S", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME, "_" + target.getName()))
                 .declare(VARIABLE_FETCHER_NAME, newDataFetcher())
                 .addCode("\n")
                 .beginControlFlow("switch ($N)", GeneratorConfig.shouldMakeNodeStrategy() ? VARIABLE_TYPE_ID : VARIABLE_TYPE_NAME)
