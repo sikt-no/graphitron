@@ -12,8 +12,6 @@ import org.jooq.Row;
 import java.util.*;
 import java.util.stream.IntStream;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
-
 /**
  * Helper class for generated code that helps simplify the extraction of required data from a DataFetchingEnvironment.
  */
@@ -50,44 +48,16 @@ public class EnvironmentHandler {
         return env;
     }
 
-    public Map<String, Object> getLocalContext() {
-        return localContext;
-    }
-
     public DSLContext getCtx() {
         return dslContext;
-    }
-
-    public String getExecutionPath() {
-        return executionPath;
     }
 
     public SelectionSet getSelect() {
         return select;
     }
 
-    public SelectionSet getConnectionSelect() {
-        return connectionSelect;
-    }
-
     public Set<String> getArguments() {
         return arguments;
-    }
-
-    public Map<String, Map<String, Row>> getNextKeys() {
-        return nextKeys;
-    }
-
-    public Map<String, Row> getNextKeyFor(String fieldName) {
-        return Optional.of(nextKeys.get(fieldName)).orElse(Map.of());
-    }
-
-    public Set<Row> getNextKeySet(String fieldName) {
-        return new HashSet<>(getNextKeyFor(fieldName).values());
-    }
-
-    public String getDataloaderName() {
-        return dataloaderName;
     }
 
     protected static List<DataFetchingFieldSelectionSet> getSelectionSetsFromEnvironment(BatchLoaderEnvironment loaderEnvironment) {
@@ -152,7 +122,4 @@ public class EnvironmentHandler {
         return result;
     }
 
-    public Set<String> createArgumentSet(Map<String, Object> arguments, String path) {
-        return null;
-    }
 }
