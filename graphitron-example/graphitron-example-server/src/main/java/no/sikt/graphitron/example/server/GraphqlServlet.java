@@ -15,6 +15,8 @@ import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExcept
 import no.sikt.graphitron.example.generated.graphitron.exception.GeneratedExceptionToErrorMappingProvider;
 import no.sikt.graphitron.example.generated.graphitron.graphitron.Graphitron;
 import no.sikt.graphitron.servlet.GraphitronServlet;
+import no.sikt.graphql.DefaultGraphitronContext;
+import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.NodeIdStrategy;
 import no.sikt.graphql.exception.DataAccessExceptionMapperImpl;
 import no.sikt.graphql.exception.ExceptionHandlingBuilder;
@@ -24,6 +26,7 @@ import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 
 import java.io.Serial;
+import java.util.Map;
 
 @WebServlet(name = "GraphqlServlet", urlPatterns = {"graphql/*"}, loadOnStartup = 1)
 public class GraphqlServlet extends GraphitronServlet {
@@ -81,6 +84,6 @@ public class GraphqlServlet extends GraphitronServlet {
     @Override
     protected ExecutionInput buildExecutionInput(ExecutionInput.Builder builder) {
         DSLContext ctx = DSL.using(dataSource, SQLDialect.POSTGRES);
-        return builder.localContext(ctx).build();
+        return builder.graphQLContext(Map.of("graphitronContext", new DefaultGraphitronContext(ctx))).build();
     }
 }
