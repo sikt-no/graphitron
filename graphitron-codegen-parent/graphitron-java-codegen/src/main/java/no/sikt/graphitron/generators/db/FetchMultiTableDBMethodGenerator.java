@@ -102,12 +102,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var multitableQuery = CodeBlock.builder()
                 .addIf(target.isResolver(), "$T", DSL.className)
                 .addIf(!target.isResolver(), "$N", CONTEXT_NAME)
-                .add(".select(\n")
-                .indent()
-                .add("$T.row(", DSL.className)
-                .add(createSelectBlock(mappedQueryVariables))
-                .add("\n)")
-                .unindent()
+                .add(".select(")
+                .add(indentIfMultiline(wrapRow(createSelectBlock(mappedQueryVariables))))
                 .add(".mapping($L)", createMappingContent(target, implementations, target.hasForwardPagination()))
                 .add(")\n.from($L)", UNION_KEYS_QUERY)
                 .add(joins.build())
@@ -180,25 +176,20 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
     }
 
     private CodeBlock createSelectBlock(Map<String, String> mappedQueryVariables) {
-        var code = CodeBlock.builder()
-                .indent()
-                .add("\n$N.field($S, $T.class)", UNION_KEYS_QUERY, TYPE_FIELD, STRING.className);
-
-        mappedQueryVariables.forEach(
-                (key, variableName) -> code.add(",\n$N.field($S)", variableName, DATA_FIELD)
+        return indentIfMultiline(
+                CodeBlock.builder()
+                        .add("\n$N.field($S, $T.class)", UNION_KEYS_QUERY, TYPE_FIELD, STRING.className)
+                        .add(mappedQueryVariables.values().stream().map(it -> CodeBlock.of(",\n$N.field($S)", it, DATA_FIELD)).collect(CodeBlock.joining()))
+                        .build()
         );
-
-        return code.unindent().build();
     }
 
     private CodeBlock getFetchCodeBlock(ObjectField target) {
         if (target.isResolver()) {
             return CodeBlock.builder()
                     .add(".fetchMap(")
-                    .indent()
-                    .add("\nr -> r.value1().valuesRow(),\nr -> r.value2().map($T::value1)", RECORD1.className)
-                    .unindent()
-                    .addStatement("\n)")
+                    .add(indentIfMultiline(CodeBlock.of("r -> r.value1().valuesRow(),\nr -> r.value2().map($T::value1)", RECORD1.className)))
+                    .addStatement(")")
                     .build();
         }
 
@@ -238,12 +229,12 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                         interfaceClassName,
                         TYPE_LAMBDA_PARAM)
                 .unindent()
-                .endControlFlow();
+                .endControlFlowIf(!isConnection);
 
         if (isConnection) {
-            code.add(";\n")
+            code.add("};\n")
                     .addStatement("return $T.of($N.get(0, $T.class), $N.get(1, $T.class))", PAIR.className, VARIABLE_RESULT, STRING.className, VARIABLE_RESULT, interfaceClassName)
-                    .add("}");
+                    .endControlFlow();
         }
 
         return code.unindent().build();
