@@ -13,6 +13,7 @@ public class VariableNames {
             VALIDATION_ERRORS_NAME = "validationErrors",
             TRANSFORMER_NAME = "transform",
             ORDER_FIELDS_NAME = "orderFields",
+            GRAPHITRON_CONTEXT_NAME = "graphitronContext",
             PATH_NAME = "path",
             PATH_INDEX_NAME = "indexPath",
             PATH_HERE_NAME = "pathHere",
@@ -36,6 +37,7 @@ public class VariableNames {
             VARIABLE_INPUT_MAP = "_inputMap",
             VARIABLE_OBJECT = "_obj",
             VARIABLE_RESULT = "_result",
+            VARIABLE_GRAPHITRON_CONTEXT = "_graphitronContext",
             VARIABLE_INTERNAL_ITERATION = "internal_it_", // To avoid conflicts with potential schema names.
             NODE_ID_HANDLER_NAME = "nodeIdHandler",
             NODE_ID_STRATEGY_NAME = "nodeIdStrategy",

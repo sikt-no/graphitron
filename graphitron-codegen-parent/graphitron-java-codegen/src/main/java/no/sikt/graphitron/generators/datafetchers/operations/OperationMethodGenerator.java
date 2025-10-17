@@ -387,8 +387,10 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
         var code = CodeBlock
                 .builder()
-                .declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT));
-        contextFields.forEach((name, type) -> code.declare(VariablePrefix.contextFieldPrefix(name), asCast(type, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, name))));
+                .declare(GRAPH_CONTEXT_NAME, asMethodCall(VARIABLE_ENV, METHOD_GRAPH_CONTEXT))
+                .declare(VARIABLE_GRAPHITRON_CONTEXT, CodeBlock.of("$N.get($S)", GRAPH_CONTEXT_NAME, GRAPHITRON_CONTEXT_NAME));
+
+        contextFields.forEach((name, type) -> code.declare(type, VariablePrefix.contextFieldPrefix(name), CodeBlock.of("$N.getContextArgument($L, $S)", VARIABLE_GRAPHITRON_CONTEXT, VARIABLE_ENV, name)));
         return code.build();
     }
 

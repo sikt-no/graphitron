@@ -81,7 +81,8 @@ public class ResolverTest extends GeneratorTest {
     void withContextCondition() {
         assertGeneratedContentContains(
                 "operation/withContextCondition",
-                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "_graphitronContext = _graphCtx.get(\"graphitronContext\")",
+                "String _c_ctxField = _graphitronContext.getContextArgument(env, \"ctxField\")",
                 "queryForQuery(ctx, _c_ctxField, selectionSet)"
         );
     }
@@ -91,7 +92,8 @@ public class ResolverTest extends GeneratorTest {
     void withArgumentContextCondition() {
         assertGeneratedContentContains(
                 "operation/withArgumentContextCondition",
-                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "_graphitronContext = _graphCtx.get(\"graphitronContext\")",
+                "String _c_ctxField = _graphitronContext.getContextArgument(env, \"ctxField\")",
                 "queryForQuery(ctx, email, _c_ctxField, selectionSet)"
         );
     }
@@ -101,7 +103,8 @@ public class ResolverTest extends GeneratorTest {
     void withInputTypeContextCondition() {
         assertGeneratedContentContains(
                 "operation/withInputTypeContextCondition",
-                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "_graphitronContext = _graphCtx.get(\"graphitronContext\")",
+                "String _c_ctxField = _graphitronContext.getContextArgument(env, \"ctxField\")",
                 "queryForQuery(ctx, in, _c_ctxField, selectionSet)"
         );
     }
@@ -111,8 +114,9 @@ public class ResolverTest extends GeneratorTest {
     void withMultipleContextConditions() {
         assertGeneratedContentContains(
                 "operation/withMultipleContextConditions",
-                "_c_ctxField1 = ((String) _graphCtx.get(\"ctxField1\"))",
-                "_c_ctxField2 = ((String) _graphCtx.get(\"ctxField2\"))",
+                "_graphitronContext = _graphCtx.get(\"graphitronContext\")",
+                "String _c_ctxField1 = _graphitronContext.getContextArgument(env, \"ctxField1\")",
+                "String _c_ctxField2 = _graphitronContext.getContextArgument(env, \"ctxField2\")",
                 "queryForQuery(ctx, email, _c_ctxField1, _c_ctxField2, selectionSet)"
         );
     }
@@ -122,7 +126,8 @@ public class ResolverTest extends GeneratorTest {
     void withDuplicateContextField() {
         assertGeneratedContentContains(
                 "operation/withDuplicateContextField",
-                "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))",
+                "_graphitronContext = _graphCtx.get(\"graphitronContext\")",
+                "String _c_ctxField = _graphitronContext.getContextArgument(env, \"ctxField\")",
                 "queryForQuery(ctx, email, _c_ctxField, selectionSet)"
         );
     }

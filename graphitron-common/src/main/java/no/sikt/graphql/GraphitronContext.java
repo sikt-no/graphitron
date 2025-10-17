@@ -13,7 +13,7 @@ public interface GraphitronContext {
     DSLContext getDslContext(DataFetchingEnvironment env);
 
     /***
-     * TODO: This will be used by Graphitron to get the value for a contextArgument. It's currently not being used.
+     * Used by Graphitron to get the values for contextArguments.
      * @param env An object containing information about what is being fetched etc. See https://www.graphql-java.com/documentation/data-fetching/#the-interesting-parts-of-the-datafetchingenvironment for more information.
      * @param name The name of the contextArgument we're looking for
      * @return The value of the contextArgument
