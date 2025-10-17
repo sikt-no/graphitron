@@ -89,9 +89,11 @@ public class QueryDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Address"), _address.ADDRESS_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_address, _address.fields(_address.getPrimaryKey().getFieldsArray()), "Address"),
-                                        DSL.select(DSL.row(_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_address, _address.fields(_address.getPrimaryKey().getFieldsArray()), "Address"),
+                                                DSL.select(DSL.row(_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_address);
@@ -116,9 +118,11 @@ public class QueryDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_customer, _customer.fields(_customer.getPrimaryKey().getFieldsArray()), "Customer"),
-                                        DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_customer, _customer.fields(_customer.getPrimaryKey().getFieldsArray()), "Customer"),
+                                                DSL.select(DSL.row(_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
+                                        )
                                 )
                         ).as("$data"))
 

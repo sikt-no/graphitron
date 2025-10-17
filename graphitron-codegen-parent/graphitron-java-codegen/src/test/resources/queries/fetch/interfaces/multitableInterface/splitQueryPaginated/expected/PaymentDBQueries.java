@@ -103,9 +103,11 @@ public class PaymentDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Customer"), _customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_customer, _customer.fields(_customer.getPrimaryKey().getFieldsArray()), "Customer"),
-                                        DSL.select(DSL.row(_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_customer, _customer.fields(_customer.getPrimaryKey().getFieldsArray()), "Customer"),
+                                                DSL.select(DSL.row(_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_customer);
@@ -131,9 +133,11 @@ public class PaymentDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Staff"), _staff.STAFF_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_staff, _staff.fields(_staff.getPrimaryKey().getFieldsArray()), "Staff"),
-                                        DSL.select(DSL.row(_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_staff, _staff.fields(_staff.getPrimaryKey().getFieldsArray()), "Staff"),
+                                                DSL.select(DSL.row(_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_staff);
