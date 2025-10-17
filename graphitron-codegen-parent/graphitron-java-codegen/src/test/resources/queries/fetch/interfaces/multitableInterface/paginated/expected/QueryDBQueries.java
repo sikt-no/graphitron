@@ -89,9 +89,11 @@ public class QueryDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Address"), _a_address.ADDRESS_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_address, _a_address.fields(_a_address.getPrimaryKey().getFieldsArray()), "Address"),
-                                        DSL.select(DSL.row(_a_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_a_address, _a_address.fields(_a_address.getPrimaryKey().getFieldsArray()), "Address"),
+                                                DSL.select(DSL.row(_a_address.getId()).mapping(Functions.nullOnAllNull(Address::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_a_address);
@@ -116,9 +118,11 @@ public class QueryDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
-                                        DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
+                                                DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(Customer::new)))
+                                        )
                                 )
                         ).as("$data"))
 

@@ -103,9 +103,11 @@ public class PaymentDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
-                                        DSL.select(DSL.row(_a_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
+                                                DSL.select(DSL.row(_a_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_a_customer);
@@ -130,9 +132,11 @@ public class PaymentDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Staff"), _a_staff.STAFF_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_staff, _a_staff.fields(_a_staff.getPrimaryKey().getFieldsArray()), "Staff"),
-                                        DSL.select(DSL.row(_a_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_a_staff, _a_staff.fields(_a_staff.getPrimaryKey().getFieldsArray()), "Staff"),
+                                                DSL.select(DSL.row(_a_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_a_staff);

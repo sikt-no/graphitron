@@ -323,13 +323,13 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 .add(getPrimaryKeyFieldsArray(implementation.getName(), querySource.toString(), context.getTargetTable().getName()))
                 .add(".as($S),\n$T.field(\n", PK_FIELDS, DSL.className)
                 .indent()
-                .addIf(target.hasForwardPagination(), "$T.row(\n", DSL.className)
+                .addIf(target.hasForwardPagination(), "$1T.select(\n$1T.row(\n", DSL.className)
                 .addIf(target.hasForwardPagination(), () ->
                         CodeBlock.of("$T.getOrderByTokenForMultitableInterface($L, $L, $S),\n",
                                 QUERY_HELPER.className, context.getTargetAlias(), getPrimaryKeyFieldsWithTableAliasBlock(context.getTargetAlias()), implementation.getName()))
                 .add("$T.select($L)", DSL.className, indentIfMultiline(selectCode))
                 .unindent()
-                .addIf(target.hasForwardPagination(), ")\n")
+                .addIf(target.hasForwardPagination(), ")\n)\n")
                 .add("\n).as($S))", DATA_FIELD)
                 .add("\n.from($L);", querySource)
                 .unindent()
