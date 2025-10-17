@@ -24,14 +24,14 @@ public class EnvironmentHandler {
     protected final DSLContext dslContext;
     protected final SelectionSet select, connectionSelect;
     protected final Set<String> arguments;
-    protected final Map<String, Map<String, Row>> nextKeys;;
+    protected final Map<String, Map<String, Row>> nextKeys;
     protected final String dataloaderName;
 
     public EnvironmentHandler(DataFetchingEnvironment env) {
         this.env = env;
         GraphitronContext graphitronContext = env.getGraphQlContext().get("graphitronContext");
         if (graphitronContext == null) {
-            throw new IllegalStateException("You have to register a graphitronContext in ExecutionInput.graphQLContext");
+            throw new IllegalStateException("A GraphitronContext must be registered in ExecutionInput.graphQLContext under the name \"graphitronContext\". Graphitron needs this to find the right DSLContext for queries.");
         }
 
         dslContext = graphitronContext.getDslContext(env);
