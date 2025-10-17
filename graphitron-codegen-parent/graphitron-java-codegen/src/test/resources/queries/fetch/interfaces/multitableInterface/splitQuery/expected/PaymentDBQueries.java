@@ -9,7 +9,6 @@ import java.lang.Integer;
 import java.lang.Long;
 import java.lang.RuntimeException;
 import java.lang.String;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import no.sikt.graphitron.jooq.generated.testdata.public_.tables.Payment;
@@ -26,7 +25,7 @@ import org.jooq.impl.DSL;
 
 public class PaymentDBQueries {
 
-    public static Map<Row1<Long>, List<PersonWithEmail>> staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
+    public static Map<Row1<Long>, PersonWithEmail> staffAndCustomersForPayment(DSLContext ctx, Set<Row1<Long>> paymentResolverKeys, SelectionSet select) {
         var _payment = PAYMENT.as("payment_425747824");
         var unionKeysQuery = staffSortFieldsForStaffAndCustomers(_payment).unionAll(customerSortFieldsForStaffAndCustomers(_payment));
 
@@ -35,11 +34,19 @@ public class PaymentDBQueries {
 
         return ctx.select(
                         DSL.row(_payment.PAYMENT_ID),
-                        DSL.multiset(
+                        DSL.field(
                                 DSL.select(
-                                                unionKeysQuery.field("$type"),
-                                                mappedCustomer.field("$data").as("$dataForCustomer"),
-                                                mappedStaff.field("$data").as("$dataForStaff"))
+                                                DSL.row(
+                                                        unionKeysQuery.field("$type", String.class),
+                                                        mappedCustomer.field("$data"),
+                                                        mappedStaff.field("$data")
+                                                ).mapping((a0, a1, a2) -> switch (a0) {
+                                                            case "Customer" -> (PersonWithEmail) a1;
+                                                            case "Staff" -> (PersonWithEmail) a2;
+                                                            default ->
+                                                                    throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", a0));
+                                                        }
+                                                ))
                                         .from(unionKeysQuery)
                                         .leftJoin(mappedCustomer)
                                         .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
@@ -52,18 +59,7 @@ public class PaymentDBQueries {
                 .where(DSL.row(_payment.PAYMENT_ID).in(paymentResolverKeys))
                 .fetchMap(
                         r -> r.value1().valuesRow(),
-                        r -> r.value2().map(
-                                internal_it_ -> {
-                                    switch (internal_it_.get(0, String.class)) {
-                                        case "Customer":
-                                            return internal_it_.get("$dataForCustomer", PersonWithEmail.class);
-                                        case "Staff":
-                                            return internal_it_.get("$dataForStaff", PersonWithEmail.class);
-                                        default:
-                                            throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "PersonWithEmail", internal_it_.get(0, String.class)));
-                                    }
-                                }
-                        )
+                        Record2::value2
                 );
     }
 

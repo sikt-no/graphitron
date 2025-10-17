@@ -16,4 +16,12 @@ public class PersonWithEmailConditions {
     public static Condition mostImportantCustomersForPayment(Payment payment, Customer customer) {
         return customer.EMAIL.startsWith("BARBARA");
     }
+
+    public static Condition managerForStaff(Payment payment, Staff staff) {
+        return staff.EMAIL.eq("Mike.Hillyer@sakilastaff.com");
+    }
+
+    public static Condition managerForStaff(Payment payment, Customer customer) {
+        return falseCondition();
+    }
 }

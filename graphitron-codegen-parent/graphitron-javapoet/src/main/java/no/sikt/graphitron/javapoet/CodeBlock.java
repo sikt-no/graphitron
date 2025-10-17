@@ -726,6 +726,13 @@ public final class CodeBlock {
             return this;
         }
 
+        public Builder endControlFlowIf(boolean predicate) {
+            if (predicate) {
+                endControlFlow();
+            }
+            return this;
+        }
+
         public Builder endControlFlow() {
             unindent();
             add("}\n");

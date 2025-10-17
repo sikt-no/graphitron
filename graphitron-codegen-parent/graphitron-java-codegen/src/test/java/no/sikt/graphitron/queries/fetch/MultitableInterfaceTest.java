@@ -52,12 +52,12 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains(
                 "multipleImplementations",
                 "citySortFieldsForSomeInterface().unionAll(customerSortFieldsForSomeInterface().unionAll(addressSortFieldsForSomeInterface()))",
-                "mappedAddress.field(\"$data\").as(\"$dataForAddress\")," +
-                        "mappedCustomer.field(\"$data\").as(\"$dataForCustomer\")," +
-                        "mappedCity.field(\"$data\").as(\"$dataForCity\")",
-                "case \"Address\": return internal_it_.get(\"$dataForAddress\", SomeInterface.class)",
-                "case \"Customer\": return internal_it_.get(\"$dataForCustomer\"",
-                "case \"City\": return internal_it_.get(\"$dataForCity\""
+                "mappedAddress.field(\"$data\")," +
+                        "mappedCustomer.field(\"$data\")," +
+                        "mappedCity.field(\"$data\")",
+                "case \"Address\" -> (SomeInterface) a1",
+                "case \"Customer\" -> (SomeInterface) a2",
+                "case \"City\" -> (SomeInterface) a3"
         );
     }
 
@@ -154,9 +154,19 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
+    @DisplayName("Multitable interface in splitQuery field")
+    void splitQuery() {
+        assertGeneratedContentMatches("splitQuery", PERSON_WITH_EMAIL);
+    }
+
+    @Test
     @DisplayName("Listed multitable interface in splitQuery field")
     void listedInSplitQuery() {
-        assertGeneratedContentMatches("splitQueryListed", PERSON_WITH_EMAIL);
+        assertGeneratedContentContains("splitQueryListed", Set.of(PERSON_WITH_EMAIL),
+                "DSL.multiset(DSL.select(DSL.row(unionKeysQuery.",
+                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1)",
+                "unionKeysQuery.field(\"$innerRowNum\")))).from" // Make sure there's no limit
+        );
     }
 
     @Test

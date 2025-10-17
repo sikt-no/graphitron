@@ -694,12 +694,6 @@ public class ProcessedDefinitionsValidator {
                                 field.getContainerTypeName(), field.getName(), REFERENCE.getName(), MULTITABLE_REFERENCE.getName()
                         );
                     }
-
-                    if (!field.isIterableWrapped() && !field.hasForwardPagination()) {
-                        addErrorMessage("Multitable queries returning a single object outside root is not currently supported. '%s.%s' is not a list.",
-                                field.getContainerTypeName(), field.getName()
-                        );
-                    }
                 });
     }
 

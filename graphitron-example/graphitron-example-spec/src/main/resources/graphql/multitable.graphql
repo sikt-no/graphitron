@@ -1,6 +1,7 @@
 extend type Query {
     reachableByEmail: [PersonWithEmail] @asConnection
     rentals: [Rental] @asConnection
+    oneStaffOrCustomerByEmail(email: String!): PersonWithEmail
 }
 
 interface PersonWithEmail {
@@ -23,6 +24,11 @@ type CustomerWithEmail implements PersonWithEmail @table(name: "CUSTOMER") {
 extend type Payment {
     staffAndCustomers(email: String): [PersonWithEmail] @splitQuery
     staffAndCustomersPaginated: [PersonWithEmail] @asConnection @splitQuery
+
+    managerForStaff: PersonWithEmail @splitQuery @multitableReference(routes: [
+        {typeName: "StaffWithEmail", path: [{condition: {method: "managerForStaff", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]},
+        {typeName: "CustomerWithEmail", path: [{condition: {method: "managerForStaff", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]}
+    ])
 
     mostImportantCustomers: [PersonWithEmail] @multitableReference(routes: [
         {typeName: "StaffWithEmail", path: [{condition: {method: "mostImportantCustomersForPayment", className: "no.sikt.graphitron.example.service.conditions.PersonWithEmailConditions"}}]},
