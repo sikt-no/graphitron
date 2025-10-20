@@ -13,7 +13,6 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  * To prevent such issues, we use variable prefixes for all variables in the generated code.
  * These make it impossible to accidentally or intentionally produce naming collisions, given that the prefixes are not substrings of each other.
  * <p>
- * <p>
  * Here is a more rigorous explanation and proof:<br>
  * Assume two variable names N and M (which are based on user-defined configuration beyond our control or other factors such as DB-schema).
  * These two variables exist in their corresponding namespaces with their own prefixes P and Q where P ≠ Q and where there exists no string S such that P = S + Q or Q = S + P.
@@ -31,7 +30,7 @@ import static org.apache.commons.lang3.StringUtils.uncapitalize;
  *  * N = M results in P + N = Q + N and P = Q which is a contradiction with our premise P ≠ Q. So we have that N ≠ M.<br>
  *  * The next possibility is that the prefixes have the same length |P| = |Q|.<br>
  *    For this to be true and for the strings to still be equal, every character in P must match the one at the same index in Q, thus resulting in P = Q, contradicting P ≠ Q.<br>
- *  * Lastly, for |P| ≠ |Q| one of them must be shorter, so let us use |P| < |Q|. This would be equivalent for |Q| < |P|. Since P + N = Q + M, Q must use P as a prefix.<br>
+ *  * Lastly, for |P| ≠ |Q| one of them must be shorter, so let us use |P| &lt; |Q|. This would be equivalent for |Q| &lt; |P|. Since P + N = Q + M, Q must use P as a prefix.<br>
  *    This means that Q = P + S where S is a non-empty string. This contradicts our second premise that there must not exist a string S such that P = S + Q or Q = S + P.<br>
  *  With this solution there can not exist a case where X = Y and variable naming collisions are impossible.
  */
