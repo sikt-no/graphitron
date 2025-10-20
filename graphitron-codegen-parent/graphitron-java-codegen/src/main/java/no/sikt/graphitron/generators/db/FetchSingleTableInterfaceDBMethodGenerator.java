@@ -160,17 +160,18 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                     QUERY_HELPER.className, context.getTargetAlias(), ORDER_FIELDS_NAME, TOKEN));
         }
 
-        allFields.forEach(field -> {
-            var isOverriddenField = isOverriddenField(overriddenFields, field.getContainerTypeName(), field);
-            var fieldAlias = field.getName();
-            var fieldContext = context;
-            if (isOverriddenField) {
-                fieldAlias = getOverriddenFieldAlias(processedSchema.getObject(field.getContainerTypeName()), fieldAlias);
-                var virtualField = new VirtualSourceField(field.getContainerTypeName(), (ObjectField) field);
-                fieldContext = context.forVirtualField(virtualField);
-            }
-            rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, fieldContext).getLeft(), fieldAlias));
-        });
+        allFields.stream().filter(it -> !it.isResolver())
+                .forEach(field -> {
+                    var isOverriddenField = isOverriddenField(overriddenFields, field.getContainerTypeName(), field);
+                    var fieldAlias = field.getName();
+                    var fieldContext = context;
+                    if (isOverriddenField) {
+                        fieldAlias = getOverriddenFieldAlias(processedSchema.getObject(field.getContainerTypeName()), fieldAlias);
+                        var virtualField = new VirtualSourceField(field.getContainerTypeName(), (ObjectField) field);
+                        fieldContext = context.forVirtualField(virtualField);
+                    }
+                    rowElements.add(CodeBlock.of("$L.as($S)", getSelectCodeAndFieldSource(field, fieldContext).getLeft(), fieldAlias));
+                });
         return CodeBlock.join(rowElements, ",\n");
     }
 
