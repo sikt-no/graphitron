@@ -132,7 +132,14 @@ public class SingleTableInterfaceTest extends InterfaceTest {
     @DisplayName("With splitQuery reference in interface")
     void splitQueryReferenceInInterface() {
         assertGeneratedContentContains("splitQueryReferenceInInterface",
-                "DSL.row(_a_address.ADDRESS_ID).as(\"address_pkey\")",
+                // Make sure only correct fields are selected
+                """
+                        select(
+                            DSL.row(_a_address.ADDRESS_ID).as(\"address_pkey\"),
+                            _a_address.DISTRICT.as(\"_discriminator\"),
+                            _a_address.POSTAL_CODE.as(\"postalCode\")
+                            )
+                        """,
                 " _data.setCustomerKey(internal_it_.get(\"address_pkey\", Record1.class).valuesRow())"
         );
     }
