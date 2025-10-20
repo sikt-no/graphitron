@@ -193,7 +193,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                     .build();
         }
 
-        return CodeBlock.of("\n.$L($T::value1);",
+        return CodeBlock.statementOf(".$L($T::value1)",
                 target.isIterableWrapped() || target.hasForwardPagination() ? "fetch" : "fetchOne",
                 RECORD1.className);
     }
@@ -211,7 +211,8 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
         var code = CodeBlock.builder()
                 .indent()
                 .add("($N, $L) -> ", TYPE_LAMBDA_PARAM, lambdaParameters.values().stream().map(CodeBlock::of).collect(CodeBlock.joining(", ")))
-                .addIf(isConnection, "{\n$T $N = ", RECORD2.className, VARIABLE_RESULT)
+                .beginControlFlowIf(isConnection)
+                .addIf(isConnection, "$T $N = ", RECORD2.className, VARIABLE_RESULT)
                 .beginControlFlow("switch ($N)", TYPE_LAMBDA_PARAM);
 
         var classToCastTo = isConnection ? RECORD2.className : interfaceClassName;
@@ -220,7 +221,7 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                 code.addStatement("case $S -> ($T) $N", implementation.getName(), classToCastTo, lambdaParameters.get(implementation.getName()))
         );
 
-        code.add("default -> \n")
+        return code.add("default -> \n")
                 .indent()
                 .add("throw new $T($T.format($S, \"$T\", $N));\n",
                         RuntimeException.class,
@@ -229,15 +230,13 @@ public class FetchMultiTableDBMethodGenerator extends FetchDBMethodGenerator {
                         interfaceClassName,
                         TYPE_LAMBDA_PARAM)
                 .unindent()
-                .endControlFlowIf(!isConnection);
-
-        if (isConnection) {
-            code.add("};\n")
-                    .addStatement("return $T.of($N.get(0, $T.class), $N.get(1, $T.class))", PAIR.className, VARIABLE_RESULT, STRING.className, VARIABLE_RESULT, interfaceClassName)
-                    .endControlFlow();
-        }
-
-        return code.unindent().build();
+                .endControlFlowIf(!isConnection)
+                .endControlFlowAsStatementIf(isConnection)
+                .addStatementIf(isConnection, "return $T.of($N.get(0, $T.class), $N.get(1, $T.class))",
+                        PAIR.className, VARIABLE_RESULT, STRING.className, VARIABLE_RESULT, interfaceClassName)
+                .endControlFlowIf(isConnection)
+                .unindent()
+                .build();
     }
 
     public List<MethodSpec> generateWithSubselectMethods(ObjectField target) {
