@@ -52,12 +52,12 @@ public class MultitableInterfaceTest extends InterfaceTest {
         assertGeneratedContentContains(
                 "multipleImplementations",
                 "citySortFieldsForSomeInterface().unionAll(customerSortFieldsForSomeInterface().unionAll(addressSortFieldsForSomeInterface()))",
-                "mappedAddress.field(\"$data\").as(\"$dataForAddress\")," +
-                        "mappedCustomer.field(\"$data\").as(\"$dataForCustomer\")," +
-                        "mappedCity.field(\"$data\").as(\"$dataForCity\")",
-                "case \"Address\": return internal_it_.get(\"$dataForAddress\", SomeInterface.class)",
-                "case \"Customer\": return internal_it_.get(\"$dataForCustomer\"",
-                "case \"City\": return internal_it_.get(\"$dataForCity\""
+                "mappedAddress.field(\"$data\")," +
+                        "mappedCustomer.field(\"$data\")," +
+                        "mappedCity.field(\"$data\")",
+                "case \"Address\" -> (SomeInterface) a1",
+                "case \"Customer\" -> (SomeInterface) a2",
+                "case \"City\" -> (SomeInterface) a3"
         );
     }
 

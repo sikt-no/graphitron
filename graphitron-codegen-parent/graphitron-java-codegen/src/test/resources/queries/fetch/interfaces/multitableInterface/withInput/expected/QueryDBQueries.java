@@ -15,6 +15,7 @@ import no.sikt.graphql.helpers.selection.SelectionSet;
 import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.JSONB;
+import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.SelectJoinStep;
@@ -30,29 +31,24 @@ public class QueryDBQueries {
         var mappedPaymentTypeTwo = paymenttypetwoForPayments();
 
         return ctx.select(
-                        unionKeysQuery.field("$type"),
-                        mappedPaymentTypeOne.field("$data").as("$dataForPaymentTypeOne"),
-                        mappedPaymentTypeTwo.field("$data").as("$dataForPaymentTypeTwo"))
+                        DSL.row(
+                                unionKeysQuery.field("$type", String.class),
+                                mappedPaymentTypeOne.field("$data"),
+                                mappedPaymentTypeTwo.field("$data")
+                        ).mapping((a0, a1 , a2) -> switch (a0) {
+                                    case "PaymentTypeOne" -> (Payment) a1;
+                                    case "PaymentTypeTwo" -> (Payment) a2;
+                                    default ->
+                                            throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "Payment", a0));
+                                }
+                        ))
                 .from(unionKeysQuery)
                 .leftJoin(mappedPaymentTypeOne)
                 .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedPaymentTypeOne.field("$pkFields", JSONB.class)))
                 .leftJoin(mappedPaymentTypeTwo)
                 .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedPaymentTypeTwo.field("$pkFields", JSONB.class)))
                 .orderBy(unionKeysQuery.field("$type"), unionKeysQuery.field("$innerRowNum"))
-                .fetch()
-                .map(
-                        internal_it_ -> {
-                            switch (internal_it_.get(0, String.class)) {
-                                case "PaymentTypeOne":
-                                    return internal_it_.get("$dataForPaymentTypeOne", Payment.class);
-                                case "PaymentTypeTwo":
-                                    return internal_it_.get("$dataForPaymentTypeTwo", Payment.class);
-                                default:
-                                    throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "Payment", internal_it_.get(0, String.class)));
-                            }
-                        }
-
-                );
+                .fetch(Record1::value1);
     }
 
     private static SelectSeekStepN<Record3<String, Integer, JSONB>> paymenttypeoneSortFieldsForPayments(String customerId) {

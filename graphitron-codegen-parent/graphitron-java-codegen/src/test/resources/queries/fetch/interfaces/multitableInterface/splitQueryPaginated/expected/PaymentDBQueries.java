@@ -53,9 +53,20 @@ public class PaymentDBQueries {
                         DSL.row(_a_payment.PAYMENT_ID),
                         DSL.multiset(
                                 DSL.select(
-                                                unionKeysQuery.field("$type"),
-                                                mappedCustomer.field(1),
-                                                mappedStaff.field(1))
+                                                DSL.row(
+                                                        unionKeysQuery.field("$type", String.class),
+                                                        mappedCustomer.field("$data"),
+                                                        mappedStaff.field("$data")
+                                                ).mapping((a0, a1 , a2) -> {
+                                                    Record2 _result = switch (a0) {
+                                                        case "Customer" -> (Record2) a1;
+                                                        case "Staff" -> (Record2) a2;
+                                                        default ->
+                                                                throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", a0));
+                                                    }
+                                                            ;
+                                                    return Pair.of(_result.get(0, String.class), _result.get(1, PersonWithEmail.class));
+                                                }))
                                         .from(unionKeysQuery)
                                         .leftJoin(mappedCustomer)
                                         .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
@@ -69,22 +80,7 @@ public class PaymentDBQueries {
                 .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys))
                 .fetchMap(
                         r -> r.value1().valuesRow(),
-                        r -> r.value2().map(
-                                internal_it_ -> {
-                                    Record2 _result;
-                                    switch (internal_it_.get(0, String.class)) {
-                                        case "Customer":
-                                            _result = internal_it_.get(1, Record2.class);
-                                            break;
-                                        case "Staff":
-                                            _result = internal_it_.get(2, Record2.class);
-                                            break;
-                                        default:
-                                            throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "PersonWithEmail", internal_it_.get(0, String.class)));
-                                    }
-                                    return Pair.of(_result.get(0, String.class), _result.get(1, PersonWithEmail.class));
-                                }
-                        )
+                        r -> r.value2().map(Record1::value1)
                 );
     }
 
@@ -107,9 +103,11 @@ public class PaymentDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Customer"), _a_customer.CUSTOMER_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
-                                        DSL.select(DSL.row(_a_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_a_customer, _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()), "Customer"),
+                                                DSL.select(DSL.row(_a_customer.EMAIL).mapping(Functions.nullOnAllNull(Customer::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_a_customer);
@@ -134,9 +132,11 @@ public class PaymentDBQueries {
         return DSL.select(
                         DSL.jsonbArray(DSL.inline("Staff"), _a_staff.STAFF_ID).as("$pkFields"),
                         DSL.field(
-                                DSL.row(
-                                        QueryHelper.getOrderByTokenForMultitableInterface(_a_staff, _a_staff.fields(_a_staff.getPrimaryKey().getFieldsArray()), "Staff"),
-                                        DSL.select(DSL.row(_a_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                DSL.select(
+                                        DSL.row(
+                                                QueryHelper.getOrderByTokenForMultitableInterface(_a_staff, _a_staff.fields(_a_staff.getPrimaryKey().getFieldsArray()), "Staff"),
+                                                DSL.select(DSL.row(_a_staff.EMAIL).mapping(Functions.nullOnAllNull(Staff::new)))
+                                        )
                                 )
                         ).as("$data"))
                 .from(_a_staff);

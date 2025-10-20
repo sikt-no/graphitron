@@ -715,6 +715,13 @@ public final class CodeBlock {
             return this;
         }
 
+        public Builder beginControlFlowIf(boolean predicate) {
+            if (predicate) {
+                beginControlFlow("");
+            }
+            return this;
+        }
+
         /**
          * @param controlFlow the control flow construct and its code, such as "else if (foo == 10)".
          *                    Shouldn't contain braces or newline characters.
@@ -726,9 +733,29 @@ public final class CodeBlock {
             return this;
         }
 
+        public Builder endControlFlowIf(boolean predicate) {
+            if (predicate) {
+                endControlFlow();
+            }
+            return this;
+        }
+
         public Builder endControlFlow() {
             unindent();
             add("}\n");
+            return this;
+        }
+
+        public Builder endControlFlowAsStatementIf(boolean predicate) {
+            if (predicate) {
+                endControlFlowAsStatement();
+            }
+            return this;
+        }
+
+        public Builder endControlFlowAsStatement() {
+            unindent();
+            add("};\n");
             return this;
         }
 

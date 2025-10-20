@@ -18,6 +18,7 @@ import org.jooq.DSLContext;
 import org.jooq.Functions;
 import org.jooq.JSONB;
 import org.jooq.Row1;
+import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.SelectJoinStep;
@@ -37,9 +38,17 @@ public class PaymentDBQueries {
                         DSL.row(_a_payment.PAYMENT_ID),
                         DSL.multiset(
                                 DSL.select(
-                                                unionKeysQuery.field("$type"),
-                                                mappedCustomer.field("$data").as("$dataForCustomer"),
-                                                mappedStaff.field("$data").as("$dataForStaff"))
+                                                DSL.row(
+                                                        unionKeysQuery.field("$type", String.class),
+                                                        mappedCustomer.field("$data"),
+                                                        mappedStaff.field("$data")
+                                                ).mapping((a0, a1, a2) -> switch (a0) {
+                                                            case "Customer" -> (PersonWithEmail) a1;
+                                                            case "Staff" -> (PersonWithEmail) a2;
+                                                            default ->
+                                                                    throw new RuntimeException(String.format("Querying multitable interface/union '%s' returned unexpected typeName '%s'", "PersonWithEmail", a0));
+                                                        }
+                                                ))
                                         .from(unionKeysQuery)
                                         .leftJoin(mappedCustomer)
                                         .on(unionKeysQuery.field("$pkFields", JSONB.class).eq(mappedCustomer.field("$pkFields", JSONB.class)))
@@ -52,18 +61,7 @@ public class PaymentDBQueries {
                 .where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys))
                 .fetchMap(
                         r -> r.value1().valuesRow(),
-                        r -> r.value2().map(
-                                internal_it_ -> {
-                                    switch (internal_it_.get(0, String.class)) {
-                                        case "Customer":
-                                            return internal_it_.get("$dataForCustomer", PersonWithEmail.class);
-                                        case "Staff":
-                                            return internal_it_.get("$dataForStaff", PersonWithEmail.class);
-                                        default:
-                                            throw new RuntimeException(String.format("Querying interface '%s' returned unexpected typeName '%s'", "PersonWithEmail", internal_it_.get(0, String.class)));
-                                    }
-                                }
-                        )
+                        r -> r.value2().map(Record1::value1)
                 );
     }
 

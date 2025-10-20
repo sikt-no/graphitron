@@ -1,0 +1,9 @@
+{
+    oneStaffOrCustomerByEmail(email: "MARY.SMITH@sakilacustomer.org") {
+        __typename
+        email
+        address {
+            id
+        }
+    }
+}
