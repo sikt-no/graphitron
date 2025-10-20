@@ -49,7 +49,10 @@ public class ResolverTest extends GeneratorTest {
     @Test
     @DisplayName("Single context input")
     void contextInput() {
-        assertGeneratedContentContains("contextInput", "_graphCtx = env.getGraphQlContext()", "_c_ctxField = ((String) _graphCtx.get(\"ctxField\"))", "mutation(_c_ctxField)");
+        assertGeneratedContentContains("contextInput",
+                "_graphCtx = env.getGraphQlContext()",
+                "String _c_ctxField = _graphitronContext.getContextArgument(env, \"ctxField\")",
+                "mutation(_c_ctxField)");
     }
 
     @Test
