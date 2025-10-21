@@ -153,9 +153,19 @@ public class MultitableInterfaceTest extends InterfaceTest {
     }
 
     @Test
+    @DisplayName("Multitable interface in splitQuery field")
+    void splitQuery() {
+        assertGeneratedContentMatches("splitQuery", PERSON_WITH_EMAIL);
+    }
+
+    @Test
     @DisplayName("Listed multitable interface in splitQuery field")
     void listedInSplitQuery() {
-        assertGeneratedContentMatches("splitQueryListed", PERSON_WITH_EMAIL);
+        assertGeneratedContentContains("splitQueryListed", Set.of(PERSON_WITH_EMAIL),
+                "DSL.multiset(DSL.select(DSL.row(unionKeysQuery.",
+                ".fetchMap(r -> r.value1().valuesRow(), r -> r.value2().map(Record1::value1)",
+                "unionKeysQuery.field(\"$innerRowNum\")))).from" // Make sure there's no limit
+        );
     }
 
     @Test

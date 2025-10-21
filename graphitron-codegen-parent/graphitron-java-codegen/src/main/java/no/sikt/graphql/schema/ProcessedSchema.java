@@ -917,6 +917,10 @@ public class ProcessedSchema {
         return (isObject(name) || isConnectionObject(name)) && objectWithPreviousTable.containsKey(name);
     }
 
+    public boolean returnsList(ObjectField field) {
+        return field.isIterableWrapped() || field.hasPagination();
+    }
+
     /**
      * Simple method that tries to find a table reference in the input records.
      * This is not very robust, but we need this to not break existing things.
