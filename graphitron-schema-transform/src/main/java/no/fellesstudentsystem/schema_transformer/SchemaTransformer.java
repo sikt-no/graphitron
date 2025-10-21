@@ -45,6 +45,11 @@ public class SchemaTransformer {
         if (config.expandConnections()) {
             transforms.add(MakeConnections::transform);
         }
+
+        if (config.addKeyDirectiveToNodes()) {
+            transforms.add(AddKeyDirectives::transform);
+        }
+
         return transforms;
     }
 
