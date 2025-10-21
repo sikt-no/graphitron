@@ -1,0 +1,7 @@
+type Mutation {
+    mutation(in: VacationDestinationInput): ID! @mutation(typeName: DELETE)
+}
+
+input VacationDestinationInput @table(name: "VACATION_DESTINATION") {
+    countryName: String @field(name: "COUNTRY_NAME")
+}

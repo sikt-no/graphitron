@@ -1,0 +1,7 @@
+type Mutation {
+  mutation(in: CustomerNodeInputTable): Wrapper @mutation(typeName: DELETE)
+}
+
+type Wrapper {
+    errors: [ValidationError]
+}
