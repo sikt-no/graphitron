@@ -14,14 +14,22 @@ import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
  * Virtual field for when we want to have a virtual source for code generation.
  */
 public class VirtualSourceField extends ObjectField {
-    private final List<ArgumentField> nonReservedArguments;
+    private final List<ArgumentField> nonReservedArguments, arguments;
     private final SQLCondition condition;
     private final boolean isResolver;
     private final List<FieldReference> fieldReferences;
     private String originalFieldName;
 
-    public VirtualSourceField(String targetTypeName, String container, List<ArgumentField> nonReservedArguments, SQLCondition condition, boolean isResolver, List<FieldReference> fieldReferences) {
+    public VirtualSourceField(
+            String targetTypeName,
+            String container,
+            List<ArgumentField> arguments,
+            List<ArgumentField> nonReservedArguments,
+            SQLCondition condition,
+            boolean isResolver,
+            List<FieldReference> fieldReferences) {
         super(new FieldDefinition("for_" + targetTypeName,new TypeName(targetTypeName)), container);
+        this.arguments = arguments;
         this.nonReservedArguments = nonReservedArguments;
         this.condition = condition;
         this.isResolver = isResolver;
@@ -31,6 +39,7 @@ public class VirtualSourceField extends ObjectField {
     public VirtualSourceField(String targetTypeName, ObjectField target) {
         this(targetTypeName,
                 target.getContainerTypeName(),
+                target.getArguments(),
                 target.getNonReservedArguments(),
                 target.getCondition(),
                 target.isResolver(),
@@ -43,11 +52,21 @@ public class VirtualSourceField extends ObjectField {
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType, String container) {
-        this(targetType.getName(), container, List.of(), null, false, List.of());
+        this(targetType.getName(), container, List.of(), List.of(), null, false, List.of());
     }
 
     public VirtualSourceField(RecordObjectSpecification<?> targetType) {
-        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), null, false, List.of());
+        this(targetType.getName(), SCHEMA_QUERY.getName(), List.of(), List.of(), null, false, List.of());
+    }
+
+    public VirtualSourceField(ObjectField originalTarget, ObjectField dataTarget) {
+        this(dataTarget.getTypeName(),
+                originalTarget.getContainerTypeName(),
+                originalTarget.getArguments(),
+                originalTarget.getNonReservedArguments(),
+                originalTarget.getCondition(),
+                originalTarget.isResolver(),
+                List.of());
     }
 
     /**
@@ -56,6 +75,11 @@ public class VirtualSourceField extends ObjectField {
     @Override
     public List<ArgumentField> getNonReservedArguments() {
         return nonReservedArguments;
+    }
+
+    @Override
+    public List<ArgumentField> getArguments() {
+        return arguments;
     }
 
     /**
