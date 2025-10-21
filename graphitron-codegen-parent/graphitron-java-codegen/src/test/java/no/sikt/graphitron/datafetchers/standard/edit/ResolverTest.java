@@ -15,13 +15,12 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
-import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
-@DisplayName("Mutation resolvers - Resolvers for mutations")
+@DisplayName("Mutation resolvers (old) - Resolvers for mutations except delete")
 public class ResolverTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "datafetchers/edit/standard";
+        return "datafetchers/edit/standard/withJdbcBatching";
     }
 
     @Override
@@ -98,42 +97,5 @@ public class ResolverTest extends GeneratorTest {
     void validation() {
         GeneratorConfig.setRecordValidation(new RecordValidation(true, null));
         assertGeneratedContentContains("default", "transform.validate();");
-    }
-
-    @Test // Note that the query still returns IDs, but we can compare which were NOT found in the database to get the ones deleted.
-    @DisplayName("Delete mutation")
-    void delete() {
-        assertGeneratedContentContains(
-                "delete",
-                "DataFetcherHelper(env).loadDelete(",
-                "(_result) -> _result == null ? in.getId() : null"
-        );
-    }
-
-    @Test
-    @DisplayName("Listed delete mutation")
-    void deleteListed() {
-        assertGeneratedContentContains(
-                "deleteListed",
-                "in.stream().map(internal_it_ -> internal_it_.getId()).filter(internal_it_ -> !_result.contains(internal_it_)).toList()"
-        );
-    }
-
-    @Test
-    @DisplayName("Delete mutation with wrapped output")
-    void deleteWrapped() {
-        assertGeneratedContentContains(
-                "deleteWrapped", Set.of(CUSTOMER_TABLE),
-                "new CustomerTable(_result.getId() == null ? in.getId() : null)"
-        );
-    }
-
-    @Test
-    @DisplayName("Listed delete mutation with wrapped output")
-    void deleteWrappedListed() {
-        assertGeneratedContentContains(
-                "deleteWrappedListed",
-                "new CustomerOutput(in.stream().map(internal_it_ -> internal_it_.getId()).filter(internal_it_ -> !_result.getId().contains(internal_it_)).toList()"
-        );
     }
 }

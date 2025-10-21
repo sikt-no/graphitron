@@ -40,8 +40,7 @@ import static no.sikt.graphitron.validation.ValidationHandler.*;
 import static no.sikt.graphql.directives.GenerationDirective.*;
 import static no.sikt.graphql.directives.GenerationDirective.NODE_ID;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
-import static org.apache.commons.lang3.StringUtils.capitalize;
-import static org.apache.commons.lang3.StringUtils.uncapitalize;
+import static org.apache.commons.lang3.StringUtils.*;
 
 /**
  * Class for producing warnings related to potential issues in the defined schema.
@@ -172,7 +171,7 @@ public class ProcessedDefinitionsValidator {
     private void checkNodeId(GenerationField field) {
         var fieldName = field instanceof ArgumentField
                 ? String.format("argument '%s' on a field in type '%s'", field.getName(), field.getContainerTypeName())
-                : String.format("field %s.%s", field.getContainerTypeName(), field.getName());
+                : String.format("field %s", getFieldName(field));
 
         if (!(field.isID() || field.getTypeName().equals(STRING.className.simpleName()))) {
             addErrorMessage(
@@ -683,15 +682,15 @@ public class ProcessedDefinitionsValidator {
                 .filter(schema::isMultiTableField)
                 .forEach(field -> {
                     if (!field.isResolver()) {
-                        addErrorMessage("'%s.%s' is a multitable field outside root, but is missing the %s directive. " +
+                        addErrorMessage("%s is a multitable field outside root, but is missing the %s directive. " +
                                         "Multitable queries outside root is only supported for resolver fields.",
-                                field.getContainerTypeName(), field.getName(), SPLIT_QUERY.getName()
+                                getFieldName(field), SPLIT_QUERY.getName()
                         );
                     }
 
                     if (field.hasFieldReferences()) {
-                        addErrorMessage("'%s.%s' has the %s directive which is not supported on multitable queries. Use %s directive instead.",
-                                field.getContainerTypeName(), field.getName(), REFERENCE.getName(), MULTITABLE_REFERENCE.getName()
+                        addErrorMessage("%s has the %s directive which is not supported on multitable queries. Use %s directive instead.",
+                                getFieldName(field), REFERENCE.getName(), MULTITABLE_REFERENCE.getName()
                         );
                     }
                 });
@@ -854,7 +853,7 @@ public class ProcessedDefinitionsValidator {
                                 ValidationHandler.isTrue(
                                         field.getArguments().size() == 1,
                                         "Only exactly one input field is currently supported for fields returning the '%s' interface. " +
-                                                "'%s.%s' has %s input fields", NODE_TYPE.getName(), field.getContainerTypeName(), field.getName(), field.getArguments().size()
+                                                "%s has %s input fields", NODE_TYPE.getName(), getFieldName(field), field.getArguments().size()
                                 );
                                 ValidationHandler.isTrue(
                                         !field.isIterableWrapped(),
@@ -1053,6 +1052,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(ObjectField::hasMutationType)
                 .forEach(target -> {
                     validateRecordRequiredFields(target);
+                    validateDeleteMutation(target);
                     new InputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
                 });
     }
@@ -1155,10 +1155,63 @@ public class ProcessedDefinitionsValidator {
             if (recordInputs.isEmpty()) {
                 addErrorMessage("Mutation "
                         + target.getName()
-                        + " is set as an insert operation, but does not link any input to tables.");
+                        + " is set as an " + lowerCase(mutationType.name()) + " operation, but does not link any input to tables.");
             }
 
             recordInputs.forEach(this::checkRequiredFields);
+        }
+    }
+
+    private void validateDeleteMutation(ObjectField field) {
+        if (field.isDeleteMutation()) {
+            /* Validate output */
+            var dataField = schema.inferDataTargetForMutation(field);
+
+            if (dataField.isEmpty()) {
+                addErrorMessage("Cannot find correct field to output data to after mutation for field %s.", getFieldName(field));
+            }
+
+            /* Validate input */
+            var recordInputs = new InputParser(field, schema).getJOOQRecords().values(); // TODO: support non-jOOQ record inputs
+            if (recordInputs.isEmpty()) {
+                addErrorMessage("Mutation field %s is a generated delete mutation, but does not link any input to tables.", getFieldName(field));
+                return;
+            }
+
+            if (dataField.isPresent() && schema.isRecordType(dataField.get()) && recordInputs.stream().findFirst().isPresent()) {
+                var inputTable = schema.getRecordType(recordInputs.stream().findFirst().get()).getTable();
+                var outputTable = schema.getRecordType(dataField.get()).getTable();
+
+                if (!inputTable.equals(outputTable)) {
+                    addErrorMessage("Mutation field %s has a mismatch between input and output tables. Input table is '%s', and output table is '%s'.",
+                            getFieldName(field), inputTable.getMappingName(), outputTable.getMappingName());
+                }
+            }
+            var input = recordInputs.stream().findFirst().orElseThrow();
+            var inputType = schema.getInputType(input);
+            var targetTable = inputType.getTable();
+            var requiredIdOrNodeIdFields = inputType.getFields().stream()
+                    .filter(it -> it.isID() || schema.isNodeIdField(it))
+                    .filter(AbstractField::isNonNullable)
+                    .toList();
+
+            if (requiredIdOrNodeIdFields.isEmpty()) {
+                var keys = getPrimaryAndUniqueKeysForTable(targetTable.getName());
+                var nonNullableInputFields = inputType.getFields().stream()
+                        .filter(AbstractField::isNonNullable)
+                        .map(AbstractField::getUpperCaseName)
+                        .toList();
+
+                for (var key : keys) {
+                    var keyFields = getJavaFieldNamesForKey(targetTable.getName(), key);
+                    var hasFieldsMatchingKey = keyFields.stream()
+                            .allMatch(kf -> nonNullableInputFields.stream().anyMatch(f -> f.equalsIgnoreCase(kf)));
+                    if (hasFieldsMatchingKey) return;
+                }
+
+                addErrorMessage("Mutation field %s is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                        getFieldName(field));
+            }
         }
     }
 
@@ -1287,9 +1340,8 @@ public class ProcessedDefinitionsValidator {
                 .flatMap(Collection::stream)
                 .filter(GenerationSourceField::isResolver)
                 .forEach(field -> {
-                    var errorMessageStart = String.format("'%s.%s' in a java record has %s directive, but",
-                            field.getContainerTypeName(),
-                            field.getName(),
+                    var errorMessageStart = String.format("%s in a java record has %s directive, but",
+                            getFieldName(field),
                             SPLIT_QUERY.getName()
                     );
 
@@ -1329,5 +1381,9 @@ public class ProcessedDefinitionsValidator {
                                         .collect(Collectors.joining(", ")));
                     }
                 });
+    }
+
+    private String getFieldName(GenerationField field) {
+        return String.format("'%s.%s'", field.getContainerTypeName(), field.getName());
     }
 }

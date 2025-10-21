@@ -1,5 +1,5 @@
 type Query {
-    customer(in: [CustomerInput]): Output @mutation(typeName: DELETE)
+    customer(in: [CustomerInput]): Output @mutation(typeName: UPDATE)
 }
 
 type Output {
