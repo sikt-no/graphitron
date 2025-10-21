@@ -13,7 +13,7 @@ public class InputCondition {
     private final InputField input, sourceInput;
     private final String namePath, startName;
     private final LinkedHashSet<String> nullChecks;
-    private final boolean pastWasIterable, hasRecord;
+    private final boolean pastWasIterable, previousWasNullable, hasRecord;
     private final Boolean isOverriddenByAncestors, isWrappedInList;
 
     private InputCondition(
@@ -23,6 +23,7 @@ public class InputCondition {
             String namePath,
             LinkedHashSet<String> nullChecks,
             boolean pastWasIterable,
+            boolean previousWasNullable,
             boolean hasRecord,
             Boolean isOverriddenByAncestors,
             Boolean isWrappedInList) {
@@ -32,6 +33,7 @@ public class InputCondition {
         this.namePath = namePath;
         this.nullChecks = new LinkedHashSet<>(nullChecks);
         this.pastWasIterable = pastWasIterable;
+        this.previousWasNullable = previousWasNullable;
         this.hasRecord = hasRecord;
         this.isOverriddenByAncestors = isOverriddenByAncestors;
         this.isWrappedInList = isWrappedInList;
@@ -40,11 +42,11 @@ public class InputCondition {
     }
 
     public InputCondition(InputField input, String startName, boolean hasRecord, Boolean isOverriddenByAncestors) {
-        this(input, input, startName, "", new LinkedHashSet<>(), false, hasRecord, isOverriddenByAncestors, false);
+        this(input, input, startName, "", new LinkedHashSet<>(), false, false, hasRecord, isOverriddenByAncestors, false);
     }
 
     public InputCondition(InputField input, boolean hasRecord) {
-        this(input, input, "", "",  new LinkedHashSet<>(), false, hasRecord, false, false);
+        this(input, input, "", "",  new LinkedHashSet<>(), false, false, hasRecord, false, false);
     }
 
     public InputField getInput() {
@@ -106,6 +108,7 @@ public class InputCondition {
                 getNameWithPathString(),
                 nullChecks,
                 pastWasIterable || this.input.isIterableWrapped(),
+                sourceInput.isNullable(),
                 hasRecord,
                 isOverriddenByAncestors || this.input.hasOverridingCondition(),
                 isWrappedInList || this.input.isIterableWrapped());
@@ -119,6 +122,7 @@ public class InputCondition {
                 namePath,
                 nullChecks,
                 pastWasIterable || this.input.isIterableWrapped(),
+                sourceInput.isNullable(),
                 hasRecord,
                 isOverriddenByAncestors,
                 isWrappedInList);
@@ -126,5 +130,9 @@ public class InputCondition {
 
     public boolean hasRecord() {
         return hasRecord;
+    }
+
+    public boolean previousWasNullable() {
+        return previousWasNullable;
     }
 }

@@ -37,6 +37,7 @@ public class GeneratorConfig {
 
     private static boolean makeNodeStrategy = false;
     private static boolean alwaysUsePrimaryKeyInSplitQueries = true;
+    private static boolean useJdbcBatchingForDeletes = true;
 
     private static int maxAllowedPageSize;
     private final static boolean USE_OPTIONAL_SELECTS = false;
@@ -106,6 +107,7 @@ public class GeneratorConfig {
         globalTransforms = mojo.getGlobalTransforms();
         recordValidation = mojo.getRecordValidation();
         makeNodeStrategy = mojo.makeNodeStrategy();
+        useJdbcBatchingForDeletes = mojo.useJdbcBatchingForDeletes();
         alwaysUsePrimaryKeyInSplitQueries = true;
         codeGenerationThresholds = mojo.getCodeGenerationThresholds();
     }
@@ -193,6 +195,14 @@ public class GeneratorConfig {
 
     public static void setAlwaysUsePrimaryKeyInSplitQueries(boolean usePrimaryKey) {
         alwaysUsePrimaryKeyInSplitQueries = usePrimaryKey;
+    }
+
+    public static boolean useJdbcBatchingForDeletes() {
+        return useJdbcBatchingForDeletes;
+    }
+
+    public static void setUseJdbcBatchingForDeletes(boolean useJdbcBatching) {
+        useJdbcBatchingForDeletes = useJdbcBatching;
     }
 
     public static void setRecordValidation(RecordValidation recordValidation) {

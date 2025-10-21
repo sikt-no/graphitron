@@ -1,0 +1,7 @@
+type Mutation {
+    mutation(in : In): [ID] @mutation(typeName: DELETE)
+}
+
+input In {
+    id: [ID]
+}

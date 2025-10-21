@@ -31,5 +31,7 @@ public interface Generator {
 
     boolean makeNodeStrategy();
 
+    boolean useJdbcBatchingForDeletes();
+
     CodeGenerationThresholds getCodeGenerationThresholds();
 }
