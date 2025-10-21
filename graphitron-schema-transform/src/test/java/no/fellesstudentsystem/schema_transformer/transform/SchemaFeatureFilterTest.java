@@ -83,6 +83,13 @@ class SchemaFeatureFilterTest {
     }
 
     @Test
+    void filter_shouldRemoveDanglingUnionMembers() {
+        var schema = createSchema("removesDanglingUnionMembers/test.graphql");
+        var expected = createSchema("removesDanglingUnionMembers/expected.graphql");
+        testSchema(new SchemaFeatureFilter(Set.of()).getFilteredGraphQLSchema(schema), expected);
+    }
+
+    @Test
     void filter_shouldRemoveEmptyTypes() {
         var schema = createSchema("removesEmptyTypes/test.graphql");
         var filteredSchema = new SchemaFeatureFilter().getFilteredGraphQLSchema(schema); // No schema exception.

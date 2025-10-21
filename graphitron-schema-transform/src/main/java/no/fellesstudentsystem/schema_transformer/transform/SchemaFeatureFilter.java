@@ -1,12 +1,12 @@
 package no.fellesstudentsystem.schema_transformer.transform;
 
 import graphql.language.DirectivesContainer;
+import graphql.language.UnionTypeDefinition;
 import graphql.schema.*;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
 
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -120,7 +120,55 @@ public class SchemaFeatureFilter {
             }
         };
 
-        return SchemaTransformer.transformSchema(schema, visitorFields); // Seems the objects get removed automatically when no fields point to them.
+        // Make sure we always visit every type
+        var schemaCopy = schema;
+        schema = schema.transform(builder -> {
+            for (var type : schemaCopy.getTypeMap().values()) {
+                if (type != schemaCopy.getQueryType() && type != schemaCopy.getMutationType() && type != schemaCopy.getSubscriptionType()) {
+                    builder.additionalType(type);
+                }
+            }
+        });
+
+        var prunedSchema = SchemaTransformer.transformSchema(schema, visitorFields); // Seems the objects get removed automatically when no fields point to them.
+        return removeUnreachableTypes(prunedSchema);
+    }
+
+    private GraphQLSchema removeUnreachableTypes(GraphQLSchema schema) {
+        var reachableTypes = findReachableTypes(schema);
+        return schema.transform(builder -> builder.clearAdditionalTypes().additionalTypes(reachableTypes));
+    }
+
+    private Set<GraphQLType> findReachableTypes(GraphQLSchema schema) {
+        Set<String> reachableNames = new HashSet<>();
+        Set<GraphQLType> reachableTypes = new HashSet<>();
+
+        var schemaRoots = Stream.of(schema.getQueryType(), schema.getMutationType(), schema.getSubscriptionType())
+                .filter(Objects::nonNull).toList();
+        Queue<GraphQLType> toVisit = new LinkedList<>(schemaRoots);
+
+        while (!toVisit.isEmpty()) {
+            GraphQLType type = GraphQLTypeUtil.unwrapAll(toVisit.poll());
+            if (type instanceof GraphQLNamedType namedType) {
+                var alreadyVisited = reachableNames.add(namedType.getName());
+                if (alreadyVisited) {
+                    continue;
+                }
+
+                reachableTypes.add(namedType);
+
+                var children = schema.getTypeMap().get(namedType.getName()).getChildren();
+                for (var child : children) {
+                    if (child instanceof GraphQLNamedType namedChild) {
+                        if (!reachableNames.contains(namedChild.getName())) {
+                            toVisit.add(namedChild);
+                        }
+                    }
+                }
+            }
+        }
+
+        return reachableTypes;
     }
 
     private boolean containerIsEmpty(GraphQLInputObjectType node) {

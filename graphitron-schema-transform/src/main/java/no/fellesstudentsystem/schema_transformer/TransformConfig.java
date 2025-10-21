@@ -13,6 +13,7 @@ public record TransformConfig(
         Set<String> directivesToFilter,
         Map<String, String> descriptionSuffixForFeatures,
         boolean addFeatureFlags,
+        boolean addKeyDirectiveToNodes,
         boolean removeGeneratorDirectives,
         boolean removeExcludedElements,
         boolean expandConnections,
