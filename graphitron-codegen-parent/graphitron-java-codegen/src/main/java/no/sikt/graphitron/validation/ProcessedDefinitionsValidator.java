@@ -7,6 +7,7 @@ import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
 import no.sikt.graphitron.definitions.helpers.ServiceWrapper;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
+import no.sikt.graphitron.definitions.interfaces.GenerationTarget;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.objects.AbstractObjectDefinition;
@@ -1052,6 +1053,7 @@ public class ProcessedDefinitionsValidator {
                 .filter(ObjectField::hasMutationType)
                 .forEach(target -> {
                     validateRecordRequiredFields(target);
+                    validateDeleteMutation(target);
                     new InputParser(target, schema).getJOOQRecords().values().forEach(inputField -> checkMutationIOFields(inputField, target));
                 });
     }
@@ -1159,6 +1161,97 @@ public class ProcessedDefinitionsValidator {
 
             recordInputs.forEach(this::checkRequiredFields);
         }
+    }
+
+    private void validateDeleteMutation(ObjectField field) {
+        if (field.isDeleteMutation()) {
+            /* Validate output */
+            var dataField = schema.inferDataTargetForMutation(field);
+
+            if (dataField.isEmpty()) {
+                addErrorMessage("Cannot find correct field to output data to after mutation for field %s.", field.formatPath());
+            }
+
+            /* Validate input */
+            var recordInputs = new InputParser(field, schema).getJOOQRecords().values(); // TODO: support non-jOOQ record inputs
+            if (recordInputs.isEmpty()) {
+                addErrorMessage("Mutation field %s is a generated delete mutation, but does not link any input to tables.", field.formatPath());
+                return;
+            }
+
+            if (dataField.isPresent() && schema.isRecordType(dataField.get()) && recordInputs.stream().findFirst().isPresent()) {
+                var inputTable = schema.getRecordType(recordInputs.stream().findFirst().get()).getTable();
+                var outputTable = schema.getRecordType(dataField.get()).getTable();
+
+                if (!inputTable.equals(outputTable)) {
+                    addErrorMessage("Mutation field %s has a mismatch between input and output tables. Input table is '%s', and output table is '%s'.",
+                            field.formatPath(), inputTable.getMappingName(), outputTable.getMappingName());
+                } else {
+                    var subqueryReferenceFields = findSubqueryReferenceFieldsForTableObject(dataField.get(), outputTable, 0);
+                    if (!subqueryReferenceFields.isEmpty()) {
+                        addErrorMessage("Mutation field %s has references returned from the data field. This is not supported. Found reference fields are: %s",
+                                field.formatPath(), String.join(", ", subqueryReferenceFields.stream().map(GenerationField::formatPath).toList()));
+                    }
+                }
+            }
+            var input = recordInputs.stream().findFirst().orElseThrow();
+            var inputType = schema.getInputType(input);
+            var targetTable = inputType.getTable();
+            var requiredIdOrNodeIdFields = inputType.getFields().stream()
+                    .filter(it -> it.isID() || schema.isNodeIdField(it))
+                    .filter(AbstractField::isNonNullable)
+                    .toList();
+
+            if (requiredIdOrNodeIdFields.isEmpty()) {
+                var keys = getPrimaryAndUniqueKeysForTable(targetTable.getName());
+                var nonNullableInputFields = inputType.getFields().stream()
+                        .filter(AbstractField::isNonNullable)
+                        .map(AbstractField::getUpperCaseName)
+                        .toList();
+
+                for (var key : keys) {
+                    var keyFields = getJavaFieldNamesForKey(targetTable.getName(), key);
+                    var hasFieldsMatchingKey = keyFields.stream()
+                            .allMatch(kf -> nonNullableInputFields.stream().anyMatch(f -> f.equalsIgnoreCase(kf)));
+                    if (hasFieldsMatchingKey) return;
+                }
+
+                addErrorMessage("Mutation field %s is a generated delete mutation, but does not have input with non-nullable fields corresponding to a PK/UK of the table.",
+                        field.formatPath());
+            }
+        }
+    }
+
+    private Set<GenerationField> findSubqueryReferenceFieldsForTableObject(GenerationField target, JOOQMapping targetTable, int recursion) {
+        recursionCheck(recursion);
+
+        if (target.hasFieldReferences() || schema.isNodeIdReferenceField(target)) {
+            return Set.of(target);
+        }
+
+        var result = new HashSet<GenerationField>();
+
+        if (schema.isRecordType(target)) {
+            var recordType = schema.getRecordType(target);
+
+            // Implicit reference
+            if (recordType.hasTable() && !recordType.getTable().equals(targetTable)) {
+                return Set.of(target);
+            }
+
+            recordType.getFields()
+                    .stream()
+                    .filter(GenerationTarget::isGenerated)
+                    .filter(it -> !it.isResolver())
+                    .forEach(f -> {
+                        if (f.hasFieldReferences()) {
+                            result.add(f);
+                        } else {
+                            result.addAll(findSubqueryReferenceFieldsForTableObject(f, targetTable, recursion + 1));
+                        }
+                    });
+        }
+        return result;
     }
 
     protected void checkRequiredFields(InputField recordInput) {

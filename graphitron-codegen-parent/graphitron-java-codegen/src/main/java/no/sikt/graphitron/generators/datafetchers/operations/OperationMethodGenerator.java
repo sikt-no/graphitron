@@ -1,10 +1,6 @@
 package no.sikt.graphitron.generators.datafetchers.operations;
 
-import no.sikt.graphitron.definitions.fields.AbstractField;
-import no.sikt.graphitron.definitions.fields.ArgumentField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
-import no.sikt.graphitron.definitions.fields.containedtypes.MutationType;
-import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -21,7 +17,6 @@ import no.sikt.graphql.GraphitronContext;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.recordValidationEnabled;
@@ -32,7 +27,6 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
-import static no.sikt.graphitron.mappings.JavaPoetClassName.FUNCTION;
 import static no.sikt.graphql.naming.GraphQLReservedName.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -48,17 +42,17 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     @Override
     public MethodSpec generate(ObjectField target) {
-        var parser = new InputParser(target, processedSchema);
+        var parser = new InputParser(target, processedSchema, !target.isDeleteMutation());
         var methodCall = getMethodCall(target, parser, false); // Note, do this before declaring services.
-        var mutationMethodCall = localObject.getName().equals(SCHEMA_MUTATION.getName()) ? getMethodCall(target, parser, true) : CodeBlock.empty();
         dataFetcherWiring.add(new WiringContainer(target.getName(), getLocalObject().getName(), target.getName()));
         return getDefaultSpecBuilder(target.getName(), wrapFetcher(wrapFuture(getReturnTypeName(target))))
                 .beginControlFlow("return $N ->", VAR_ENV)
                 .addCode(extractParams(target))
                 .addCode(declareContextArgs(target))
-                .addCode(transformInputs(target, parser))
+                .addCodeIf(!target.isDeleteMutation() || recordValidationEnabled(), () -> transformInputs(target, parser))
                 .addCode(declareAllServiceClasses(target.getName()))
-                .addCode(mutationMethodCall)
+                .addCodeIf(!target.isDeleteMutation() && localObject.getName().equals(SCHEMA_MUTATION.getName()),
+                        () -> getMethodCall(target, parser, true))
                 .addCode(methodCall)
                 .endControlFlow("") // Keep this, logic to set semicolon only kicks in if a string is set.
                 .build();
@@ -125,9 +119,9 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
 
     private CodeBlock callQueryBlockInner(ObjectField target, String objectToCall, String method, InputParser parser, CodeBlock queryFunction) {
         // Is this query call the result of a delete operation?
-        var isDeleteMutationWithoutService = target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE);
-        if (isDeleteMutationWithoutService) {
-            return CodeBlock.of("$L,\n$L", queryFunction, filterDeleteIDsFunction(target));
+        if (target.isDeleteMutation()) {
+            return !processedSchema.inferDataTargetForMutation(target).map(target::equals).orElse(false) ?
+                    CodeBlock.of("$L,\n$L", queryFunction, wrapMutationOutputFunction(target)) :  queryFunction;
         }
 
         var object = processedSchema.getObjectOrConnectionNode(target);
@@ -171,90 +165,18 @@ public class OperationMethodGenerator extends DataFetcherMethodGenerator {
     }
 
     /**
-     * @return CodeBlock for the filtering of IDs. Does not use recursion to check for arbitrarily deep nesting.
+     * @return CodeBlock for wrapping output from mutations. Does not use recursion to check for arbitrarily deep nesting.
      */
-    private CodeBlock filterDeleteIDsFunction(ObjectField target) {
+    private CodeBlock wrapMutationOutputFunction(ObjectField target) {
         var isRecord = processedSchema.isRecordType(target);
+        if (!isRecord) return CodeBlock.empty();
         var recordType = processedSchema.getRecordType(target);
-        var outputIDFieldOptional = isRecord
-                ? recordType.getFields().stream().filter(FieldSpecification::isID).findFirst()
-                : Optional.of(target);
-
-        var argIDField = deduceIDInputFieldFromArgs(target);
-        GenerationField idContainerField, idField;
-        if (argIDField != null) {
-            idContainerField = null;
-            idField = argIDField;
-        } else {
-            idContainerField = deduceIDInputFieldType(target);
-            idField = idContainerField == null ? null : processedSchema
-                    .getRecordType(idContainerField)
-                    .getFields()
-                    .stream()
-                    .filter(FieldSpecification::isID)
-                    .findFirst()
-                    .orElseThrow();  // This will not happen, already checked in previous filter that this exists.
-        }
-
-        if (outputIDFieldOptional.isEmpty() || idField == null || !outputIDFieldOptional.get().isID()) {
-            return CodeBlock.of("$L.identity()", FUNCTION.className);
-        }
-
-        var outputIDField = outputIDFieldOptional.get();
-
-        var extraction = CodeBlock
-                .builder()
-                .add(VAR_RESULT)
-                .addIf(isRecord, outputIDField.getMappingFromSchemaName().asGetCall());
-
-        var filter = CodeBlock.builder();
-        if (outputIDField.isIterableWrapped()) {
-            filter.add(
-                    "$1L.stream().map($2L -> $2N$3L).filter($2L -> !$4L.contains($2N))$5L",
-                    idContainerField == null ? idField.getName() : idContainerField.getName(),
-                    VAR_ITERATOR,
-                    idField.getMappingFromSchemaName().asGetCall(),
-                    extraction.build(),
-                    collectToList()
-            );
-        } else {
-            filter.add(
-                    "$L == null ? $L : null",
-                    extraction.build(),
-                    idContainerField == null
-                            ? idField.getName()
-                            : CodeBlock.of("$N$L", idContainerField.getName(), idField.getMappingFromSchemaName().asGetCall()));
-        }
-
-        var reWrapping = CodeBlock.builder().add("($L) -> ", VAR_RESULT);
-        if (isRecord) {
-            return reWrapping.add("new $T($L)", recordType.getGraphClassName(), filter.build()).build();
-        }
-
-        return reWrapping.add(filter.build()).build();
+        return  CodeBlock.of("($1N) -> new $2T($1N)", VAR_RESULT, recordType.getGraphClassName());
     }
 
-    private ArgumentField deduceIDInputFieldType(ObjectField target) {
-        return target
-                .getArguments()
-                .stream()
-                .filter(it ->
-                        Optional
-                                .of(processedSchema.getRecordType(it))
-                                .map(record -> record.getFields().stream().anyMatch(FieldSpecification::isID))
-                                .orElse(false)
-                )
-                .findFirst()
-                .orElse(null);
-    }
-
-    private ArgumentField deduceIDInputFieldFromArgs(ObjectField target) {
-        return target.getArguments().stream().filter(AbstractField::isID).findFirst().orElse(null);
-    }
-
-    private static String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
-        if (target.hasMutationType() && target.getMutationType().equals(MutationType.DELETE)) {
-            return "loadDelete";
+    private String getFetcherMethodName(ObjectField target, RecordObjectSpecification<?> localObject) {
+        if (target.isDeleteMutation()) {
+            return processedSchema.isObject(target) && !processedSchema.hasTableObject(target) ? "loadWrapped" : "load";
         }
 
         if (!localObject.isOperationRoot() && target.isIterableWrapped() && target.isNonNullable())  {

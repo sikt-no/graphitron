@@ -14,11 +14,11 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_INPUT_TABLE;
 import static no.sikt.graphitron.common.configuration.SchemaComponent.CUSTOMER_TABLE;
 
-@DisplayName("Mutation queries - Queries for updating and then fetching data")
+@DisplayName("Mutation queries - Queries for updating with JDBC batching and then fetching data")
 public class FetchQueryTest extends GeneratorTest {
     @Override
     protected String getSubpath() {
-        return "queries/edit";
+        return "queries/edit/withBatching";
     }
 
     @Override

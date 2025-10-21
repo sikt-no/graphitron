@@ -1,0 +1,3 @@
+mutation DeleteCategories($in: [CategoryPkAndNameInput!]!) {
+    deleteCategoriesByPkAndName(in: $in)
+}
