@@ -52,6 +52,8 @@ type Mutation {
     # TODO: This case fails if the inputs are not in a record. Technically, we have the table in Film, and that should suffice to resolve this.
     updateFilmName(in: FilmNameInput): Film @mutation(typeName: UPDATE)
     updateFilmNames(in: [FilmNameInput]): [Film] @mutation(typeName: UPDATE)
+    updateCityName(in: CityNameInput): City @mutation(typeName: UPDATE)
+
     insertFilm(in: FilmCreateInput): Film @mutation(typeName: INSERT)
 
     deleteFilmID(in: FilmInput): ID @nodeId(typeName: "Film") @mutation(typeName: DELETE)
@@ -74,6 +76,11 @@ input CategoryNameInput @table(name: "CATEGORY") {
 
 input CategoryInput @table(name: "CATEGORY") {
     categoryId: ID! @nodeId(typeName: "Category")
+}
+
+input CityNameInput @table(name: "CITY") {
+    cityId: ID! @nodeId(typeName: "City")
+    name: String! @field(name: "CITY_")
 }
 
 interface Node {
