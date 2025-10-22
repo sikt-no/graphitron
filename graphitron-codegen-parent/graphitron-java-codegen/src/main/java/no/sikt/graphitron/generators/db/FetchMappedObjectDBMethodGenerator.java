@@ -1,5 +1,6 @@
 package no.sikt.graphitron.generators.db;
 
+import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
@@ -20,6 +21,7 @@ import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.STATIC;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.NODE_ID_STRATEGY_NAME;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
@@ -144,6 +146,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         allParameters.addAll(inputParameters);
         allParameters.addAll(tableParameters);
         
+        // Add nodeIdStrategy parameter if needed
+        if (GeneratorConfig.shouldMakeNodeStrategy()) {
+            allParameters.add(NODE_ID_STRATEGY_NAME);
+        }
+        
         var parameterList = String.join(", ", allParameters);
         var helperCall = CodeBlock.of("$L($L)", helperMethodName, parameterList);
         
@@ -180,9 +187,17 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 helperMethodName = generateHelperMethodName(field);
             }
             
-            // For nested fields, only pass the target table alias, not all aliases
-            var targetAlias = context.getTargetAlias();
-            return CodeBlock.of("$L($L)", helperMethodName, targetAlias);
+            // Build parameter list for the helper method call
+            var parameters = new java.util.ArrayList<String>();
+            parameters.add(context.getTargetAlias());
+            
+            // Add nodeIdStrategy parameter if needed
+            if (GeneratorConfig.shouldMakeNodeStrategy()) {
+                parameters.add(NODE_ID_STRATEGY_NAME);
+            }
+            
+            var parameterList = String.join(", ", parameters);
+            return CodeBlock.of("$L($L)", helperMethodName, parameterList);
         }
         return null;
     }
@@ -385,12 +400,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
             }
         }
-        
-            var method = methodBuilder
+
+            return methodBuilder
                     .addCode("return $L;\n", selectRowBlock)
+                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
                     .build();
-            
-            return method;
         } finally {
             // Clear the current parent field and reset flag after processing
             currentParentField = null;
@@ -477,12 +491,14 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             
             return methodBuilder
                     .addCode("return $L;\n", selectRowBlock)
+                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
                     .build();
         } else {
             // For record types without tables, just generate the simple mapping
             // This handles cases like Wrapper type without @table directive
             return methodBuilder
                     .addCode("return DSL.row().mapping($T::new);\n", returnType)
+                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
                     .build();
         }
     }

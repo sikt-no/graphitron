@@ -49,7 +49,21 @@ public class NodeDirectiveTest extends GeneratorTest {
     void defaultCase() {
         assertGeneratedContentContains(
                 "root/default", Set.of(CUSTOMER_QUERY),
-                "row(nodeIdStrategy.createId(\"Customer\", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping"
+                """
+                        public static Customer queryForQuery(DSLContext ctx, NodeIdStrategy nodeIdStrategy,
+                                SelectionSet select) {
+                            var _a_customer = CUSTOMER.as("customer_2168032777");
+                            return ctx
+                                    .select(queryForQuery_customer(_a_customer, nodeIdStrategy))
+                                    .from(_a_customer)
+                                    .fetchOne(it -> it.into(Customer.class));
+                        }
+                        private static SelectField<Customer> queryForQuery_customer(
+                                no.sikt.graphitron.jooq.generated.testdata.public_.tables.Customer _a_customer,
+                                NodeIdStrategy nodeIdStrategy) {
+                            return DSL.row(nodeIdStrategy.createId("Customer", _a_customer.fields(_a_customer.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(Customer::new));
+                        }
+                        """
         );
     }
 
@@ -58,8 +72,12 @@ public class NodeDirectiveTest extends GeneratorTest {
     void nested() {
         assertGeneratedContentContains(
                 "root/nested", Set.of(CUSTOMER_QUERY),
-                "createId(\"Address\", _a_customer_2168032777_address.fields(_a_customer_2168032777_address.getPrimaryKey().getFieldsArray())))" +
-                        ".mapping(Functions.nullOnAllNull(Address"
+                """
+                            private static SelectField<fake.graphql.example.model.Address> queryForQuery_customer_address(
+                                    Address _a_address, NodeIdStrategy nodeIdStrategy) {
+                                return DSL.row(nodeIdStrategy.createId("Address", _a_address.fields(_a_address.getPrimaryKey().getFieldsArray()))).mapping(Functions.nullOnAllNull(fake.graphql.example.model.Address::new));
+                            }
+                        """
         );
     }
 
@@ -95,7 +113,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void splitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/default",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"Customer\", _a_address_2"
+                "DSL.row(nodeIdStrategy.createId(\"Customer\", _a_address_2"
         );
     }
 
@@ -104,7 +122,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customTypeIdInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customTypeId",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"C\", _a_address_2"
+                "DSL.row(nodeIdStrategy.createId(\"C\", _a_address_2"
         );
     }
 
@@ -113,7 +131,7 @@ public class NodeDirectiveTest extends GeneratorTest {
     void customKeyColumnsInSplitQuery() {
         assertGeneratedContentContains(
                 "splitQuery/customKeyColumns",
-                "DSL.select(DSL.row(nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
+                "DSL.row(nodeIdStrategy.createId(\"Address\", _a_customer_2168032777_address.ADDRESS_ID)).mapping"
         );
     }
 
