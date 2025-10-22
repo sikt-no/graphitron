@@ -26,14 +26,14 @@ public class QueryDBQueries {
         return DSL.row(
                 _a_customer.getId(),
                 DSL.field(
-                        DSL.select(queryForCustomer_address(_a_customer_2168032777_address))
+                        DSL.select(queryForQuery_customer_address(_a_customer_2168032777_address))
                                 .from(_a_customer_2168032777_address)
 
                 )
         ).mapping(Functions.nullOnAllNull(Customer::new));
     }
 
-    private static SelectField<fake.graphql.example.model.Address> queryForCustomer_address(
+    private static SelectField<fake.graphql.example.model.Address> queryForQuery_customer_address(
             Address _a_address) {
         return DSL.row(_a_address.getId()).mapping(Functions.nullOnAllNull(fake.graphql.example.model.Address::new));
     }

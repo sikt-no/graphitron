@@ -7,29 +7,29 @@ import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
 import no.sikt.graphitron.generators.context.FetchContext;
 import no.sikt.graphitron.generators.context.InputParser;
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphql.directives.GenerationDirective;
 import no.sikt.graphql.schema.ProcessedSchema;
 
 import java.util.List;
 import java.util.stream.Stream;
 
+import static javax.lang.model.element.Modifier.PRIVATE;
+import static javax.lang.model.element.Modifier.STATIC;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryMethodName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.ORDER_FIELDS_NAME;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
 import static no.sikt.graphitron.mappings.TableReflection.tableHasPrimaryKey;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
-import static javax.lang.model.element.Modifier.PRIVATE;
-import static javax.lang.model.element.Modifier.STATIC;
 
 /**
  * Generator that creates the default data fetching methods
  */
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
+    private ObjectField currentParentField = null;
 
     public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -156,7 +156,19 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     protected CodeBlock getHelperMethodCallForCorrelatedSubquery(ObjectField field, FetchContext context) {
         // Use helper methods for record types in correlated subqueries
         if (processedSchema.isRecordType(field)) {
-            var helperMethodName = generateHelperMethodName(field);
+            // Check if this is a nested field within a parent field
+            // If the reference object is not null, this is likely a nested context
+            var isNested = context.getReferenceObject() != null && context.getReferenceObject() != getLocalObject();
+            
+            String helperMethodName;
+            if (isNested && currentParentField != null) {
+                // For nested fields, use parent helper method name + field name
+                var parentHelperName = generateHelperMethodName(currentParentField);
+                helperMethodName = parentHelperName + "_" + field.getName();
+            } else {
+                // For top-level fields, use standard naming
+                helperMethodName = generateHelperMethodName(field);
+            }
             
             // For nested fields, only pass the target table alias, not all aliases
             var targetAlias = context.getTargetAlias();
@@ -166,12 +178,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
     
     private String generateHelperMethodName(ObjectField target) {
-        // Generate method name like: queryForQuery_customerTable
-        // where Query is the container type and customerTable is the return type (camelCase)
+        // Generate method name like: queryForQuery_outer
+        // Pattern: [callingMethod]_[returnType]
+        var callingMethodName = asQueryMethodName(target.getName(), getLocalObject().getName());
         var returnTypeName = processedSchema.getRecordType(target).getName();
         // Make first letter lowercase for camelCase
         returnTypeName = returnTypeName.substring(0, 1).toLowerCase() + returnTypeName.substring(1);
-        return "queryFor" + target.getContainerTypeName() + "_" + returnTypeName;
+        return callingMethodName + "_" + returnTypeName;
     }
 
     private CodeBlock setFetch(ObjectField referenceField) {
@@ -268,6 +281,9 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
     
     private MethodSpec generateHelperMethod(ObjectField target) {
+        // Set the current parent field for nested method generation
+        currentParentField = target;
+        
         var context = new FetchContext(processedSchema, target, getLocalObject(), false);
         var refContext = target.isResolver() ? context.nextContext(target) : context;
 
@@ -302,9 +318,13 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             }
         }
         
-        return methodBuilder
+        var method = methodBuilder
                 .addCode("return $L;\n", selectRowBlock)
                 .build();
+        
+        // Clear the current parent field after processing
+        currentParentField = null;
+        return method;
     }
     
     private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField) {
@@ -354,9 +374,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private MethodSpec generateNestedHelperMethod(ObjectField parentField, ObjectField nestedField) {
         var returnType = processedSchema.getRecordType(nestedField).getGraphClassName();
         
-        // Generate method name based on the nested field's container type (e.g., queryForCustomer_address)
-        var containerTypeName = nestedField.getContainerTypeName();
-        var helperMethodName = "queryFor" + containerTypeName + "_" + nestedField.getName();
+        // Generate method name like: queryForQuery_outer_customers
+        // Pattern: [parentHelperMethod]_[fieldName]
+        var parentHelperMethodName = generateHelperMethodName(parentField);
+        var fieldName = nestedField.getName();
+        var helperMethodName = parentHelperMethodName + "_" + fieldName;
         
         var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
                 .addModifiers(PRIVATE, STATIC)
