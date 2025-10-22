@@ -35,7 +35,8 @@ public class NodeIdOutputTest extends NodeIdDirectiveTest {
     void referenceAndInput() {
         assertGeneratedContentContains("referenceAndInput", Set.of(CUSTOMER_NODE),
                 "customer.getPrimaryKey().getFieldsArray()))).from(_a_customer).where(_a_customer.FIRST_NAME.eq(inRecord.getFirstName()))",
-                "CustomerNoTable::new))).fetchOne("
+                "CustomerNoTable::new))",
+                ".fetchOne("
         );
     }
 

@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.db;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.GenerationSourceField;
 import no.sikt.graphitron.definitions.fields.ObjectField;
+import no.sikt.graphitron.definitions.mapping.AliasWrapper;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
 import no.sikt.graphitron.generators.codebuilding.LookupHelpers;
 import no.sikt.graphitron.generators.codebuilding.VariableNames;
@@ -33,6 +34,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIE
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private ObjectField currentParentField = null;
     private boolean isGeneratingHelperMethod = false;
+    private String currentHelperMethodName = null;
 
     public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -178,7 +180,10 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             var isNested = context.getReferenceObject() != null && context.getReferenceObject() != getLocalObject();
             
             String helperMethodName;
-            if (isNested && currentParentField != null) {
+            if (isNested && currentHelperMethodName != null) {
+                // When we're already inside a helper method, use its name as the parent
+                helperMethodName = currentHelperMethodName + "_" + field.getName();
+            } else if (isNested && currentParentField != null) {
                 // For nested fields, use parent helper method name + field name
                 var parentHelperName = generateHelperMethodName(currentParentField);
                 helperMethodName = parentHelperName + "_" + field.getName();
@@ -413,10 +418,11 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     }
     
     private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField) {
-        return generateNestedHelperMethods(parentField, new java.util.HashSet<>());
+        var parentHelperName = generateHelperMethodName(parentField);
+        return generateNestedHelperMethods(parentField, parentHelperName, new java.util.HashSet<>());
     }
     
-    private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField, java.util.Set<String> visitedTypes) {
+    private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField, String parentHelperMethodName, java.util.Set<String> visitedTypes) {
         var nestedMethods = new java.util.ArrayList<MethodSpec>();
         
         if (!processedSchema.isRecordType(parentField)) {
@@ -442,64 +448,97 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 processedSchema.isRecordType(objectField) && 
                 processedSchema.getRecordType(objectField) != null) {
                 
-                // Generate helper method for this nested field
-                var nestedHelperMethod = generateNestedHelperMethod(parentField, objectField);
+                // Generate helper method for this nested field, passing the parent helper method name
+                var nestedHelperMethod = generateNestedHelperMethodWithParentName(parentHelperMethodName, objectField);
                 if (!nestedHelperMethod.code().isEmpty()) {
                     nestedMethods.add(nestedHelperMethod);
                 }
                 
-                // Recursively generate methods for deeper nesting with cycle detection
-                nestedMethods.addAll(generateNestedHelperMethods(objectField, new java.util.HashSet<>(visitedTypes)));
+                // Recursively generate methods for deeper nesting, maintaining the naming chain
+                var nestedHelperMethodName = parentHelperMethodName + "_" + objectField.getName();
+                nestedMethods.addAll(generateNestedHelperMethods(objectField, nestedHelperMethodName, new java.util.HashSet<>(visitedTypes)));
             }
         }
         
         return nestedMethods;
     }
     
+    // This method is called from the main generation loop for first-level nested fields
     private MethodSpec generateNestedHelperMethod(ObjectField parentField, ObjectField nestedField) {
+        var parentHelperMethodName = generateHelperMethodName(parentField);
+        return generateNestedHelperMethodWithParentName(parentHelperMethodName, nestedField);
+    }
+    
+    // This method is called recursively with the correct parent helper method name
+    private MethodSpec generateNestedHelperMethodWithParentName(String parentHelperMethodName, ObjectField nestedField) {
         var returnType = processedSchema.getRecordType(nestedField).getGraphClassName();
         
-        // Generate method name like: queryForQuery_outer_customers
+        // Generate method name like: queryForQuery_customer_address
         // Pattern: [parentHelperMethod]_[fieldName]
-        var parentHelperMethodName = generateHelperMethodName(parentField);
         var fieldName = nestedField.getName();
         var helperMethodName = parentHelperMethodName + "_" + fieldName;
         
-        var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
-                .addModifiers(PRIVATE, STATIC)
-                .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
+        // Set the current helper method name for nested calls
+        var previousHelperMethodName = currentHelperMethodName;
+        currentHelperMethodName = helperMethodName;
         
-        // Check if the nested field's record type has a table
-        var nestedRecordType = processedSchema.getRecordType(nestedField);
-        if (nestedRecordType != null && nestedRecordType.hasTable()) {
-            // Create a context for the nested field
-            var context = new FetchContext(processedSchema, nestedField, getLocalObject(), false);
-            var refContext = nestedField.isResolver() ? context.nextContext(nestedField) : context;
+        try {
+            var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
+                    .addModifiers(PRIVATE, STATIC)
+                    .returns(ParameterizedTypeName.get(SELECT_FIELD.className, returnType));
             
-            var selectRowBlock = generateSelectRow(refContext);
+            // Check if the nested field's record type has a table
+            var nestedRecordType = processedSchema.getRecordType(nestedField);
+            if (nestedRecordType != null && nestedRecordType.hasTable()) {
+                // Create a context for the nested field
+                var context = new FetchContext(processedSchema, nestedField, getLocalObject(), false);
+                var refContext = nestedField.isResolver() ? context.nextContext(nestedField) : context;
+                
+                var selectRowBlock = generateSelectRow(refContext);
             
-            // Add parameter for the nested table alias using the mapping name
+            // Collect all aliases from the context
             var nestedAliasSet = refContext.getAliasSet();
+            
+            // Separate aliases into those that will be parameters vs those that need to be declared
+            var parameterAlias = (AliasWrapper) null;
+            var aliasesToDeclare = new java.util.LinkedHashSet<AliasWrapper>();
+            
+            // The first non-service alias should be the parameter (the main table for this nested field)
             for (var alias : nestedAliasSet) {
                 if (!alias.hasTableMethod()) {
-                    var tableMapping = alias.getAlias().getTable();
-                    var underlyingTable = tableMapping.getTable();
-                    methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
-                    break; // Only add one parameter for the target table
+                    if (parameterAlias == null) {
+                        // This is the main table alias that will be passed as a parameter
+                        parameterAlias = alias;
+                        var tableMapping = alias.getAlias().getTable();
+                        var underlyingTable = tableMapping.getTable();
+                        methodBuilder.addParameter(underlyingTable.getTableClass(), alias.getAlias().getMappingName());
+                    } else {
+                        // These are child aliases that need to be declared within the method
+                        aliasesToDeclare.add(alias);
+                    }
                 }
             }
             
-            return methodBuilder
-                    .addCode("return $L;\n", selectRowBlock)
-                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
-                    .build();
-        } else {
-            // For record types without tables, just generate the simple mapping
-            // This handles cases like Wrapper type without @table directive
-            return methodBuilder
-                    .addCode("return DSL.row().mapping($T::new);\n", returnType)
-                    .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
-                    .build();
+            // Add code to declare any child aliases that are needed
+            if (!aliasesToDeclare.isEmpty()) {
+                methodBuilder.addCode(createAliasDeclarations(aliasesToDeclare));
+            }
+            
+                return methodBuilder
+                        .addCode("return $L;\n", selectRowBlock)
+                        .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
+                        .build();
+            } else {
+                // For record types without tables, just generate the simple mapping
+                // This handles cases like Wrapper type without @table directive
+                return methodBuilder
+                        .addCode("return DSL.row().mapping($T::new);\n", returnType)
+                        .addParameterIf(GeneratorConfig.shouldMakeNodeStrategy(), NODE_ID_STRATEGY.className, NODE_ID_STRATEGY_NAME)
+                        .build();
+            }
+        } finally {
+            // Restore the previous helper method name
+            currentHelperMethodName = previousHelperMethodName;
         }
     }
 }

@@ -302,7 +302,8 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "fromMultitableInterface", Set.of(CUSTOMER_TABLE),
                 "DSL.row(_a_payment.PAYMENT_ID), DSL.field(",
-                "CustomerTable::new))).from(_a_payment_1831371789_customer)",
+                "CustomerTable::new))",
+                ".from(_a_payment_1831371789_customer)",
                 ".from(_a_payment).where(DSL.row(_a_payment.PAYMENT_ID).in(paymentResolverKeys"
         );
     }
@@ -336,7 +337,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
         assertGeneratedContentContains(
                 "afterJavaServiceListed", Set.of(CUSTOMER_TABLE),
                 "Map<Row1<Long>, Address> addressForCustomer(DSLContext ctx, Set<Row1<Long>> customerResolverKeys",
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForCustomer_address(_a_address"
         );
     }
 
@@ -345,7 +346,7 @@ public class ReferenceSplitQueryTest extends ReferenceTest {
     void afterJavaServiceNested() {
         assertGeneratedContentContains(
                 "afterJavaServiceNested", Set.of(CUSTOMER_TABLE),
-                ".select(DSL.row(_a_address.ADDRESS_ID), DSL.row(_a_address"
+                ".select(DSL.row(_a_address.ADDRESS_ID), addressForWrapper_address(_a_address"
         );
     }
 }
