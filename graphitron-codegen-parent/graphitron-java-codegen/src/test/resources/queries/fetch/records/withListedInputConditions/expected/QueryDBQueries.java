@@ -16,7 +16,7 @@ public class QueryDBQueries {
                                                  SelectionSet select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return ctx
-                .select(queryForCustomerForQuery_customerTable(inRecordList, _a_customer))
+                .select(customerForQuery_customerTable(inRecordList, _a_customer))
                 .from(_a_customer)
                 .where(
                         inRecordList != null && inRecordList.size() > 0 ?
@@ -42,18 +42,18 @@ public class QueryDBQueries {
                                                          List<CustomerRecord> inRecordList, SelectionSet select) {
         var _a_customer = CUSTOMER.as("customer_2168032777");
         return ctx
-                .select(queryForCustomerOverrideForQuery_customerTable(inRecordList, _a_customer))
+                .select(customerOverrideForQuery_customerTable(inRecordList, _a_customer))
                 .from(_a_customer)
                 .where(no.sikt.graphitron.codereferences.conditions.RecordCustomerCondition.customerJOOQRecordList(_a_customer, inRecordList))
                 .fetchOne(it -> it.into(CustomerTable.class));
     }
 
-    private static SelectField<CustomerTable> queryForCustomerForQuery_customerTable(
+    private static SelectField<CustomerTable> customerForQuery_customerTable(
             List<CustomerRecord> inRecordList, Customer _a_customer) {
         return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }
 
-    private static SelectField<CustomerTable> queryForCustomerOverrideForQuery_customerTable(
+    private static SelectField<CustomerTable> customerOverrideForQuery_customerTable(
             List<CustomerRecord> inRecordList, Customer _a_customer) {
         return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
     }

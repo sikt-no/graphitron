@@ -30,6 +30,7 @@ import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIE
  */
 public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private ObjectField currentParentField = null;
+    private boolean isGeneratingHelperMethod = false;
 
     public FetchMappedObjectDBMethodGenerator(ObjectDefinition localObject, ProcessedSchema processedSchema) {
         super(localObject, processedSchema);
@@ -154,6 +155,15 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
 
     @Override
     protected CodeBlock getHelperMethodCallForCorrelatedSubquery(ObjectField field, FetchContext context) {
+        // Check if we're in a double nesting scenario where we should inline table types
+        if (isGeneratingHelperMethod && hasDoubleNestedWrapperPattern()) {
+            var recordType = processedSchema.getRecordType(field);
+            if (recordType != null && recordType.hasTable()) {
+                // If we're in a double nested wrapper pattern and this field maps to a table, inline it
+                return null;
+            }
+        }
+        
         // Use helper methods for record types in correlated subqueries
         if (processedSchema.isRecordType(field)) {
             // Check if this is a nested field within a parent field
@@ -185,6 +195,53 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
         // Make first letter lowercase for camelCase
         returnTypeName = returnTypeName.substring(0, 1).toLowerCase() + returnTypeName.substring(1);
         return callingMethodName + "_" + returnTypeName;
+    }
+    
+    /**
+     * Detects if the current parent field has a double nested wrapper pattern:
+     * Wrapper1 -> Wrapper2 -> TableType
+     * where Wrapper1 and Wrapper2 are record types without tables, and the final type has a table.
+     */
+    private boolean hasDoubleNestedWrapperPattern() { //TODO: this seems strange and not generic
+        if (currentParentField == null) {
+            return false;
+        }
+        
+        // Check if the parent field is a record type without a table (first wrapper)
+        var parentRecordType = processedSchema.getRecordType(currentParentField);
+        if (parentRecordType == null || parentRecordType.hasTable()) {
+            return false; // Parent should be a wrapper type without a table
+        }
+        
+        // Look for nested record types within the parent that might be wrapper types
+        var parentObject = processedSchema.getObjectOrConnectionNode(currentParentField);
+        if (parentObject == null) {
+            return false;
+        }
+        
+        // Check if any field in the parent is a wrapper type that leads to a table type
+        for (var field : parentObject.getFields()) {
+            if (processedSchema.isRecordType(field)) {
+                var fieldRecordType = processedSchema.getRecordType(field);
+                if (fieldRecordType != null && !fieldRecordType.hasTable()) {
+                    // This is a potential second wrapper, check if it leads to a table type
+                    var fieldObject = processedSchema.getObjectOrConnectionNode(field);
+                    if (fieldObject != null) {
+                        for (var nestedField : fieldObject.getFields()) {
+                            if (processedSchema.isRecordType(nestedField)) {
+                                var nestedRecordType = processedSchema.getRecordType(nestedField);
+                                if (nestedRecordType != null && nestedRecordType.hasTable()) {
+                                    // Found the pattern: Wrapper1 -> Wrapper2 -> TableType
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return false;
     }
 
     private CodeBlock setFetch(ObjectField referenceField) {
@@ -270,8 +327,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 helperMethods.add(helperMethod);
             }
             
-            // Generate nested helper methods
-            helperMethods.addAll(generateNestedHelperMethods(field));
+            // Set current parent field to check for double nested wrapper pattern
+            currentParentField = field;
+            
+            // Skip nested helper method generation for double nested wrapper patterns
+            if (!hasDoubleNestedWrapperPattern()) {
+                helperMethods.addAll(generateNestedHelperMethods(field));
+            }
+            
+            // Clear current parent field
+            currentParentField = null;
         }
                 
         var allMethods = new java.util.ArrayList<MethodSpec>();
@@ -283,13 +348,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
     private MethodSpec generateHelperMethod(ObjectField target) {
         // Set the current parent field for nested method generation
         currentParentField = target;
+        // Set flag to prevent nested helper method extractions
+        isGeneratingHelperMethod = true;
         
-        var context = new FetchContext(processedSchema, target, getLocalObject(), false);
-        var refContext = target.isResolver() ? context.nextContext(target) : context;
+        try {
+            var context = new FetchContext(processedSchema, target, getLocalObject(), false);
+            var refContext = target.isResolver() ? context.nextContext(target) : context;
 
-        var returnType = processedSchema.getRecordType(target).getGraphClassName();
-        var selectRowBlock = generateSelectRow(refContext);  // Use refContext to get the correct table context
-        var helperMethodName = generateHelperMethodName(target);
+            var returnType = processedSchema.getRecordType(target).getGraphClassName();
+            var selectRowBlock = generateSelectRow(refContext);  // Use refContext to get the correct table context
+            var helperMethodName = generateHelperMethodName(target);
 
         var methodBuilder = MethodSpec.methodBuilder(helperMethodName)
                 .addModifiers(PRIVATE, STATIC)
@@ -318,13 +386,16 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
             }
         }
         
-        var method = methodBuilder
-                .addCode("return $L;\n", selectRowBlock)
-                .build();
-        
-        // Clear the current parent field after processing
-        currentParentField = null;
-        return method;
+            var method = methodBuilder
+                    .addCode("return $L;\n", selectRowBlock)
+                    .build();
+            
+            return method;
+        } finally {
+            // Clear the current parent field and reset flag after processing
+            currentParentField = null;
+            isGeneratingHelperMethod = false;
+        }
     }
     
     private java.util.List<MethodSpec> generateNestedHelperMethods(ObjectField parentField) {

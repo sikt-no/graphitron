@@ -212,7 +212,7 @@ public class OutputTest extends GeneratorTest {
     void outerNestedRowExtraField() {
         assertGeneratedContentContains(
                 "outerNestedRowExtraField", Set.of(CUSTOMER_TABLE),
-                ".row(.EMAIL,DSL.field(DSL.select(customerQuery_customerTable(_a_customer))"
+                ".row(.EMAIL,DSL.field(DSL.select(queryForQuery_wrapper_customer(_a_customer))"
         );
     }
 
@@ -230,20 +230,13 @@ public class OutputTest extends GeneratorTest {
                             }
                             private static SelectField<Wrapper1> queryForQuery_wrapper1(Customer _a_customer) {
                                 return DSL.row(
-                                        DSL.row(
-                                                DSL.field(
-                                                        DSL.select(queryForQuery_wrapper1_customer(_a_customer))
-                                                        .from(_a_customer)
-                                                )
-                                        ).mapping(Functions.nullOnAllNull(Wrapper2::new))
+                                      DSL.row(
+                                              DSL.field(
+                                                      DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                                                      .from(_a_customer)
+                                              )
+                                      ).mapping(Functions.nullOnAllNull(Wrapper2::new))
                                 ).mapping(Functions.nullOnAllNull(Wrapper1::new));
-                            }
-                            private static SelectField<Wrapper2> queryForQuery_wrapper1_customer() {
-                                return DSL.row().mapping(Wrapper2::new);
-                            }
-                            private static SelectField<CustomerTable> customerForQuery_wrapper2_customer(
-                                    Customer _a_customer) {
-                                return DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new));
                             }
                             """
         );
@@ -316,23 +309,24 @@ public class OutputTest extends GeneratorTest {
         assertGeneratedContentContains(
                 "outerDoubleNestedWithArgument", Set.of(CUSTOMER_TABLE),
                 """
-                 public static Wrapper1 queryForQuery(DSLContext ctx, String firstName, SelectionSet select) {
-                        var _a_customer = CUSTOMER.as("customer_2168032777");
-                        return ctx
-                                .select(queryForQuery_wrapper1(firstName, _a_customer))
-                                .fetchOne(it -> it.into(Wrapper1.class));
-                    }
-                    private static SelectField<Wrapper1> queryForQuery_wrapper1(String firstName, Customer _a_customer) {
-                        return DSL.row(
-                                DSL.row(
-                                        DSL.field(
-                                                DSL.select(queryForQuery_wrapper1_wrapper2(_a_customer))
-                                                .from(_a_customer)
-                                                .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
-                                        )
-                                ).mapping(Functions.nullOnAllNull(Wrapper2::new))
-                        ).mapping(Functions.nullOnAllNull(Wrapper1::new));
-                 }""" //TODO extract the inner row as well?
+                        public static Wrapper1 queryForQuery(DSLContext ctx, String firstName, SelectionSet select) {
+                            var _a_customer = CUSTOMER.as("customer_2168032777");
+                            return ctx
+                                    .select(queryForQuery_wrapper1(firstName, _a_customer))
+                                    .fetchOne(it -> it.into(Wrapper1.class));
+                        }
+                        private static SelectField<Wrapper1> queryForQuery_wrapper1(String firstName,
+                                Customer _a_customer) {
+                            return DSL.row(
+                                    DSL.row(
+                                            DSL.field(
+                                                    DSL.select(DSL.row(_a_customer.getId()).mapping(Functions.nullOnAllNull(CustomerTable::new)))
+                                                    .from(_a_customer)
+                                                    .where(firstName != null ? _a_customer.FIRST_NAME.eq(firstName) : DSL.noCondition())
+                                            )
+                                    ).mapping(Functions.nullOnAllNull(Wrapper2::new))
+                            ).mapping(Functions.nullOnAllNull(Wrapper1::new));
+                        }""" //TODO extract the inner row as well?
         );
     }
 
